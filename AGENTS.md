@@ -21,8 +21,11 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
    schema barrel, no hand-written registry. Tables are found by glob
    (`drizzle.config.ts`), extension points by decorators.
 4. **Dependencies go one way:** `core` ← `iam` ← `modules` ← `features`. A
-   module never imports another module of its own level: they talk through
-   events.
+   module may use another of its own level only through what that one
+   exports (its module, an exported service, its `forFeature()` or
+   `forRecord()`), and only in one direction: no cycles, no reaching into
+   another's internals. What would close a cycle is an event instead.
+   `src/module-graph.spec.ts` enforces both.
 5. **Each rule is written once.** A permission condition, a validation or a
    limit has one definition; everything else is derived from it.
 6. **Nothing until it is needed.** No layer, base class, option or helper
