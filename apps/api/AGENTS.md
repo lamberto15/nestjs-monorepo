@@ -36,11 +36,23 @@ When a task depends on how the app behaves in production - an error users hit, a
 
 The root [AGENTS.md](../../AGENTS.md) holds the rules and the owner's decisions. In this app:
 
-- **Folders:** `src/core/<name>` (always there: config, database, http, logging…), `src/iam/<name>` (tenancy, sign-in, access), `src/modules/<name>` (optional capabilities), `src/features/<name>` (business features). Imports go one way: core ← iam ← modules ← features. No `index.ts` barrels.
+- **Folders:** `src/core/<name>` (always there: config, database, tenancy, http, logging…), `src/iam/<name>` (sign-in, access), `src/modules/<name>` (optional capabilities), `src/features/<name>` (business features). Imports go one way: core ← iam ← modules ← features. No `index.ts` barrels.
 - **A module's files**, all in its folder: `<name>.module.ts`, `<name>.config.ts`, `<name>.tables.ts`, `<name>.controller.ts`, `<name>.service.ts`, `<name>.schemas.ts` (Zod request and response shapes), `*.spec.ts` (unit), `<name>.e2e-spec.ts` (e2e), `README.md` (what it does, its variables, how to remove it).
 - **Environment variables:** only in `<name>.config.ts`: `export const schema = z.object({...})`, then `export const <name>Config = registerAs('<name>', () => { const env = readEnv(schema); return {...}; })` (`core/config/env.ts`). The module imports `ConfigModule.forFeature(<name>Config)`; classes inject `@Inject(<name>Config.KEY) config: ConfigType<typeof <name>Config>`. Nothing else reads `process.env`.
 - **Database:** `@InjectDrizzle() private readonly db: Database` (`core/database/database.ts`). Tables live in the module's `*.tables.ts`; `pnpm db:generate` finds them by glob and writes the migration.
 - **Columns** come from `core/database/columns.ts`: `uuidPk()` for an id (UUIDv7 from PostgreSQL's `uuidv7()`; no serial ids), `at(name)` for a point in time (`timestamptz(3)`: milliseconds, as a JavaScript Date and a list cursor hold them; never a bare `timestamp()`), `...timestamps()` for created/updated. A calendar day with no time is `date()`. A number people read (INV-0042) is a sequence, never the id.
+- **Tenant tables:** every table of a tenant's data is declared with `tenantTable()` (`core/tenancy/tenant-tables.ts`), never `pgTable`. Lead uniques with `t.tenantId`. A key to another tenant table is `tenantReference()`, and the table it points at is declared `{ referenced: true }`. Never filter by tenant or set `tenantId` on insert: the database binds each query to the current tenant. Run work as a tenant with `Tenancy.run(tenantId, work)`, walk tenants with `forEachTenant()`, and use `acrossTenants()` only for whole-table maintenance in workers. Jobs are queued with `withTenant(data)` and consumed with `TenantWorkerHost`.
+  ```ts
+  export const invoices = tenantTable(
+    'invoices',
+    { id: uuidPk(), customerId: uuid('customer_id').notNull(), number: text('number').notNull(), ...timestamps() },
+    (t) => [
+      uniqueIndex('invoices_number_idx').on(t.tenantId, t.number),
+      tenantReference('invoices_customer_fk', [t.tenantId, t.customerId], [customers.tenantId, customers.id]),
+    ],
+  );
+  ```
+- **Observability** is backend-neutral: `reportError()` and the OpenTelemetry API, never a vendor's SDK in a module (`core/observability/README.md`). A module's own metrics go through `MetricsService` (`core/metrics`).
 - **Transactions:** `@InjectTransaction() db: Database` in services, `@Transactional()` on a write that must be atomic; `@InjectDrizzle()` only for what must stay outside a transaction.
 - **Readiness:** a module that owns a dependency marks a provider `@ReadinessCheck('name')` (`core/health/readiness.ts`); `GET /health` finds it.
 - **Errors** are thrown as Nest HTTP exceptions with a `code`; an error class of a package maps with `ProblemDetailsFilter.map()` in the module's own folder.

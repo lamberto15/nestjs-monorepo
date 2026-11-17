@@ -1,9 +1,17 @@
 import { registerAs } from '@nestjs/config';
 import { z } from 'zod';
-import { flag, list, optional, secret } from '../config/env.helpers.js';
+import {
+  baseUrl,
+  flag,
+  list,
+  optional,
+  secret,
+} from '../config/env.helpers.js';
 import { readEnv } from '../config/env.js';
 
 export const schema = z.object({
+  /** The public origin of this API, for the links it hands out (signed file URLs, mails). */
+  APP_URL: baseUrl('http://localhost:3000'),
   /**
    * Browser apps on other origins (`https://admin.example.com`, comma-separated):
    * CORS, and the origins allowed to send cookie-authenticated writes (CSRF).
@@ -24,6 +32,7 @@ export const schema = z.object({
 export const httpConfig = registerAs('http', () => {
   const env = readEnv(schema);
   return {
+    appUrl: env.APP_URL!,
     corsOrigins: env.CORS_ORIGINS,
     cursorKeys: env.CURSOR_KEYS,
     openApi: env.OPENAPI,

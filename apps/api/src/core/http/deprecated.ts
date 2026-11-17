@@ -65,9 +65,7 @@ export function Deprecated(options: DeprecatedOptions) {
 }
 
 /**
- * Sets the headers; see `Deprecated()`. Seam: the earlier template also
- * counted each call in `deprecated_route_calls_total{route}`
- * (`matchedRouteKey()`), which comes back with the metrics module.
+ * Sets the headers; see `Deprecated()`. core/metrics counts the calls (`deprecated_route_calls_total`), by the `Deprecation` header.
  */
 @Injectable()
 export class DeprecationInterceptor implements NestInterceptor {

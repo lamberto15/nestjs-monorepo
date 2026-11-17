@@ -6,10 +6,14 @@ import { pgSchema, serial, text } from 'drizzle-orm/pg-core';
 import { inject } from 'vitest';
 import { bootModules } from '../../../test/boot.js';
 import { FIXTURE_MIGRATIONS } from '../../../test/fixtures/test-items.tables.js';
-import { createDatabase } from '../../../test/postgres.js';
+import { createDatabase, databaseUrl } from '../../../test/postgres.js';
 import { DatabaseModule } from './database.module.js';
 import type { Database } from './database.js';
-import { MIGRATIONS_FOLDER, migrateDatabase } from './migrations.js';
+import {
+  MIGRATIONS_FOLDER,
+  migrateAll,
+  migrateDatabase,
+} from './migrations.js';
 
 /** Drizzle's bookkeeping table `name`, read with the query builder. */
 const migrationsTable = (name: string) =>
@@ -39,9 +43,23 @@ const folders = (folder: string) =>
       ).length
     : 0;
 
-/** A fresh, empty database for one test. */
-const empty = () =>
-  createDatabase(inject('postgresUrl'), inject('databasePrefix'));
+/** A fresh, empty database for one test, owned by the run's owner role, and its URL as each role. */
+async function empty() {
+  const database = await createDatabase(
+    inject('postgresUrl'),
+    inject('databasePrefix'),
+    undefined,
+    inject('ownerRole'),
+  );
+  return {
+    ...database,
+    ownerUrl: databaseUrl(inject('ownerUrl'), database.name),
+    appUrl: databaseUrl(inject('appUrl'), database.name),
+    maintenanceUrl: databaseUrl(inject('maintenanceUrl'), database.name),
+  };
+}
+
+const ALL = [{ migrationsFolder: MIGRATIONS_FOLDER }, FIXTURE_MIGRATIONS];
 
 describe('migrations (e2e)', () => {
   it('applies every pending migration once, and again finds nothing to do', async () => {
@@ -49,8 +67,10 @@ describe('migrations (e2e)', () => {
     try {
       const expected = folders(FIXTURE_MIGRATIONS.migrationsFolder);
       expect(expected).toBeGreaterThan(0);
-      await migrateDatabase(database.url, FIXTURE_MIGRATIONS);
-      await migrateDatabase(database.url, FIXTURE_MIGRATIONS);
+      // The fixtures' tables refer to the app's (tenants).
+      await migrateDatabase(database.ownerUrl);
+      await migrateDatabase(database.ownerUrl, FIXTURE_MIGRATIONS);
+      await migrateDatabase(database.ownerUrl, FIXTURE_MIGRATIONS);
       expect(
         await applied(database.url, FIXTURE_MIGRATIONS.migrationsTable),
       ).toBe(expected);
@@ -63,7 +83,7 @@ describe('migrations (e2e)', () => {
     const database = await empty();
     try {
       await Promise.all(
-        [1, 2, 3].map(() => migrateDatabase(database.url, FIXTURE_MIGRATIONS)),
+        [1, 2, 3].map(() => migrateAll(database, { migrations: ALL })),
       );
       expect(
         await applied(database.url, FIXTURE_MIGRATIONS.migrationsTable),
@@ -74,14 +94,29 @@ describe('migrations (e2e)', () => {
   });
 
   describe('MIGRATE_ON_START', () => {
+    const VARIABLES = [
+      'DATABASE_URL',
+      'DATABASE_OWNER_URL',
+      'DATABASE_MAINTENANCE_URL',
+      'MIGRATE_ON_START',
+    ];
     const saved = { ...process.env };
     afterEach(() => {
-      process.env.DATABASE_URL = saved.DATABASE_URL;
-      process.env.MIGRATE_ON_START = saved.MIGRATE_ON_START;
+      for (const name of VARIABLES) process.env[name] = saved[name];
     });
 
-    async function bootOn(migrateOnStart: string | undefined, url: string) {
-      process.env.DATABASE_URL = url;
+    const useDatabase = (database: Awaited<ReturnType<typeof empty>>) =>
+      Object.assign(process.env, {
+        DATABASE_URL: database.appUrl,
+        DATABASE_OWNER_URL: database.ownerUrl,
+        DATABASE_MAINTENANCE_URL: database.maintenanceUrl,
+      });
+
+    async function bootOn(
+      migrateOnStart: string | undefined,
+      database: Awaited<ReturnType<typeof empty>>,
+    ) {
+      useDatabase(database);
       if (migrateOnStart === undefined) delete process.env.MIGRATE_ON_START;
       else process.env.MIGRATE_ON_START = migrateOnStart;
       const app = await bootModules(DatabaseModule);
@@ -99,7 +134,7 @@ describe('migrations (e2e)', () => {
       async () => {
         const database = await empty();
         try {
-          await bootOn(undefined, database.url);
+          await bootOn(undefined, database);
           expect(await applied(database.url, '__drizzle_migrations')).toBe(
             folders(MIGRATIONS_FOLDER),
           );
@@ -112,7 +147,8 @@ describe('migrations (e2e)', () => {
     it('applies nothing when off', async () => {
       const database = await empty();
       try {
-        await bootOn('off', database.url);
+        // No table at all, so the app's role checks pass: the start reads none.
+        await bootOn('off', database);
         expect(await applied(database.url, '__drizzle_migrations')).toBe(0);
       } finally {
         await database.drop();
@@ -120,11 +156,11 @@ describe('migrations (e2e)', () => {
     });
 
     it.skipIf(noAppMigrations)(
-      'node dist/migrate applies drizzle/ to DATABASE_URL',
+      'node dist/migrate applies drizzle/ as DATABASE_OWNER_URL',
       async () => {
         const database = await empty();
         try {
-          process.env.DATABASE_URL = database.url;
+          useDatabase(database);
           await import('../../migrate.js');
           expect(await applied(database.url, '__drizzle_migrations')).toBe(
             folders(MIGRATIONS_FOLDER),

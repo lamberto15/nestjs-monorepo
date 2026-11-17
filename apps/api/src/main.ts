@@ -1,9 +1,12 @@
+// First: it starts the tracing SDK, which patches what is loaded after it.
+import './core/observability/instrument.js';
 import { NestFactory } from '@nestjs/core';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { AppModule } from './app.module.js';
 import { createHttpAdapter, setupHttp } from './core/http/http-setup.js';
 import { setupOpenApi } from './core/http/openapi.js';
 import { createLogger } from './core/logging/logging.js';
+import { observeInstrument } from './core/observability/observe.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestNodeApplication>(
@@ -11,7 +14,7 @@ async function bootstrap() {
     createHttpAdapter(),
     // Held until the logger below is in place: it masks the secrets the
     // modules' configs declared while the app was created.
-    { bufferLogs: true },
+    { bufferLogs: true, instrument: observeInstrument() },
   );
   app.useLogger(createLogger());
   setupHttp(app);

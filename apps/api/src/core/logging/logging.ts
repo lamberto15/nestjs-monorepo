@@ -17,6 +17,17 @@ const LEVELS: LogLevel[] = [
 ];
 
 /**
+ * What another module adds to the log without this one knowing it, set when
+ * that module's file loads: `correlation` gives fields for every line (the
+ * active trace id, from core/observability), `problem` hears every error
+ * and warning's message.
+ */
+export const logHooks: {
+  correlation?: () => Record<string, string>;
+  problem?: (message: unknown) => void;
+} = {};
+
+/**
  * Nest's ConsoleLogger with the secrets kept out. Its own `redact` option
  * masks the declared keys in structured params and logged objects; what it
  * leaves as is (string messages, an error's message, the stack trace) goes
@@ -33,12 +44,19 @@ export class RedactingConsoleLogger extends ConsoleLogger {
     super({ ...options, redact: redaction.paths() });
   }
 
-  /**
-   * Fields added to every line. The seam for OpenTelemetry: return the active
-   * span's `{ traceId }` here, once the SDK is started.
-   */
+  /** Fields added to every line (logHooks.correlation). */
   protected correlation(): Record<string, string> {
-    return {};
+    return logHooks.correlation?.() ?? {};
+  }
+
+  override error(message: unknown, ...rest: unknown[]) {
+    logHooks.problem?.(message);
+    super.error(message, ...rest);
+  }
+
+  override warn(message: unknown, ...rest: unknown[]) {
+    logHooks.problem?.(message);
+    super.warn(message, ...rest);
   }
 
   protected override formatMessage(

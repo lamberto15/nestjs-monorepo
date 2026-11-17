@@ -1,0 +1,102 @@
+import {
+  type AnyPgColumn,
+  type AnyPgColumnBuilder,
+  foreignKey,
+  type PgBuildExtraConfigColumns,
+  pgTable,
+  type PgTableExtraConfigValue,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { tenants } from './tenancy.tables.js';
+import { isolation } from './tenant-isolation.js';
+import { requireTenantId } from './tenant-scope.js';
+
+/**
+ * The `tenant_id` every tenant table gets: NOT NULL, no database default (a
+ * raw insert must name its tenant), referencing `tenants`. An insert that
+ * leaves it out gets the context's tenant, or a TenantScopeMissingError
+ * without one; the wall checks the value is the context's.
+ */
+const tenantColumn = () =>
+  uuid('tenant_id')
+    .notNull()
+    .references(() => tenants.id, { onDelete: 'cascade' })
+    .$defaultFn(() => requireTenantId('An insert into a tenant table'));
+
+type TenantColumns<TColumns> = TColumns & {
+  tenantId: ReturnType<typeof tenantColumn>;
+};
+
+/**
+ * A tenant table: a `pgTable` with a `tenantId` column added and the wall
+ * of the isolation mode declared with it, so `pnpm db:generate` emits both.
+ * Its rows are only ever seen and written in their tenant's scope.
+ * `referenced: true` for a table that other tenant tables point at
+ * (tenantReference()): it adds the unique `(tenant_id, id)` their keys need.
+ * Uniques are per tenant: lead them with `t.tenantId`.
+ *
+ * ```ts
+ * export const invoices = tenantTable('invoices', {
+ *   id: uuidPk(),
+ *   customerId: uuid('customer_id').notNull(),
+ *   number: text('number').notNull(),
+ *   ...timestamps(),
+ * }, (t) => [
+ *   uniqueIndex('invoices_number_idx').on(t.tenantId, t.number),
+ *   tenantReference('invoices_customer_fk', [t.tenantId, t.customerId], [customers.tenantId, customers.id]),
+ * ]);
+ * ```
+ */
+export function tenantTable<
+  TName extends string,
+  TColumns extends Record<string, AnyPgColumnBuilder>,
+>(
+  name: TName,
+  columns: TColumns,
+  extraConfig?: (
+    self: PgBuildExtraConfigColumns<TenantColumns<TColumns>>,
+  ) => PgTableExtraConfigValue[],
+  { referenced = false }: { referenced?: boolean } = {},
+) {
+  return pgTable(
+    name,
+    { ...columns, tenantId: tenantColumn() } as TenantColumns<TColumns>,
+    (t) => {
+      const self = t as unknown as {
+        tenantId: AnyPgColumn;
+        id?: AnyPgColumn;
+      };
+      if (referenced && !self.id) {
+        throw new Error(
+          `${name}: a referenced tenant table needs an id column.`,
+        );
+      }
+      return [
+        ...isolation.tableWall(name, self.tenantId),
+        ...(referenced && self.id
+          ? [unique(`${name}_tenant_id_id_key`).on(self.tenantId, self.id)]
+          : []),
+        ...(extraConfig?.(t) ?? []),
+      ];
+    },
+  );
+}
+
+/**
+ * A key from one tenant table to another, within the tenant:
+ * `(tenant_id, x_id)` → `(tenant_id, id)`. PostgreSQL checks a key as the
+ * tables' owner, past the wall, so a plain `x_id → id` could point at
+ * another tenant's row; this one can't. The referenced table is declared
+ * `{ referenced: true }`. No `set null`: it would empty `tenant_id` too.
+ */
+export function tenantReference(
+  name: string,
+  columns: [tenantId: AnyPgColumn, column: AnyPgColumn],
+  foreign: [tenantId: AnyPgColumn, id: AnyPgColumn],
+  onDelete: 'cascade' | 'restrict' | 'no action' = 'cascade',
+) {
+  return foreignKey({ name, columns, foreignColumns: foreign }).onDelete(
+    onDelete,
+  );
+}

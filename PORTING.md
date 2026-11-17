@@ -18,10 +18,14 @@ repository.
 - [x] redis, queues, the worker process, locks and scheduled jobs
 - [x] encryption (data keys, blind indexes, re-encryption)
 - [x] i18n (English; catalogs per module)
-- [ ] database roles and tenancy (row-level security first)
-- [ ] mail
-- [ ] throttling, maintenance mode
-- [ ] metrics and observability
+- [x] database roles (app, owner, maintenance) and tenancy: row-level
+      security behind one seam, `TENANCY=single|multi`, tenant-scoped jobs
+- [x] mail: transports, queued delivery with retries
+- [x] throttling (Redis counters, the multiplier)
+- [x] metrics (`/metrics`) and observability (NestJS Observe, or OTLP to a
+      self-hosted backend such as Nestrix)
+- [ ] mail delivery modes and budgets (with settings and quotas), maintenance
+      mode (with settings), generated keys kept in the database
 
 ## Identity and access (`apps/api/src/iam`)
 
@@ -38,7 +42,8 @@ repository.
 ## Modules (`apps/api/src/modules`)
 
 - [ ] records, lists, fields, search, views
-- [ ] tags, comments, attachments, images, storage, revisions, favorites,
+- [x] storage (local, S3, signed URLs), images
+- [ ] tags, comments, attachments, revisions, favorites,
       recents, templates, choices, sequences, custom-fields, expressions
 - [ ] approvals, acknowledgments, bulk, merge, data-transfer, reports,
       data-quality, retention
@@ -66,6 +71,8 @@ repository.
 
 - The bundled operations stack (backups, monitoring, load tests, pgbouncer,
   PDF rendering service): a deployment's own.
+- Sentry, and the monitoring and reporting database roles: errors go to the
+  chosen observability backend.
 - `analytics` (nightly aggregates for a reporting role): analytical
   reporting is done outside the app, in a store fed by replication. Scheduled
   exports (`reports`) stay, with data-transfer.

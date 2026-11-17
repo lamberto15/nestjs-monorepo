@@ -74,6 +74,11 @@ export const problemCode = (status: number) =>
 
 type ErrorMapper = (error: unknown) => HttpException | undefined;
 
+type ServerErrorListener = (
+  error: unknown,
+  problem: { requestId?: string; code: string; status: number },
+) => void;
+
 /**
  * The one exception filter: turns everything thrown into problem details.
  * A module whose code or packages throw errors of their own (not
@@ -83,9 +88,19 @@ type ErrorMapper = (error: unknown) => HttpException | undefined;
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
   private static readonly mappers: ErrorMapper[] = [];
+  private static readonly serverErrorListeners: ServerErrorListener[] = [];
   private readonly logger = new Logger('Errors');
 
   constructor(private readonly adapterHost: HttpAdapterHost) {}
+
+  /**
+   * Tells `listener` of every error answered as a 5xx that is not an
+   * overload: how core/observability reports them, registered when its
+   * file loads.
+   */
+  static onServerError(listener: ServerErrorListener) {
+    this.serverErrorListeners.push(listener);
+  }
 
   /** How errors of `type` become HTTP errors (return undefined to leave one as a 500). */
   static map<E>(
@@ -237,8 +252,10 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       });
       return;
     }
-    // Seam: an error tracker (Sentry, NestJS Observe) captures these once one is registered.
     if (problem.status >= 500) {
+      for (const listener of ProblemDetailsFilter.serverErrorListeners) {
+        listener(exception, problem);
+      }
       this.logger.error(
         `${problem.instance ?? 'ws'} failed: ${(exception as Error)?.message ?? exception}`,
         (exception as Error)?.stack,

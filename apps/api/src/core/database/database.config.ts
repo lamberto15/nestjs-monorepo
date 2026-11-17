@@ -8,10 +8,30 @@ import {
 } from '../config/env.helpers.js';
 import { readEnv } from '../config/env.js';
 
+const postgresUrl = () => z.url({ protocol: /^postgres(ql)?$/ });
+
+/** Outside production, what compose.dev.yaml's superuser makes at the first start. */
+const DEVELOPMENT = {
+  owner: 'postgres://app:app@127.0.0.1:5432/app',
+  maintenance: 'postgres://app_maintenance:app_maintenance@127.0.0.1:5432/app',
+};
+
 export const schema = z.object({
-  DATABASE_URL: secret(z.url({ protocol: /^postgres(ql)?$/ }))
-    .describe('PostgreSQL 18 or later.')
-    .meta({ example: 'postgres://app:app@127.0.0.1:5432/app' }),
+  DATABASE_URL: secret(postgresUrl())
+    .describe(
+      'PostgreSQL 18 or later, as the app\'s role: no superuser, no BYPASSRLS, owning nothing, so row-level security binds it. The migrations make it from this URL (README.md, "Roles").',
+    )
+    .meta({ example: 'postgres://app_runtime:app_runtime@127.0.0.1:5432/app' }),
+  DATABASE_OWNER_URL: secret(
+    optional().pipe(postgresUrl().optional()),
+  ).describe(
+    `The same database as the owner of its tables: runs the migrations (MIGRATE_ON_START, node dist/migrate) and makes the other roles. Give it to the migration only. Unset outside production: ${DEVELOPMENT.owner}.`,
+  ),
+  DATABASE_MAINTENANCE_URL: secret(
+    optional().pipe(postgresUrl().optional()),
+  ).describe(
+    `The maintenance role (BYPASSRLS), for work across every tenant (Tenancy.acrossTenants()); the migrations make it. Give it to workers only; unset, that work is refused. Unset outside production: ${DEVELOPMENT.maintenance}.`,
+  ),
   DATABASE_POOL_MAX: integer(10, { min: 1, max: 500 }).describe(
     'Connections this process may hold: replicas × this must stay under max_connections.',
   ),
@@ -39,8 +59,28 @@ export const schema = z.object({
 
 export const databaseConfig = registerAs('database', () => {
   const env = readEnv(schema);
+  const production = env.NODE_ENV === 'production';
+  const ownerUrl =
+    env.DATABASE_OWNER_URL ?? (production ? undefined : DEVELOPMENT.owner);
+  const maintenanceUrl =
+    env.DATABASE_MAINTENANCE_URL ??
+    (production ? undefined : DEVELOPMENT.maintenance);
+  // A role's URL on another server or database would make or use its
+  // roles there: refused before anything connects.
+  for (const [name, url] of [
+    ['DATABASE_OWNER_URL', ownerUrl],
+    ['DATABASE_MAINTENANCE_URL', maintenanceUrl],
+  ] as const) {
+    if (url && !sameDatabase(url, env.DATABASE_URL)) {
+      throw new Error(
+        `${name} must name DATABASE_URL's server and database (only its role differs).`,
+      );
+    }
+  }
   return {
     url: env.DATABASE_URL,
+    ownerUrl,
+    maintenanceUrl,
     poolMax: env.DATABASE_POOL_MAX,
     poolTimeoutMs: env.DATABASE_POOL_TIMEOUT_MS,
     statementTimeoutMs: env.DATABASE_STATEMENT_TIMEOUT_MS,
@@ -51,3 +91,8 @@ export const databaseConfig = registerAs('database', () => {
         (env.NODE_ENV === 'production' ? 'off' : 'on')) === 'on',
   };
 });
+
+function sameDatabase(a: string, b: string) {
+  const [x, y] = [new URL(a), new URL(b)];
+  return x.host === y.host && x.pathname === y.pathname;
+}

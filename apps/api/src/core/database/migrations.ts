@@ -4,6 +4,8 @@ import { sql } from 'drizzle-orm';
 import type { MigrationConfig } from 'drizzle-orm/migrator';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { isolation } from '../tenancy/tenant-isolation.js';
+import { type DatabaseUrls, ensureRoles } from './roles.js';
 
 /**
  * The migrations `pnpm db:generate` writes from the tables: apps/api/drizzle,
@@ -46,4 +48,36 @@ export async function migrateDatabase(
   } finally {
     await db.$client.end();
   }
+}
+
+/**
+ * Brings the database up to this version, as its owner: every migration
+ * folder (drizzle/ by default), then the app's roles and the tenant wall
+ * (roles.ts), which stop it when they don't hold. What `node dist/migrate`
+ * and MIGRATE_ON_START run, and the e2e tests' template.
+ */
+export async function migrateAll(
+  urls: Partial<DatabaseUrls> & { appUrl: string },
+  {
+    migrations = [{ migrationsFolder: MIGRATIONS_FOLDER }],
+    log = () => {},
+  }: {
+    migrations?: MigrationConfig[];
+    log?: (line: string) => void;
+  } = {},
+) {
+  const { ownerUrl } = urls;
+  if (!ownerUrl) {
+    throw new Error(
+      'Migrating needs DATABASE_OWNER_URL: the migrations run as the tables\' owner, not as the app (core/database/README.md, "Roles").',
+    );
+  }
+  for (const config of migrations) {
+    await migrateDatabase(ownerUrl, config);
+  }
+  await ensureRoles(
+    { ...urls, ownerUrl },
+    (owner, write) => isolation.secure(owner, write),
+    log,
+  );
 }

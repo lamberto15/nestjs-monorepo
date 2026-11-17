@@ -7,8 +7,15 @@ import { HttpConventionsModule } from './core/http/http-conventions.module.js';
 import { I18nModule } from './core/i18n/i18n.module.js';
 import { SharedLocksModule } from './core/locks/locks.module.js';
 import { LoggingModule } from './core/logging/logging.module.js';
+import { MailModule } from './core/mail/mail.module.js';
+import { MetricsModule } from './core/metrics/metrics.module.js';
+import { ObservabilityModule } from './core/observability/observability.module.js';
 import { QueuesModule } from './core/queues/queues.module.js';
 import { RedisModule } from './core/redis/redis.module.js';
+import { TenancyModule } from './core/tenancy/tenancy.module.js';
+import { ThrottlingModule } from './core/throttling/throttling.module.js';
+import { ImagesModule } from './modules/images/images.module.js';
+import { StorageModule } from './modules/storage/storage.module.js';
 
 /**
  * Every module of the app, listed here and nowhere else. A module owns its
@@ -22,14 +29,22 @@ import { RedisModule } from './core/redis/redis.module.js';
     ConfigModule.forRoot(),
     // Core: always there.
     LoggingModule,
+    MetricsModule,
+    ObservabilityModule,
     HttpConventionsModule,
+    ThrottlingModule,
     I18nModule,
     DatabaseModule,
+    TenancyModule,
     RedisModule,
     QueuesModule,
     SharedLocksModule,
     EncryptionModule,
+    MailModule,
     HealthModule,
+    // Optional capabilities.
+    StorageModule,
+    ImagesModule,
   ],
 })
 export class AppModule {}

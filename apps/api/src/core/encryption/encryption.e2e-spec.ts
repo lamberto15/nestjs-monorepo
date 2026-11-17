@@ -3,6 +3,7 @@ import { Injectable, Module } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { eq, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, uuid } from 'drizzle-orm/pg-core';
 import { DatabaseModule } from '../database/database.module.js';
 import type { Database } from '../database/database.js';
@@ -66,17 +67,18 @@ describe('encryption', () => {
     await admin.init();
     db = admin.get(PeopleService).db;
     // Test-only DDL: the table exists for this file alone.
-    await db.execute(sql`drop table if exists ${people}`);
-    await db.execute(sql`create table ${people} (
+    // As the owner: the app's role may not create tables.
+    const owner = drizzle(process.env.DATABASE_OWNER_URL!);
+    await owner.execute(sql`create table ${people} (
       id uuid primary key default gen_random_uuid(),
       tenant_id uuid not null,
       national_id text,
       national_id_index text
     )`);
+    await owner.$client.end();
   });
 
   afterAll(async () => {
-    await db.execute(sql`drop table if exists ${people}`);
     await admin.close();
   });
 

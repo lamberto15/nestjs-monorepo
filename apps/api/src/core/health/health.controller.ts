@@ -6,6 +6,7 @@ import {
   HealthCheckService,
   HealthIndicatorService,
 } from '@nestjs/terminus';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
 
 /**
@@ -15,6 +16,8 @@ import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
  *   app answers, 503 when one doesn't or while the app shuts down.
  * - `GET /health/live` (liveness): 200 while the process serves requests.
  */
+// Probes are never rate limited.
+@SkipThrottle()
 @ApiExcludeController()
 @Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {

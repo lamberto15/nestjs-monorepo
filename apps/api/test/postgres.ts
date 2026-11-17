@@ -24,22 +24,32 @@ export async function onServer(serverUrl: string, statement: string) {
   }
 }
 
+/** `serverUrl`, connecting as `role` with `password`. */
+export const asRole = (serverUrl: string, role: string, password: string) => {
+  const url = new URL(serverUrl);
+  url.username = role;
+  url.password = password;
+  return url.toString();
+};
+
 /**
  * A database of its own, named `<prefix>_<random>`: a copy of `template`
- * (FILE_COPY, fast for a small database), or empty without one. `drop()`
- * ends whatever is still connected to it.
+ * (FILE_COPY, fast for a small database), or empty without one, owned by
+ * `owner` (the run's owner role) when given. `drop()` ends whatever is
+ * still connected to it.
  */
 export async function createDatabase(
   serverUrl: string,
   prefix: string,
   template?: string,
+  owner?: string,
 ) {
   const name = `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
   await onServer(
     serverUrl,
-    template
-      ? `create database "${name}" template "${template}" strategy file_copy`
-      : `create database "${name}"`,
+    `create database "${name}"${owner ? ` owner "${owner}"` : ''}${
+      template ? ` template "${template}" strategy file_copy` : ''
+    }`,
   );
   return {
     name,

@@ -1,0 +1,154 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+import { getHeapStatistics } from 'node:v8';
+import { Injectable, Logger } from '@nestjs/common';
+import {
+  collectDefaultMetrics,
+  Counter,
+  Gauge,
+  type GaugeConfiguration,
+  Histogram,
+  Registry,
+} from 'prom-client';
+import {
+  COUNTED_TARGETS,
+  onTelemetryRejected,
+  REFUSAL_STATUSES,
+} from '../observability/telemetry-health.js';
+
+/** A collector that takes longer (Redis or PostgreSQL away) is given up: the scrape goes on without it. */
+const COLLECT_TIMEOUT_MS = 2_000;
+const TIMED_OUT = Symbol('timed out');
+
+/** One value of a collected gauge, with its labels. */
+export type MetricSample<Label extends string> = {
+  labels?: Partial<Record<Label, string>>;
+  value: number;
+};
+
+/**
+ * The process's Prometheus metrics (prom-client), served at `GET /metrics`.
+ * It holds Node's default metrics, the HTTP request durations by route
+ * pattern and the requests in flight. A module declares its own metrics in
+ * its own folder, with no list here: a counter or histogram of its own on
+ * `registry` (`registers: [metrics.registry]`), or a gauge read at scrape time
+ * with `collect()`.
+ *
+ * A registry of its own, not prom-client's global one: every app of a test
+ * run (and anything else in the process) keeps its metrics apart.
+ */
+@Injectable()
+export class MetricsService {
+  private readonly logger = new Logger('Metrics');
+  readonly registry = new Registry();
+
+  /** How long requests take, by method, route pattern and status. */
+  readonly httpDuration = new Histogram({
+    name: 'http_request_duration_seconds',
+    help: 'HTTP request duration in seconds, by method, route pattern and status.',
+    labelNames: ['method', 'route', 'status'] as const,
+    // An API's range: 5 ms to 10 s.
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+    registers: [this.registry],
+  });
+
+  /** Requests being served right now. */
+  readonly inFlight = new Gauge({
+    name: 'http_requests_in_flight',
+    help: 'HTTP requests being served.',
+    registers: [this.registry],
+  });
+
+  /** Calls to routes marked `@Deprecated()`: when it stops rising, the route can go. */
+  readonly deprecatedCalls = new Counter({
+    name: 'deprecated_route_calls_total',
+    help: 'Calls to deprecated routes, by route pattern.',
+    labelNames: ['route'] as const,
+    registers: [this.registry],
+  });
+
+  /**
+   * Telemetry the collector turned away (401, 403, 429), by pipeline: a dead
+   * export the app itself would never notice (observability/telemetry-health.ts).
+   */
+  readonly telemetryRejected = new Counter({
+    name: 'telemetry_rejected_total',
+    help: 'Telemetry uploads refused by the collector, by target (observe, otlp) and HTTP status.',
+    labelNames: ['target', 'status'] as const,
+    registers: [this.registry],
+  });
+
+  constructor() {
+    collectDefaultMetrics({ register: this.registry });
+    // Every series a refusal can make, at 0 from the start: Prometheus'
+    // increase() needs a sample before the first count, and a refusal that
+    // happens once (NestJS Observe pauses its uploads after the first 401 or
+    // 429) would otherwise show up already at 1 and never raise the alert.
+    for (const target of COUNTED_TARGETS) {
+      for (const status of REFUSAL_STATUSES) {
+        this.telemetryRejected.inc({ target, status: String(status) }, 0);
+      }
+    }
+    onTelemetryRejected((target, status) =>
+      this.telemetryRejected.inc({ target, status: String(status) }),
+    );
+    // Not among prom-client's defaults: what a heap alert compares the used heap with.
+    this.collect(
+      'nodejs_heap_size_limit_bytes',
+      "V8's heap limit (--max-old-space-size plus the young generation).",
+      () => [{ value: getHeapStatistics().heap_size_limit }],
+    );
+  }
+
+  /**
+   * A gauge whose values `read` gives at each scrape (labelled samples).
+   * A failing read is logged and leaves the gauge empty for that scrape:
+   * one broken source never fails the whole scrape.
+   */
+  collect<Label extends string = never>(
+    name: string,
+    help: string,
+    read: () => Promise<MetricSample<Label>[]> | MetricSample<Label>[],
+    labelNames: readonly Label[] = [],
+  ) {
+    const logger = this.logger;
+    const gauge: GaugeConfiguration<Label> = {
+      name,
+      help,
+      labelNames,
+      registers: [this.registry],
+      async collect() {
+        this.reset();
+        try {
+          const samples = await Promise.race([
+            read(),
+            sleep(COLLECT_TIMEOUT_MS, TIMED_OUT, { ref: false }),
+          ]);
+          if (samples === TIMED_OUT) {
+            throw new Error(`no answer in ${COLLECT_TIMEOUT_MS} ms`);
+          }
+          for (const sample of samples) {
+            this.set(sample.labels ?? {}, sample.value);
+          }
+        } catch (error) {
+          // Absent, not a 0, so alerts notice: reset() empties a labelled
+          // gauge but seeds a 0 on an unlabelled one, which remove() takes
+          // out (remove() without labels throws on a labelled gauge).
+          this.reset();
+          if (labelNames.length === 0) {
+            this.remove();
+          }
+          logger.warn(`${name} not collected: ${(error as Error).message}`);
+        }
+      },
+    };
+    new Gauge<Label>(gauge); // NOSONAR S1848: `registers` hands it to the registry when it is made
+  }
+
+  /** The exposition (text format) and its content type. */
+  async scrape() {
+    return {
+      contentType: this.registry.contentType,
+      body: await this.registry.metrics(),
+    };
+  }
+}
