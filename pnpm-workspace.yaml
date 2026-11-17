@@ -1,3 +1,5 @@
 packages:
   - apps/*
   - packages/*
+# Dependencies are pinned to exact versions (no ^ or ~).
+saveExact: true
