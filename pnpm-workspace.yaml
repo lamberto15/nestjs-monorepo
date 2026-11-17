@@ -4,6 +4,8 @@ packages:
 # Dependencies are pinned to exact versions (no ^ or ~).
 saveExact: true
 allowBuilds:
+  # The web app's bundler: its install step checks the platform binary.
+  esbuild: true
   # Swagger UI's install-count ping: not wanted.
   '@scarf/scarf': false
   # bullmq's msgpackr: an optional native speedup with a prebuilt binary.

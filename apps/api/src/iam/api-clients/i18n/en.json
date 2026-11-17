@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageClients": "Create, change, rotate the keys of and delete API clients"
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
+import { DiscoveryModule } from '@nestjs/core';
 import { MailModule as NestMailModule } from '@nestjs/mail';
 import { mailConfig } from './mail.config.js';
 import {
@@ -40,6 +41,7 @@ import { mailTransport } from './mail.transport.js';
       }),
     }),
     ConfigModule.forFeature(mailConfig),
+    DiscoveryModule,
     BullModule.registerQueue({
       name: MAIL_QUEUE,
       defaultJobOptions: MAIL_JOB_OPTIONS,

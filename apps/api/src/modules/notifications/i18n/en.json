@@ -1,0 +1,31 @@
+{
+  "notificationCenter": {
+    "invalidLink": "This link is invalid or has expired.",
+    "mail": {
+      "subject": "{title}",
+      "greeting": "Hi {name},",
+      "open": "Open in {app}",
+      "footer": "You receive this email because of your notification settings in {app}.",
+      "unsubscribe": "Unsubscribe",
+      "digestSubject": {
+        "one": "{count} new notification in {app}",
+        "other": "{count} new notifications in {app}"
+      },
+      "digestIntro": {
+        "one": "{count} new notification in {app}:",
+        "other": "{count} new notifications in {app}:"
+      },
+      "digestMore": "...and {more} more.",
+      "digestFooter": "You receive this digest because of your notification settings in {app}."
+    }
+  },
+  "notifications": {
+    "notification": {
+      "test": {
+        "label": "Test notification",
+        "title": "Test notification",
+        "body": "This is a test notification, sent at {at}."
+      }
+    }
+  }
+}

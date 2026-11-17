@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "setting": {
+      "label": "Settings and feature flags",
+      "actions": {
+        "read": "See the settings that are not public and every stored value",
+        "update": "Set and remove the values of a tenant, a unit or a person (the operators also set the platform values)"
+      }
+    }
+  }
+}

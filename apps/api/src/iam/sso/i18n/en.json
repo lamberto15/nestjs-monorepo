@@ -1,0 +1,19 @@
+{
+  "sso": {
+    "required": "Your organization requires signing in through its identity provider (single sign-on)"
+  },
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageSso": "Set up the tenant's single sign-on: SAML, OpenID Connect and OAuth 2.0 connections, verified email domains, SSO required",
+        "provisionScim": "Provision users and groups over SCIM 2.0 (API clients: the identity provider's SCIM token)"
+      }
+    },
+    "systemJobs": {
+      "sso": {
+        "label": "Single sign-on",
+        "description": "Fetches SSO connections' OpenID Connect discovery documents and checks the DNS records of the domains tenants verify."
+      }
+    }
+  }
+}

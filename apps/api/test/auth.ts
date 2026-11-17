@@ -132,12 +132,10 @@ export async function accessTokenFor(
   userId: string,
   tenantId: string | null,
 ) {
-  const issued = await app
-    .get(TokenService)
-    .issue(userId, {
-      method: 'password',
-      claims: tokenClaims(['pwd'], new Date(), tenantId),
-    });
+  const issued = await app.get(TokenService).issue(userId, {
+    method: 'password',
+    claims: tokenClaims(['pwd'], new Date(), tenantId),
+  });
   return {
     ...issued,
     headers: { authorization: `Bearer ${issued.accessToken}` },

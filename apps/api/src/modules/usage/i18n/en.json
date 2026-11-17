@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "usage": {
+      "label": "API usage",
+      "actions": {
+        "read": "Read an API client's requests per day and route",
+        "setClientQuota": "Set or remove an API client's daily request quota"
+      }
+    }
+  },
+  "usage": {
+    "quotaExceeded": "The daily quota of {quota} requests is used up; it starts again at midnight UTC.",
+    "clientsOnly": "Usage is counted for API clients only; administrators read it at /v1/access/clients/{id}/usage.",
+    "clientNotFound": "API client not found.",
+    "rangeBackwards": "from must not be after to.",
+    "rangeTooLong": "A report covers at most {max} days."
+  }
+}

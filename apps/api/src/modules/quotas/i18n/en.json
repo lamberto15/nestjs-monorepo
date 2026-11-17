@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "quota": {
+      "label": "Quotas",
+      "actions": {
+        "read": "Read the tenant's use against its limits",
+        "setLimits": "Set quota plans and the limits of tenants (operators)"
+      }
+    }
+  },
+  "quotas": {
+    "stockExceeded": "The tenant is limited to {limit} ({label}) and uses {used}. Ask the operators to raise the limit, or free some.",
+    "rateExceeded": "The limit of {limit} ({label}) is used up; it starts again at {resetsAt}.",
+    "tenantNotFound": "Tenant not found.",
+    "planNotFound": "Quota plan not found.",
+    "unknownKey": "No quota is called {key}.",
+    "unknownPlan": "No quota plan is called {name}."
+  }
+}

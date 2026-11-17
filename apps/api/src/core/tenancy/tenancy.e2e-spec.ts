@@ -444,7 +444,7 @@ describe('the wall at migrate (e2e)', { timeout: 60_000 }, () => {
 
       await owner.query('create table loose (id int, tenant_id uuid)');
       await expect(migrate()).rejects.toThrow(
-        /loose \(row-level security off, not forced, missing policy loose_tenant_select/,
+        /loose \(row-level security off, not forced, missing policy loose_tenant_delete/,
       );
     } finally {
       await close();

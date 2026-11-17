@@ -25,7 +25,10 @@ export async function bootModules(
   }).compile();
   const app = moduleRef.createNestApplication<NestNodeApplication>(
     createHttpAdapter(),
-    { logger: process.env.TEST_LOGS ? ['error', 'warn'] : false },
+    {
+      rawBody: true,
+      logger: process.env.TEST_LOGS ? ['error', 'warn'] : false,
+    },
   );
   setupHttp(app);
   await app.init();

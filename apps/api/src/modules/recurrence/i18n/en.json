@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "systemJobs": {
+      "record-schedules": {
+        "label": "Recurring records",
+        "description": "Creates the records of the recurring schedules that are due, as each schedule's owner."
+      }
+    }
+  }
+}

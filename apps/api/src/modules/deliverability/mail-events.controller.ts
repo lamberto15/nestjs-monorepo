@@ -1,0 +1,129 @@
+import {
+  BadRequestException,
+  Controller,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  PayloadTooLargeException,
+  Param,
+  Post,
+  type RawBodyRequest,
+  Req,
+} from '@nestjs/common';
+import { Public } from '@nestjs/authentication';
+import { Throttle, minutes } from '@nestjs/throttler';
+import {
+  ApiBadRequestResponse,
+  ApiBody,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
+import { z } from 'zod';
+import { MailEventsService } from './mail-events.service.js';
+
+/** The largest notification read (SNS messages are at most 256 KB). */
+const MAX_BODY_BYTES = 512 * 1024;
+
+/**
+ * The bytes the provider signed. A JSON body is kept by the app's parser
+ * (`rawBody: true`, main.ts). SNS posts JSON as `text/plain`, which no parser
+ * of the app takes, so the request's stream is still unread: read here.
+ */
+async function rawBodyOf(
+  request: RawBodyRequest<IncomingMessage>,
+): Promise<Buffer> {
+  if (request.rawBody) return request.rawBody;
+  if (request.readableEnded) return Buffer.alloc(0);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) {
+      throw new PayloadTooLargeException({
+        code: 'payload_too_large',
+        message: 'The notification is too large.',
+      });
+    }
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+const receiptSchema = z.object({
+  received: z.literal(true),
+  kind: z.enum(['events', 'handshake', 'ignored']),
+  events: z.number().int(),
+});
+
+/**
+ * Where mail providers report bounces and complaints:
+ * `POST /v1/webhooks/mail/ses` for Amazon SES through SNS, `/postmark`,
+ * `/sendgrid`, `/resend`. Public: the provider signs the message and the
+ * intake verifies it on the bytes as received (SNS posts JSON as text/plain,
+ * so the body is read raw, never through the JSON parser).
+ *
+ * Not `@VerifyWebhook()` (@nestjs/webhooks): it checks HMAC schemes keyed on a
+ * shared secret, synchronously, and SNS signs with RSA and a certificate
+ * fetched from a URL the message names. The replay protection is the events
+ * table's unique index (and the job id), not the inbox.
+ */
+@ApiTags('incoming webhooks')
+@Public()
+@Controller('webhooks/mail')
+export class MailEventsController {
+  constructor(private readonly events: MailEventsService) {}
+
+  @Post(':provider')
+  @HttpCode(HttpStatus.OK)
+  // SNS retries on a 5xx and 429; this bounds a flood from anyone else.
+  @Throttle({ default: { limit: 300, ttl: minutes(1) } })
+  @ApiOperation({
+    summary: 'A mail provider reports bounces and complaints',
+    description:
+      '`postmark`: a Bounce, SpamComplaint or Delivery webhook (JSON) carrying POSTMARK_WEBHOOK_SECRET as the Basic Auth password or in X-Postmark-Webhook-Secret. `resend`: a Svix-signed webhook (`email.bounced`, `email.complained`, `email.delivered`), verified with RESEND_WEBHOOK_SECRET. `sendgrid`: the signed Event Webhook (a JSON array), verified with SENDGRID_WEBHOOK_PUBLIC_KEY. `ses`: an SNS HTTP(S) notification (JSON, sent as text/plain) from one of SES_SNS_TOPIC_ARNS, signed by SNS (SignatureVersion 1 or 2). A `SubscriptionConfirmation` from an allowed topic is confirmed; a `Notification` carrying SES bounces, complaints or deliveries is queued for the suppression list. Nothing is written in the request.',
+  })
+  @ApiParam({ name: 'provider', example: 'ses' })
+  @ApiBody({
+    description: 'The provider’s notification, as it sends it.',
+    schema: { type: 'string' },
+  })
+  @ApiOkResponse({ standardSchema: receiptSchema })
+  @ApiBadRequestResponse({
+    description:
+      'Not the provider’s format (sns_malformed, postmark_malformed, sendgrid_malformed, resend_malformed, resend_stale).',
+  })
+  @ApiUnauthorizedResponse({
+    description:
+      'The signature or secret does not verify (sns_signature_invalid, sendgrid_signature_invalid, resend_signature_invalid, resend_signature_missing, postmark_secret_invalid), or the certificate or subscribe URL is not an SNS host (sns_certificate_refused, sns_subscribe_url_refused).',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'The topic is not in SES_SNS_TOPIC_ARNS (sns_topic_not_allowed), or the provider is not configured (postmark_not_configured, sendgrid_not_configured, resend_not_configured).',
+  })
+  @ApiNotFoundResponse({ description: 'No such provider.' })
+  @ApiServiceUnavailableResponse({
+    description:
+      'The signing certificate could not be fetched (sns_certificate_unavailable): the provider retries.',
+  })
+  async handle(
+    @Param('provider') provider: string,
+    @Req() request: RawBodyRequest<IncomingMessage>,
+    @Headers() headers: IncomingHttpHeaders,
+  ) {
+    const rawBody = await rawBodyOf(request);
+    if (rawBody.length === 0) {
+      throw new BadRequestException({
+        code: 'sns_malformed',
+        message: 'An empty body.',
+      });
+    }
+    return this.events.receive(provider, { rawBody, headers });
+  }
+}

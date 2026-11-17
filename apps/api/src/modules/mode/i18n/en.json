@@ -1,0 +1,6 @@
+{
+  "mode": {
+    "readOnly": "The service is read-only for now: it answers reads, and refuses changes.",
+    "maintenance": "The service is down for maintenance. Try again shortly."
+  }
+}

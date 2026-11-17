@@ -15,10 +15,7 @@ import { AccessModule } from '../../iam/access/access.module.js';
 import { AccessRecordFinder } from '../../iam/access/access-record-finder.js';
 import { definePermissions } from '../../iam/access/permissions.js';
 // socket.io-client is a devDependency of apps/api (package.json).
-import {
-  io,
-  type Socket,
-} from '../../../../../node_modules/.pnpm/socket.io-client@4.8.4_supports-color@7.2.0/node_modules/socket.io-client/build/esm/index.js';
+import { io, type Socket } from 'socket.io-client';
 import { setupRealtime } from '../realtime/realtime.adapter.js';
 import { PresenceModule } from './presence.module.js';
 

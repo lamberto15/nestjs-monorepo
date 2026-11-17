@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger, type Type } from '@nestjs/common';
+import { DiscoveryService } from '@nestjs/core';
 import type { ConfigType } from '@nestjs/config';
 import {
   type Mailable,
@@ -19,6 +20,11 @@ import { abortable } from '../queues/abortable.js';
 import { DEFAULT_JOB_OPTIONS } from '../queues/queues.js';
 import { mailConfig } from './mail.config.js';
 import { isEssentialMail } from './mail.essential.js';
+import {
+  type MailSuppression,
+  MailSuppressionList,
+  normalizeAddress,
+} from './mail-suppression.js';
 
 /** The queue every mail goes through. */
 export const MAIL_QUEUE = 'mail';
@@ -44,6 +50,8 @@ export interface QueuedMail {
   html?: string;
   text?: string;
   headers: Record<string, string>;
+  /** Essential mail still reaches an address that complained (mail-suppression.ts). */
+  essential?: boolean;
 }
 
 /**
@@ -115,6 +123,7 @@ export class MailQueue {
           html: message.html,
           text: message.text,
           headers: { ...message.headers },
+          essential: essential || isEssentialMail(mail),
         },
         { jobId },
       ),
@@ -127,19 +136,61 @@ export class MailQueue {
 export class MailProcessor extends WorkerHost {
   private readonly logger = new Logger('MailQueue');
 
-  constructor(private readonly mailer: Mailer) {
+  constructor(
+    private readonly mailer: Mailer,
+    private readonly discovery: DiscoveryService,
+  ) {
     super();
   }
 
+  /** The application's suppression list, when a module keeps one. */
+  private suppression(): MailSuppression | undefined {
+    return this.discovery
+      .getProviders({ metadataKey: MailSuppressionList.KEY })
+      .at(0)?.instance as MailSuppression | undefined;
+  }
+
   async process(job: Job<QueuedMail>) {
+    const { essential = false, ...mail } = job.data;
+    // Asked at each try: an address may have bounced since the mail was queued.
+    const verdicts = await this.suppression()?.check(
+      [...mail.to, ...mail.cc, ...mail.bcc].map(({ address }) => address),
+      { essential, mail: job.name },
+    );
+    const skipped: { address: string; reason: string }[] = [];
+    const allowed = (addresses: MailAddress[]) =>
+      addresses.filter(({ address }) => {
+        const verdict = verdicts?.get(normalizeAddress(address));
+        if (verdict && !verdict.send) {
+          skipped.push({ address, reason: verdict.reason });
+          return false;
+        }
+        return true;
+      });
+    const to = allowed(mail.to);
+    const cc = allowed(mail.cc);
+    const bcc = allowed(mail.bcc);
+    if (skipped.length > 0) {
+      this.logger.warn('Mail not sent to suppressed addresses', {
+        jobId: job.id,
+        mail: job.name,
+        reasons: skipped.map(({ reason }) => reason),
+      });
+    }
+    if (to.length + cc.length + bcc.length === 0) {
+      return { skipped };
+    }
     try {
       const sent = await this.mailer.send({
-        ...job.data,
+        ...mail,
+        to,
+        cc,
+        bcc,
         idempotencyKey: job.id,
         // The queue retries, over hours; the mailer makes one attempt per try.
         retry: false,
       });
-      return { messageId: sent.messageId };
+      return { messageId: sent.messageId, skipped };
     } catch (error) {
       if (error instanceof MailError && error.permanent) {
         this.logger.warn(`Mail refused for good: ${error.message}`, {

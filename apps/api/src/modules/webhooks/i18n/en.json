@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "webhooks": {
+      "label": "Webhooks",
+      "actions": {
+        "manageEndpoints": "Manage an API client's outgoing webhook endpoints and deliveries on its behalf",
+        "manageSenders": "Register, rotate and remove the senders of incoming webhooks"
+      }
+    }
+  }
+}

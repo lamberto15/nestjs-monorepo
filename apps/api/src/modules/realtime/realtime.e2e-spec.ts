@@ -11,10 +11,7 @@ import { createHttpAdapter, setupHttp } from '../../core/http/http-setup.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AUTH_EVENTS } from '../../iam/auth/auth.events.js';
 // socket.io-client is a devDependency of apps/api (package.json).
-import {
-  io,
-  type Socket,
-} from '../../../../../node_modules/.pnpm/socket.io-client@4.8.4_supports-color@7.2.0/node_modules/socket.io-client/build/esm/index.js';
+import { io, type Socket } from 'socket.io-client';
 import { setupRealtime } from './realtime.adapter.js';
 import { defineRealtimeEvent } from './realtime.events.js';
 import { REALTIME_DISCONNECT_EVENTS } from './realtime.listeners.js';

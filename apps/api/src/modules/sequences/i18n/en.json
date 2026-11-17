@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageNamingSeries": "Define naming series (number formats) and set their counters"
+      }
+    }
+  }
+}

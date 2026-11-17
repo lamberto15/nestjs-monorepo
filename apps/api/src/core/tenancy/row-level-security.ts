@@ -260,7 +260,8 @@ async function policiesIn(client: ClientBase, namespace: string) {
             pg_get_expr(p.polqual, p.polrelid) as using,
             pg_get_expr(p.polwithcheck, p.polrelid) as "withCheck"
      from pg_policy p join pg_class c on c.oid = p.polrelid
-     where c.relnamespace = ${namespace}`,
+     where c.relnamespace = ${namespace}
+     order by 1, 2`,
   );
   const byTable = new Map<string, Map<string, LivePolicy>>();
   for (const { table, ...policy } of rows) {

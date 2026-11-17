@@ -3,6 +3,16 @@
     "currencyMismatch": "{left} and {right} can't be combined: convert one of the amounts first.",
     "unknownCurrency": "{currency} is not an ISO 4217 currency code.",
     "amountPrecision": "The amount has more decimals than {currency} has ({exponent}).",
-    "invalidDecimal": "The amount must be a decimal string, such as 12.34."
+    "invalidDecimal": "The amount must be a decimal string, such as 12.34.",
+    "rateUnavailable": "No exchange rate for {currencies} on or before {day}.",
+    "ratesUnavailable": "No exchange rates on or before that day."
+  },
+  "permissions": {
+    "systemJobs": {
+      "exchange-rates": {
+        "label": "Exchange rates",
+        "description": "Fetches the ECB's euro reference rates every working day."
+      }
+    }
   }
 }

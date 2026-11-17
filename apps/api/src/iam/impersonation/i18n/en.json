@@ -1,0 +1,16 @@
+{
+  "impersonation": {
+    "alreadyImpersonating": "Stop the current impersonation first.",
+    "yourself": "You can't impersonate yourself.",
+    "notFound": "No such member in this tenant.",
+    "administrator": "Administrators can't be impersonated.",
+    "notImpersonating": "You are not impersonating anyone."
+  },
+  "permissions": {
+    "access": {
+      "actions": {
+        "impersonate": "Act as a member of the tenant, for support (never an administrator); audited as both"
+      }
+    }
+  }
+}

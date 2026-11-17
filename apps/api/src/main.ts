@@ -15,7 +15,8 @@ async function bootstrap() {
     createHttpAdapter(),
     // Held until the logger below is in place: it masks the secrets the
     // modules' configs declared while the app was created.
-    { bufferLogs: true, instrument: observeInstrument() },
+    // rawBody: signed webhooks are verified on the bytes that were signed.
+    { bufferLogs: true, rawBody: true, instrument: observeInstrument() },
   );
   app.useLogger(createLogger());
   setupHttp(app);

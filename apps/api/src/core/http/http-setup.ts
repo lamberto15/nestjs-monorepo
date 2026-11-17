@@ -1,4 +1,4 @@
-import { VersioningType } from '@nestjs/common';
+import { type RequestMethod, VersioningType } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { type NestNodeApplication, NodeAdapter } from '@nestjs/platform-node';
 import compression from 'compression';
@@ -50,6 +50,18 @@ export function createHttpAdapter() {
       : mapException(error);
   return adapter;
 }
+
+/**
+ * Routes another website's page must be able to post to, which the CSRF
+ * protection would refuse: the module that owns one adds it here when its
+ * file loads (iam/sso: a SAML identity provider posts the sign-in to the
+ * assertion consumer route). Keyed, so a second app in one process (tests)
+ * replaces the entry. Each such route authenticates the post itself.
+ */
+export const csrfExclusions = new Map<
+  string,
+  { path: string; method: RequestMethod; version?: string }
+>();
 
 /**
  * The HTTP conventions applied to the app itself (main.ts and the e2e tests
@@ -106,7 +118,10 @@ export function setupHttp(app: NestNodeApplication) {
   // Refuses writes from other websites' pages with a 403 on every route.
   // curl, API clients' systems and webhooks send no Origin or Sec-Fetch-Site
   // and are unaffected. CORS_ORIGINS may write.
-  app.enableCsrfProtection({ trustedOrigins: origins });
+  app.enableCsrfProtection({
+    trustedOrigins: origins,
+    exclude: [...csrfExclusions.values()],
+  });
 
   // /v1/notes: a breaking change ships as /v2 next to it (`@Version('2')` on
   // a route or `@Controller({ version: '2' })`). /health and the docs carry

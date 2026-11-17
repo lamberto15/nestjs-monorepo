@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageLegalHolds": "Place, list and release legal holds (records kept whatever a delete or a retention rule says)"
+      }
+    }
+  }
+}

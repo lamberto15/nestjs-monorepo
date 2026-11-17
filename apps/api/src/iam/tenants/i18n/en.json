@@ -1,0 +1,49 @@
+{
+  "tenants": {
+    "notFound": "No such tenant.",
+    "slugTaken": "A tenant named \"{slug}\" exists.",
+    "slugTakenField": "Taken.",
+    "operatorTenant": "The operators' tenant can't be deactivated nor deleted: its members run the deployment.",
+    "deletionPending": "The tenant's deletion is pending: cancel it (DELETE /v1/tenants/{id}/deletion) before reactivating it.",
+    "confirmSlug": "Type the tenant's slug to confirm its deletion.",
+    "notThisSlug": "Not this tenant's slug.",
+    "noDeletionPending": "No deletion is pending for this tenant.",
+    "deletionStarted": "The tenant is being erased: it can't be cancelled now.",
+    "invitationsUnavailable": "Nothing in this deployment invites a tenant's first administrator: the tenant was not made.",
+    "notAMember": "You are not a member of this tenant.",
+    "signUpClosed": "Sign-up is closed: ask an administrator for an invitation.",
+    "emailTaken": "An account with this email address exists.",
+    "domainExists": "{hostname} is listed already.",
+    "domainExistsField": "Listed already.",
+    "domainNotFound": "No such domain.",
+    "hostname": {
+      "not_a_hostname": "Not a hostname: a domain name such as app.example.com.",
+      "ip_address": "An IP address, not a domain name.",
+      "port": "A hostname takes no port.",
+      "reserved": "Under a top-level name that is not public (.local, .internal, .test…).",
+      "app_domain": "The app's own domain, or one under it."
+    }
+  },
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageTenants": "Run the deployment's tenants: create, rename, deactivate and delete them (operators only)",
+        "manageDomains": "Add, verify and remove the tenant's own domains"
+      }
+    },
+    "systemJobs": {
+      "tenant-deletion": {
+        "label": "Tenant deletion",
+        "description": "Erases the tenants whose deletion's grace period ended."
+      },
+      "sign-up-tenant-sweep": {
+        "label": "Unverified sign-ups' tenants",
+        "description": "Deletes the tenants self sign-ups made whose members never proved their address."
+      },
+      "tenant-domains": {
+        "label": "Tenant domains",
+        "description": "Checks the DNS records of the tenants' domains."
+      }
+    }
+  }
+}

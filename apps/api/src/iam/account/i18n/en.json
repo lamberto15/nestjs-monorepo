@@ -1,0 +1,84 @@
+{
+  "account": {
+    "invalidLink": "This link is invalid or has expired.",
+    "invalidCode": "Invalid code.",
+    "wrongPassword": "Your current password is wrong.",
+    "emailTaken": "An account with this email already exists.",
+    "passwordBreached": "This password has appeared in a data breach: choose another one.",
+    "passwordCheckUnavailable": "Passwords can't be checked right now: try again in a minute.",
+    "passwordReused": "This password was used before: choose one you haven't used recently.",
+    "serverBusy": "The service is busy: try again shortly.",
+    "required": "Required.",
+    "reauthenticationFailed": "The password or the code is wrong.",
+    "reauthenticationIncomplete": "Your password, and your code when two-factor is on, are required.",
+    "reauthenticationUnavailable": "Your account has no password, two-factor or passkey: sign in again with an email link or a provider.",
+    "passkeysOff": "Passkeys aren't available here.",
+    "passkeyRegistrationFailed": "The passkey couldn't be registered: try again.",
+    "passkeyRegistered": "This passkey is registered already.",
+    "passkeyInvalid": "The passkey wasn't accepted.",
+    "passkeyLimit": "An account can hold {max} passkeys: remove one first.",
+    "noPasskeys": "Your account has no passkey.",
+    "lastSignInMethod": "This is your only way to sign in: set a password or add another way first.",
+    "onboardingNotPending": "This account has no onboarding step to do.",
+    "placeholderEmail": "Enter a real email address, not a placeholder.",
+    "mfaAlreadyOn": "Two-factor is already on: turn it off first.",
+    "identityTaken": "This identity is connected to another account.",
+    "mail": {
+      "greeting": "Hi {name},",
+      "expires": "The link works until {expiresAt}.",
+      "resetPassword": {
+        "subject": "Reset your password",
+        "intro": "Someone asked to reset the password of your account. If it was you, choose a new one:",
+        "action": "Choose a new password",
+        "note": "The link works once. If you didn't ask, ignore this email: your password stays as it is."
+      },
+      "invitation": {
+        "subject": "You're invited to {app}",
+        "intro": "You've been invited to {app}. Choose a password to activate your account:",
+        "action": "Accept the invitation",
+        "note": "The link works once."
+      },
+      "verifyEmail": {
+        "subject": "Confirm your email address",
+        "intro": "Please confirm that this is your email address:",
+        "action": "Confirm my address",
+        "note": "If you didn't create an account, ignore this email."
+      },
+      "magicLink": {
+        "subject": "Your sign-in link",
+        "intro": "Here is your sign-in link. Open it in the browser where you asked for it:",
+        "action": "Sign in",
+        "note": "The link works once. If you didn't ask for it, ignore this email."
+      },
+      "securityFooter": "You receive this email because it concerns the security of your {app} account.",
+      "newSignIn": {
+        "subject": "New sign-in to your account",
+        "body": "Your account was signed in from {device} ({ip}). If this wasn't you, change your password and sign out everywhere."
+      },
+      "passwordChanged": {
+        "subject": "Your password was changed",
+        "body": "The password of your account was changed (from {ip}). If this wasn't you, reset it right away."
+      },
+      "passwordBreached": {
+        "subject": "Your password appeared in a data breach",
+        "body": "The password of your account appears in a known data breach, so others may try it. Change it now, to one you use nowhere else."
+      },
+      "mfaEnabled": {
+        "subject": "Two-factor sign-in turned on",
+        "body": "Two-factor sign-in was turned on for your account (from {ip}). If this wasn't you, change your password right away."
+      },
+      "mfaDisabled": {
+        "subject": "Two-factor sign-in turned off",
+        "body": "Two-factor sign-in was turned off for your account (from {ip}). If this wasn't you, change your password right away."
+      },
+      "passkeyAdded": {
+        "subject": "A passkey was added to your account",
+        "body": "A passkey named “{name}” was added to your account (from {ip}). If this wasn't you, remove it and change your password right away."
+      },
+      "passkeyRemoved": {
+        "subject": "A passkey was removed from your account",
+        "body": "The passkey “{name}” was removed from your account (from {ip}). If this wasn't you, change your password right away."
+      }
+    }
+  }
+}

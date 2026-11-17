@@ -91,3 +91,64 @@ export const moneyResponseSchema = z
     currency: z.string().describe('ISO 4217.'),
   })
   .meta({ id: 'Money' });
+
+const day = z.iso
+  .date()
+  .optional()
+  .describe(
+    'A day (yyyy-mm-dd): the rates of the newest working day on or before it. Default: today (UTC).',
+  );
+
+export const ratesQuerySchema = z.object({ date: day });
+export type RatesQuery = z.infer<typeof ratesQuerySchema>;
+
+export const ratesResponseSchema = z.object({
+  source: z.string().describe('Whose rates: `ecb`.'),
+  base: z.string().describe('The currency the rates are quoted against: EUR.'),
+  day: z.iso.date().describe('The day of these rates.'),
+  rates: z
+    .record(z.string(), z.string())
+    .describe(
+      'Units of each currency per one `base`, as decimal strings: { "USD": "1.1652" }.',
+    ),
+});
+
+export const convertQuerySchema = z
+  .object({
+    amount: decimalSchema.describe(
+      'The amount to convert, in major units: "12.34".',
+    ),
+    currency: currencyCodeSchema.describe('The amount’s currency.'),
+    to: currencyCodeSchema.describe('The currency to convert to.'),
+    date: day,
+    rounding: roundingSchema,
+  })
+  .superRefine(checkMinorUnit);
+export type ConvertQuery = z.infer<typeof convertQuerySchema>;
+
+export const conversionResponseSchema = z.object({
+  from: moneyResponseSchema.describe('The amount asked for.'),
+  amount: moneyResponseSchema.describe(
+    'The converted amount, rounded once to the target’s minor unit.',
+  ),
+  rate: z
+    .string()
+    .describe(
+      'Target units per source unit, to 10 decimals (half-up), to show and store. The amount is computed from the exact legs, not from it.',
+    ),
+  rateDate: z.iso
+    .date()
+    .describe(
+      'The day of the rates used: the newest with both currencies on or before `date`.',
+    ),
+  source: z
+    .string()
+    .describe('Whose rates: `ecb` (`identity` for the same currency).'),
+  base: z.string().describe('The currency both legs are quoted against.'),
+  legs: z
+    .object({ from: z.string(), to: z.string() })
+    .describe(
+      'Units of the source and the target currency per one `base` (1 for the base).',
+    ),
+  rounding: z.string(),
+});

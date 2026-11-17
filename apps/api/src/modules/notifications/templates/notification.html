@@ -1,0 +1,10 @@
+<p>{{ greeting }}</p>
+<h2 style="font-size: 18px; margin: 16px 0 8px">{{ title }}</h2>
+<p>{{ body }}</p>
+{{#if url}}
+<p><a href="{{ url }}">{{ open }}</a></p>
+{{/if}}
+<p style="color: #59636e; font-size: 13px">
+  {{ footer }}{{#if unsubscribeUrl}}
+  <a href="{{ unsubscribeUrl }}">{{ unsubscribe }}</a>{{/if}}
+</p>

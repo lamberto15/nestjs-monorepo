@@ -141,7 +141,7 @@ describe('tables that name a tenant (e2e)', () => {
     it('stops a global table that lost its declaration', async () => {
       expect(
         await checkAfter('drop policy memberships_global on memberships'),
-      ).toMatch(/memberships \(missing policy memberships_tenant_select/);
+      ).toMatch(/memberships \(missing policy memberships_tenant_delete/);
     }, 60_000);
 
     it("stops a nullRows table's policy loosened by hand", async () => {

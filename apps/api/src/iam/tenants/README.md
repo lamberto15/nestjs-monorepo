@@ -1,0 +1,38 @@
+# Tenants
+
+Who a tenant is and how it lives, on top of core/tenancy (which owns the
+`tenants` table, the scope and Tenancy.run).
+
+- **Sign-up** (`POST /v1/auth/sign-up`, AUTH_SIGN_UP): an unverified account
+  with a password, behind `@Captcha({ action: 'sign-up', count: 'requests' })`
+  and five requests per address and email in 15 minutes. With TENANCY=single
+  it joins the one tenant with SIGN_UP_ROLES; with TENANT_SIGN_UP it makes a
+  tenant (its slug drawn, never chosen) and is its administrator; otherwise it
+  joins no tenant. After the commit it emits `tenancy.user-signed-up` (the
+  account module mails the verification link).
+- **A user's tenants** (`GET /v1/auth/tenants`) and the **switch**
+  (`POST /v1/auth/tenant`): the session is rotated into the chosen tenant;
+  never while impersonating.
+- **Operators** (`/v1/tenants`, `@OperatorOnly()` and
+  `Access.manageTenants`): list, read, create (its first administrator
+  invited through `tenancy.tenant-administrator-invited`, answered by the
+  invitations module with `{ expiresAt }`; no answer, 503 and no tenant),
+  rename, deactivate and reactivate, delete after TENANT_DELETION_GRACE_DAYS
+  (the slug typed again; a recent sign-in) and cancel. Never the operators'
+  tenant. Every change is audited in the operators' tenant and in the tenant.
+- **Deactivation** ends the tenant's sessions and refresh tokens and emits
+  `tenancy.tenant-deactivated` (realtime closes its sockets).
+- **Nightly jobs**: TenantDeletionJob (04:30 UTC) claims a due tenant, emits
+  `tenancy.tenant-erasing` (awaited: what lives outside its tables), then
+  deletes its row (the cascade takes its rows), audited `tenant.purged` in
+  no tenant. SignUpSweepJob (04:15 UTC) deletes sign-ups' tenants nobody
+  verified within 7 days.
+- **Domains** (`/v1/branding/domains`, CUSTOM_DOMAINS, `Access.manageDomains`):
+  a hostname proved by a TXT record `_app-verification.<hostname>`, checked
+  on the queue and every night; a verified one routes its host to the tenant
+  (TenantDomainsService is the `@HostTenantResolver()`).
+- Domain events (outbox): `tenant.created`, `tenant.deactivated`,
+  `tenant.reactivated`, `tenant.purged`.
+
+Tables: `tenant_lifecycle` (sign-up mark, deletion schedule),
+`tenant_domains`, `tenant_domain_routes`. Variables: tenants.config.ts.

@@ -22,15 +22,40 @@ import { TenancyModule } from './core/tenancy/tenancy.module.js';
 import { ThrottlingModule } from './core/throttling/throttling.module.js';
 import { SharedWorkflowsModule } from './core/workflows/workflows.module.js';
 import { AccessModule } from './iam/access/access.module.js';
+import { AccountModule } from './iam/account/account.module.js';
+import { ApiClientsModule } from './iam/api-clients/api-clients.module.js';
 import { AuditModule } from './iam/audit/audit.module.js';
 import { AuthModule } from './iam/auth/auth.module.js';
+import { BreakGlassModule } from './iam/break-glass/break-glass.module.js';
 import { CaptchaModule } from './iam/captcha/captcha.module.js';
+import { HoldsModule } from './iam/holds/holds.module.js';
+import { ImpersonationModule } from './iam/impersonation/impersonation.module.js';
+import { InvitationsModule } from './iam/invitations/invitations.module.js';
 import { OrganizationModule } from './iam/organization/organization.module.js';
+import { SsoModule } from './iam/sso/sso.module.js';
+import { TenantsModule } from './iam/tenants/tenants.module.js';
+import { CalendarsModule } from './modules/calendars/calendars.module.js';
 import { ClientErrorsModule } from './modules/client-errors/client-errors.module.js';
+import { DeliverabilityModule } from './modules/deliverability/deliverability.module.js';
+import { FeaturesModule } from './modules/features/features.module.js';
 import { ImagesModule } from './modules/images/images.module.js';
+import { InboxModule } from './modules/inbox/inbox.module.js';
+import { ListsModule } from './modules/lists/lists.module.js';
+import { MessagingModule } from './modules/messaging/messaging.module.js';
+import { ModeModule } from './modules/mode/mode.module.js';
+import { MoneyModule } from './modules/money/money.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { PresenceModule } from './modules/presence/presence.module.js';
+import { QuotasModule } from './modules/quotas/quotas.module.js';
 import { RealtimeModule } from './modules/realtime/realtime.module.js';
+import { RecurrenceModule } from './modules/recurrence/recurrence.module.js';
+import { RetentionModule } from './modules/retention/retention.module.js';
+import { SearchModule } from './modules/search/search.module.js';
+import { SequencesModule } from './modules/sequences/sequences.module.js';
+import { SettingsModule } from './modules/settings/settings.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
+import { UsageModule } from './modules/usage/usage.module.js';
+import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
 
 /**
  * Every module of the app, listed here and nowhere else. A module owns its
@@ -63,30 +88,60 @@ import { StorageModule } from './modules/storage/storage.module.js';
     SharedOutboxModule,
     SharedWorkflowsModule,
     JobsModule,
-    // Global interceptors run in the order their modules are listed.
-    // Idempotency comes before every interceptor that does work: a replayed
-    // response is neither metered nor retried. Usage metering (when ported)
-    // goes between these two; the retries of outbound calls are the
-    // innermost. Only the two that set a request's context (its language,
-    // I18nModule; nestjs-cls) stay outside it, which its boot warning names.
+    // Global interceptors and guards run in the order their modules are
+    // first reached, so this block's order matters.
+    // Interceptors: idempotency comes before every one that does work (a
+    // replayed response is neither metered nor retried), then usage
+    // metering, and the retries of outbound calls are the innermost. Only
+    // the two that set a request's context (its language, I18nModule;
+    // nestjs-cls) stay outside idempotency, which its boot warning names.
+    // Guards: the rate limit (ThrottlingModule, above), then who is calling
+    // (AuthModule), then what they may do (AccessModule, which refuses a
+    // route that declares no check: @Can(), @Can.Anyone() or @Public()).
+    // AuthModule therefore comes before every module that imports
+    // AccessModule, as UsageModule does.
     SharedIdempotencyModule,
-    SharedHttpClientModule,
-    // Identity and access. Global guards run in the order their modules are
-    // listed: the rate limit (ThrottlingModule, above), then who is calling
-    // (AuthModule), then what they may do.
     AuthModule,
     AuditModule,
-    // Its guard refuses a route that declares no check (@Can(), @Can.Anyone()
-    // or @Public()).
     AccessModule,
+    UsageModule,
+    SharedHttpClientModule,
+    // The rest of identity and access.
     OrganizationModule,
     CaptchaModule,
-    // Optional capabilities.
+    // Its guard ("SSO required") runs after the principal's.
+    SsoModule,
+    AccountModule,
+    ApiClientsModule,
+    InvitationsModule,
+    TenantsModule,
+    ImpersonationModule,
+    BreakGlassModule,
+    HoldsModule,
+    // Optional capabilities. One may use what another exports, in one
+    // direction only (AGENTS.md, "Rules"); the one used comes first.
+    SettingsModule,
+    // Its guard refuses writes while APP_MODE says so.
+    ModeModule,
+    FeaturesModule,
+    QuotasModule,
     StorageModule,
     ImagesModule,
     ClientErrorsModule,
     RealtimeModule,
     PresenceModule,
+    NotificationsModule,
+    InboxModule,
+    WebhooksModule,
+    DeliverabilityModule,
+    MessagingModule,
+    MoneyModule,
+    SequencesModule,
+    CalendarsModule,
+    RecurrenceModule,
+    RetentionModule,
+    ListsModule,
+    SearchModule,
   ],
 })
 export class AppModule {}

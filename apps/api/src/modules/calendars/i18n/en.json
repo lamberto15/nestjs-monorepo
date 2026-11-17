@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageCalendars": "Create, change and delete business calendars (working hours, time zone, holidays)"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "invitations": {
+    "invalid": "This invitation is invalid, used or expired",
+    "signIn": "Sign in to the account this invitation was sent to, then accept it",
+    "otherAccount": "This invitation was sent to another address than your account's",
+    "membershipInactive": "Your membership in this organization is turned off: ask its administrators to turn it back on",
+    "notWhileImpersonating": "An invitation can't be accepted while an administrator acts as you",
+    "required": "Required.",
+    "mail": {
+      "subject": "{inviter} invited you to {tenant} on {app}",
+      "greeting": "Hello,",
+      "intro": "{inviter} invited you to {tenant} on {app}.",
+      "action": "Accept the invitation",
+      "note": "New to {app}? The link lets you choose a password. Already have an account with this address? Sign in, then accept. The link works once.",
+      "expires": "It ends {expiresAt}."
+    }
+  }
+}

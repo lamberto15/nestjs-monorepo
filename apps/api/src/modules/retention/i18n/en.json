@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageRetention": "Turn retention rules on and off and set their days (what is purged or anonymised, and when)"
+      }
+    },
+    "systemJobs": {
+      "retention": {
+        "label": "Retention",
+        "description": "Purges or anonymises the records past their retention days, in batches, skipping those under a legal hold."
+      }
+    }
+  }
+}
