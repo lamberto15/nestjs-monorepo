@@ -14,6 +14,7 @@ import { QueuesModule } from './core/queues/queues.module.js';
 import { RedisModule } from './core/redis/redis.module.js';
 import { TenancyModule } from './core/tenancy/tenancy.module.js';
 import { ThrottlingModule } from './core/throttling/throttling.module.js';
+import { ClientErrorsModule } from './modules/client-errors/client-errors.module.js';
 import { ImagesModule } from './modules/images/images.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
 
@@ -45,6 +46,7 @@ import { StorageModule } from './modules/storage/storage.module.js';
     // Optional capabilities.
     StorageModule,
     ImagesModule,
+    ClientErrorsModule,
   ],
 })
 export class AppModule {}

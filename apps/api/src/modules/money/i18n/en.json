@@ -1,0 +1,8 @@
+{
+  "money": {
+    "currencyMismatch": "{left} and {right} can't be combined: convert one of the amounts first.",
+    "unknownCurrency": "{currency} is not an ISO 4217 currency code.",
+    "amountPrecision": "The amount has more decimals than {currency} has ({exponent}).",
+    "invalidDecimal": "The amount must be a decimal string, such as 12.34."
+  }
+}

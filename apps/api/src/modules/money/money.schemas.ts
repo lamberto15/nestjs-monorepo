@@ -1,0 +1,93 @@
+import { z } from 'zod';
+import { currencyExponent, isCurrency } from './currencies.js';
+import { DECIMAL_PATTERN, ROUNDING_MODES } from './decimal.js';
+
+/**
+ * The Zod pieces of money in the API. Amounts, unit prices and rates are
+ * decimal strings end to end (`"12.34"`), typed `string` in OpenAPI: a JSON
+ * number would pass through a float in most clients.
+ */
+
+/** An ISO 4217 code in capitals (`EUR`). */
+export const currencyCodeSchema = z
+  .string()
+  .regex(/^[A-Z]{3}$/, { message: 'must be three capital letters (EUR)' })
+  .refine(isCurrency, { message: 'must be an ISO 4217 currency code (EUR)' })
+  .meta({
+    description: 'An ISO 4217 currency code, in capitals.',
+    example: 'EUR',
+  });
+
+/**
+ * A decimal string of any precision (a unit price, a quantity, a rate):
+ * `"0.0125"`, `"-3"`. Stored in a `numeric` column.
+ */
+export const decimalSchema = z
+  .string()
+  .regex(DECIMAL_PATTERN, {
+    message: 'must be a decimal string: digits, an optional fraction (12.5)',
+  })
+  .max(64)
+  .meta({ example: '12.5' });
+
+/** A rounding mode (README, "Rounding"). */
+export const roundingSchema = z
+  .enum(ROUNDING_MODES as [string, ...string[]])
+  .default('half-up')
+  .describe(
+    'How a result between two minor units is rounded: half-up (ties away from zero, the default), half-even (banker’s), half-down, up, down, ceiling, floor.',
+  );
+
+/**
+ * An issue on `amount` when it has more decimals than its currency's minor
+ * unit (trailing zeros don't count: 12.340 EUR is 12.34 EUR).
+ */
+function checkMinorUnit(
+  value: { amount: string; currency: string },
+  ctx: z.RefinementCtx,
+) {
+  if (!isCurrency(value.currency) || !DECIMAL_PATTERN.test(value.amount)) {
+    return; // their own issues
+  }
+  // A loop, not /0+$/: that regex is quadratic on a long run of zeros.
+  const fraction = value.amount.split('.')[1] ?? '';
+  let decimals = fraction.length;
+  while (decimals > 0 && fraction[decimals - 1] === '0') decimals--;
+  const exponent = currencyExponent(value.currency);
+  if (decimals > exponent) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['amount'],
+      message: `has more decimals than ${value.currency} has (${exponent})`,
+    });
+  }
+}
+
+/**
+ * A money object in a body: `{ "amount": "12.34", "currency": "EUR" }`.
+ * The amount has at most the currency's decimals (12.345 EUR is a 400:
+ * rounding is the server's to decide, never implied by the input).
+ * `Money.of(body.amount, body.currency)` reads it.
+ */
+export const moneySchema = z
+  .object({
+    amount: decimalSchema.describe(
+      'The amount in major units, as a decimal string: "12.34". At most the currency’s decimals (0 for JPY, 2 for EUR, 3 for KWD).',
+    ),
+    currency: currencyCodeSchema,
+  })
+  .superRefine(checkMinorUnit);
+/** @public */
+export type MoneyInput = z.infer<typeof moneySchema>;
+
+/** A money object in a response: the amount always with exactly the currency's decimals. */
+export const moneyResponseSchema = z
+  .object({
+    amount: z
+      .string()
+      .describe(
+        'The amount in major units, with exactly the currency’s decimals: "12.30", "1200" (JPY), "1.250" (KWD).',
+      ),
+    currency: z.string().describe('ISO 4217.'),
+  })
+  .meta({ id: 'Money' });

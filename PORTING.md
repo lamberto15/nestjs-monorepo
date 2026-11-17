@@ -42,9 +42,12 @@ repository.
 ## Modules (`apps/api/src/modules`)
 
 - [ ] records, lists, fields, search, views
-- [x] storage (local, S3, signed URLs), images
+- [x] storage (local, S3, signed URLs), images, client-errors
+- [x] money values (decimal arithmetic, currencies, columns), the expression
+      language, field types
+- [ ] money routes and exchange rates
 - [ ] tags, comments, attachments, revisions, favorites,
-      recents, templates, choices, sequences, custom-fields, expressions
+      recents, templates, choices, sequences, custom-fields
 - [ ] approvals, acknowledgments, bulk, merge, data-transfer, reports,
       data-quality, retention
 - [ ] notifications, messaging, inbox, subscriptions, deliverability,
@@ -52,7 +55,7 @@ repository.
 - [ ] automations, forms, shares, ai, documents, calendars, recurrence,
       money
 - [ ] settings, features, branding, quotas, usage, tenants, people,
-      integrations, config-bundles, idempotency, auth-policy, client-errors,
+      integrations, config-bundles, idempotency, auth-policy,
       ops, mode
 
 ## Features (`apps/api/src/features`)
