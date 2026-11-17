@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
-import { Injectable, Logger, type Type } from '@nestjs/common';
+import { Inject, Injectable, Logger, type Type } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import {
   type Mailable,
   type MailableRenderOptions,
@@ -16,6 +17,8 @@ import {
 } from 'bullmq';
 import { abortable } from '../queues/abortable.js';
 import { DEFAULT_JOB_OPTIONS } from '../queues/queues.js';
+import { mailConfig } from './mail.config.js';
+import { isEssentialMail } from './mail.essential.js';
 
 /** The queue every mail goes through. */
 export const MAIL_QUEUE = 'mail';
@@ -56,9 +59,13 @@ export interface QueuedMail {
  */
 @Injectable()
 export class MailQueue {
+  private readonly logger = new Logger('MailQueue');
+
   constructor(
     @InjectQueue(MAIL_QUEUE) private readonly queue: Queue<QueuedMail>,
     private readonly mailer: Mailer,
+    @Inject(mailConfig.KEY)
+    private readonly config: Pick<ConfigType<typeof mailConfig>, 'delivery'>,
   ) {}
 
   async send<M extends Mailable<any>>(
@@ -67,14 +74,27 @@ export class MailQueue {
     {
       jobId = randomUUID(),
       signal,
+      essential = false,
     }: {
       /** Your own job id when the call may repeat (a retried handler): the mail goes once. */
       jobId?: string;
       /** Stops waiting for Redis (the add may still land: the job id makes that harmless). */
       signal?: AbortSignal;
+      /** Essential for this send (a mandatory notification), besides a class marked `@EssentialMail()`. */
+      essential?: boolean;
     } = {},
   ) {
     signal?.throwIfAborted();
+    const { delivery } = this.config;
+    if (
+      delivery === 'off' ||
+      (delivery === 'essential' && !essential && !isEssentialMail(mail))
+    ) {
+      this.logger.warn(`Mail withheld by MAIL_DELIVERY=${delivery}`, {
+        mail: mail.name,
+      });
+      return;
+    }
     const message = await this.mailer.render(mail, options);
     if (message.attachments.length > 0) {
       throw new Error(

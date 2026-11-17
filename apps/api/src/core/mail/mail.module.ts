@@ -1,8 +1,7 @@
-import { join } from 'node:path';
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
-import { FileTemplateEngine, MailModule as NestMailModule } from '@nestjs/mail';
+import { MailModule as NestMailModule } from '@nestjs/mail';
 import { mailConfig } from './mail.config.js';
 import {
   MAIL_JOB_OPTIONS,
@@ -10,14 +9,20 @@ import {
   MailProcessor,
   MailQueue,
 } from './mail.queue.js';
+import {
+  LAYOUT_DIR,
+  ModuleTemplateEngine,
+  SOURCE_ROOT,
+} from './mail.templates.js';
 import { mailTransport } from './mail.transport.js';
 
 /**
  * Mail (@nestjs/mail, global `Mailer`) and its queue. Inject `MailQueue` and
  * `send()` a `Mailable` class: the request renders it and returns, a worker
- * sends it. Bodies are HTML templates in `core/mail/templates` (copied to
- * dist), wrapped in `layout.html`; `<name>.<locale>.html` is picked for the
- * mail's `locale`. Needs QueuesModule.
+ * sends it. Bodies are HTML templates in each module's own `templates/`
+ * folder (found under src or dist, copied by nest-cli.json), wrapped in the
+ * shared `core/mail/templates/layout.html`; `<name>.<locale>.html` is
+ * picked for the mail's `locale`. Needs QueuesModule.
  */
 @Module({
   imports: [
@@ -26,14 +31,15 @@ import { mailTransport } from './mail.transport.js';
       inject: [mailConfig.KEY],
       useFactory: (config: ConfigType<typeof mailConfig>) => ({
         transport: mailTransport(config),
-        templates: new FileTemplateEngine({
-          dir: join(import.meta.dirname, 'templates'),
-          layout: 'layout',
-          cache: config.cacheTemplates,
-        }),
+        templates: new ModuleTemplateEngine(
+          [SOURCE_ROOT, ...config.templateRoots],
+          LAYOUT_DIR,
+          config.cacheTemplates,
+        ),
         from: config.from,
       }),
     }),
+    ConfigModule.forFeature(mailConfig),
     BullModule.registerQueue({
       name: MAIL_QUEUE,
       defaultJobOptions: MAIL_JOB_OPTIONS,

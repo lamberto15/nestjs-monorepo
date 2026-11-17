@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import {
   InMemoryMailTransport,
@@ -19,6 +20,17 @@ class WelcomeMail implements Mailable<{ name: string }> {
   }
 }
 
+@Injectable()
+class FixtureMail implements Mailable<{ name: string }> {
+  render({ name }: { name: string }) {
+    return {
+      subject: 'Fixture',
+      template: 'fixture-welcome',
+      context: { name },
+    };
+  }
+}
+
 describe('mail', () => {
   let app: NestNodeApplication;
   let mailQueue: MailQueue;
@@ -28,6 +40,10 @@ describe('mail', () => {
   beforeAll(async () => {
     process.env.MAIL_TRANSPORT = 'memory';
     process.env.APP_ROLE = 'all';
+    process.env.MAIL_TEMPLATE_ROOTS = join(
+      import.meta.dirname,
+      '../../../test/fixtures/mail',
+    );
     process.env.REDIS_PREFIX = `test-mail-${process.pid}`;
     app = await bootModules(QueuesModule, MailModule);
     mailQueue = app.get(MailQueue);
@@ -43,6 +59,7 @@ describe('mail', () => {
     await app.close();
     delete process.env.MAIL_TRANSPORT;
     delete process.env.APP_ROLE;
+    delete process.env.MAIL_TEMPLATE_ROOTS;
     delete process.env.REDIS_PREFIX;
   });
 
@@ -58,6 +75,25 @@ describe('mail', () => {
     expect(mail?.subject).toBe('Welcome Ada');
     expect(mail?.to[0]?.address).toBe('ada@example.com');
     expect(mail?.html).toContain('Hi Ada');
+  });
+
+  it('renders a template that lives outside core/mail, in the layout and the locale', async () => {
+    await mailQueue.send(FixtureMail, {
+      to: 'p@example.com',
+      data: { name: 'Ada' },
+      locale: 'pt',
+    });
+    await mailQueue.send(FixtureMail, {
+      to: 'e@example.com',
+      data: { name: 'Bob' },
+    });
+    await vi.waitFor(() => expect(mailbox.mails).toHaveLength(2), {
+      timeout: 5000,
+    });
+    const html = mailbox.mails.map((mail) => mail.html).join();
+    expect(html).toContain('Ola Ada');
+    expect(html).toContain('Fixture hello Bob');
+    expect(html).toContain('max-width: 560px');
   });
 
   it('sends once when the same job id is queued twice', async () => {

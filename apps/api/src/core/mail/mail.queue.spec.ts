@@ -1,5 +1,6 @@
 import type { Mailer } from '@nestjs/mail';
 import type { Queue } from 'bullmq';
+import { EssentialMail } from './mail.essential.js';
 import { MAIL_JOB_OPTIONS, MailQueue } from './mail.queue.js';
 
 class Hello {
@@ -7,6 +8,9 @@ class Hello {
     return { subject: 'Hello', html: '<p>Hi</p>' };
   }
 }
+
+@EssentialMail()
+class Essential extends Hello {}
 
 describe('MailQueue', () => {
   const rendered = {
@@ -22,12 +26,13 @@ describe('MailQueue', () => {
     attachments: [] as unknown[],
   };
 
-  function queueWith() {
+  function queueWith(delivery: 'all' | 'essential' | 'off' = 'all') {
     const add = vi.fn(async () => undefined);
     const render = vi.fn(async () => rendered);
     const queue = new MailQueue(
       { add } as unknown as Queue,
       { render } as unknown as Mailer,
+      { delivery },
     );
     return { queue, add, render };
   }
@@ -40,6 +45,19 @@ describe('MailQueue', () => {
       expect.objectContaining({ subject: 'Hello', to: rendered.to }),
       { jobId: 'j1' },
     );
+  });
+
+  it('withholds what MAIL_DELIVERY does not let through', async () => {
+    for (const [delivery, mail, options, queued] of [
+      ['off', Essential, {}, false],
+      ['essential', Hello, {}, false],
+      ['essential', Hello, { essential: true }, true],
+      ['essential', Essential, {}, true],
+    ] as const) {
+      const { queue, add } = queueWith(delivery);
+      await queue.send(mail, { to: 'a@example.com' } as never, options);
+      expect(add).toHaveBeenCalledTimes(queued ? 1 : 0);
+    }
   });
 
   it('refuses a mail with attachments: a job carries none', async () => {

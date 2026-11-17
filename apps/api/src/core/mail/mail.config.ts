@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { readEnv } from '../config/env.js';
 import {
   choice,
+  list,
   optional,
   secret,
   withDefault,
@@ -21,6 +22,17 @@ export const schema = z.object({
     ['file', 'log', 'smtp', 'resend', 'postmark', 'sendgrid', 'ses', 'memory'],
     'file',
   ),
+  /**
+   * Which mail leaves: `all`, `essential` (only mail marked
+   * `@EssentialMail()`: a staging server that must still send sign-in
+   * links) or `off` (none: a copy of production's data).
+   */
+  MAIL_DELIVERY: choice(['all', 'essential', 'off'], 'all'),
+  /**
+   * Extra directories searched for `templates/` folders, comma-separated,
+   * besides the application's own source (tests, templates shipped apart).
+   */
+  MAIL_TEMPLATE_ROOTS: list(),
   /** The sender of every mail. */
   MAIL_FROM: withDefault('My API <no-reply@example.com>'),
   /** Where the `file` transport writes the .eml files. */
@@ -52,6 +64,8 @@ export const mailConfig = registerAs('mail', () => {
   return {
     transport: env.MAIL_TRANSPORT,
     from: env.MAIL_FROM,
+    delivery: env.MAIL_DELIVERY,
+    templateRoots: env.MAIL_TEMPLATE_ROOTS,
     directory: env.MAIL_DIRECTORY,
     smtpUrl: env.SMTP_URL,
     apiKey: env.MAIL_API_KEY,
