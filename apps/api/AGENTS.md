@@ -31,3 +31,15 @@ When a task depends on how the app behaves in production - an error users hit, a
 
 - The Observe MCP server answers those questions directly: errors with their traces and logs, slow operations, jobs, and what a release changed (`find_regressions`, `diff_release`). It is included on the Pro plan and above. In Claude Code: `claude mcp add observe --transport http https://observe-api.nestjs.com/mcp`, and the client opens a browser to approve. Other clients: https://www.observe.nestjs.com/documentation/mcp
 - Without it, the user can open the request or error in the Observe dashboard and click **Copy agent prompt**, which hands over that page's trace, stack and logs as text.
+
+## How this app is built
+
+The root [AGENTS.md](../../AGENTS.md) holds the rules and the owner's decisions. In this app:
+
+- **Folders:** `src/core/<name>` (always there: config, database, http, logging…), `src/iam/<name>` (tenancy, sign-in, access), `src/modules/<name>` (optional capabilities), `src/features/<name>` (business features). Imports go one way: core ← iam ← modules ← features. No `index.ts` barrels.
+- **A module's files**, all in its folder: `<name>.module.ts`, `<name>.config.ts`, `<name>.tables.ts`, `<name>.controller.ts`, `<name>.service.ts`, `<name>.schemas.ts` (Zod request and response shapes), `*.spec.ts` (unit), `<name>.e2e-spec.ts` (e2e), `README.md` (what it does, its variables, how to remove it).
+- **Environment variables:** only in `<name>.config.ts`: `export const schema = z.object({...})`, then `export const <name>Config = registerAs('<name>', () => { const env = readEnv(schema); return {...}; })` (`core/config/env.ts`). The module imports `ConfigModule.forFeature(<name>Config)`; classes inject `@Inject(<name>Config.KEY) config: ConfigType<typeof <name>Config>`. Nothing else reads `process.env`.
+- **Database:** `@InjectDrizzle() private readonly db: Database` (`core/database/database.ts`). Tables live in the module's `*.tables.ts`; `pnpm db:generate` finds them by glob and writes the migration.
+- **Wiring:** a module is added to `src/app.module.ts` and nowhere else. If a module seems to need a line in another module's file, it needs an event or a discovery decorator instead.
+- **e2e tests** boot the module under test with what it imports, not `AppModule`, on `NodeAdapter` with `app.inject()`: a module that can't be tested alone isn't self-contained.
+- **Comments** say why, in a sentence or two. No commented-out code.

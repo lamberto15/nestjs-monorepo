@@ -38,6 +38,29 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
 11. **Versions are the newest, pinned exactly.** Drizzle comes from its `rc`
     tag.
 
+## Decisions (the owner's, 2026-11-17)
+
+- **The web app is served by the API** (`@nestjs/serve-static`): one image,
+  one origin. No Caddy; HTTPS and certificates are the host's job.
+- **Everything is on by default:** `app.module.ts` lists every module; an
+  adopter deletes what they don't want.
+- **Routes stay as they were** in the earlier template, so the web app, the
+  typed client and the e2e tests carry over, except where a route was
+  awkward: those are redesigned, and each change is listed in PORTING.md.
+- **Tenancy is a seam.** Modules ask the tenancy module for the tenant's
+  database and never know the isolation mode. Row-level security is the first
+  strategy; schema-per-tenant and database-per-tenant are later strategies
+  behind the same seam. Every tenant table keeps `tenant_id` in every mode,
+  so a single-tenant project becomes multi-tenant by a switch, not a data
+  migration.
+- **Features come from a generator**, a Nest schematics collection (`nest g`).
+- **Ported by dependency:** core, then tenancy, sign-in and access, then
+  records and their add-ons, then the rest, then the web app and the client.
+- **No bundled operations:** no monitoring, backups, load tests, proxies or
+  deploy pipelines.
+- **Git:** local commits on `main`; no push and no pull request until the
+  owner asks.
+
 ## Commands
 
 ```bash

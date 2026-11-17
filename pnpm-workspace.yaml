@@ -3,3 +3,8 @@ packages:
   - packages/*
 # Dependencies are pinned to exact versions (no ^ or ~).
 saveExact: true
+allowBuilds:
+  # Swagger UI's install-count ping: not wanted.
+  '@scarf/scarf': false
+  # bullmq's msgpackr: an optional native speedup with a prebuilt binary.
+  msgpackr-extract: true
