@@ -70,6 +70,11 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
 - **CASL stays as the rules engine**, in one file behind the access service;
   routes and services ask `@nestjs/authorization` policies. A condition is
   written once and its SQL derived from it.
+- **Observability has two backends, swapped by configuration:** NestJS
+  Observe (hosted) or Nestrix (the owner's open-source, self-hosted server).
+  Modules use the OpenTelemetry API only, never a backend's SDK. Sentry is not
+  ported. Gaps found in Nestrix are filed on its repository
+  (nestrix-js/nestrix#49 tracks them), not worked around here.
 - **No bundled operations:** no monitoring, backups, load tests, proxies or
   deploy pipelines.
 - **Git:** local commits on `main`; no push and no pull request until the
