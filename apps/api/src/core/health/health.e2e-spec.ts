@@ -1,18 +1,13 @@
-import { type NestNodeApplication, NodeAdapter } from '@nestjs/platform-node';
-import { Test } from '@nestjs/testing';
-import { AppModule } from '../src/app.module.js';
+import type { NestNodeApplication } from '@nestjs/platform-node';
+import { bootModules } from '../../../test/boot.js';
+import { DatabaseModule } from '../database/database.module.js';
+import { HealthModule } from './health.module.js';
 
 describe('health', () => {
   let app: NestNodeApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-    app = moduleRef.createNestApplication<NestNodeApplication>(
-      new NodeAdapter(),
-    );
-    await app.init();
+    app = await bootModules(DatabaseModule, HealthModule);
   });
 
   afterAll(async () => {

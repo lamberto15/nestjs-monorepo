@@ -1,0 +1,165 @@
+{
+  "type": "base",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "38b5e8c1-4957-45bc-859e-791b8b2b5df1",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_items"
+      ],
+      "writes": [
+        "s|tbl|public.test_items",
+        "n|tbl|public.test_items",
+        "e|tbl|public.test_items",
+        "n|rel|public.test_items",
+        "n|type|public.test_items",
+        "n|rel|public.test_items_pkey",
+        "n|rel|public.test_items_name_key"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_items"
+      ],
+      "writes": [
+        "s|fk|public.test_items.test_items_parent_id_test_items_id_fkey",
+        "n|fk|public.test_items.test_items_parent_id_test_items_id_fkey",
+        "e|fk|public.test_items.test_items_parent_id_test_items_id_fkey",
+        "n|con|public.test_items.test_items_parent_id_test_items_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.test_items",
+        "n|sch|public",
+        "n|tbl|public.test_items",
+        "n|sch|public",
+        "n|col|public.test_items.parent_id",
+        "n|col|public.test_items.id",
+        "e|uniqueness|public.test_items.id"
+      ]
+    }
+  ],
+  "ddl": [
+    {
+      "schema": "public",
+      "name": "test_items",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "id",
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "uuidv7()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "name",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "parent_id",
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "created_at",
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "updated_at",
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "test_items_parent_id_test_items_id_fkey",
+      "nameExplicit": false,
+      "columns": [
+        "parent_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "test_items",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "test_items_pkey",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "public",
+      "table": "test_items",
+      "name": "test_items_name_key",
+      "nameExplicit": false,
+      "columns": [
+        "name"
+      ],
+      "nullsNotDistinct": false,
+      "entityType": "uniques"
+    }
+  ]
+}

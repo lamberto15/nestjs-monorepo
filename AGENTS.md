@@ -56,6 +56,15 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
 - **Features come from a generator**, a Nest schematics collection (`nest g`).
 - **Ported by dependency:** core, then tenancy, sign-in and access, then
   records and their add-ons, then the rest, then the web app and the client.
+- **English only for now.** Texts still go through the translation catalogs
+  (`<module>/i18n/en.json`), never hard-coded, so a language is added by
+  adding catalogs and naming it in `LOCALES`.
+- **Spreadsheets are `turbosheet`** (the owner's library): Excel and CSV,
+  streaming, password-protected files. Imports and exports use it instead of
+  separate CSV libraries; a gap in it is fixed upstream, not worked around.
+- **Analytical reporting is not in the app.** The app keeps lists, exports
+  and scheduled exports; dashboards over history belong in a store fed by
+  replication.
 - **No bundled operations:** no monitoring, backups, load tests, proxies or
   deploy pipelines.
 - **Git:** local commits on `main`; no push and no pull request until the

@@ -1,0 +1,5 @@
+# Generated.
+pnpm-lock.yaml
+**/drizzle/
+**/dist/
+apps/api/env.example
