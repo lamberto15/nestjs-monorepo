@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "access": {
+      "label": "Access control",
+      "actions": {
+        "manageRoles": "Create, edit and delete roles",
+        "manageUsers": "Assign users their roles, deactivate their memberships"
+      }
+    },
+    "conditions": {
+      "mine": {
+        "label": "Created by me",
+        "description": "Only records this person (or API client) created."
+      }
+    },
+    "systemJobs": {
+      "seed": {
+        "label": "First-boot seed",
+        "description": "Creates the built-in and declared roles and the first administrator on the first start."
+      }
+    },
+    "seedRoles": {
+      "administrator": {
+        "name": "Administrator",
+        "description": "Can do everything, including managing roles and users."
+      },
+      "editor": {
+        "name": "Editor",
+        "description": "Writes records and changes their own."
+      },
+      "unit-lead": {
+        "name": "Unit lead",
+        "description": "Sees the records of the units they lead and every unit below them."
+      },
+      "viewer": {
+        "name": "Viewer",
+        "description": "Sees every record, changes nothing."
+      }
+    }
+  }
+}

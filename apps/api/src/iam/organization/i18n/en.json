@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageOrganizationalUnits": "Create, retype, move and delete organizational units (what \"in my units\" covers)"
+      }
+    },
+    "conditions": {
+      "inMyUnits": {
+        "label": "In my units",
+        "description": "Only records of the units I belong to."
+      },
+      "inMyUnitsAndBelow": {
+        "label": "In my units and below",
+        "description": "Only records of the units I belong to, and of the units below them."
+      },
+      "inUnitsILeadAndBelow": {
+        "label": "In units I lead and below",
+        "description": "Only records of the units I lead, and of the units below them."
+      }
+    }
+  }
+}

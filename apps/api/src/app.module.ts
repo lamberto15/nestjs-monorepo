@@ -21,10 +21,15 @@ import { SecretsModule } from './core/secrets/secrets.module.js';
 import { TenancyModule } from './core/tenancy/tenancy.module.js';
 import { ThrottlingModule } from './core/throttling/throttling.module.js';
 import { SharedWorkflowsModule } from './core/workflows/workflows.module.js';
+import { AccessModule } from './iam/access/access.module.js';
 import { AuditModule } from './iam/audit/audit.module.js';
 import { AuthModule } from './iam/auth/auth.module.js';
+import { CaptchaModule } from './iam/captcha/captcha.module.js';
+import { OrganizationModule } from './iam/organization/organization.module.js';
 import { ClientErrorsModule } from './modules/client-errors/client-errors.module.js';
 import { ImagesModule } from './modules/images/images.module.js';
+import { PresenceModule } from './modules/presence/presence.module.js';
+import { RealtimeModule } from './modules/realtime/realtime.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
 
 /**
@@ -71,10 +76,17 @@ import { StorageModule } from './modules/storage/storage.module.js';
     // (AuthModule), then what they may do.
     AuthModule,
     AuditModule,
+    // Its guard refuses a route that declares no check (@Can(), @Can.Anyone()
+    // or @Public()).
+    AccessModule,
+    OrganizationModule,
+    CaptchaModule,
     // Optional capabilities.
     StorageModule,
     ImagesModule,
     ClientErrorsModule,
+    RealtimeModule,
+    PresenceModule,
   ],
 })
 export class AppModule {}

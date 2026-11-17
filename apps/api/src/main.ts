@@ -7,6 +7,7 @@ import { createHttpAdapter, setupHttp } from './core/http/http-setup.js';
 import { setupOpenApi } from './core/http/openapi.js';
 import { createLogger } from './core/logging/logging.js';
 import { observeInstrument } from './core/observability/observe.js';
+import { setupRealtime } from './modules/realtime/realtime.adapter.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestNodeApplication>(
@@ -18,6 +19,8 @@ async function bootstrap() {
   );
   app.useLogger(createLogger());
   setupHttp(app);
+  // Sockets on the same server, reaching every instance through Redis.
+  setupRealtime(app);
   setupOpenApi(app);
   // On SIGTERM, /health turns 503 and the modules close what they hold.
   app.enableShutdownHooks();

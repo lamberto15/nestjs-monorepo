@@ -37,12 +37,15 @@ repository.
       principal and its guards
 - [ ] auth: token issue and refresh routes, impersonation, break-glass
 - [ ] account (password, email, MFA, passkeys, sessions)
-- [ ] access (roles, grants, conditions, field permissions, API clients)
-- [ ] organization (units, memberships)
+- [x] access: the permission catalog each module adds to, roles, dated
+      grants, conditions, field permissions, the access API, the first-boot
+      seed, the system principal
+- [ ] access: API clients, invitations
+- [x] organization (units, the tree, dated memberships, unit conditions)
 - [x] audit (the log, sign-in entries, retention)
 - [ ] audit: record changes and the audit pages
 - [ ] sso (OIDC, SAML, SCIM)
-- [ ] captcha
+- [x] captcha (Turnstile, the stub, app attestation)
 - [ ] holds (legal holds)
 - [ ] resources
 
@@ -52,13 +55,15 @@ repository.
 - [x] storage (local, S3, signed URLs), images, client-errors
 - [x] money values (decimal arithmetic, currencies, columns), the expression
       language, field types
+- [x] realtime (socket.io on Redis, sockets closed when a session, key,
+      member or tenant ends), presence
 - [ ] money routes and exchange rates
 - [ ] tags, comments, attachments, revisions, favorites,
       recents, templates, choices, sequences, custom-fields
 - [ ] approvals, acknowledgments, bulk, merge, data-transfer, reports,
       data-quality, retention
 - [ ] notifications, messaging, inbox, subscriptions, deliverability,
-      webhooks, realtime, presence
+      webhooks
 - [ ] automations, forms, shares, ai, documents, calendars, recurrence,
       money
 - [ ] settings, features, branding, quotas, usage, tenants, people,
@@ -96,6 +101,22 @@ repository.
   to the millisecond.
 - A queue is registered by the module that owns it; there is no central
   list of queues.
+- A permission condition is declared once, as column and value; the old
+  template wrote each one twice (a CASL form and an SQL form).
+- A module registers its permissions in its own imports
+  (`AccessModule.forFeature()`); there is no list in a root module.
+- No action may be named `manage` (CASL reads it as every action):
+  `Approval.manage` and `Ops.manage` get another name when ported.
+- `PATCH /access/users/:id` announces a deactivation as an event; sessions
+  end on the member's next request.
+- A route asks for bot protection with `@Captcha()`, metadata that the
+  captcha module's global guard reads; it runs before a route's own limits
+  (the old one ran after the sign-in limit).
+- `GET /v1/auth/captcha` tells a page which widget to render (the old
+  template put it in `/auth/methods`).
+- Realtime events are declared where they are pushed; there is no central
+  manifest and no `x-realtime-events` OpenAPI extension. Presence names a
+  record type by its permission subject (`Note`), not a slug.
 - Operators are the members of the tenant named by `OPERATOR_TENANT`
   (with `TENANCY=single`, of the one tenant); the tenants table has no
   operator column.

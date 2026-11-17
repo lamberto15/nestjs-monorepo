@@ -1,0 +1,3330 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "63a8b323-244e-4cef-9be3-d01e34336a4b",
+  "prevIds": [
+    "8e2fcbef-6342-42c0-b947-c98eeb78557b"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|tbl|public.api_client_roles",
+        "n|tbl|public.api_client_roles",
+        "e|tbl|public.api_client_roles",
+        "n|rel|public.api_client_roles",
+        "n|type|public.api_client_roles",
+        "n|rel|public.api_client_roles_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "role_permissions"
+      ],
+      "writes": [
+        "s|tbl|public.role_permissions",
+        "n|tbl|public.role_permissions",
+        "e|tbl|public.role_permissions",
+        "n|rel|public.role_permissions",
+        "n|type|public.role_permissions",
+        "n|rel|public.role_permissions_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "roles"
+      ],
+      "writes": [
+        "s|tbl|public.roles",
+        "n|tbl|public.roles",
+        "e|tbl|public.roles",
+        "n|rel|public.roles",
+        "n|type|public.roles",
+        "n|rel|public.roles_pkey",
+        "n|rel|public.roles_tenant_id_id_key"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|tbl|public.user_roles",
+        "n|tbl|public.user_roles",
+        "e|tbl|public.user_roles",
+        "n|rel|public.user_roles",
+        "n|type|public.user_roles",
+        "n|rel|public.user_roles_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|tbl|public.organizational_unit_closure",
+        "n|tbl|public.organizational_unit_closure",
+        "e|tbl|public.organizational_unit_closure",
+        "n|rel|public.organizational_unit_closure",
+        "n|type|public.organizational_unit_closure",
+        "n|rel|public.organizational_unit_closure_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|tbl|public.organizational_unit_memberships",
+        "n|tbl|public.organizational_unit_memberships",
+        "e|tbl|public.organizational_unit_memberships",
+        "n|rel|public.organizational_unit_memberships",
+        "n|type|public.organizational_unit_memberships",
+        "n|rel|public.organizational_unit_memberships_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_units"
+      ],
+      "writes": [
+        "s|tbl|public.organizational_units",
+        "n|tbl|public.organizational_units",
+        "e|tbl|public.organizational_units",
+        "n|rel|public.organizational_units",
+        "n|type|public.organizational_units",
+        "n|rel|public.organizational_units_pkey",
+        "n|rel|public.organizational_units_tenant_id_id_key"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "api_client_roles",
+        "api_client_roles_role_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.api_client_roles_role_id_idx",
+        "n|idx|public.api_client_roles_role_id_idx",
+        "e|idx|public.api_client_roles_role_id_idx",
+        "n|rel|public.api_client_roles_role_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "n|col|public.api_client_roles.role_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "role_permissions",
+        "role_permissions_role_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.role_permissions_role_id_idx",
+        "n|idx|public.role_permissions_role_id_idx",
+        "e|idx|public.role_permissions_role_id_idx",
+        "n|rel|public.role_permissions_role_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "n|col|public.role_permissions.role_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "roles",
+        "roles_tenant_key_idx"
+      ],
+      "writes": [
+        "s|idx|public.roles_tenant_key_idx",
+        "n|idx|public.roles_tenant_key_idx",
+        "e|idx|public.roles_tenant_key_idx",
+        "n|rel|public.roles_tenant_key_idx"
+      ],
+      "reads": [
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "n|col|public.roles.tenant_id",
+        "n|col|public.roles.key"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "roles",
+        "roles_tenant_name_idx"
+      ],
+      "writes": [
+        "s|idx|public.roles_tenant_name_idx",
+        "n|idx|public.roles_tenant_name_idx",
+        "e|idx|public.roles_tenant_name_idx",
+        "n|rel|public.roles_tenant_name_idx"
+      ],
+      "reads": [
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "n|col|public.roles.tenant_id",
+        "n|col|public.roles.name"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "user_roles",
+        "user_roles_role_live_idx"
+      ],
+      "writes": [
+        "s|idx|public.user_roles_role_live_idx",
+        "n|idx|public.user_roles_role_live_idx",
+        "e|idx|public.user_roles_role_live_idx",
+        "n|rel|public.user_roles_role_live_idx"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "n|col|public.user_roles.role_id",
+        "n|col|public.user_roles.tenant_id",
+        "n|col|public.user_roles.expires_at"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_unit_closure",
+        "organizational_unit_closure_descendant_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_unit_closure_descendant_idx",
+        "n|idx|public.organizational_unit_closure_descendant_idx",
+        "e|idx|public.organizational_unit_closure_descendant_idx",
+        "n|rel|public.organizational_unit_closure_descendant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "n|col|public.organizational_unit_closure.descendant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_unit_memberships",
+        "organizational_unit_memberships_open_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_unit_memberships_open_idx",
+        "n|idx|public.organizational_unit_memberships_open_idx",
+        "e|idx|public.organizational_unit_memberships_open_idx",
+        "n|rel|public.organizational_unit_memberships_open_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "n|col|public.organizational_unit_memberships.tenant_id",
+        "n|col|public.organizational_unit_memberships.unit_id",
+        "n|col|public.organizational_unit_memberships.user_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_unit_memberships",
+        "organizational_unit_memberships_user_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_unit_memberships_user_idx",
+        "n|idx|public.organizational_unit_memberships_user_idx",
+        "e|idx|public.organizational_unit_memberships_user_idx",
+        "n|rel|public.organizational_unit_memberships_user_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "n|col|public.organizational_unit_memberships.user_id",
+        "n|col|public.organizational_unit_memberships.valid_from"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_unit_memberships",
+        "organizational_unit_memberships_unit_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_unit_memberships_unit_idx",
+        "n|idx|public.organizational_unit_memberships_unit_idx",
+        "e|idx|public.organizational_unit_memberships_unit_idx",
+        "n|rel|public.organizational_unit_memberships_unit_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "n|col|public.organizational_unit_memberships.unit_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_units",
+        "organizational_units_parent_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_units_parent_id_idx",
+        "n|idx|public.organizational_units_parent_id_idx",
+        "e|idx|public.organizational_units_parent_id_idx",
+        "n|rel|public.organizational_units_parent_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|col|public.organizational_units.parent_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_units",
+        "organizational_units_sibling_name_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_units_sibling_name_idx",
+        "n|idx|public.organizational_units_sibling_name_idx",
+        "e|idx|public.organizational_units_sibling_name_idx",
+        "n|rel|public.organizational_units_sibling_name_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|col|public.organizational_units.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|fk|public.api_client_roles.api_client_roles_tenant_id_tenants_id_fkey",
+        "n|fk|public.api_client_roles.api_client_roles_tenant_id_tenants_id_fkey",
+        "e|fk|public.api_client_roles.api_client_roles_tenant_id_tenants_id_fkey",
+        "n|con|public.api_client_roles.api_client_roles_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.api_client_roles.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|fk|public.api_client_roles.api_client_roles_client_fk",
+        "n|fk|public.api_client_roles.api_client_roles_client_fk",
+        "e|fk|public.api_client_roles.api_client_roles_client_fk",
+        "n|con|public.api_client_roles.api_client_roles_client_fk"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "n|tbl|public.api_clients",
+        "n|sch|public",
+        "n|col|public.api_client_roles.tenant_id",
+        "n|col|public.api_client_roles.client_id",
+        "n|col|public.api_clients.tenant_id",
+        "n|col|public.api_clients.id",
+        "e|uniqueness|public.api_clients.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|fk|public.api_client_roles.api_client_roles_role_fk",
+        "n|fk|public.api_client_roles.api_client_roles_role_fk",
+        "e|fk|public.api_client_roles.api_client_roles_role_fk",
+        "n|con|public.api_client_roles.api_client_roles_role_fk"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "n|col|public.api_client_roles.tenant_id",
+        "n|col|public.api_client_roles.role_id",
+        "n|col|public.roles.tenant_id",
+        "n|col|public.roles.id",
+        "e|uniqueness|public.roles.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "role_permissions"
+      ],
+      "writes": [
+        "s|fk|public.role_permissions.role_permissions_tenant_id_tenants_id_fkey",
+        "n|fk|public.role_permissions.role_permissions_tenant_id_tenants_id_fkey",
+        "e|fk|public.role_permissions.role_permissions_tenant_id_tenants_id_fkey",
+        "n|con|public.role_permissions.role_permissions_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.role_permissions.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "role_permissions"
+      ],
+      "writes": [
+        "s|fk|public.role_permissions.role_permissions_role_fk",
+        "n|fk|public.role_permissions.role_permissions_role_fk",
+        "e|fk|public.role_permissions.role_permissions_role_fk",
+        "n|con|public.role_permissions.role_permissions_role_fk"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "n|col|public.role_permissions.tenant_id",
+        "n|col|public.role_permissions.role_id",
+        "n|col|public.roles.tenant_id",
+        "n|col|public.roles.id",
+        "e|uniqueness|public.roles.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "roles"
+      ],
+      "writes": [
+        "s|fk|public.roles.roles_tenant_id_tenants_id_fkey",
+        "n|fk|public.roles.roles_tenant_id_tenants_id_fkey",
+        "e|fk|public.roles.roles_tenant_id_tenants_id_fkey",
+        "n|con|public.roles.roles_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.roles.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|fk|public.user_roles.user_roles_tenant_id_tenants_id_fkey",
+        "n|fk|public.user_roles.user_roles_tenant_id_tenants_id_fkey",
+        "e|fk|public.user_roles.user_roles_tenant_id_tenants_id_fkey",
+        "n|con|public.user_roles.user_roles_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.user_roles.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|fk|public.user_roles.user_roles_membership_fk",
+        "n|fk|public.user_roles.user_roles_membership_fk",
+        "e|fk|public.user_roles.user_roles_membership_fk",
+        "n|con|public.user_roles.user_roles_membership_fk"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "n|tbl|public.memberships",
+        "n|sch|public",
+        "n|col|public.user_roles.tenant_id",
+        "n|col|public.user_roles.user_id",
+        "n|col|public.memberships.tenant_id",
+        "n|col|public.memberships.user_id",
+        "e|uniqueness|public.memberships.tenant_id.user_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|fk|public.user_roles.user_roles_role_fk",
+        "n|fk|public.user_roles.user_roles_role_fk",
+        "e|fk|public.user_roles.user_roles_role_fk",
+        "n|con|public.user_roles.user_roles_role_fk"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "n|col|public.user_roles.tenant_id",
+        "n|col|public.user_roles.role_id",
+        "n|col|public.roles.tenant_id",
+        "n|col|public.roles.id",
+        "e|uniqueness|public.roles.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|fk|public.organizational_unit_closure.organizational_unit_closure_tenant_id_tenants_id_fkey",
+        "n|fk|public.organizational_unit_closure.organizational_unit_closure_tenant_id_tenants_id_fkey",
+        "e|fk|public.organizational_unit_closure.organizational_unit_closure_tenant_id_tenants_id_fkey",
+        "n|con|public.organizational_unit_closure.organizational_unit_closure_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.organizational_unit_closure.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|fk|public.organizational_unit_closure.organizational_unit_closure_ancestor_fk",
+        "n|fk|public.organizational_unit_closure.organizational_unit_closure_ancestor_fk",
+        "e|fk|public.organizational_unit_closure.organizational_unit_closure_ancestor_fk",
+        "n|con|public.organizational_unit_closure.organizational_unit_closure_ancestor_fk"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|col|public.organizational_unit_closure.tenant_id",
+        "n|col|public.organizational_unit_closure.ancestor_id",
+        "n|col|public.organizational_units.tenant_id",
+        "n|col|public.organizational_units.id",
+        "e|uniqueness|public.organizational_units.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|fk|public.organizational_unit_closure.organizational_unit_closure_descendant_fk",
+        "n|fk|public.organizational_unit_closure.organizational_unit_closure_descendant_fk",
+        "e|fk|public.organizational_unit_closure.organizational_unit_closure_descendant_fk",
+        "n|con|public.organizational_unit_closure.organizational_unit_closure_descendant_fk"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|col|public.organizational_unit_closure.tenant_id",
+        "n|col|public.organizational_unit_closure.descendant_id",
+        "n|col|public.organizational_units.tenant_id",
+        "n|col|public.organizational_units.id",
+        "e|uniqueness|public.organizational_units.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|fk|public.organizational_unit_memberships.organizational_unit_memberships_tenant_id_tenants_id_fkey",
+        "n|fk|public.organizational_unit_memberships.organizational_unit_memberships_tenant_id_tenants_id_fkey",
+        "e|fk|public.organizational_unit_memberships.organizational_unit_memberships_tenant_id_tenants_id_fkey",
+        "n|con|public.organizational_unit_memberships.organizational_unit_memberships_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.organizational_unit_memberships.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|fk|public.organizational_unit_memberships.organizational_unit_memberships_membership_fk",
+        "n|fk|public.organizational_unit_memberships.organizational_unit_memberships_membership_fk",
+        "e|fk|public.organizational_unit_memberships.organizational_unit_memberships_membership_fk",
+        "n|con|public.organizational_unit_memberships.organizational_unit_memberships_membership_fk"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "n|tbl|public.memberships",
+        "n|sch|public",
+        "n|col|public.organizational_unit_memberships.tenant_id",
+        "n|col|public.organizational_unit_memberships.user_id",
+        "n|col|public.memberships.tenant_id",
+        "n|col|public.memberships.user_id",
+        "e|uniqueness|public.memberships.tenant_id.user_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|fk|public.organizational_unit_memberships.organizational_unit_memberships_unit_fk",
+        "n|fk|public.organizational_unit_memberships.organizational_unit_memberships_unit_fk",
+        "e|fk|public.organizational_unit_memberships.organizational_unit_memberships_unit_fk",
+        "n|con|public.organizational_unit_memberships.organizational_unit_memberships_unit_fk"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|col|public.organizational_unit_memberships.tenant_id",
+        "n|col|public.organizational_unit_memberships.unit_id",
+        "n|col|public.organizational_units.tenant_id",
+        "n|col|public.organizational_units.id",
+        "e|uniqueness|public.organizational_units.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_units"
+      ],
+      "writes": [
+        "s|fk|public.organizational_units.organizational_units_tenant_id_tenants_id_fkey",
+        "n|fk|public.organizational_units.organizational_units_tenant_id_tenants_id_fkey",
+        "e|fk|public.organizational_units.organizational_units_tenant_id_tenants_id_fkey",
+        "n|con|public.organizational_units.organizational_units_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.organizational_units.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_units"
+      ],
+      "writes": [
+        "s|fk|public.organizational_units.organizational_units_parent_fk",
+        "n|fk|public.organizational_units.organizational_units_parent_fk",
+        "e|fk|public.organizational_units.organizational_units_parent_fk",
+        "n|con|public.organizational_units.organizational_units_parent_fk"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "n|col|public.organizational_units.tenant_id",
+        "n|col|public.organizational_units.parent_id",
+        "n|col|public.organizational_units.tenant_id",
+        "n|col|public.organizational_units.id",
+        "e|uniqueness|public.organizational_units.id.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|pol|public.api_client_roles.api_client_roles_tenant_select",
+        "n|pol|public.api_client_roles.api_client_roles_tenant_select",
+        "e|pol|public.api_client_roles.api_client_roles_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "e|rls|public.api_client_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|pol|public.api_client_roles.api_client_roles_tenant_insert",
+        "n|pol|public.api_client_roles.api_client_roles_tenant_insert",
+        "e|pol|public.api_client_roles.api_client_roles_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "e|rls|public.api_client_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|pol|public.api_client_roles.api_client_roles_tenant_update",
+        "n|pol|public.api_client_roles.api_client_roles_tenant_update",
+        "e|pol|public.api_client_roles.api_client_roles_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "e|rls|public.api_client_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "api_client_roles"
+      ],
+      "writes": [
+        "s|pol|public.api_client_roles.api_client_roles_tenant_delete",
+        "n|pol|public.api_client_roles.api_client_roles_tenant_delete",
+        "e|pol|public.api_client_roles.api_client_roles_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "e|rls|public.api_client_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "role_permissions"
+      ],
+      "writes": [
+        "s|pol|public.role_permissions.role_permissions_tenant_select",
+        "n|pol|public.role_permissions.role_permissions_tenant_select",
+        "e|pol|public.role_permissions.role_permissions_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "e|rls|public.role_permissions"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "role_permissions"
+      ],
+      "writes": [
+        "s|pol|public.role_permissions.role_permissions_tenant_insert",
+        "n|pol|public.role_permissions.role_permissions_tenant_insert",
+        "e|pol|public.role_permissions.role_permissions_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "e|rls|public.role_permissions"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "role_permissions"
+      ],
+      "writes": [
+        "s|pol|public.role_permissions.role_permissions_tenant_update",
+        "n|pol|public.role_permissions.role_permissions_tenant_update",
+        "e|pol|public.role_permissions.role_permissions_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "e|rls|public.role_permissions"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "role_permissions"
+      ],
+      "writes": [
+        "s|pol|public.role_permissions.role_permissions_tenant_delete",
+        "n|pol|public.role_permissions.role_permissions_tenant_delete",
+        "e|pol|public.role_permissions.role_permissions_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "e|rls|public.role_permissions"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "roles"
+      ],
+      "writes": [
+        "s|pol|public.roles.roles_tenant_select",
+        "n|pol|public.roles.roles_tenant_select",
+        "e|pol|public.roles.roles_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "e|rls|public.roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "roles"
+      ],
+      "writes": [
+        "s|pol|public.roles.roles_tenant_insert",
+        "n|pol|public.roles.roles_tenant_insert",
+        "e|pol|public.roles.roles_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "e|rls|public.roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "roles"
+      ],
+      "writes": [
+        "s|pol|public.roles.roles_tenant_update",
+        "n|pol|public.roles.roles_tenant_update",
+        "e|pol|public.roles.roles_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "e|rls|public.roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "roles"
+      ],
+      "writes": [
+        "s|pol|public.roles.roles_tenant_delete",
+        "n|pol|public.roles.roles_tenant_delete",
+        "e|pol|public.roles.roles_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.roles",
+        "n|sch|public",
+        "e|rls|public.roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|pol|public.user_roles.user_roles_tenant_select",
+        "n|pol|public.user_roles.user_roles_tenant_select",
+        "e|pol|public.user_roles.user_roles_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "e|rls|public.user_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|pol|public.user_roles.user_roles_tenant_insert",
+        "n|pol|public.user_roles.user_roles_tenant_insert",
+        "e|pol|public.user_roles.user_roles_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "e|rls|public.user_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|pol|public.user_roles.user_roles_tenant_update",
+        "n|pol|public.user_roles.user_roles_tenant_update",
+        "e|pol|public.user_roles.user_roles_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "e|rls|public.user_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "user_roles"
+      ],
+      "writes": [
+        "s|pol|public.user_roles.user_roles_tenant_delete",
+        "n|pol|public.user_roles.user_roles_tenant_delete",
+        "e|pol|public.user_roles.user_roles_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "e|rls|public.user_roles"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_select",
+        "n|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_select",
+        "e|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_closure"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_insert",
+        "n|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_insert",
+        "e|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_closure"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_update",
+        "n|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_update",
+        "e|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_closure"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_closure"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_delete",
+        "n|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_delete",
+        "e|pol|public.organizational_unit_closure.organizational_unit_closure_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_closure"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_select",
+        "n|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_select",
+        "e|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_memberships"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_insert",
+        "n|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_insert",
+        "e|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_memberships"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_update",
+        "n|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_update",
+        "e|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_memberships"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_unit_memberships"
+      ],
+      "writes": [
+        "s|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_delete",
+        "n|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_delete",
+        "e|pol|public.organizational_unit_memberships.organizational_unit_memberships_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "e|rls|public.organizational_unit_memberships"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_units"
+      ],
+      "writes": [
+        "s|pol|public.organizational_units.organizational_units_tenant_select",
+        "n|pol|public.organizational_units.organizational_units_tenant_select",
+        "e|pol|public.organizational_units.organizational_units_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "e|rls|public.organizational_units"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_units"
+      ],
+      "writes": [
+        "s|pol|public.organizational_units.organizational_units_tenant_insert",
+        "n|pol|public.organizational_units.organizational_units_tenant_insert",
+        "e|pol|public.organizational_units.organizational_units_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "e|rls|public.organizational_units"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_units"
+      ],
+      "writes": [
+        "s|pol|public.organizational_units.organizational_units_tenant_update",
+        "n|pol|public.organizational_units.organizational_units_tenant_update",
+        "e|pol|public.organizational_units.organizational_units_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "e|rls|public.organizational_units"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "organizational_units"
+      ],
+      "writes": [
+        "s|pol|public.organizational_units.organizational_units_tenant_delete",
+        "n|pol|public.organizational_units.organizational_units_tenant_delete",
+        "e|pol|public.organizational_units.organizational_units_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_units",
+        "n|sch|public",
+        "e|rls|public.organizational_units"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "api_client_roles",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "role_permissions",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "roles",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "user_roles",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "organizational_unit_closure",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "organizational_unit_memberships",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "organizational_units",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "client_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "role_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "expires_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "subject",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "action",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "conditions",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'[]'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "fields",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "key",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "name",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "description",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "''",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "system",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "created_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "updated_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "role_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "expires_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "ancestor_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "descendant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "depth",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "unit_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "user_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "role",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'member'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "valid_from",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "valid_to",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "created_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "updated_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "type",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'team'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "name",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "parent_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "created_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "updated_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_role_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "role_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_role_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "role_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_key_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "key",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_name_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "name",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_role_live_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "role_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "expires_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_descendant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "descendant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_open_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "unit_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "user_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": "(\"valid_to\" is null)",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_user_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "user_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "valid_from",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_unit_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "unit_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_parent_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "parent_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_sibling_name_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "coalesce(\"parent_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
+            "isExpression": true,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "lower(\"name\")",
+            "isExpression": true,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_client_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "client_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "api_clients",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_role_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "role_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "roles",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_role_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "role_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "roles",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_membership_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "user_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "memberships",
+        "columnsTo": [
+          "tenant_id",
+          "user_id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_role_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "role_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "roles",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_ancestor_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "ancestor_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "organizational_units",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_descendant_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "descendant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "organizational_units",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_membership_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "user_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "memberships",
+        "columnsTo": [
+          "tenant_id",
+          "user_id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_unit_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "unit_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "organizational_units",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_parent_fk",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "parent_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "organizational_units",
+        "columnsTo": [
+          "tenant_id",
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_pkey",
+        "columns": [
+          "client_id",
+          "role_id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_pkey",
+        "columns": [
+          "user_id",
+          "role_id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_pkey",
+        "columns": [
+          "ancestor_id",
+          "descendant_id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_id_id_key",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "id"
+        ],
+        "nullsNotDistinct": false,
+        "entityType": "uniques"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_tenant_id_id_key",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "id"
+        ],
+        "nullsNotDistinct": false,
+        "entityType": "uniques"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_role_check",
+        "value": "\"role\" in ('member', 'lead')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_period_check",
+        "value": "\"valid_to\" is null or \"valid_to\" > \"valid_from\"",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_type_check",
+        "value": "\"type\" in ('division', 'department', 'team')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"api_client_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"api_client_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"api_client_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"api_client_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"api_client_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"role_permissions\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"role_permissions\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"role_permissions\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"role_permissions\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"role_permissions\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "roles",
+        "name": "roles_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"user_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"user_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"user_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"user_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"user_roles\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_unit_closure\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"organizational_unit_closure\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_unit_closure\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"organizational_unit_closure\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_unit_closure\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_unit_memberships\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"organizational_unit_memberships\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_unit_memberships\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"organizational_unit_memberships\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_unit_memberships\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_units\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"organizational_units\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_units\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"organizational_units\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_units",
+        "name": "organizational_units_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"organizational_units\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    }
+  ]
+}

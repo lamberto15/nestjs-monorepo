@@ -1,0 +1,9 @@
+{
+  "captcha": {
+    "required": "Confirm you are not a robot: solve the challenge and try again.",
+    "attestationInvalid": "The app attestation was refused: ask for a new challenge and try again.",
+    "invalid": "The challenge was not accepted: solve it again.",
+    "unavailable": "The challenge cannot be checked right now: try again in a minute.",
+    "degraded": "Too many attempts while the challenge cannot be checked: try again later."
+  }
+}

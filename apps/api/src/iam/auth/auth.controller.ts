@@ -17,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { minutes } from '@nestjs/throttler';
 import { z } from 'zod';
+import { Captcha } from '../captcha/captcha.decorator.js';
 import { AddressThrottle } from './address-throttle.guard.js';
 import { DuringMfaEnrollment } from './mfa-enrollment.guard.js';
 import { DuringOnboarding } from './onboarding.js';
@@ -60,6 +61,7 @@ export class AuthController {
     ttl: minutes(15),
     perEmail: true,
   })
+  @Captcha({ action: 'sign-in', count: 'failures' })
   @Post('sign-in')
   @HttpCode(200)
   @ApiOperation({
