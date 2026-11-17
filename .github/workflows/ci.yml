@@ -1,0 +1,219 @@
+# The checks every pull request and main must pass. It validates only:
+# publishing images and deploying are the adopting project's own workflows
+# (AGENTS.md, "No bundled operations"). docs/ci.md explains each job.
+#
+# Third-party actions are pinned by commit SHA (the comment names the
+# release); Dependabot proposes newer ones.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # New advisories appear without a commit: scan the dependencies and the
+  # image once a night.
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push to a pull request replaces its run; a run on main finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The images of compose.dev.yaml, read from it: CI's PostgreSQL and Redis
+  # cannot drift from development's, and Dependabot's updates of that file
+  # reach CI too.
+  images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      postgres: ${{ steps.read.outputs.postgres }}
+      redis: ${{ steps.read.outputs.redis }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: read
+        run: |
+          for service in postgres redis; do
+            image=$(yq ".services.$service.image" compose.dev.yaml)
+            if [ -z "$image" ] || [ "$image" = null ]; then
+              echo "::error file=compose.dev.yaml::services.$service.image is missing"
+              exit 1
+            fi
+            echo "$service: $image"
+            echo "$service=$image" >> "$GITHUB_OUTPUT"
+          done
+
+  # Build, lint, unit tests and the checks that need no service.
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
+        with:
+          runtime: node@26
+          cache: true
+      - uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm test
+      # env.example must be what the modules' environment schemas generate
+      # (it builds the API first; Turborepo replays the build from its cache).
+      - run: pnpm env:check
+      - run: pnpm test:tools
+      # The committed migrations are consistent (drizzle-kit check) and match
+      # the tables: generating finds nothing to write. The test fixtures keep
+      # migrations of their own.
+      - name: Migrations are consistent and match the tables
+        run: |
+          pnpm --filter api exec drizzle-kit check
+          pnpm --filter api db:generate
+          pnpm --filter api db:generate:fixtures
+          if [ -n "$(git status --porcelain -- apps/api)" ]; then
+            echo '::error::The tables changed without a migration: run pnpm db:generate (and db:generate:fixtures) and commit what it writes.'
+            git status --porcelain -- apps/api
+            git diff -- apps/api
+            exit 1
+          fi
+
+  # The e2e tests on real PostgreSQL and Redis. Their harness
+  # (apps/api/test/global-setup.ts) needs a role that may create databases and
+  # roles: the services' superuser, as compose.dev.yaml's.
+  e2e:
+    needs: images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: ${{ needs.images.outputs.postgres }}
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: ${{ needs.images.outputs.redis }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://app:app@127.0.0.1:5432/app
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
+        with:
+          runtime: node@26
+          cache: true
+      - uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+      - run: pnpm test:e2e
+
+  # No high or critical advisory in a production dependency; no secret in the
+  # repository; no high or critical misconfiguration in the Dockerfile.
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pnpm (the audit reads the lockfile only)
+        uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
+        with:
+          install: false
+      - run: pnpm audit --prod --audit-level high
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          # Trivy's own release (github.com/aquasecurity/trivy); Dependabot does not raise it.
+          version: v0.76.2
+          cache: true
+      - name: No secrets in the repository
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          skip-setup-trivy: true
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          exit-code: '1'
+          cache-dir: ${{ runner.temp }}/trivy
+      - name: No high or critical misconfigurations
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          skip-setup-trivy: true
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          cache-dir: ${{ runner.temp }}/trivy
+
+  # The production image builds and has no fixable high or critical
+  # vulnerability (OS packages and node_modules). It is not pushed.
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # The runner is thrown away: removing the builder only costs time.
+          cleanup: false
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: app:ci
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          # Main and the nightly run write the cache; pull requests only read it.
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.2
+          cache: true
+      - name: No fixable high or critical vulnerabilities in the image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          skip-setup-trivy: true
+          image-ref: app:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          cache-dir: ${{ runner.temp }}/trivy
+
+  # The one check to require in the branch protection rules.
+  ci:
+    if: ${{ always() }}
+    needs: [verify, e2e, security, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          case " $RESULTS " in *' failure '*|*' cancelled '*|*' skipped '*) exit 1;; esac

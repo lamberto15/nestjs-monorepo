@@ -1,0 +1,49 @@
+# The newest versions as reviewed pull requests, instead of floating tags.
+version: 2
+updates:
+  - package-ecosystem: npm # the pnpm workspace (apps/*, packages/*) and its lockfile
+    directory: /
+    schedule:
+      interval: weekly
+    # Every dependency is an exact version (pnpm-workspace.yaml saveExact):
+    # raise the pinned version itself, never widen it to a range.
+    versioning-strategy: increase
+    groups:
+      nestjs:
+        patterns: ['@nestjs/*']
+      # Drizzle's ORM and its kit share one release line.
+      drizzle:
+        patterns: ['drizzle-orm', 'drizzle-kit']
+      # vitest and its plugins share one version.
+      vitest:
+        patterns: ['vitest', '@vitest/*']
+      # The OpenTelemetry packages version together.
+      opentelemetry:
+        patterns: ['@opentelemetry/*']
+      # Everything else that is not a major, in one pull request a week.
+      minor-and-patch:
+        update-types: ['minor', 'patch']
+    ignore:
+      # @types/node follows the Node.js major the app runs on (engines, the
+      # Dockerfile's node image): raise it with them, by hand.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: docker # the Dockerfile at the root
+    directory: /
+    schedule:
+      interval: weekly
+    # Node.js is a coordinated platform choice: the image, package.json
+    # engines and CI must agree. Keep receiving Node 26 patch updates; move
+    # to 28 only in a dedicated pull request.
+    ignore:
+      - dependency-name: node
+        versions: ['>=27.0.0']
+  # compose.dev.yaml (and so CI's PostgreSQL and Redis).
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
