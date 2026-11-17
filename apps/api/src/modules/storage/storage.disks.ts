@@ -8,6 +8,7 @@ import {
   type StorageModuleOptions,
 } from '@nestjs/storage';
 import type { httpConfig } from '../../core/http/http.config.js';
+import type { Secrets } from '../../core/secrets/secrets.service.js';
 import type { storageConfig } from './storage.config.js';
 
 /** The route that serves the local disk's signed URLs (FilesController). */
@@ -20,15 +21,24 @@ export const FILES_ROUTE = 'files';
  * serves them at /files; on S3 they point at the bucket. Add disks here (a
  * public one behind a CDN, say) and inject them with `@InjectDisk('name')`.
  */
-export function createStorageOptions(
+export async function createStorageOptions(
   config: ConfigType<typeof storageConfig>,
   http: ConfigType<typeof httpConfig>,
-): StorageModuleOptions {
+  secrets?: Secrets,
+): Promise<StorageModuleOptions> {
+  // STORAGE_SIGNING_KEYS when set. Otherwise one key made once and kept in
+  // the database, so every instance honours the others' links; without
+  // SecretsModule, a key of this process.
+  const generate = () => randomBytes(32).toString('base64url');
   const signedUrls = {
     baseUrl: `${http.appUrl}/${FILES_ROUTE}`,
     keys: config.signingKeys.length
       ? config.signingKeys
-      : [randomBytes(32).toString('base64url')],
+      : [
+          secrets
+            ? await secrets.loadOrCreate('STORAGE_SIGNING_KEYS', generate)
+            : generate(),
+        ],
   };
   let files: StorageDisk;
   switch (config.driver) {

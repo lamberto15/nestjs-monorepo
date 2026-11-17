@@ -11,6 +11,12 @@ written only in its scope. Modules never know how the wall is built.
   `tenantReference()` (composite, so it can't point into another tenant),
   and the table it points at is declared `{ referenced: true }`. Then
   `pnpm db:generate`. Inserts leave `tenantId` out: it comes from the scope.
+- **Tables that name a tenant but are not walled:** `globalTable()` for a
+  table read across tenants (memberships, API keys: looked up before the
+  tenant is known); its `tenantId` is required and never comes from the
+  scope. `tenantTable(..., { nullRows: 'outside' })` for a tenant table
+  with rows of no tenant (the audit log): a tenant sees its own, work outside
+  every tenant sees the rows of none.
 - **Queries:** `@InjectTransaction() db: Database`, as core/database says,
   with no tenant filter: the database binds every query to the scope.
 - **`Tenancy`** (global): `tenantId()` (the current one, or
@@ -25,7 +31,10 @@ written only in its scope. Modules never know how the wall is built.
 ## How it works (row-level security)
 
 - Every tenant table has four policies (`tenant_id` equals the
-  transaction-local `app.tenant_id`), row-level security enabled and forced.
+  transaction-local `app.tenant_id`; with `nullRows`, or both are null),
+  row-level security enabled and forced. A global table has one
+  `<table>_global` policy. The migrate-time check tells them apart by that
+  policy and by whether `tenant_id` is required.
 - The app's pool (`row-level-security.ts`, used by DatabaseModule) sends
   every `begin` with `set_config('app.tenant_id', <scope's tenant or ''>,
 true)`; a query outside a transaction in a tenant's scope gets a
@@ -65,7 +74,8 @@ URLs are core/database's.
 
 `tenancy.e2e-spec.ts` (the wall in SQL and through the app, pooled
 connections, requests, work over tenants, the migrate-time check),
-`tenant-job.e2e-spec.ts`, `single-tenant.e2e-spec.ts`; fixtures:
+`tenant-job.e2e-spec.ts`, `single-tenant.e2e-spec.ts`, `tenant-tables.e2e-spec.ts`
+(global and nullRows tables); fixtures:
 `test/fixtures/tenant-items*.ts`.
 
 Not removable: the database's pool is this module's.

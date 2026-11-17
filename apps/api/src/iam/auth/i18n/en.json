@@ -1,0 +1,13 @@
+{
+  "auth": {
+    "invalidCredentials": "Invalid email or password.",
+    "emailUnverified": "Confirm your email address first: open the link we sent you.",
+    "clientIpNotAllowed": "This API client may not be used from this address.",
+    "featureOff": "Not available here: {name} is off in this deployment.",
+    "operatorRequired": "Only the operators of this deployment may do this: it reaches past your tenant.",
+    "notWhileImpersonating": "Not while acting as another user.",
+    "reauthenticationRequired": "Sign in again to do this: your last sign-in is too old.",
+    "mfaEnrollmentRequired": "Your organization requires two-factor sign-in: set it up first.",
+    "onboardingRequired": "Replace the placeholder email address and the generated password first."
+  }
+}

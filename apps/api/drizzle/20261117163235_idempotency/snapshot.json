@@ -1,0 +1,194 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "f767d909-b2eb-43a7-944c-470ceb785747",
+  "prevIds": [
+    "6429f1e3-ccf5-4934-8405-404339fe2428"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "idempotency_keys"
+      ],
+      "writes": [
+        "s|tbl|public.idempotency_keys",
+        "n|tbl|public.idempotency_keys",
+        "e|tbl|public.idempotency_keys",
+        "n|rel|public.idempotency_keys",
+        "n|type|public.idempotency_keys",
+        "n|rel|public.idempotency_keys_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "idempotency_keys",
+        "idempotency_keys_expires_at_idx"
+      ],
+      "writes": [
+        "s|idx|public.idempotency_keys_expires_at_idx",
+        "n|idx|public.idempotency_keys_expires_at_idx",
+        "e|idx|public.idempotency_keys_expires_at_idx",
+        "n|rel|public.idempotency_keys_expires_at_idx"
+      ],
+      "reads": [
+        "n|tbl|public.idempotency_keys",
+        "n|sch|public",
+        "n|col|public.idempotency_keys.expires_at"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "idempotency_keys",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "key_hash",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "key",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "fingerprint",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "owner",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "response",
+        "type": "json",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "expires_at",
+        "type": "bigint",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "idempotency_keys_expires_at_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "expires_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "idempotency_keys",
+        "name": "idempotency_keys_pkey",
+        "columns": [
+          "key_hash"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    }
+  ]
+}

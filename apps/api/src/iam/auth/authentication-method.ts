@@ -1,0 +1,212 @@
+import { randomUUID } from 'node:crypto';
+import type { JwtClaims, SessionRecord } from '@nestjs/authentication';
+
+/**
+ * How a principal proved who they are. Only `password` is signed in by
+ * this module; the others are named here so the modules that add them
+ * (magic links, OIDC, SSO as `sso:<connection>`, passkeys) record their
+ * sign-ins the same way. `impersonation`: a session an administrator acts
+ * in (nobody signed in to it).
+ */
+export const SIGN_IN_METHODS = [
+  'password',
+  'magic-link',
+  'oidc',
+  'sso',
+  'passkey',
+  'impersonation',
+] as const;
+export type SignInMethod = (typeof SIGN_IN_METHODS)[number];
+
+/**
+ * What a session's metadata (the package's `SessionRecord.metadata`, next to
+ * `userAgent` and `ip`) records about its authentication. Flat keys: the
+ * package merges a sign-in's `metadata` over `session.metadata(request)`
+ * one level deep.
+ */
+export interface AuthenticationMetadata {
+  /** How the session was created. */
+  method?: SignInMethod;
+  /** The OIDC provider (`google`) or the SSO connection. */
+  provider?: string;
+  /** When the user last proved who they are here: the sign-in, or a re-authentication (ISO 8601). */
+  authenticatedAt?: string;
+}
+
+export const AUTHENTICATION_KEYS = [
+  'method',
+  'provider',
+  'authenticatedAt',
+] as const satisfies readonly (keyof AuthenticationMetadata)[];
+
+/** The package's method string (`password`, `magic-link`, `oidc:google`, `sso:acme`) as metadata. */
+export function methodMetadata(
+  method: string,
+): Pick<AuthenticationMetadata, 'method' | 'provider'> {
+  const [name, ...rest] = method.split(':');
+  const provider = rest.join(':');
+  return {
+    method: name as SignInMethod,
+    ...(provider && { provider }),
+  };
+}
+
+/**
+ * `SignInService.signIn()`'s options for a sign-in by `method`: the event's method, and the session's.
+ * @public
+ */
+export const signInOptions = (method: string) => ({
+  method,
+  metadata: methodMetadata(method),
+});
+
+/**
+ * The claims of a token client's sign-in, fixed for its refresh family: how
+ * (RFC 8176 `amr`: `pwd` a password, `pop` a passkey, as proof of
+ * possession of a key, since the package drops `hwk` (it means a second
+ * factor there); the package adds `mfa` itself), when (OpenID Connect
+ * `auth_time`, epoch seconds), the tenant the tokens act in (`tid`,
+ * docs/tenancy.md; JwtAuth checks the membership on every request), and
+ * the family's own id (`sid`, the registered "session ID" claim): the
+ * package keeps its family id to itself (the access token doesn't carry
+ * it), so revoking a family finds the realtime connections its access
+ * tokens opened by this one (DrizzleAuthenticationStore's
+ * `auth.token-session-ended` event). And,
+ * for a sign-in `amr` has no value for (a provider, SSO, a magic link: a
+ * native app's handoff), the package's method string (`method`:
+ * `oidc:google`, `sso:<connection>`), which "SSO required" reads. And the
+ * device it signed in from (`dev`: `deviceLabel()`, "NestJSMobile on iOS"),
+ * for the sessions list: a family keeps no request of its own.
+ */
+export const tokenClaims = (
+  amr: string[],
+  at = new Date(),
+  tenantId: string | null = null,
+  {
+    sid = randomUUID(),
+    method,
+    device,
+  }: { sid?: string; method?: string; device?: string | null } = {},
+) => ({
+  ...(amr.length > 0 && { amr }),
+  auth_time: Math.floor(at.getTime() / 1000),
+  ...(tenantId && { tid: tenantId }),
+  sid,
+  ...(method && { method }),
+  ...(device && { dev: device }),
+});
+
+/** The metadata without its authentication keys, and those keys apart. */
+export function splitAuthentication(
+  metadata: Record<string, unknown> | undefined,
+) {
+  const rest: Record<string, unknown> = { ...metadata };
+  const authentication: AuthenticationMetadata = {};
+  for (const key of AUTHENTICATION_KEYS) {
+    if (rest[key] !== undefined) {
+      (authentication as Record<string, unknown>)[key] = rest[key];
+    }
+    delete rest[key];
+  }
+  return { rest, authentication };
+}
+
+/** How the credential of a request was authenticated: a cookie session or an access token. */
+export interface CredentialAuthentication {
+  via: 'session' | 'token';
+  method: SignInMethod | null;
+  provider: string | null;
+  /** A second factor was verified. */
+  mfa: boolean;
+  /** When the user last proved who they are; null: unknown (counts as long ago). */
+  authenticatedAt: Date | null;
+}
+
+/** Whether `session` is a browser session's record (not an access token's claims). */
+export const isSessionRecord = (session: unknown): session is SessionRecord =>
+  typeof session === 'object' &&
+  session !== null &&
+  typeof (session as SessionRecord).userId === 'string' &&
+  (session as SessionRecord).createdAt instanceof Date;
+
+/** A valid date from an ISO string or epoch seconds, else null. */
+function dateOf(value: unknown, unit: 'iso' | 'seconds') {
+  const at =
+    unit === 'iso'
+      ? typeof value === 'string'
+        ? Date.parse(value)
+        : Number.NaN
+      : typeof value === 'number'
+        ? value * 1000
+        : Number.NaN;
+  return Number.isFinite(at) ? new Date(at) : null;
+}
+
+/**
+ * The authentication behind `request.session`: a session's metadata, or an
+ * access token's `amr` (RFC 8176) and `auth_time` (OpenID Connect) claims.
+ * `null` for anything else (an API key's session).
+ */
+export function authenticationOf(
+  session: unknown,
+): CredentialAuthentication | null {
+  if (isSessionRecord(session)) {
+    const metadata = (session.metadata ?? {}) as AuthenticationMetadata;
+    return {
+      via: 'session',
+      method: SIGN_IN_METHODS.includes(metadata.method!)
+        ? metadata.method!
+        : null,
+      provider: metadata.provider ?? null,
+      mfa: session.mfa === 'verified',
+      authenticatedAt: dateOf(metadata.authenticatedAt, 'iso'),
+    };
+  }
+  if (
+    typeof session === 'object' &&
+    session !== null &&
+    typeof (session as JwtClaims).sub === 'string'
+  ) {
+    const claims = session as JwtClaims;
+    const amr = Array.isArray(claims.amr) ? (claims.amr as unknown[]) : [];
+    const named =
+      typeof claims.method === 'string' ? methodMetadata(claims.method) : {};
+    return {
+      via: 'token',
+      method: amr.includes('pwd')
+        ? 'password'
+        : amr.includes('pop')
+          ? 'passkey'
+          : SIGN_IN_METHODS.includes(named.method!)
+            ? named.method!
+            : null,
+      provider: named.provider ?? null,
+      mfa: amr.includes('mfa'),
+      authenticatedAt: dateOf(claims.auth_time, 'seconds'),
+    };
+  }
+  return null;
+}
+
+/**
+ * Whether the authentication counts as recent at `now`: made before
+ * `recentUntil`, and not in the future (another instance's clock: a
+ * minute's leeway). Never for an impersonation, whatever its session says:
+ * nobody signed in to it.
+ */
+export function isRecent(
+  authentication: CredentialAuthentication | null,
+  recentUntil: Date | null,
+  now = Date.now(),
+) {
+  if (!authentication || authentication.method === 'impersonation') {
+    return false;
+  }
+  const at = authentication.authenticatedAt?.getTime();
+  return (
+    at !== undefined &&
+    recentUntil !== null &&
+    now < recentUntil.getTime() &&
+    at <= now + 60_000
+  );
+}

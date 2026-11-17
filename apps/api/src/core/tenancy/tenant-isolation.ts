@@ -11,9 +11,21 @@ import { rowLevelSecurity } from './row-level-security.js';
  * so that schema-per-tenant or database-per-tenant can replace it without
  * a module changing (README.md, "Other isolation modes").
  */
+/**
+ * Whose rows a table with a `tenant_id` holds, and so its wall:
+ * `tenant`: a tenant's alone (tenantTable()); `tenant-or-none`: a
+ * tenant's, or no tenant's, these seen only outside every tenant
+ * (tenantTable()'s `nullRows: 'outside'`); `global`: a global table
+ * whose rows name a tenant, read before a request has one (globalTable()).
+ */
+export type TenantRows = 'tenant' | 'tenant-or-none' | 'global';
+
 export interface TenantIsolation {
-  /** What a tenant table declares besides its columns, so `pnpm db:generate` emits it (tenantTable()). */
-  tableWall(table: string, tenantId: AnyPgColumn): PgPolicy[];
+  /**
+   * What a table with a `tenant_id` declares besides its columns, so `pnpm
+   * db:generate` emits it (tenantTable(), globalTable()).
+   */
+  tableWall(table: string, tenantId: AnyPgColumn, rows: TenantRows): PgPolicy[];
 
   /**
    * The pool every query of the app goes through: each query and each

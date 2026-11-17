@@ -6,6 +6,7 @@ import {
   HealthCheckService,
   HealthIndicatorService,
 } from '@nestjs/terminus';
+import { Public } from '@nestjs/authentication';
 import { SkipThrottle } from '@nestjs/throttler';
 import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
 
@@ -17,6 +18,7 @@ import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
  * - `GET /health/live` (liveness): 200 while the process serves requests.
  */
 // Probes are never rate limited.
+@Public()
 @SkipThrottle()
 @ApiExcludeController()
 @Controller({ path: 'health', version: VERSION_NEUTRAL })

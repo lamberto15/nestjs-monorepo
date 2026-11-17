@@ -14,7 +14,7 @@ import {
   currentTenantScope,
   type TenantScope,
 } from './tenant-scope.js';
-import type { TenantIsolation } from './tenant-isolation.js';
+import type { TenantIsolation, TenantRows } from './tenant-isolation.js';
 
 /** The transaction-local setting the policies read. */
 const SETTING = 'app.tenant_id';
@@ -31,8 +31,28 @@ const currentTenant = sql.raw(
  * row, so a connection without a tenant reads and writes nothing. No bypass
  * clause: cross-tenant work runs as the maintenance role (BYPASSRLS).
  */
-function tenantPolicies(table: string, tenantId: AnyPgColumn): PgPolicy[] {
-  const own = sql`(${tenantId} = ${currentTenant})`;
+function tenantPolicies(
+  table: string,
+  tenantId: AnyPgColumn,
+  rows: TenantRows = 'tenant',
+): PgPolicy[] {
+  if (rows === 'global') {
+    // A global table naming a tenant: no wall, declared as such so the
+    // check at migrate tells it from a tenant table missing its own.
+    return [
+      pgPolicy(`${table}_global`, {
+        for: 'all',
+        using: sql`true`,
+        withCheck: sql`true`,
+      }),
+    ];
+  }
+  // Rows of no tenant ('tenant-or-none'): read and written only where the
+  // context has no tenant either, so no tenant sees an account's own rows.
+  const own =
+    rows === 'tenant'
+      ? sql`(${tenantId} = ${currentTenant})`
+      : sql`((${tenantId} = ${currentTenant}) or (${tenantId} is null and ${currentTenant} is null))`;
   return [
     pgPolicy(`${table}_tenant_select`, { for: 'select', using: own }),
     pgPolicy(`${table}_tenant_insert`, { for: 'insert', withCheck: own }),
@@ -257,20 +277,23 @@ async function policiesIn(client: ClientBase, namespace: string) {
  * the column references deparse the same), read back, rolled back.
  * Formatting can't fail the comparison; a different expression can.
  */
-async function expectedPolicies(client: ClientBase, tables: string[]) {
+async function expectedPolicies(
+  client: ClientBase,
+  tables: { name: string; rows: TenantRows }[],
+) {
   const dialect = new PgDialect();
   const render = (expression: SQL | undefined) =>
     expression && dialect.sqlToQuery(expression).sql;
   await client.query('savepoint tenant_wall_probe');
   try {
-    for (const table of tables) {
+    for (const { name: table, rows } of tables) {
       const name = escapeIdentifier(table);
       await client.query(
         `create temporary table pg_temp.${name} (like public.${name})`,
       );
       const declared = getTableConfig(
         pgTable(table, { tenantId: uuid('tenant_id') }, (t) =>
-          tenantPolicies(table, t.tenantId),
+          tenantPolicies(table, t.tenantId, rows),
         ),
       ).policies;
       for (const policy of declared) {
@@ -300,19 +323,24 @@ const POLICY_PARTS = [
 
 /**
  * Every table with a `tenant_id` has row-level security enabled and
- * forced, and exactly its four policies as tenantTable() declares them,
- * with no other permissive policy: a table declared without tenantTable(),
- * or a policy edited by hand (`ALTER POLICY … USING (true)`), stops the
- * migration. Custom: drizzle-kit compares policies with its snapshot, not
- * with the database.
+ * forced, and exactly the policies its declaration gives, with no other
+ * permissive policy: a table declared without tenantTable() or
+ * globalTable(), or a policy edited by hand (`ALTER POLICY … USING
+ * (true)`), stops the migration. Which declaration a table has is read
+ * from the database: a `<table>_global` policy is globalTable()'s, a
+ * `tenant_id` that may be null is tenantTable()'s `nullRows`, any other
+ * is a tenant table's. Custom: drizzle-kit compares policies with its
+ * snapshot, not with the database.
  */
 async function assertWall(client: ClientBase) {
   const { rows } = await client.query<{
     name: string;
     enabled: boolean;
     forced: boolean;
+    required: boolean;
   }>(
-    `select c.relname as name, c.relrowsecurity as enabled, c.relforcerowsecurity as forced
+    `select c.relname as name, c.relrowsecurity as enabled, c.relforcerowsecurity as forced,
+            a.attnotnull as required
      from pg_class c
      join pg_namespace n on n.oid = c.relnamespace
      join pg_attribute a on a.attrelid = c.oid and a.attname = 'tenant_id' and not a.attisdropped
@@ -325,7 +353,14 @@ async function assertWall(client: ClientBase) {
   const live = await policiesIn(client, `'public'::regnamespace`);
   const wanted = await expectedPolicies(
     client,
-    rows.map((row) => row.name),
+    rows.map((row) => ({
+      name: row.name,
+      rows: live.get(row.name)?.has(`${row.name}_global`)
+        ? ('global' as const)
+        : row.required
+          ? ('tenant' as const)
+          : ('tenant-or-none' as const),
+    })),
   );
   const problems = rows.flatMap((row) => {
     const found = live.get(row.name) ?? new Map<string, LivePolicy>();
@@ -354,7 +389,7 @@ async function assertWall(client: ClientBase) {
   });
   if (problems.length > 0) {
     throw new Error(
-      `Tenant tables without their wall: ${problems.join('; ')}. Declare them with tenantTable() and change them only there (pnpm db:generate), never by hand (core/tenancy/README.md).`,
+      `Tenant tables without their wall: ${problems.join('; ')}. Declare them with tenantTable() (or globalTable()) and change them only there (pnpm db:generate), never by hand (core/tenancy/README.md).`,
     );
   }
 }

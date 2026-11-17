@@ -1,8 +1,10 @@
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { Inject, Module, Optional, type OnModuleInit } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { I18nStandardSchemaValidationPipe } from '@nestjs/i18n';
 import { I18nModule } from '../i18n/i18n.module.js';
+import { Secrets } from '../secrets/secrets.service.js';
 import { useCursorKeys } from './cursor-seal.js';
 import { httpConfig } from './http.config.js';
 import {
@@ -36,11 +38,25 @@ export class HttpConventionsModule implements OnModuleInit {
   constructor(
     @Inject(httpConfig.KEY)
     private readonly config: ConfigType<typeof httpConfig>,
+    // There when the app has SecretsModule (app.module.ts has; a test that
+    // boots one module may not).
+    @Optional() private readonly secrets?: Secrets,
   ) {}
 
-  onModuleInit() {
+  /**
+   * CURSOR_KEYS when set. Otherwise one key made once and kept in the
+   * database, so every instance opens the others' cursors; without
+   * SecretsModule, a key of this process (cursor-seal.ts).
+   */
+  async onModuleInit() {
     if (this.config.cursorKeys.length > 0) {
       useCursorKeys(this.config.cursorKeys);
+    } else if (this.secrets) {
+      useCursorKeys([
+        await this.secrets.loadOrCreate('CURSOR_KEYS', () =>
+          randomBytes(32).toString('base64'),
+        ),
+      ]);
     }
   }
 }

@@ -24,16 +24,23 @@ repository.
 - [x] throttling (Redis counters, the multiplier)
 - [x] metrics (`/metrics`) and observability (NestJS Observe, or OTLP to a
       self-hosted backend such as Nestrix)
+- [x] secrets: keys the app makes for itself, made once and kept in the
+      database (list cursors, file links, tokens, idempotency)
+- [x] outbox and domain events, workflows, idempotency keys, outbound HTTP
+      (timeouts, retries, circuit breaking), the job index
 - [ ] mail delivery modes and budgets (with settings and quotas), maintenance
-      mode (with settings), generated keys kept in the database
+      mode (with settings), workflow payload encryption
 
 ## Identity and access (`apps/api/src/iam`)
 
-- [ ] auth (sign-in, sessions, tokens)
+- [x] auth: password sign-in, sessions, API keys, access tokens, the
+      principal and its guards
+- [ ] auth: token issue and refresh routes, impersonation, break-glass
 - [ ] account (password, email, MFA, passkeys, sessions)
 - [ ] access (roles, grants, conditions, field permissions, API clients)
 - [ ] organization (units, memberships)
-- [ ] audit
+- [x] audit (the log, sign-in entries, retention)
+- [ ] audit: record changes and the audit pages
 - [ ] sso (OIDC, SAML, SCIM)
 - [ ] captcha
 - [ ] holds (legal holds)
@@ -51,12 +58,11 @@ repository.
 - [ ] approvals, acknowledgments, bulk, merge, data-transfer, reports,
       data-quality, retention
 - [ ] notifications, messaging, inbox, subscriptions, deliverability,
-      webhooks, realtime, events, presence
+      webhooks, realtime, presence
 - [ ] automations, forms, shares, ai, documents, calendars, recurrence,
       money
 - [ ] settings, features, branding, quotas, usage, tenants, people,
-      integrations, config-bundles, idempotency, auth-policy,
-      ops, mode
+      config-bundles, auth-policy, ops (dead letters, job admin), mode
 
 ## Features (`apps/api/src/features`)
 
@@ -90,5 +96,8 @@ repository.
   to the millisecond.
 - A queue is registered by the module that owns it; there is no central
   list of queues.
-- Without `CURSOR_KEYS` each process seals list cursors with its own key
-  (the old template stored a generated key in the database).
+- Operators are the members of the tenant named by `OPERATOR_TENANT`
+  (with `TENANCY=single`, of the one tenant); the tenants table has no
+  operator column.
+- Domain events have no fixed channels (webhook, notification, realtime):
+  a module that delivers them subscribes with `@OnDomainEvent`.

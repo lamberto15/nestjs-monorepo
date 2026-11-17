@@ -12,6 +12,7 @@ import {
 import type { ConfigType } from '@nestjs/config';
 import type { NodeResponse as Response } from '@nestjs/platform-node';
 import { ApiExcludeController } from '@nestjs/swagger';
+import { Public } from '@nestjs/authentication';
 import { SkipThrottle } from '@nestjs/throttler';
 import { metricsConfig } from './metrics.config.js';
 import { MetricsService } from './metrics.service.js';
@@ -32,6 +33,8 @@ const sameSecret = (given: string, expected: string) =>
  * every scrape would hang until Prometheus gave up.
  */
 @ApiExcludeController()
+// Its own bearer token (METRICS_TOKEN), not a user's sign-in.
+@Public()
 @SkipThrottle()
 @Controller({ path: 'metrics', version: VERSION_NEUTRAL })
 export class MetricsController {

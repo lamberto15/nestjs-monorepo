@@ -45,15 +45,30 @@ The root [AGENTS.md](../../AGENTS.md) holds the rules and the owner's decisions.
   ```ts
   export const invoices = tenantTable(
     'invoices',
-    { id: uuidPk(), customerId: uuid('customer_id').notNull(), number: text('number').notNull(), ...timestamps() },
+    {
+      id: uuidPk(),
+      customerId: uuid('customer_id').notNull(),
+      number: text('number').notNull(),
+      ...timestamps(),
+    },
     (t) => [
       uniqueIndex('invoices_number_idx').on(t.tenantId, t.number),
-      tenantReference('invoices_customer_fk', [t.tenantId, t.customerId], [customers.tenantId, customers.id]),
+      tenantReference(
+        'invoices_customer_fk',
+        [t.tenantId, t.customerId],
+        [customers.tenantId, customers.id],
+      ),
     ],
   );
   ```
 - **Observability** is backend-neutral: `reportError()` and the OpenTelemetry API, never a vendor's SDK in a module (`core/observability/README.md`). A module's own metrics go through `MetricsService` (`core/metrics`).
 - **Transactions:** `@InjectTransaction() db: Database` in services, `@Transactional()` on a write that must be atomic; `@InjectDrizzle()` only for what must stay outside a transaction.
+- **Sign-in:** every route needs credentials unless it is `@Public()` (`@nestjs/authentication`). `@CurrentUser() user: RequestPrincipal` (`iam/auth/principal.ts`) is who is calling; the request already runs in their tenant. An e2e test gets one with `bootModules(...authModules(), NotesModule)` and `const { headers } = await signedInUser(app)` (`test/auth.ts`).
+- **Audit:** `await this.audit.record(user, { action: 'note.deleted', targetType: 'note', targetId: id })` (`iam/audit`), in the transaction of the change.
+- **Events:** modules of one level never import each other. Something another module may react to, and that must not be lost, is published in the transaction of the change: `events.publish(noteCreated, payload)` with `export const noteCreated = defineEvent<{ id: string }>('note.created')` (`core/outbox/events.ts`); a subscriber marks a method `@OnDomainEvent(noteCreated, { consumer: 'search' })` and runs in the event's tenant, in the worker. `@nestjs/event-emitter` is for reactions inside the same request only.
+- **Long work** is a job on a queue the module registers itself (`core/queues`, `withTenant(data)`), or a workflow when it has steps that wait (`core/workflows`, `TenantWorkflow`).
+- **Retries of a write:** `@IdempotentRoute()` on a route that creates or acts (`core/idempotency`). **Outbound HTTP:** `HttpClientModule.register({ name, baseUrl })` in the module's imports (`core/http-client`: timeouts, retries, circuit breaking); `safeFetch` for a URL a tenant supplied.
+- **A key the app makes for itself** (not given in the environment) is made once and kept in the database: `secrets.loadOrCreate('NAME', generate)` (`core/secrets`), so every instance shares it.
 - **Readiness:** a module that owns a dependency marks a provider `@ReadinessCheck('name')` (`core/health/readiness.ts`); `GET /health` finds it.
 - **Errors** are thrown as Nest HTTP exceptions with a `code`; an error class of a package maps with `ProblemDetailsFilter.map()` in the module's own folder.
 - **Wiring:** a module is added to `src/app.module.ts` and nowhere else. If a module seems to need a line in another module's file, it needs an event or a discovery decorator instead.

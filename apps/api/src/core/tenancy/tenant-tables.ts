@@ -10,7 +10,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { tenants } from './tenancy.tables.js';
 import { isolation } from './tenant-isolation.js';
-import { requireTenantId } from './tenant-scope.js';
+import { currentTenantScope, requireTenantId } from './tenant-scope.js';
 
 /**
  * The `tenant_id` every tenant table gets: NOT NULL, no database default (a
@@ -24,8 +24,31 @@ const tenantColumn = () =>
     .references(() => tenants.id, { onDelete: 'cascade' })
     .$defaultFn(() => requireTenantId('An insert into a tenant table'));
 
-type TenantColumns<TColumns> = TColumns & {
-  tenantId: ReturnType<typeof tenantColumn>;
+/**
+ * The `tenant_id` of a tenant table with rows of no tenant (`nullRows`):
+ * an insert that leaves it out gets the context's tenant, or null without
+ * one.
+ */
+const nullableTenantColumn = () =>
+  uuid('tenant_id')
+    .references(() => tenants.id, { onDelete: 'cascade' })
+    // Null (no tenant) is what the column allows; Drizzle's type wants a value.
+    .$defaultFn(() => currentTenantScope()?.tenantId as string);
+
+/**
+ * The `tenant_id` of a global table that names a tenant: required on
+ * every insert (no default from the context: such rows are written for a
+ * tenant named on purpose, often outside its scope).
+ */
+const namedTenantColumn = () =>
+  uuid('tenant_id')
+    .notNull()
+    .references(() => tenants.id, { onDelete: 'cascade' });
+
+type TenantColumns<TColumns, TNullRows = undefined> = TColumns & {
+  tenantId: TNullRows extends 'outside'
+    ? ReturnType<typeof nullableTenantColumn>
+    : ReturnType<typeof tenantColumn>;
 };
 
 /**
@@ -35,6 +58,11 @@ type TenantColumns<TColumns> = TColumns & {
  * `referenced: true` for a table that other tenant tables point at
  * (tenantReference()): it adds the unique `(tenant_id, id)` their keys need.
  * Uniques are per tenant: lead them with `t.tenantId`.
+ *
+ * `nullRows: 'outside'` for a table that also keeps rows of no tenant (an
+ * account's own entries in the audit log, written before any tenant is
+ * chosen): `tenant_id` may be null, and those rows are read and written
+ * only by work outside every tenant, never by a tenant's.
  *
  * ```ts
  * export const invoices = tenantTable('invoices', {
@@ -51,17 +79,24 @@ type TenantColumns<TColumns> = TColumns & {
 export function tenantTable<
   TName extends string,
   TColumns extends Record<string, AnyPgColumnBuilder>,
+  TNullRows extends 'outside' | undefined = undefined,
 >(
   name: TName,
   columns: TColumns,
   extraConfig?: (
-    self: PgBuildExtraConfigColumns<TenantColumns<TColumns>>,
+    self: PgBuildExtraConfigColumns<TenantColumns<TColumns, TNullRows>>,
   ) => PgTableExtraConfigValue[],
-  { referenced = false }: { referenced?: boolean } = {},
+  {
+    referenced = false,
+    nullRows,
+  }: { referenced?: boolean; nullRows?: TNullRows } = {},
 ) {
   return pgTable(
     name,
-    { ...columns, tenantId: tenantColumn() } as TenantColumns<TColumns>,
+    {
+      ...columns,
+      tenantId: nullRows ? nullableTenantColumn() : tenantColumn(),
+    } as TenantColumns<TColumns, TNullRows>,
     (t) => {
       const self = t as unknown as {
         tenantId: AnyPgColumn;
@@ -73,13 +108,59 @@ export function tenantTable<
         );
       }
       return [
-        ...isolation.tableWall(name, self.tenantId),
+        ...isolation.tableWall(
+          name,
+          self.tenantId,
+          nullRows ? 'tenant-or-none' : 'tenant',
+        ),
         ...(referenced && self.id
           ? [unique(`${name}_tenant_id_id_key`).on(self.tenantId, self.id)]
           : []),
         ...(extraConfig?.(t) ?? []),
       ];
     },
+  );
+}
+
+/**
+ * A global table whose rows name a tenant: read before the request has a
+ * tenant, to find it (which tenants a user belongs to, whose an API key
+ * is). Its rows are every context's: code reading them for a tenant
+ * filters by `tenantId` itself, and an insert names the tenant. The
+ * declaration (a `<table>_global` policy, no wall) is what lets the check
+ * at migrate tell it from a tenant table that lost its wall.
+ *
+ * ```ts
+ * export const memberships = globalTable('memberships', {
+ *   userId: uuid('user_id').notNull(),
+ * }, (t) => [primaryKey({ columns: [t.tenantId, t.userId] })]);
+ * ```
+ */
+export function globalTable<
+  TName extends string,
+  TColumns extends Record<string, AnyPgColumnBuilder>,
+>(
+  name: TName,
+  columns: TColumns,
+  extraConfig?: (
+    self: PgBuildExtraConfigColumns<
+      TColumns & { tenantId: ReturnType<typeof namedTenantColumn> }
+    >,
+  ) => PgTableExtraConfigValue[],
+) {
+  return pgTable(
+    name,
+    { ...columns, tenantId: namedTenantColumn() } as TColumns & {
+      tenantId: ReturnType<typeof namedTenantColumn>;
+    },
+    (t) => [
+      ...isolation.tableWall(
+        name,
+        (t as unknown as { tenantId: AnyPgColumn }).tenantId,
+        'global',
+      ),
+      ...(extraConfig?.(t) ?? []),
+    ],
   );
 }
 

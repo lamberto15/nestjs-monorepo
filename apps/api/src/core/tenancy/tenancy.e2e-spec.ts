@@ -385,7 +385,8 @@ describe('tenancy (e2e)', () => {
   });
 });
 
-describe('the wall at migrate (e2e)', () => {
+// Each test migrates a database of its own, several times.
+describe('the wall at migrate (e2e)', { timeout: 60_000 }, () => {
   async function migrated() {
     const database = await createDatabase(
       inject('postgresUrl'),

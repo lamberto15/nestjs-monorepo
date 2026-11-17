@@ -10,8 +10,9 @@ export default defineConfig({
     // each file a copy of it as DATABASE_URL (test/setup-env.ts).
     globalSetup: ['./test/global-setup.ts'],
     setupFiles: ['./test/setup-env.ts'],
-    // Booting a module and copying a database take longer than the 10 s
-    // default when the machine is busy.
+    // Booting a module, copying a database and migrating one take longer
+    // than the defaults (10 s and 5 s) when the machine is busy.
     hookTimeout: 60_000,
+    testTimeout: 30_000,
   },
 });

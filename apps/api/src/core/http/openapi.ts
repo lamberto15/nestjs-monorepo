@@ -1,7 +1,21 @@
 import type { INestApplication } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import {
+  DocumentBuilder,
+  SwaggerModule,
+  type OpenAPIObject,
+} from '@nestjs/swagger';
 import { httpConfig } from './http.config.js';
+
+/**
+ * What a module adds to the published document and to Swagger UI, keyed by
+ * the module's name so a second app in one process (tests) replaces its
+ * entry: core/idempotency marks its header optional and fills it in.
+ */
+export const openApiAdditions = {
+  document: new Map<string, (document: OpenAPIObject) => void>(),
+  swaggerOptions: {} as Record<string, unknown>,
+};
 
 /** Your API's name, in the document and Swagger UI's title. */
 const API_TITLE = 'My API';
@@ -21,6 +35,7 @@ export function setupOpenApi(app: INestApplication) {
   }
   SwaggerModule.setup('api', app, () => buildOpenApiDocument(app), {
     customSiteTitle: API_TITLE,
+    swaggerOptions: openApiAdditions.swaggerOptions,
   });
 }
 
@@ -83,5 +98,7 @@ export function buildOpenApiDocument(app: INestApplication) {
       'user-session',
     )
     .build();
-  return SwaggerModule.createDocument(app, config);
+  const document = SwaggerModule.createDocument(app, config);
+  for (const add of openApiAdditions.document.values()) add(document);
+  return document;
 }
