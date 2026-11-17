@@ -65,6 +65,11 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
 - **Analytical reporting is not in the app.** The app keeps lists, exports
   and scheduled exports; dashboards over history belong in a store fed by
   replication.
+- **Dynamic forms are ported last**, as a leaf module nothing depends on,
+  sharing the field definitions of custom fields.
+- **CASL stays as the rules engine**, in one file behind the access service;
+  routes and services ask `@nestjs/authorization` policies. A condition is
+  written once and its SQL derived from it.
 - **No bundled operations:** no monitoring, backups, load tests, proxies or
   deploy pipelines.
 - **Git:** local commits on `main`; no push and no pull request until the

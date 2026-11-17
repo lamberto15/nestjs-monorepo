@@ -8,3 +8,5 @@ allowBuilds:
   '@scarf/scarf': false
   # bullmq's msgpackr: an optional native speedup with a prebuilt binary.
   msgpackr-extract: true
+  protobufjs: false
+  re2: true
