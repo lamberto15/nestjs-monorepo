@@ -2,8 +2,9 @@
 
 What a deployment needs. The repository builds an image and describes what
 that image requires; the platform around it (an orchestrator, a proxy, backups,
-monitoring) is the host's, and is not here. CI builds and scans the image but
-publishes and deploys nothing ([CI and the image](ci.md)).
+monitoring) is the host's, and is not here. CI builds and scans the image,
+`publish.yml` publishes the one CI passed, and nothing deploys it
+([CI and the image](ci.md)).
 
 ## The image
 
@@ -92,6 +93,8 @@ The ones a production deployment sets:
 - `DATA_ENCRYPTION_KEYS` and `BLIND_INDEX_KEYS`: the app refuses to start when
   a module declares an encrypted column and the keys are missing, and a key
   shorter than 32 characters is refused ([core/encryption](../apps/api/src/core/encryption/README.md)).
+  Both are secrets: `DATA_ENCRYPTION_KEYS_FILE` and `BLIND_INDEX_KEYS_FILE`
+  take them from files (below).
 - `MAIL_TRANSPORT` and its credentials; `STORAGE_DRIVER` with the bucket.
 - `APP_ROLE` per process (below).
 

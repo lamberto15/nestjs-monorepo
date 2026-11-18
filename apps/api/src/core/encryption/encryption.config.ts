@@ -1,5 +1,6 @@
 import { registerAs } from '@nestjs/config';
 import { z } from 'zod';
+import { secret } from '../config/env.helpers.js';
 import { readEnv } from '../config/env.js';
 
 /** A comma-separated list of keys, newest first; unset is an empty list. */
@@ -15,9 +16,9 @@ const keys = z
 
 export const schema = z.object({
   /** Data keys: `openssl rand -base64 32` each. The first encrypts, all decrypt. */
-  DATA_ENCRYPTION_KEYS: keys,
+  DATA_ENCRYPTION_KEYS: secret(keys),
   /** Blind-index keys, the same way; never a key also in DATA_ENCRYPTION_KEYS. */
-  BLIND_INDEX_KEYS: keys,
+  BLIND_INDEX_KEYS: secret(keys),
 });
 
 export const encryptionConfig = registerAs('encryption', () => {

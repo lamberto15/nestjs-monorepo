@@ -9,6 +9,6 @@ Personal data the database should never hold in clear (tax numbers, national ids
 - **Boot check:** the app refuses to start when a column is declared and its keys are missing, or when BLIND_INDEX_KEYS shares a key with DATA_ENCRYPTION_KEYS. A key shorter than 32 characters is refused.
 - A declared column's property name is also kept out of the logs (core/logging).
 
-Variables (`encryption.config.ts`): DATA_ENCRYPTION_KEYS, BLIND_INDEX_KEYS (comma-separated, newest first; `openssl rand -base64 32` each). Both are empty by default: only an app with no encrypted column can leave them so.
+Variables (`encryption.config.ts`): DATA_ENCRYPTION_KEYS, BLIND_INDEX_KEYS (comma-separated, newest first; `openssl rand -base64 32` each). Both are empty by default: only an app with no encrypted column can leave them so. Both are secrets: each can be given as `<NAME>_FILE` instead (core/config), and the logger masks them.
 
 Remove: delete this folder and its line in `app.module.ts`, and the modules with encrypted columns.
