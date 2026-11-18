@@ -84,9 +84,14 @@ export class InvitationUnits {
       (unitId) => !open.some((row) => row.unitId === unitId),
     );
     if (joined.length) {
+      // Dated by the app's clock, as every other writer of memberships and
+      // every `currentMembership()` reader is: the column's default is the
+      // database's clock, and one running ahead of the app's would leave
+      // the new member out of their units until it caught up.
+      const validFrom = new Date();
       await this.db
         .insert(organizationalUnitMemberships)
-        .values(joined.map((unitId) => ({ unitId, userId })));
+        .values(joined.map((unitId) => ({ unitId, userId, validFrom })));
     }
   }
 }
