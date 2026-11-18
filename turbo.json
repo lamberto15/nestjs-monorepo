@@ -19,7 +19,13 @@
     "test:e2e": {
       "dependsOn": ["^build"],
       "cache": false,
-      "passThroughEnv": ["TEST_DATABASE_URL", "TEST_LOGS"]
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "TEST_LOGS",
+        "S3_TEST_*",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ]
     },
     "typecheck": {
       "dependsOn": ["^build"],

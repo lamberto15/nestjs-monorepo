@@ -25,9 +25,9 @@ export const schema = z.object({
   S3_BUCKET: optional(),
   /** `auto` for Cloudflare R2. Default: AWS_REGION, then us-east-1. */
   S3_REGION: optional(),
-  /** S3-compatible endpoints: https://<account>.r2.cloudflarestorage.com, http://minio:9000… */
+  /** S3-compatible endpoints: https://<account>.r2.cloudflarestorage.com, http://garage:3900… */
   S3_ENDPOINT: optional(),
-  /** MinIO and most self-hosted stores. */
+  /** Garage and most self-hosted stores. */
   S3_FORCE_PATH_STYLE: flag('off'),
 });
 

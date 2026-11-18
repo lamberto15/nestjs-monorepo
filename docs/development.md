@@ -51,6 +51,7 @@ Run from the root. Turborepo runs a script in every package that has it
 | `pnpm test:e2e:web`                         | The browser tests of the web app ([below](#browser-tests)).             |
 | `pnpm test:tools`                           | The tests of `tools/` (Node's test runner).                             |
 | `pnpm services:up`, `pnpm services:down`    | The development PostgreSQL and Redis.                                   |
+| `pnpm storage:up`                           | Garage, an S3-compatible store, ready for `STORAGE_DRIVER=s3`.          |
 | `pnpm run setup`                            | Writes `apps/api/.env`.                                                 |
 | `pnpm env:example`, `pnpm env:check`        | Writes or checks `apps/api/env.example`.                                |
 | `pnpm feature:add <name> …`                 | Generates a feature ([adding-a-feature.md](adding-a-feature.md)).       |
@@ -100,7 +101,9 @@ run under an advisory lock.
 - **e2e tests** are `<name>.e2e-spec.ts`, one set per module, run against a real
   PostgreSQL and Redis (`pnpm services:up` first): `pnpm --filter api test:e2e`,
   or one file as above. Concurrency, locks and row-level security show up
-  there and not in a mock.
+  there and not in a mock. The S3 disk's test (`storage.s3.e2e-spec.ts`)
+  runs against Garage (`pnpm storage:up`, which prints the key) when
+  `S3_TEST_ENDPOINT` is set, as in CI; it is skipped otherwise.
 
 How an e2e run works (`apps/api/test`, `vitest.config.e2e.ts`):
 

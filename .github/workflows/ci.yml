@@ -173,6 +173,11 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://app:app@127.0.0.1:5432/app
       REDIS_URL: redis://127.0.0.1:6379
+      # The development Garage (pnpm storage:up): the S3 disk's e2e test.
+      # Its fixed development key (tools/dev/garage-setup.sh), not a secret.
+      S3_TEST_ENDPOINT: http://127.0.0.1:3900
+      AWS_ACCESS_KEY_ID: GK0123456789abcdef01234567
+      AWS_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -182,6 +187,7 @@ jobs:
           runtime: node@26
           cache: true
       - uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+      - run: pnpm storage:up
       - run: pnpm test:e2e
 
   # No high or critical advisory in a production dependency; no secret in the
