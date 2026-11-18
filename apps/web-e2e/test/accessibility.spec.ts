@@ -91,12 +91,14 @@ test.describe('signed in as the administrator', () => {
   });
 
   // Reflow (WCAG 1.4.10): narrowing the window (or zooming in) under the
-  // two-column breakpoint, the dashboard's chart shrinks with it rather than
-  // keeping its width and scrolling the page sideways.
+  // two-column breakpoint, the dashboard's cards shrink with it rather than
+  // keeping their width and scrolling the page sideways.
   test('the dashboard reflows when the window narrows', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await expect(page.locator('[data-slot="chart"] svg')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Dashboard' }),
+    ).toBeVisible();
     await page.setViewportSize({ width: 375, height: 812 });
     await expect
       .poll(() =>

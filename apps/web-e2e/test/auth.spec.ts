@@ -33,15 +33,16 @@ test('a wrong password is refused and stays on the form', async ({ page }) => {
 test('a deep link goes to sign-in and back after signing in', async ({
   page,
 }) => {
+  // A page every member may open: a unit lead has no audit log.
   const { email, password } = unitLead();
-  await page.goto('/audit');
+  await page.goto('/notifications');
   await expect(page).toHaveURL(/\/sign-in\?redirect=/);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL('/audit');
+  await expect(page).toHaveURL('/notifications');
   await expect(
-    page.getByRole('heading', { name: 'Audit log', level: 1 }),
+    page.getByRole('heading', { name: 'Inbox', level: 1 }),
   ).toBeVisible();
 });
 

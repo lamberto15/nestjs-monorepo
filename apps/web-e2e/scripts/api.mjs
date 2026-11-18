@@ -1,5 +1,6 @@
 // The API the browser tests run against (playwright.config.ts, `webServer`):
-// the demo seed first, then the built API (`node dist/main`).
+// the demo seed first, then the built API (`node dist/main`), which serves
+// the built web app (core/web, WEB_ROOT) from its own origin, as in production.
 //
 // The seed (docs/development.md, "Demo data") makes the demo tenant's members
 // in the seed roles and prints their generated passwords once. They are kept
@@ -8,12 +9,13 @@
 // that run stays, or E2E_CREDENTIALS points at another.
 //
 // The environment is what `pnpm services:up` (the development services) and
-// apps/api/env.development.example give, each variable overridable from the
-// shell: CI sets its own services' URLs (.github/workflows/web-e2e.yml). The
-// seed refuses a database that isn't marked as a development one.
+// apps/api/env.example give, each variable overridable from the shell. The
+// tests use a database of their own on that server (E2E_DATABASE, created
+// and marked as a development one, which the seed needs): the development
+// database keeps its data, and its secrets stay sealed with its own keys.
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,20 +26,22 @@ const credentialsFile = resolve(
   '..',
   process.env.E2E_CREDENTIALS ?? 'playwright/.auth/credentials.json',
 );
-const webUrl = process.env.E2E_BASE_URL ?? 'http://localhost:4173';
+const webUrl = process.env.E2E_BASE_URL ?? 'http://localhost:3300';
+const database = process.env.E2E_DATABASE ?? 'app_browser_tests';
+const server = process.env.E2E_POSTGRES ?? 'postgres://app:app@127.0.0.1:5432';
 
 const env = {
   NODE_ENV: 'development',
   // Not 3000 (nor 3100, Gotenberg's): a development stack (pnpm dev) may be running on this machine.
   PORT: '3300',
-  DATABASE_URL: 'postgres://app_runtime:app_runtime@127.0.0.1:5432/app',
-  DATABASE_OWNER_URL: 'postgres://app:app@127.0.0.1:5432/app',
-  DATABASE_MAINTENANCE_URL:
-    'postgres://app_maintenance:app_maintenance@127.0.0.1:5432/app',
+  DATABASE_URL: `postgres://app_runtime:app_runtime@127.0.0.1:5432/${database}`,
+  DATABASE_OWNER_URL: `${server}/${database}`,
+  DATABASE_MAINTENANCE_URL: `postgres://app_maintenance:app_maintenance@127.0.0.1:5432/${database}`,
   REDIS_URL: 'redis://127.0.0.1:6379',
   MIGRATE_ON_START: 'on',
-  // The web app and the API share one origin (vite preview proxies /v1), so
-  // the __Host-sid cookie works; plain http://localhost accepts Secure cookies.
+  // The built web app, served by the API: one origin, so the __Host-sid
+  // cookie works; plain http://localhost accepts Secure cookies.
+  WEB_ROOT: resolve(here, '../../web/dist'),
   APP_URL: webUrl,
   WEB_URL: webUrl,
   CORS_ORIGINS: webUrl,
@@ -48,10 +52,12 @@ const env = {
   STORAGE_DRIVER: 'local',
   PASSWORD_BREACH_CHECK: 'off',
   // SSO connections, devices and phone numbers are encrypted columns, the
-  // last two with blind indexes (docs/encryption.md): their keys are required
-  // at boot, made per run.
-  DATA_ENCRYPTION_KEYS: randomBytes(32).toString('base64'),
-  BLIND_INDEX_KEYS: randomBytes(32).toString('base64'),
+  // last two with blind indexes (core/encryption): their keys are required
+  // at boot. Fixed, not per run: the tests' database is reused, and what it
+  // sealed (app_secrets) must open on the next run. Test keys of a database
+  // holding demo data only, never anyone's real keys.
+  DATA_ENCRYPTION_KEYS: Buffer.alloc(32, 'browser-tests-data').toString('base64'),
+  BLIND_INDEX_KEYS: Buffer.alloc(32, 'browser-tests-index').toString('base64'),
   // The suite signs in a few times per account on a database that may be reused.
   RATE_LIMIT_MULTIPLIER: '20',
   LOG_LEVEL: 'error',
@@ -80,6 +86,28 @@ function account(line) {
   return [{ email, password, roles: roles.split(', ') }];
 }
 
+/**
+ * The tests' database, created on the server when it is missing and marked
+ * as a development one (tools/dev/10-dev-database.sql's setting). With the
+ * API's own driver (pg), resolved from apps/api.
+ */
+async function prepareDatabase() {
+  const { Client } = createRequire(resolve(api, 'package.json'))('pg');
+  const client = new Client({ connectionString: `${server}/postgres` });
+  await client.connect();
+  try {
+    const found = await client.query(
+      'select 1 from pg_database where datname = $1',
+      [database],
+    );
+    const name = client.escapeIdentifier(database);
+    if (found.rowCount === 0) await client.query(`create database ${name}`);
+    await client.query(`alter database ${name} set app.dev_database = 'on'`);
+  } finally {
+    await client.end();
+  }
+}
+
 function seed() {
   const result = spawnSync(process.execPath, ['dist/demo/seed-demo.js'], {
     cwd: api,
@@ -105,13 +133,14 @@ function seed() {
   console.log(`Demo data seeded: ${accounts.length} accounts.`);
 }
 
+await prepareDatabase();
 seed();
-const server = spawn(process.execPath, ['dist/main.js'], {
+const child = spawn(process.execPath, ['dist/main.js'], {
   cwd: api,
   env,
   stdio: 'inherit',
 });
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => server.kill(signal));
+  process.on(signal, () => child.kill(signal));
 }
-server.on('exit', (code) => process.exit(code ?? 0));
+child.on('exit', (code) => process.exit(code ?? 0));

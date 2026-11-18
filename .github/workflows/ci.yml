@@ -260,9 +260,32 @@ jobs:
           cache-dir: ${{ runner.temp }}/trivy
 
   # The one check to require in the branch protection rules.
+  # The browser tests (apps/web-e2e): the built API serving the built web
+  # app, on the development services (compose.dev.yaml, whose database is
+  # marked for the demo seed) and the runner's own Google Chrome
+  # (docs/development.md, "Browser tests").
+  web-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      E2E_BROWSER_CHANNEL: chrome
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
+        with:
+          runtime: node@26
+          cache: true
+      - uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+      - run: pnpm services:up
+      - run: pnpm test:e2e:web
+
   ci:
     if: ${{ always() }}
-    needs: [verify, e2e, security, image]
+    needs: [verify, e2e, web-e2e, security, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

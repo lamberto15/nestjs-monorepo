@@ -213,13 +213,16 @@ Scripts, with `pnpm --filter @nestjs-monorepo/web <script>`: `test` and `test:co
 
 `pnpm test:e2e:web` builds the API and the web app, then runs Playwright
 (`apps/web-e2e`) on the built app against the built API. It needs the services
-and a development database, because the API it starts first seeds the demo data
-(`apps/web-e2e/scripts/api.mjs`).
+(`pnpm services:up`). The API it starts (`apps/web-e2e/scripts/api.mjs`) uses a
+database of its own on that server, `app_browser_tests` (`E2E_DATABASE`),
+created and marked for the demo seed when missing, so your development
+database and its keys are left alone.
 
-- `playwright.config.ts` starts two servers: the API on port 3300 and
-  `vite preview` on port 4173, which proxies the API, so the page and the API share
-  one origin and the `__Host-sid` session cookie works. Outside CI an
-  already running server is reused.
+- `playwright.config.ts` starts the API on port 3300, which serves the built web
+  app (`WEB_ROOT`, core/web) as in production: the page and the API share one
+  origin, so the `__Host-sid` session cookie works, and the pages carry the
+  API's real headers (a Content-Security-Policy violation fails a test). Outside
+  CI an already running server is reused.
 - The `setup` project signs in once per role with the seed's passwords (kept in
   `playwright/.auth/credentials.json`, ignored by git); the `chromium` project reuses
   that state. One worker, because the tests share one database.

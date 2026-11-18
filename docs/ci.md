@@ -6,8 +6,9 @@ publishing the image and deploying are the adopting project's own workflows.
 
 | Job        | Runs                                                                                                                                                                                                  |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verify`   | `pnpm build`, `pnpm lint`, the raw-SQL check, knip, `pnpm test` and the unit coverage thresholds, `pnpm env:check`, `pnpm test:tools`, the migrations check and, on pull requests, the migration lint |
+| `verify`   | `pnpm build`, `pnpm lint`, the raw-SQL check, knip, `pnpm test` and the unit coverage thresholds, `pnpm env:check`, `pnpm test:tools`, the migrations check, on pull requests the migration lint, then a generated feature's web pages type-checked and tested |
 | `e2e`      | `pnpm test:e2e` on PostgreSQL and Redis service containers                                                                                                                                            |
+| `web-e2e` | `pnpm test:e2e:web`: Playwright on the built API serving the built web app, on `compose.dev.yaml`'s services and the runner's Chrome |
 | `security` | `pnpm audit --prod --audit-level high`; Trivy: secrets, then high or critical misconfigurations                                                                                                       |
 | `image`    | builds the Dockerfile (not pushed); Trivy fails on fixable high or critical vulnerabilities                                                                                                           |
 | `ci`       | the one job to require in branch protection: it fails if any other did not succeed                                                                                                                    |

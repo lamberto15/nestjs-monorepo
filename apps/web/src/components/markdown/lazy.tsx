@@ -11,7 +11,11 @@ const Editor = lazy(() =>
   import('./markdown-editor').then((m) => ({ default: m.MarkdownEditor })),
 );
 
-/** A Markdown body; until its chunk arrives, the text as written. */
+/**
+ * A Markdown body; until its chunk arrives, the text as written. The viewer
+ * of what `form.MarkdownField` writes; no shipped page shows one yet.
+ * @public
+ */
 export function MarkdownText(props: { children: string }) {
   return (
     <Suspense

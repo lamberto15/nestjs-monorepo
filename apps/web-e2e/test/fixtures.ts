@@ -57,8 +57,8 @@ export const test = base.extend<{
     options?: ScanOptions,
   ) => Promise<void>;
 }>({
-  // Every page of the test's context runs under production's policy (`vite
-  // preview` sends caddy/Caddyfile's headers, apps/web/preview-headers.ts):
+  // Every page of the test's context runs under production's policy (the
+  // API serves the page with core/web's headers):
   // a `securitypolicyviolation` in any of them fails the test, with what was
   // refused. A document's only: a worker's own violations don't reach it.
   context: async ({ context }, use) => {
