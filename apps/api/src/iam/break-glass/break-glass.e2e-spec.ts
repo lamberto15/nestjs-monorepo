@@ -21,6 +21,9 @@ import { RolesService } from '../access/roles.service.js';
 import { auditLog } from '../audit/audit.tables.js';
 import { AuditLogModule } from '../audit-log/audit-log.module.js';
 import { AuthPolicySource } from '../auth/auth-policy.js';
+import { QueuesModule } from '../../core/queues/queues.module.js';
+import { HoldsModule } from '../holds/holds.module.js';
+import { InvitationsModule } from '../invitations/invitations.module.js';
 import { BreakGlassModule } from './break-glass.module.js';
 import { breakGlassGrants } from './break-glass.tables.js';
 
@@ -68,6 +71,9 @@ describe('break-glass (e2e)', () => {
       AuditLogModule,
       TestPolicyModule,
       BreakGlassModule,
+      QueuesModule,
+      HoldsModule,
+      InvitationsModule,
     );
     db = app.get<Database>(getDrizzleToken());
     // The boot makes the operators' tenant (OPERATOR_TENANT), roles seeded.
@@ -201,6 +207,15 @@ describe('break-glass (e2e)', () => {
     expect(JSON.stringify(log.json())).toContain(grant.id);
     const roleList = await through('GET', '/v1/access/roles', grant.id);
     expect(roleList.statusCode).toBe(200);
+    // Routes guarded by a manage action read too (nothing is written).
+    for (const url of [
+      `/v1/access/users/${target.admin.id}/explanation?subject=Access`,
+      '/v1/access/invitations',
+      '/v1/legal-holds',
+    ]) {
+      const read = await through('GET', url, grant.id);
+      expect(read.statusCode, url).toBe(200);
+    }
 
     // The same routes without the header show the operators' own tenant.
     const own = await call('GET', '/v1/access/users', operator);

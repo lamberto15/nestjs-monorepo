@@ -65,9 +65,11 @@ declares (listed in `systemJobs` of a `forFeature()` declaration).
 ## Break-glass
 
 A principal with `breakGlass` set (an operator reading another tenant,
-iam/break-glass) holds every read action of the catalog
-(`catalog.readPermissions()`), unconditional, and nothing else, whatever
-its roles; only in the grant's tenant, in its read-only scope.
+iam/break-glass) holds every action of the catalog
+(`catalog.breakGlassPermissions()`), unconditional, whatever its roles, so it
+reads every route an administrator may read; only in the grant's tenant, in
+its read-only scope (GET, HEAD and OPTIONS; READ ONLY transactions), so
+nothing is written.
 
 ## Extending it (no registry)
 

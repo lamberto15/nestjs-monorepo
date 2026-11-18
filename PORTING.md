@@ -114,7 +114,7 @@ repository.
 
 ## Decided by the owner on 2026-11-18, to do
 
-- [ ] Break-glass reads every GET an administrator may read (16 routes now
+- [x] Break-glass reads every GET an administrator may read (16 routes now
       answer 403: their read checks a non-read action); writes stay refused.
 - [x] Security alerts mail once: their email channel is fixed (the account
       mails them), not offered in preferences; a changed password settles an

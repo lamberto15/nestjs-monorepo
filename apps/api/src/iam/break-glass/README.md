@@ -23,9 +23,10 @@ open and unexpired, the tenant active and not opted out, the request a read
 
 - **read only in the database**: core/tenancy's read-only scope, every
   transaction `READ ONLY` (PostgreSQL refuses any write, 25006);
-- **read only in access**: every read action of the catalog (`read`,
-  `readAudit`…), unconditional, and nothing else, whatever the operator's
-  roles (iam/access);
+- **every route an administrator reads**: every action of the catalog,
+  unconditional, whatever the operator's roles (iam/access), so a list
+  guarded by a manage action (`manageSso`, `manageLegalHolds`…) opens too;
+  only the methods above, so nothing is written;
 - **told**: `user.breakGlass` (`GET /v1/auth/me` shows it), the audit
   label `<email> (break-glass)`, a `tenant.break-glass-read` entry in the
   tenant's log (method and path) and a `BreakGlass` log line.

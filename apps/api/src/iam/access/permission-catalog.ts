@@ -225,15 +225,18 @@ export class PermissionCatalog implements OnModuleInit {
   }
 
   /**
-   * Every read action of the catalog (`read`, `readAudit`…), without
-   * conditions: what an operator holds through a break-glass grant.
-   * Nothing that changes anything.
+   * Every action of the catalog, without conditions: what an operator holds
+   * through a break-glass grant, so they read every route an administrator
+   * may read (a list guarded by `manageSso`, too). Nothing is written: such
+   * a request is GET, HEAD or OPTIONS only, its transactions READ ONLY.
    */
-  readPermissions(): PermissionInput[] {
+  breakGlassPermissions(): PermissionInput[] {
     return Object.entries(this.subjects).flatMap(([subject, declared]) =>
-      Object.keys(declared.actions)
-        .filter((action) => /^read(?:[A-Z]|$)/.test(action))
-        .map((action) => ({ subject, action, conditions: [] })),
+      Object.keys(declared.actions).map((action) => ({
+        subject,
+        action,
+        conditions: [],
+      })),
     );
   }
 

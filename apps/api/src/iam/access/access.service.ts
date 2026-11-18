@@ -701,14 +701,14 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
       return { held: [] };
     }
     if (principal.kind === 'user' && principal.breakGlass) {
-      // An operator reading a tenant through a break-glass grant: every read
-      // action of the catalog, unconditional, and nothing else, whatever
-      // their roles (the transactions are read only too); only in the
-      // grant's tenant, read only.
+      // An operator reading a tenant through a break-glass grant: every
+      // action of the catalog, unconditional, whatever their roles, so any
+      // route an administrator reads opens; only in the grant's tenant, in a
+      // read-only scope (GET, HEAD, OPTIONS; READ ONLY transactions).
       return {
         held:
           scope.readOnly && scope.tenantId === principal.breakGlass.tenantId
-            ? builtIn(this.catalog.readPermissions())
+            ? builtIn(this.catalog.breakGlassPermissions())
             : [],
       };
     }
