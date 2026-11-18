@@ -3,3 +3,8 @@ pnpm-lock.yaml
 **/drizzle/
 **/dist/
 apps/api/env.example
+# Committed as their generators write them, so `pnpm client:check` and the
+# router plugin find no difference (the commit hook would reformat them).
+packages/api-client/src/schema.ts
+packages/api-client/src/realtime-events.ts
+apps/web/src/routeTree.gen.ts

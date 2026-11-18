@@ -31,7 +31,8 @@
   "actions": {
     "bulk": {
       "started": "Bulk run",
-      "finished": "Bulk run ended"
+      "finished": "Bulk run ended",
+      "failed": "Bulk run failed"
     },
     "member": {
       "signed-in": "Member signed in"

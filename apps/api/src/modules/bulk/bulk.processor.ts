@@ -94,18 +94,21 @@ export class BulkProcessor extends TenantWorkerHost<BulkJob, BulkResult> {
 
   /**
    * A run that failed for good (runs get one attempt; a stalled one is
-   * failed by BullMQ without `handle()`): its starter hears it. Items done
-   * before it stay done.
+   * failed by BullMQ without `handle()`): its starter hears it, and the
+   * audit log closes the run with `bulk.failed`. Items done before it stay
+   * done.
    */
   @OnWorkerEvent('failed')
   async onFailed(job: Job<BulkJob> | undefined, error: Error) {
     if (!job) return;
     await inTenantOf(job.data, async () => {
+      const reason = publicReason(error.message);
+      await this.bulk.failed(job.data, job.id!, reason);
       this.realtime.toPrincipal(job.data.principal, bulkFailed, {
         id: job.id!,
         subject: job.data.subject,
         action: job.data.action,
-        error: publicReason(error.message),
+        error: reason,
       });
     }).catch((failure: unknown) =>
       this.logger.error('A failed bulk run could not be announced', {

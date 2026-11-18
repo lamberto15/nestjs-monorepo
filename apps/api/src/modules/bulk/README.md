@@ -42,7 +42,8 @@ in its own transaction. Jobs run on the `bulk` queue (one attempt, never
 retried blindly; a lost worker fails the run, items done stay done). The
 principal is checked again when the job starts. Audit: `bulk.started` (the
 run's one line in the log, `targetId` the run id), then each record's own
-entry and `bulk.finished`, all carrying the run id (`runId`, from
+entry and `bulk.finished` (or `bulk.failed`, with its reason, when a
+queued run fails for good), all carrying the run id (`runId`, from
 `inAuditRun()`); realtime `bulk.progress`, `bulk.finished`, `bulk.failed`.
 A watcher of changed records hears once per run (`record.bulk-changed`),
 linking to the record list filtered by `?bulkRun=<id>`, which every record

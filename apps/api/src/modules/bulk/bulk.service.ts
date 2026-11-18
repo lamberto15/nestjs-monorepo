@@ -550,6 +550,18 @@ export class BulkService {
     });
   }
 
+  /** Audits a queued run that failed for good (`reason` is for people), in the run. */
+  failed(job: BulkJob, id: string, reason: string) {
+    return this.audit.record(job.principal, {
+      action: 'bulk.failed',
+      targetType: 'bulk',
+      targetId: id,
+      runId: id,
+      details: { subject: job.subject, action: job.action, reason },
+      ip: job.ip,
+    });
+  }
+
   private async enqueue(job: BulkJob) {
     const jobId = randomUUID();
     // Listed for its principal (GET /bulk) before it is queued.

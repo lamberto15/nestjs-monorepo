@@ -367,6 +367,56 @@ describe('bulk operations (e2e)', () => {
     ]);
   });
 
+  it('closes a run that fails for good with bulk.failed, in the run', async () => {
+    // A principal who no longer acts in the run's tenant: the worker refuses it.
+    const job = await queue.add(
+      'TestItem',
+      {
+        tenantId,
+        principal: {
+          kind: 'user',
+          id: editor.id,
+          name: 'Gone',
+          email: 'gone@example.com',
+          emailVerified: true,
+          locale: null,
+          timezone: null,
+          tenantId: randomUUID(),
+        },
+        subject: 'TestItem',
+        action: 'delete',
+        ids: [randomUUID()],
+      },
+      { jobId: randomUUID(), attempts: 1 },
+    );
+    let entries: { action: string; runId: string | null; details: unknown }[] =
+      [];
+    for (let i = 0; i < 100 && entries.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      entries = await inTenant(() =>
+        db()
+          .select({
+            action: auditLog.action,
+            runId: auditLog.runId,
+            details: auditLog.details,
+          })
+          .from(auditLog)
+          .where(eq(auditLog.targetId, job.id!)),
+      );
+    }
+    expect(entries).toEqual([
+      {
+        action: 'bulk.failed',
+        runId: job.id,
+        details: {
+          subject: 'TestItem',
+          action: 'delete',
+          reason: 'The account that started this bulk run is no longer active.',
+        },
+      },
+    ]);
+  });
+
   it('says it takes bulk in the list description, and refuses a filter the list does not declare', async () => {
     const lists = await call('GET', '/v1/lists/TestItem', editor.headers);
     expect(lists.json().capabilities).toMatchObject({ bulk: true });

@@ -36,7 +36,7 @@ export interface RealtimeEventPayloads {
   /** A document you asked for was issued: download it at GET /v1/documents/{id}/download, or as the record's attachment. */
   'document.ready': components['schemas']['RealtimeDocumentReadyEvent'];
   /** A new notification, in the recipient's language. */
-  notification: components['schemas']['RealtimeNotificationEvent'];
+  'notification': components['schemas']['RealtimeNotificationEvent'];
   /** A notification was marked read (or unread: readAt null). */
   'notification.read': components['schemas']['RealtimeNotificationReadEvent'];
   /** A notification was removed. */
