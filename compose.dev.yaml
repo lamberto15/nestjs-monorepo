@@ -53,5 +53,44 @@ services:
     ports:
       - '127.0.0.1:3100:3000'
 
+  # Garage: an S3-compatible store, to try STORAGE_DRIVER=s3 (presigned
+  # uploads and downloads) on this machine and in CI. Only with the profile:
+  # pnpm storage:up (starts it, then tools/dev/garage-setup.sh makes the
+  # layout, the key and the bucket). Development values only.
+  garage:
+    image: dxflrs/garage:v2.5.0
+    profiles: [storage]
+    restart: unless-stopped
+    configs:
+      - source: garage
+        target: /etc/garage.toml
+    ports:
+      - '127.0.0.1:3900:3900'
+    volumes:
+      - garage_data:/var/lib/garage
+    healthcheck:
+      test: ['CMD', '/garage', 'status']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+configs:
+  # Inline, not a mounted file: some Docker setups mount files empty.
+  garage:
+    content: |
+      metadata_dir = "/var/lib/garage/meta"
+      data_dir = "/var/lib/garage/data"
+      db_engine = "sqlite"
+      replication_factor = 1
+      rpc_bind_addr = "[::]:3901"
+      rpc_public_addr = "127.0.0.1:3901"
+      rpc_secret = "6295cc36bf51fedf5903b9f092646eba12758def845af5d81b6cfa4ea587d613"
+
+      [s3_api]
+      s3_region = "garage"
+      api_bind_addr = "[::]:3900"
+      root_domain = ".s3.garage.localhost"
+
 volumes:
   postgres_data:
+  garage_data:

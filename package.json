@@ -18,6 +18,7 @@
     "test:e2e": "turbo run test:e2e",
     "services:up": "docker compose -f compose.dev.yaml up -d --wait",
     "services:down": "docker compose -f compose.dev.yaml down",
+    "storage:up": "docker compose -f compose.dev.yaml --profile storage up -d --wait garage && sh tools/dev/garage-setup.sh",
     "env:example": "pnpm --filter api build && node tools/env-example.mjs",
     "env:check": "pnpm --filter api build && node tools/env-example.mjs --check",
     "test:tools": "node --test tools/",
