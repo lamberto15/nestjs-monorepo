@@ -161,6 +161,11 @@ repository.
   image and publishes it to GHCR, from `main` and from a `v*` tag; where
   it runs, and how, is the deployment's own for now.
 
+## Waiting on upstream
+
+- `nest_outbox.messages` has no index by topic: the operator's backlog and
+  settle of notifications scan it (nestjs/outbox#90).
+
 ## Changed on the way
 
 - A variable is described once, in its module's `*.config.ts`;
