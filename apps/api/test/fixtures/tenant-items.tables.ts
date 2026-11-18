@@ -1,4 +1,4 @@
-import { text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { timestamps, uuidPk } from '../../src/core/database/columns.js';
 import {
   tenantReference,
@@ -19,6 +19,7 @@ export const tenantItems = tenantTable(
   },
   (t) => [
     uniqueIndex('test_tenant_items_name_idx').on(t.tenantId, t.name),
+    index('test_tenant_items_parent_idx').on(t.parentId),
     tenantReference(
       'test_tenant_items_parent_fk',
       [t.tenantId, t.parentId],

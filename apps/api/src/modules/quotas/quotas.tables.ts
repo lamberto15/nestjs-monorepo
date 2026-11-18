@@ -1,4 +1,4 @@
-import { jsonb, pgTable, primaryKey, text } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgTable, primaryKey, text } from 'drizzle-orm/pg-core';
 import { timestamps } from '../../core/database/columns.js';
 import { globalTable } from '../../core/tenancy/tenant-tables.js';
 
@@ -30,5 +30,9 @@ export const tenantQuotas = globalTable(
       .default({}),
     ...timestamps(),
   },
-  (t) => [primaryKey({ columns: [t.tenantId] })],
+  (t) => [
+    primaryKey({ columns: [t.tenantId] }),
+    // The foreign key to quota_plans: a plan's delete finds its tenants.
+    index('tenant_quotas_plan_idx').on(t.plan),
+  ],
 );

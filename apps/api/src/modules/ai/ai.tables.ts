@@ -51,6 +51,8 @@ export const aiRuns = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('ai_runs_tenant_idx').on(t.tenantId),
     index('ai_runs_requested_by_idx').on(t.requestedBy),
     // One run at a time per record, task and requester.
     uniqueIndex('ai_runs_pending_idx')

@@ -25,6 +25,8 @@ export const breakGlassGrants = tenantTable(
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [
+    index('break_glass_grants_user_idx').on(t.userId),
+    index('break_glass_grants_target_idx').on(t.targetTenantId),
     index('break_glass_grants_user_target_idx').on(
       t.tenantId,
       t.userId,

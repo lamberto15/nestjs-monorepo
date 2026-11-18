@@ -1,0 +1,273 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "87c1531a-db22-4db4-b677-4a74d282a2b1",
+  "prevIds": [
+    "fabefa2a-c30d-4b40-aa65-bdb019bab040"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "test_tenant_items",
+        "test_tenant_items_parent_idx"
+      ],
+      "writes": [
+        "s|idx|public.test_tenant_items_parent_idx",
+        "n|idx|public.test_tenant_items_parent_idx",
+        "e|idx|public.test_tenant_items_parent_idx",
+        "n|rel|public.test_tenant_items_parent_idx"
+      ],
+      "reads": [
+        "n|tbl|public.test_tenant_items",
+        "n|sch|public",
+        "n|col|public.test_tenant_items.parent_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "test_items",
+        "test_items_parent_idx"
+      ],
+      "writes": [
+        "s|idx|public.test_items_parent_idx",
+        "n|idx|public.test_items_parent_idx",
+        "e|idx|public.test_items_parent_idx",
+        "n|rel|public.test_items_parent_idx"
+      ],
+      "reads": [
+        "n|tbl|public.test_items",
+        "n|sch|public",
+        "n|col|public.test_items.parent_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "test_encrypted_notes",
+        "test_encrypted_notes_body_idx"
+      ],
+      "writes": [
+        "s|idx|public.test_encrypted_notes_body_idx",
+        "n|idx|public.test_encrypted_notes_body_idx",
+        "e|idx|public.test_encrypted_notes_body_idx",
+        "n|rel|public.test_encrypted_notes_body_idx"
+      ],
+      "reads": [
+        "n|tbl|public.test_encrypted_notes",
+        "n|sch|public",
+        "n|col|public.test_encrypted_notes.tenant_id",
+        "n|col|public.test_encrypted_notes.body_index"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "generated_items",
+        "generated_items_unit_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.generated_items_unit_id_idx",
+        "n|idx|public.generated_items_unit_id_idx",
+        "e|idx|public.generated_items_unit_id_idx",
+        "n|rel|public.generated_items_unit_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.generated_items",
+        "n|sch|public",
+        "n|col|public.generated_items.tenant_id",
+        "n|col|public.generated_items.unit_id",
+        "n|col|public.generated_items.id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "test_record_items",
+        "test_record_items_unit_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.test_record_items_unit_id_idx",
+        "n|idx|public.test_record_items_unit_id_idx",
+        "e|idx|public.test_record_items_unit_id_idx",
+        "n|rel|public.test_record_items_unit_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.test_record_items",
+        "n|sch|public",
+        "n|col|public.test_record_items.tenant_id",
+        "n|col|public.test_record_items.unit_id",
+        "n|col|public.test_record_items.id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_tenant_items",
+        "name": "test_tenant_items_parent_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "parent_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_items",
+        "name": "test_items_parent_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "parent_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_encrypted_notes",
+        "name": "test_encrypted_notes_body_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "body_index",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "generated_items",
+        "name": "generated_items_unit_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "unit_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "id",
+            "isExpression": false,
+            "asc": false,
+            "nullsFirst": true,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_record_items",
+        "name": "test_record_items_unit_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "unit_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "id",
+            "isExpression": false,
+            "asc": false,
+            "nullsFirst": true,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    }
+  ]
+}

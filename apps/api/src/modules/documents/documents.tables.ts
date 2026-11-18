@@ -56,6 +56,8 @@ export const documents = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('documents_tenant_idx').on(t.tenantId),
     index('documents_record_idx').on(t.subject, t.recordId),
     index('documents_requested_by_idx').on(t.requestedBy),
     // One document at a time per record, requester and language.

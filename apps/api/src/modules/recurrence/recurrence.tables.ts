@@ -63,6 +63,7 @@ export const recordSchedules = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    index('record_schedules_calendar_idx').on(t.calendarId),
     index('record_schedules_owner_idx').on(t.tenantId, t.owner, t.id),
     index('record_schedules_next_run_at_idx')
       .on(t.tenantId, t.nextRunAt)

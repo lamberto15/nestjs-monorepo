@@ -1,5 +1,11 @@
 import { fileURLToPath } from 'node:url';
-import { type AnyPgColumn, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import {
+  type AnyPgColumn,
+  index,
+  pgTable,
+  text,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { timestamps, uuidPk } from '../../src/core/database/columns.js';
 
 /**
@@ -7,12 +13,16 @@ import { timestamps, uuidPk } from '../../src/core/database/columns.js';
  * (`pnpm exec drizzle-kit generate --config test/fixtures/drizzle.config.ts`),
  * applied to the tests' template database only (global-setup.ts).
  */
-export const testItems = pgTable('test_items', {
-  id: uuidPk(),
-  name: text('name').notNull().unique(),
-  parentId: uuid('parent_id').references((): AnyPgColumn => testItems.id),
-  ...timestamps(),
-});
+export const testItems = pgTable(
+  'test_items',
+  {
+    id: uuidPk(),
+    name: text('name').notNull().unique(),
+    parentId: uuid('parent_id').references((): AnyPgColumn => testItems.id),
+    ...timestamps(),
+  },
+  (t) => [index('test_items_parent_idx').on(t.parentId)],
+);
 
 /** Where the fixtures' migrations are, recorded apart from the app's. */
 export const FIXTURE_MIGRATIONS = {

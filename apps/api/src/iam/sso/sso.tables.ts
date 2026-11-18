@@ -148,6 +148,8 @@ export const ssoRoleMappings = tenantTable(
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('sso_role_mappings_tenant_idx').on(t.tenantId),
     unique('sso_role_mappings_connection_group_role_key')
       .on(t.connectionId, t.group, t.roleId)
       .nullsNotDistinct(),
@@ -179,6 +181,8 @@ export const ssoRoleGrants = tenantTable(
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('sso_role_grants_tenant_idx').on(t.tenantId),
     primaryKey({ columns: [t.userId, t.roleId] }),
     index('sso_role_grants_connection_idx').on(t.connectionId, t.userId),
     foreignKey({

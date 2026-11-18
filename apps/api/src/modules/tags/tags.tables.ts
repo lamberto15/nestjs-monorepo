@@ -52,6 +52,8 @@ export const recordTags = tenantTable(
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('record_tags_tenant_idx').on(t.tenantId),
     primaryKey({ columns: [t.tagId, t.recordId] }),
     index('record_tags_record_idx').on(t.subject, t.recordId),
     tenantReference(

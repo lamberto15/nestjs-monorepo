@@ -77,6 +77,8 @@ export const organizationalUnitClosure = tenantTable(
     depth: integer('depth').notNull(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('organizational_unit_closure_tenant_idx').on(t.tenantId),
     primaryKey({ columns: [t.ancestorId, t.descendantId] }),
     index('organizational_unit_closure_descendant_idx').on(t.descendantId),
     tenantReference(
@@ -111,6 +113,8 @@ export const organizationalUnitMemberships = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('organizational_unit_memberships_tenant_idx').on(t.tenantId),
     uniqueIndex('organizational_unit_memberships_open_idx')
       .on(t.tenantId, t.unitId, t.userId)
       .where(isNull(t.validTo)),

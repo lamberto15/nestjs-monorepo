@@ -154,6 +154,8 @@ export const approvalDelegations = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('approval_delegations_tenant_idx').on(t.tenantId),
     index('approval_delegations_from_idx').on(t.fromUserId),
     index('approval_delegations_to_idx').on(t.toUserId, t.endsAt),
   ],
@@ -201,6 +203,8 @@ export const approvalEvents = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('approval_events_tenant_idx').on(t.tenantId),
     index('approval_events_request_idx').on(t.requestId),
     tenantReference(
       'approval_events_request_fk',

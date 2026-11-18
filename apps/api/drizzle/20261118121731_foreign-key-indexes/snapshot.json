@@ -1,0 +1,849 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "37178ee7-37bd-4458-b61a-d89155ceb5de",
+  "prevIds": [
+    "9f2dc9e6-48ab-463c-afc0-15700b6eae31"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "api_client_roles",
+        "api_client_roles_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.api_client_roles_tenant_idx",
+        "n|idx|public.api_client_roles_tenant_idx",
+        "e|idx|public.api_client_roles_tenant_idx",
+        "n|rel|public.api_client_roles_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.api_client_roles",
+        "n|sch|public",
+        "n|col|public.api_client_roles.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "role_permissions",
+        "role_permissions_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.role_permissions_tenant_idx",
+        "n|idx|public.role_permissions_tenant_idx",
+        "e|idx|public.role_permissions_tenant_idx",
+        "n|rel|public.role_permissions_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.role_permissions",
+        "n|sch|public",
+        "n|col|public.role_permissions.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "user_roles",
+        "user_roles_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.user_roles_tenant_idx",
+        "n|idx|public.user_roles_tenant_idx",
+        "e|idx|public.user_roles_tenant_idx",
+        "n|rel|public.user_roles_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.user_roles",
+        "n|sch|public",
+        "n|col|public.user_roles.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "api_keys",
+        "api_keys_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.api_keys_tenant_idx",
+        "n|idx|public.api_keys_tenant_idx",
+        "e|idx|public.api_keys_tenant_idx",
+        "n|rel|public.api_keys_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.api_keys",
+        "n|sch|public",
+        "n|col|public.api_keys.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "break_glass_grants",
+        "break_glass_grants_user_idx"
+      ],
+      "writes": [
+        "s|idx|public.break_glass_grants_user_idx",
+        "n|idx|public.break_glass_grants_user_idx",
+        "e|idx|public.break_glass_grants_user_idx",
+        "n|rel|public.break_glass_grants_user_idx"
+      ],
+      "reads": [
+        "n|tbl|public.break_glass_grants",
+        "n|sch|public",
+        "n|col|public.break_glass_grants.user_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "break_glass_grants",
+        "break_glass_grants_target_idx"
+      ],
+      "writes": [
+        "s|idx|public.break_glass_grants_target_idx",
+        "n|idx|public.break_glass_grants_target_idx",
+        "e|idx|public.break_glass_grants_target_idx",
+        "n|rel|public.break_glass_grants_target_idx"
+      ],
+      "reads": [
+        "n|tbl|public.break_glass_grants",
+        "n|sch|public",
+        "n|col|public.break_glass_grants.target_tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_unit_closure",
+        "organizational_unit_closure_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_unit_closure_tenant_idx",
+        "n|idx|public.organizational_unit_closure_tenant_idx",
+        "e|idx|public.organizational_unit_closure_tenant_idx",
+        "n|rel|public.organizational_unit_closure_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_closure",
+        "n|sch|public",
+        "n|col|public.organizational_unit_closure.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "organizational_unit_memberships",
+        "organizational_unit_memberships_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.organizational_unit_memberships_tenant_idx",
+        "n|idx|public.organizational_unit_memberships_tenant_idx",
+        "e|idx|public.organizational_unit_memberships_tenant_idx",
+        "n|rel|public.organizational_unit_memberships_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.organizational_unit_memberships",
+        "n|sch|public",
+        "n|col|public.organizational_unit_memberships.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "sso_role_grants",
+        "sso_role_grants_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.sso_role_grants_tenant_idx",
+        "n|idx|public.sso_role_grants_tenant_idx",
+        "e|idx|public.sso_role_grants_tenant_idx",
+        "n|rel|public.sso_role_grants_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.sso_role_grants",
+        "n|sch|public",
+        "n|col|public.sso_role_grants.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "sso_role_mappings",
+        "sso_role_mappings_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.sso_role_mappings_tenant_idx",
+        "n|idx|public.sso_role_mappings_tenant_idx",
+        "e|idx|public.sso_role_mappings_tenant_idx",
+        "n|rel|public.sso_role_mappings_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.sso_role_mappings",
+        "n|sch|public",
+        "n|col|public.sso_role_mappings.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "tenant_domain_routes",
+        "tenant_domain_routes_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.tenant_domain_routes_tenant_idx",
+        "n|idx|public.tenant_domain_routes_tenant_idx",
+        "e|idx|public.tenant_domain_routes_tenant_idx",
+        "n|rel|public.tenant_domain_routes_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.tenant_domain_routes",
+        "n|sch|public",
+        "n|col|public.tenant_domain_routes.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "ai_runs",
+        "ai_runs_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.ai_runs_tenant_idx",
+        "n|idx|public.ai_runs_tenant_idx",
+        "e|idx|public.ai_runs_tenant_idx",
+        "n|rel|public.ai_runs_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.ai_runs",
+        "n|sch|public",
+        "n|col|public.ai_runs.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "approval_delegations",
+        "approval_delegations_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.approval_delegations_tenant_idx",
+        "n|idx|public.approval_delegations_tenant_idx",
+        "e|idx|public.approval_delegations_tenant_idx",
+        "n|rel|public.approval_delegations_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.approval_delegations",
+        "n|sch|public",
+        "n|col|public.approval_delegations.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "approval_events",
+        "approval_events_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.approval_events_tenant_idx",
+        "n|idx|public.approval_events_tenant_idx",
+        "e|idx|public.approval_events_tenant_idx",
+        "n|rel|public.approval_events_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.approval_events",
+        "n|sch|public",
+        "n|col|public.approval_events.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "attachment_uploads",
+        "attachment_uploads_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.attachment_uploads_tenant_idx",
+        "n|idx|public.attachment_uploads_tenant_idx",
+        "e|idx|public.attachment_uploads_tenant_idx",
+        "n|rel|public.attachment_uploads_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.attachment_uploads",
+        "n|sch|public",
+        "n|col|public.attachment_uploads.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "documents",
+        "documents_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.documents_tenant_idx",
+        "n|idx|public.documents_tenant_idx",
+        "e|idx|public.documents_tenant_idx",
+        "n|rel|public.documents_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.documents",
+        "n|sch|public",
+        "n|col|public.documents.tenant_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "tenant_quotas",
+        "tenant_quotas_plan_idx"
+      ],
+      "writes": [
+        "s|idx|public.tenant_quotas_plan_idx",
+        "n|idx|public.tenant_quotas_plan_idx",
+        "e|idx|public.tenant_quotas_plan_idx",
+        "n|rel|public.tenant_quotas_plan_idx"
+      ],
+      "reads": [
+        "n|tbl|public.tenant_quotas",
+        "n|sch|public",
+        "n|col|public.tenant_quotas.plan"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "record_schedules",
+        "record_schedules_calendar_idx"
+      ],
+      "writes": [
+        "s|idx|public.record_schedules_calendar_idx",
+        "n|idx|public.record_schedules_calendar_idx",
+        "e|idx|public.record_schedules_calendar_idx",
+        "n|rel|public.record_schedules_calendar_idx"
+      ],
+      "reads": [
+        "n|tbl|public.record_schedules",
+        "n|sch|public",
+        "n|col|public.record_schedules.calendar_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "record_tags",
+        "record_tags_tenant_idx"
+      ],
+      "writes": [
+        "s|idx|public.record_tags_tenant_idx",
+        "n|idx|public.record_tags_tenant_idx",
+        "e|idx|public.record_tags_tenant_idx",
+        "n|rel|public.record_tags_tenant_idx"
+      ],
+      "reads": [
+        "n|tbl|public.record_tags",
+        "n|sch|public",
+        "n|col|public.record_tags.tenant_id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_client_roles",
+        "name": "api_client_roles_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "role_permissions",
+        "name": "role_permissions_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_roles",
+        "name": "user_roles_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "api_keys",
+        "name": "api_keys_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "break_glass_grants",
+        "name": "break_glass_grants_user_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "user_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "break_glass_grants",
+        "name": "break_glass_grants_target_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "target_tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_closure",
+        "name": "organizational_unit_closure_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "organizational_unit_memberships",
+        "name": "organizational_unit_memberships_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "sso_role_grants",
+        "name": "sso_role_grants_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "sso_role_mappings",
+        "name": "sso_role_mappings_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "tenant_domain_routes",
+        "name": "tenant_domain_routes_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "ai_runs",
+        "name": "ai_runs_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "approval_delegations",
+        "name": "approval_delegations_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "approval_events",
+        "name": "approval_events_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "attachment_uploads",
+        "name": "attachment_uploads_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "documents",
+        "name": "documents_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "tenant_quotas",
+        "name": "tenant_quotas_plan_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "plan",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "record_schedules",
+        "name": "record_schedules_calendar_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "calendar_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "record_tags",
+        "name": "record_tags_tenant_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    }
+  ]
+}

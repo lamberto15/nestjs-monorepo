@@ -1,0 +1,19 @@
+CREATE INDEX "api_client_roles_tenant_idx" ON "api_client_roles" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "role_permissions_tenant_idx" ON "role_permissions" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "user_roles_tenant_idx" ON "user_roles" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "api_keys_tenant_idx" ON "api_keys" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "break_glass_grants_user_idx" ON "break_glass_grants" ("user_id");--> statement-breakpoint
+CREATE INDEX "break_glass_grants_target_idx" ON "break_glass_grants" ("target_tenant_id");--> statement-breakpoint
+CREATE INDEX "organizational_unit_closure_tenant_idx" ON "organizational_unit_closure" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "organizational_unit_memberships_tenant_idx" ON "organizational_unit_memberships" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "sso_role_grants_tenant_idx" ON "sso_role_grants" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "sso_role_mappings_tenant_idx" ON "sso_role_mappings" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "tenant_domain_routes_tenant_idx" ON "tenant_domain_routes" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "ai_runs_tenant_idx" ON "ai_runs" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "approval_delegations_tenant_idx" ON "approval_delegations" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "approval_events_tenant_idx" ON "approval_events" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "attachment_uploads_tenant_idx" ON "attachment_uploads" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "documents_tenant_idx" ON "documents" ("tenant_id");--> statement-breakpoint
+CREATE INDEX "tenant_quotas_plan_idx" ON "tenant_quotas" ("plan");--> statement-breakpoint
+CREATE INDEX "record_schedules_calendar_idx" ON "record_schedules" ("calendar_id");--> statement-breakpoint
+CREATE INDEX "record_tags_tenant_idx" ON "record_tags" ("tenant_id");

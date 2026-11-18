@@ -156,6 +156,8 @@ export const apiKeys = globalTable(
     lastUsedAt: at('last_used_at'),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('api_keys_tenant_idx').on(t.tenantId),
     index('api_keys_client_id_idx').on(t.clientId),
     tenantReference(
       'api_keys_client_fk',

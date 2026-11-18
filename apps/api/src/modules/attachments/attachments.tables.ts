@@ -137,6 +137,8 @@ export const attachmentUploads = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('attachment_uploads_tenant_idx').on(t.tenantId),
     index('attachment_uploads_expires_idx').on(t.expiresAt),
     index('attachment_uploads_uploaded_by_idx').on(t.uploadedBy),
   ],

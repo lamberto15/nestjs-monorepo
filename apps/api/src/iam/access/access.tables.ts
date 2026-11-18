@@ -56,6 +56,8 @@ export const rolePermissions = tenantTable(
     fields: jsonb('fields').$type<string[]>(),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('role_permissions_tenant_idx').on(t.tenantId),
     index('role_permissions_role_id_idx').on(t.roleId),
     tenantReference(
       'role_permissions_role_fk',
@@ -77,6 +79,8 @@ export const userRoles = tenantTable(
     expiresAt: at('expires_at'),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('user_roles_tenant_idx').on(t.tenantId),
     // A role belongs to one tenant, so (user, role) names the grant.
     primaryKey({ columns: [t.userId, t.roleId] }),
     // The roles list counts each role's live grants: role, the wall's
@@ -104,6 +108,8 @@ export const apiClientRoles = tenantTable(
     expiresAt: at('expires_at'),
   },
   (t) => [
+    // The foreign key to tenants: a tenant's delete and export find its rows.
+    index('api_client_roles_tenant_idx').on(t.tenantId),
     primaryKey({ columns: [t.clientId, t.roleId] }),
     index('api_client_roles_role_id_idx').on(t.roleId),
     tenantReference(

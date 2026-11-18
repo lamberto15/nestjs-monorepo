@@ -228,6 +228,14 @@ export function recordTable<
         ...fieldExtras(name, t, declaration.fields, declaration.softDelete),
         ...(declaration.unit
           ? [
+              // As a reference field's (fieldExtras): a unit-scoped list
+              // (`unit_id in …`, newest first) is a range of it, and the
+              // key's check when a unit is deleted uses it.
+              index(`${name}_unit_id_idx`).on(
+                t.tenantId!,
+                t.unitId!,
+                t.id!.desc().nullsFirst(),
+              ),
               // A unit with records can't be deleted.
               tenantReference(
                 `${name}_unit_fk`,

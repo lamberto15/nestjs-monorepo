@@ -1,4 +1,10 @@
-import { boolean, primaryKey, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  primaryKey,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { at, timestamps, uuidPk } from '../../core/database/columns.js';
 import { globalTable, tenantTable } from '../../core/tenancy/tenant-tables.js';
 
@@ -59,10 +65,15 @@ export const tenantDomains = tenantTable(
  * per hostname: the first to verify it. Kept with `tenant_domains` in the
  * same transactions.
  */
-export const tenantDomainRoutes = globalTable('tenant_domain_routes', {
-  hostname: text('hostname').primaryKey(),
-  createdAt: at('created_at').notNull().defaultNow(),
-});
+export const tenantDomainRoutes = globalTable(
+  'tenant_domain_routes',
+  {
+    hostname: text('hostname').primaryKey(),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  // The foreign key to tenants: a tenant's delete finds its routes.
+  (t) => [index('tenant_domain_routes_tenant_idx').on(t.tenantId)],
+);
 
 export type TenantLifecycle = typeof tenantLifecycle.$inferSelect;
 export type TenantDomain = typeof tenantDomains.$inferSelect;
