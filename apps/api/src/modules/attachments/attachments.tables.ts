@@ -91,6 +91,9 @@ export const attachments = tenantTable(
   (t) => [
     // The upload sweep's check that a key became an attachment's file.
     index('attachments_key_idx').on(t.tenantId, t.key),
+    // The storage quota's sum (attachments.quota.ts), read from the index
+    // alone: each upload checks it while a tenant has a limit.
+    index('attachments_size_idx').on(t.tenantId, t.size),
     index('attachments_record_idx').on(t.subject, t.recordId),
     index('attachments_uploaded_by_idx').on(t.uploadedBy),
     // The scan retry job looks for the uploads stuck pending (a pending file is rare).
@@ -184,6 +187,8 @@ export const attachmentVersions = tenantTable(
     replacedAt: at('replaced_at').notNull().defaultNow(),
   },
   (t) => [
+    // The storage quota's sum, as attachments_size_idx.
+    index('attachment_versions_size_idx').on(t.tenantId, t.size),
     unique('attachment_versions_attachment_version_key').on(
       t.tenantId,
       t.attachmentId,

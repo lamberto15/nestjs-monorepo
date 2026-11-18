@@ -1,0 +1,117 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "6fa49ef4-0326-4cce-acb9-189012f42974",
+  "prevIds": [
+    "f8ee97ec-267d-4e97-9e5a-03c7d5ae5fd3"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "attachment_versions",
+        "attachment_versions_size_idx"
+      ],
+      "writes": [
+        "s|idx|public.attachment_versions_size_idx",
+        "n|idx|public.attachment_versions_size_idx",
+        "e|idx|public.attachment_versions_size_idx",
+        "n|rel|public.attachment_versions_size_idx"
+      ],
+      "reads": [
+        "n|tbl|public.attachment_versions",
+        "n|sch|public",
+        "n|col|public.attachment_versions.tenant_id",
+        "n|col|public.attachment_versions.size"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "attachments",
+        "attachments_size_idx"
+      ],
+      "writes": [
+        "s|idx|public.attachments_size_idx",
+        "n|idx|public.attachments_size_idx",
+        "e|idx|public.attachments_size_idx",
+        "n|rel|public.attachments_size_idx"
+      ],
+      "reads": [
+        "n|tbl|public.attachments",
+        "n|sch|public",
+        "n|col|public.attachments.tenant_id",
+        "n|col|public.attachments.size"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "attachment_versions",
+        "name": "attachment_versions_size_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "size",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "attachments",
+        "name": "attachments_size_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "size",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    }
+  ]
+}
