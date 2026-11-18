@@ -6,22 +6,33 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { DatabaseModule } from '../database/database.module.js';
 import { SharedLocksModule } from './locks.module.js';
 
-const key = `e2e:${randomUUID()}`;
 const runs: string[] = [];
 
-@Injectable()
-class TestJob {
-  // February 29th at 3 AM: the schedule never fires by itself, the test calls the method.
-  @Cron('0 3 29 2 *', { name: key })
-  @OnOneInstance({ key })
-  async run() {
-    runs.push('ran');
-    await Promise.resolve();
+/**
+ * A job on a key of its own, one per test. A lease handed back at shutdown is
+ * kept up to a second after the job last started (@nestjs/locks'
+ * HANDOVER_GRACE), so a key shared with the previous test would start this
+ * one with that lease still held elsewhere.
+ */
+function jobOn(key: string) {
+  @Injectable()
+  class TestJob {
+    // February 29th at 3 AM: the schedule never fires by itself, the test calls the method.
+    @Cron('0 3 29 2 *', { name: key })
+    @OnOneInstance({ key })
+    async run() {
+      runs.push('ran');
+      await Promise.resolve();
+    }
   }
+  return TestJob;
 }
 
 describe('locks and scheduled jobs', () => {
   const apps: TestingModule[] = [];
+
+  let key: string;
+  let TestJob: ReturnType<typeof jobOn>;
 
   async function start() {
     const app = await Test.createTestingModule({
@@ -33,16 +44,15 @@ describe('locks and scheduled jobs', () => {
     return app;
   }
 
-  /** Closing hands the job's lease back, so each test starts with none. */
-  const stopAll = async () => {
-    await Promise.all(apps.splice(0).map((app) => app.close()));
-  };
-
   beforeEach(() => {
     runs.length = 0;
+    key = `e2e:${randomUUID()}`;
+    TestJob = jobOn(key);
   });
 
-  afterEach(stopAll);
+  afterEach(async () => {
+    await Promise.all(apps.splice(0).map((app) => app.close()));
+  });
 
   it('runs the job on one of three instances, and skips the others', async () => {
     const instances = [await start(), await start(), await start()];
@@ -57,11 +67,8 @@ describe('locks and scheduled jobs', () => {
     const tick = async () => {
       for (const app of instances) await app.get(TestJob).run();
     };
-    // A lease handed back at shutdown is kept up to a second: wait for the first owner.
-    await vi.waitFor(async () => {
-      await tick();
-      expect(runs).toHaveLength(1);
-    });
+    await tick();
+    expect(runs).toHaveLength(1);
     await tick();
     await tick();
     expect(runs).toHaveLength(3);

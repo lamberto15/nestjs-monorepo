@@ -51,11 +51,20 @@ const der = (tag: number, content: Buffer) => {
   return Buffer.concat([Buffer.from([tag]), head, content]);
 };
 const seq = (...parts: Buffer[]) => der(0x30, Buffer.concat(parts));
-const integer = (bytes: Buffer) =>
-  der(
+/**
+ * A non-negative DER INTEGER: minimal, so leading zero bytes go (a random
+ * serial starting 0x00 0x01… is "illegal padding" to OpenSSL), and a zero
+ * goes back in front of a high bit so it stays positive.
+ */
+const integer = (raw: Buffer) => {
+  let start = 0;
+  while (start < raw.length - 1 && raw[start] === 0) start++;
+  const bytes = raw.subarray(start);
+  return der(
     0x02,
     bytes[0]! & 0x80 ? Buffer.concat([Buffer.from([0]), bytes]) : bytes,
   );
+};
 const oid = (dotted: string) => {
   const [a, b, ...rest] = dotted.split('.').map(Number);
   const bytes = [a! * 40 + b!];

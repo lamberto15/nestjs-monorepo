@@ -100,7 +100,10 @@ describe('API clients (e2e)', () => {
 
     const read = (await call('GET', `${URL}/${id}`, admin.headers)).json();
     expect(read.keys).toHaveLength(1);
-    expect(JSON.stringify(read)).not.toContain(key.split('_')[2]);
+    // The secret is base64url, which may hold `_` itself: all after the prefix.
+    const secret = key.replace(/^sk_[0-9a-f]{16}_/, '');
+    expect(secret.length).toBeGreaterThan(16);
+    expect(JSON.stringify(read)).not.toContain(secret);
     expect(JSON.stringify(read)).not.toContain('keyHash');
     const list = (await call('GET', URL, admin.headers)).json();
     expect(list.items.map((client: { id: string }) => client.id)).toEqual([id]);
