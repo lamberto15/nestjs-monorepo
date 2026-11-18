@@ -19,11 +19,14 @@ import { useCan } from '@/lib/features';
 
 /**
  * Webhooks belong to an API client (it is the webhooks' tenant, and what a
- * delivery carries is what it may read), so the way in is the client.
+ * delivery carries is what it may read), so the way in is the client. Each
+ * part shows by permission: the clients with `manageEndpoints`, the link to
+ * the incoming senders with `manageSenders`.
  */
 export function WebhookClientsPage() {
   const { t } = useTranslation('webhooks');
-  const list = useQuery(clientsQuery);
+  const canManageEndpoints = useCan('Webhooks.manageEndpoints');
+  const list = useQuery({ ...clientsQuery, enabled: canManageEndpoints });
   // The senders page turns away anyone without the permission: no link to it then.
   const canManageSenders = useCan('Webhooks.manageSenders');
   return (
@@ -42,7 +45,7 @@ export function WebhookClientsPage() {
           )
         }
       />
-      {list.isPending ? (
+      {!canManageEndpoints ? null : list.isPending ? (
         <Spinner />
       ) : list.data?.items.length ? (
         <div className="rounded-md border">

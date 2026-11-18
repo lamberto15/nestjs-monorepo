@@ -5,7 +5,8 @@ import { featuresQuery, type Me } from '@/lib/session';
 /**
  * A route's `beforeLoad`: the pages need WEBHOOKS and API_CLIENTS on (the
  * API answers 404 `feature_off` otherwise: webhooks are managed per API
- * client) and `Webhooks.manageEndpoints` (anyone else goes to the dashboard).
+ * client) and `Webhooks.manageEndpoints` or `Webhooks.manageSenders` (anyone
+ * else goes to the dashboard).
  * For the user's sake only: the API refuses them either way.
  */
 export function requireWebhooks() {
@@ -18,7 +19,10 @@ export function requireWebhooks() {
     if (features.webhooks !== true || features.apiClients !== true) {
       throw notFound();
     }
-    if (context.me.can['Webhooks.manageEndpoints'] !== true) {
+    if (
+      context.me.can['Webhooks.manageEndpoints'] !== true &&
+      context.me.can['Webhooks.manageSenders'] !== true
+    ) {
       throw redirect({ to: '/' });
     }
   };

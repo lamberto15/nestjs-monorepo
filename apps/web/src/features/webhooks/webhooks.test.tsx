@@ -120,7 +120,11 @@ const deliveryList = {
 type Condition = { field: string; op: string; value: unknown };
 
 function api(
-  options: { features?: Partial<typeof allFeatures>; can?: boolean } = {},
+  options: {
+    features?: Partial<typeof allFeatures>;
+    can?: boolean;
+    senders?: boolean;
+  } = {},
 ) {
   const state = {
     endpoints: [endpoint()],
@@ -153,7 +157,10 @@ function api(
     http.get('/v1/auth/me', () =>
       HttpResponse.json({
         ...signedInUser,
-        can: { 'Webhooks.manageEndpoints': options.can ?? true },
+        can: {
+          'Webhooks.manageEndpoints': options.can ?? true,
+          'Webhooks.manageSenders': options.senders ?? false,
+        },
       }),
     ),
     http.get('/v1/features', () =>
@@ -766,6 +773,16 @@ describe('gating', () => {
     api({ features: { apiClients: false } });
     await renderApp(endpointsPath);
     expect(await screen.findByText('Page not found')).toBeVisible();
+  });
+
+  it('shows the entry to whoever manages senders only: the senders link, no clients', async () => {
+    api({ can: false, senders: true });
+    await renderApp('/webhooks');
+    expect(
+      await screen.findByRole('link', { name: 'Incoming senders' }),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Webhooks' })).toBeVisible();
+    expect(screen.queryByText('Billing exporter')).toBeNull();
   });
 
   it('hides the entry from a user without the permission and sends them to the dashboard', async () => {

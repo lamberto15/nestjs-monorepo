@@ -132,7 +132,7 @@ repository.
       no maintenance page (the host's job).
 - [x] An API client's create takes `dailyQuota`, written in its transaction
       through a hook the usage module provides.
-- [ ] One Webhooks menu entry for `manageEndpoints` or `manageSenders`; the
+- [x] One Webhooks menu entry for `manageEndpoints` or `manageSenders`; the
       page shows each section by permission.
 - [ ] The documents panel lists `GET /v1/<path>/{id}/documents`.
 - [ ] A `markdown` field type in the generator: a text column, the Markdown

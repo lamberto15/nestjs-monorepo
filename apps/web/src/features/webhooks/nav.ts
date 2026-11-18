@@ -8,5 +8,6 @@ export default {
   label: 'webhooks:nav.title',
   icon: WebhookIcon,
   feature: 'webhooks',
-  permission: 'Webhooks.manageEndpoints',
+  // Either: the page shows what each lets you manage.
+  permission: ['Webhooks.manageEndpoints', 'Webhooks.manageSenders'],
 } satisfies NavContribution;
