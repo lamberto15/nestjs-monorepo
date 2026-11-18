@@ -108,6 +108,9 @@ repository.
       message rules, migration lint, setup, the demo seed
 - [x] the docs pages
 - [x] CI (one workflow, the image, Dependabot: `docs/ci.md`)
+- [x] the browser tests (`apps/web-e2e`, 38 tests): on the API serving the
+      built web app, a database of their own; CI job `web-e2e`
+- [x] the image builds (`docker build`) and serves the page and the API
 
 ## Not ported, on purpose
 
