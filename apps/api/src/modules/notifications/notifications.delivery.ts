@@ -151,6 +151,7 @@ export class NotificationDelivery {
           'push',
           {
             deviceId: device.id,
+            userId: user.id,
             notificationId: row.id,
             ...rendered,
             link: row.link,

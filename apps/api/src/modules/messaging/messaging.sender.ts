@@ -86,6 +86,7 @@ export class MessagingSender {
         kind: 'push',
         tenantId: message.tenantId,
         deviceId,
+        userId: message.userId,
         notificationId: message.messageId,
         title: message.title,
         body: message.body,

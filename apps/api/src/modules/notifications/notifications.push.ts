@@ -7,9 +7,15 @@ import { notificationsConfig } from './notifications.config.js';
 /** The queue web push messages go through: one job per device. */
 export const PUSH_QUEUE = 'push';
 
-/** What a push job carries: the device, and the message (what the service worker shows). */
+/**
+ * What a push job carries: the device, the person it was rendered for, and
+ * the message (what the service worker shows). A browser can move to another
+ * account while a push waits out quiet hours: it is sent only while the
+ * device is still `userId`'s.
+ */
 export interface PushJob {
   deviceId: string;
+  userId: string;
   notificationId: string;
   title: string;
   body: string;

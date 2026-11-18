@@ -22,6 +22,8 @@ export interface CodeJob extends TenantEnvelope {
 export interface PushJob extends TenantEnvelope {
   kind: 'push';
   deviceId: string;
+  /** Whose device it was when queued: a token another account registers since keeps the id. */
+  userId: string;
   notificationId: string;
   title: string;
   body: string;

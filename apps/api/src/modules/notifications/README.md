@@ -53,7 +53,9 @@ the tenant), their preferences, the texts in their language, then: **email**
 flag the row for `NotificationDigestJob`, hourly at :05, daily at
 NOTIFICATIONS_DIGEST_HOUR in the user's zone); **push** (one job per
 registered browser on the `push` queue, held until the user's quiet hours end
-unless `urgent`; a browser the push service says is gone is forgotten);
+unless `urgent`; sent only while the browser is still the recipient's, not
+once someone else registered it; a browser the push service says is gone is
+forgotten);
 **realtime** after the commit (`notification`, `notification.read`,
 `notifications.read-all`, `notification.removed`, `notifications.unread-count`).
 Mail honours MAIL_DELIVERY; a mandatory type counts as essential mail. Every

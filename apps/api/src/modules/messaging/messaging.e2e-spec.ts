@@ -283,6 +283,53 @@ describe('push and SMS (e2e)', () => {
         'one-token',
       ]);
     });
+
+    it('drops a queued push once another account has registered the device', async () => {
+      const alice = await member(app, tenantId, ['editor']);
+      const bob = await member(app, tenantId, ['editor']);
+      const token = 'handed-over-token';
+      const registered = await call(
+        'PUT',
+        '/v1/messaging/devices',
+        alice.headers,
+        {
+          platform: 'android',
+          name: 'Shared phone',
+          token,
+        },
+      );
+      const deviceId = registered.json().id;
+      await app.get(MessagingSender).pushToDevices({
+        tenantId,
+        userId: alice.id,
+        messageId: 'n-handed-over',
+        title: 'For Alice',
+        body: 'Only Alice should read this.',
+        link: null,
+        sendAt: new Date(Date.now() + 3_600_000),
+      });
+      const job = (await queue().getJob(`push-n-handed-over-${deviceId}`))!;
+      expect(await job.getState()).toBe('delayed');
+
+      // Bob signs in on the same phone: the token moves to him and keeps its id.
+      const moved = await call('PUT', '/v1/messaging/devices', bob.headers, {
+        platform: 'android',
+        name: 'Shared phone',
+        token,
+      });
+      expect(moved.json().id).toBe(deviceId);
+
+      const before = push().sent.length;
+      await job.promote();
+      await idle();
+      expect(push().sent.slice(before)).toEqual([]);
+      const bobs = (
+        await call('GET', '/v1/messaging/devices', bob.headers)
+      ).json().items;
+      expect(bobs.map((device: { id: string }) => device.id)).toEqual([
+        deviceId,
+      ]);
+    });
   });
 
   describe('the phone number and SMS delivery', () => {

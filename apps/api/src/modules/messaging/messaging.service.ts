@@ -163,11 +163,12 @@ export class MessagingService {
   }
 
   /** The decrypted token of a device, for the worker; undefined when it is gone. */
-  async deviceToken(deviceId: string) {
+  /** The token of the user's device: none once another account has registered it. */
+  async deviceToken(deviceId: string, userId: string) {
     const [row] = await this.db
       .select()
       .from(devices)
-      .where(eq(devices.id, deviceId));
+      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
     return row
       ? {
           platform: row.platform,
@@ -177,8 +178,10 @@ export class MessagingService {
   }
 
   /** The provider reported the token dead (or the device is otherwise gone). */
-  async dropDevice(deviceId: string) {
-    await this.db.delete(devices).where(eq(devices.id, deviceId));
+  async dropDevice(deviceId: string, userId: string) {
+    await this.db
+      .delete(devices)
+      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
   }
 
   /** The ids of the user's devices that can get a push now. */

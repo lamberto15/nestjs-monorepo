@@ -678,6 +678,61 @@ describe('notifications (e2e)', () => {
     ).toBe(204);
   });
 
+  it('never sends a held-back push to the account a browser moved to since', async () => {
+    const alice = await person();
+    const bob = await person();
+    const subscription = {
+      endpoint: 'https://push.example.com/send/moved-while-quiet',
+      keys: { p256dh: 'BPublicKey', auth: 'secret' },
+    };
+    await call('PUT', '/v1/devices', alice.headers, {
+      name: 'Shared',
+      subscription,
+    });
+    const hour = (offset: number) =>
+      String((new Date().getUTCHours() + 24 + offset) % 24).padStart(2, '0') +
+      ':00';
+    await call('PUT', '/v1/notifications/quiet-hours', alice.headers, {
+      start: hour(-1),
+      end: hour(2),
+    });
+    const id = await testNotification(alice);
+    await delivered(id);
+    const [device] = (await call('GET', '/v1/devices', alice.headers)).json()
+      .items as { id: string }[];
+    const queue = app.get<Queue>(getQueueToken(PUSH_QUEUE));
+    const job = (await queue.getJob(`push-${id}-${device!.id}`))!;
+    expect(job.opts.delay).toBeGreaterThan(0);
+
+    // Bob signs in on the same browser while the push waits: the row moves to him, its id kept.
+    const moved = await call('PUT', '/v1/devices', bob.headers, {
+      name: 'Shared',
+      subscription,
+    });
+    expect(moved.json().id).toBe(device!.id);
+
+    // Due now: the worker runs it, and the browser hears nothing written for Alice.
+    await job.promote();
+    await vi.waitFor(
+      async () => {
+        const done = (await queue.getJob(job.id!))!;
+        expect(await done.getState()).toBe('completed');
+        expect(done.returnvalue).toEqual({ sent: false });
+      },
+      { timeout: 20_000 },
+    );
+    expect(
+      pushed.mock.calls.filter(
+        ([sent]) =>
+          (sent as { endpoint: string }).endpoint === subscription.endpoint,
+      ),
+    ).toEqual([]);
+    // Bob's registration is untouched.
+    expect(
+      (await call('GET', '/v1/devices', bob.headers)).json().items,
+    ).toMatchObject([{ id: device!.id }]);
+  });
+
   it('forgets a browser the push service says is gone', async () => {
     const alice = await person();
     await call('PUT', '/v1/devices', alice.headers, {

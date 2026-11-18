@@ -140,7 +140,7 @@ export class MessagingProcessor extends TenantWorkerHost<
     if (!this.push) {
       throw new UnrecoverableError('PUSH_PROVIDER is off.');
     }
-    const device = await this.messaging.deviceToken(data.deviceId);
+    const device = await this.messaging.deviceToken(data.deviceId, data.userId);
     if (!device || !this.push.platforms.includes(device.platform)) {
       return { status: 'skipped', reason: 'no_device' };
     }
@@ -167,7 +167,7 @@ export class MessagingProcessor extends TenantWorkerHost<
         device.platform,
       );
       if (result === 'gone') {
-        await this.messaging.dropDevice(data.deviceId);
+        await this.messaging.dropDevice(data.deviceId, data.userId);
         return { status: 'skipped', reason: 'device_gone' };
       }
     } catch (error) {

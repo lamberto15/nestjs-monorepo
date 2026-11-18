@@ -26,14 +26,17 @@ export class PushProcessor extends WorkerHost {
   }
 
   async process(job: Job<PushJob>) {
-    const device = await this.devices.find(job.data.deviceId);
-    if (!device) return { sent: false }; // removed since it was queued
+    const { deviceId, userId } = job.data;
+    // Removed since it was queued, or moved to another account: whoever is
+    // signed in on the browser now never sees what was written for userId.
+    const device = await this.devices.find(deviceId, userId);
+    if (!device) return { sent: false };
     try {
       await this.webPush.send(device, job.data);
       return { sent: true };
     } catch (error) {
       if (isGone(error)) {
-        await this.devices.forget(device.id);
+        await this.devices.forget(device.id, userId);
         this.logger.log(
           'A browser is gone: its push registration was removed',
           {

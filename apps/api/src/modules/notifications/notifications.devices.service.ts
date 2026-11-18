@@ -97,18 +97,23 @@ export class DevicesService {
     return rows.map((row) => this.subscription(row));
   }
 
-  /** One device with its keys, or undefined (removed since the job was queued). */
-  async find(id: string) {
+  /**
+   * One of the user's devices with its keys, or undefined: removed since the
+   * job was queued, or registered by someone else since (it moved to them).
+   */
+  async find(id: string, userId: string) {
     const [row] = await this.db
       .select()
       .from(pushDevices)
-      .where(eq(pushDevices.id, id));
+      .where(and(eq(pushDevices.id, id), eq(pushDevices.userId, userId)));
     return row && this.subscription(row);
   }
 
-  /** The push service says this browser is gone: forget it. */
-  async forget(id: string) {
-    await this.db.delete(pushDevices).where(eq(pushDevices.id, id));
+  /** The push service says this browser of the user's is gone: forget it (not once it moved to someone else). */
+  async forget(id: string, userId: string) {
+    await this.db
+      .delete(pushDevices)
+      .where(and(eq(pushDevices.id, id), eq(pushDevices.userId, userId)));
   }
 
   /** Forgets browsers not seen since `before`; how many. */
