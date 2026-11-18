@@ -94,8 +94,9 @@ repository.
 - [x] the generator (`pnpm feature:add`, Nest schematics), proved by a
       generated fixture that may not drift from it. No sample feature ships
       (`notes` is not ported: AGENTS.md, "Decisions").
-- [ ] the web pages of a generated feature (the list page reads
-      `?bulkRun=<id>`, the link of a bulk run's notification)
+- [x] the web pages of a generated feature (`pnpm feature:add` from the
+      root, `--web-root`; the list page reads `?bulkRun=<id>`, the link of a
+      bulk run's notification), proved in CI by generating one
 
 ## Around the API
 

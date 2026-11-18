@@ -77,6 +77,53 @@ describe('the feature schematic', () => {
     }
   });
 
+  it('from the repository root with --web-root, also writes the web pages, and the API test helpers stay beside its src', async () => {
+    const tree = empty();
+    tree.create(
+      'apps/api/src/app.module.ts',
+      "import { Module } from '@nestjs/common';\n\n@Module({\n  imports: [],\n})\nexport class AppModule {}\n",
+    );
+    const result = await runner.runSchematic(
+      'feature',
+      {
+        name: 'invoices',
+        fields: 'title:string,total:money',
+        addons: '',
+        sourceRoot: 'apps/api/src',
+        webRoot: 'apps/web/src',
+      },
+      tree,
+    );
+    expect(
+      result.files.filter((file) => file.startsWith('/apps/web/')).sort(),
+    ).toEqual(
+      [
+        'features/invoices/api.ts',
+        'features/invoices/invoice-form.tsx',
+        'features/invoices/invoices.test.tsx',
+        'features/invoices/nav.ts',
+        'features/invoices/use-invoice-delete.tsx',
+        'locales/en/invoices.json',
+        'routes/_app/invoices/$id/edit.tsx',
+        'routes/_app/invoices/$id/index.tsx',
+        'routes/_app/invoices/index.tsx',
+        'routes/_app/invoices/new.tsx',
+      ].map((file) => '/apps/web/src/' + file),
+    );
+    // A bulk run's notification opens the list narrowed to what it changed.
+    expect(
+      result.readContent('/apps/web/src/routes/_app/invoices/index.tsx'),
+    ).toContain('...run.query');
+    expect(
+      result.readContent('/apps/web/src/features/invoices/api.ts'),
+    ).toContain("INVOICES_PATH = '/v1/invoices'");
+    expect(
+      result.readContent(
+        '/apps/api/src/features/invoices/invoices.e2e-spec.ts',
+      ),
+    ).toContain("from '../../../test/boot.js'");
+  });
+
   it('writes the nine files, its texts, spec and README into src/features/<name>, and adds the module to the app module', async () => {
     const tree = empty();
     tree.create(

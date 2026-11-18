@@ -45,11 +45,25 @@
       // Dice UI's data table: registry output the shadcn CLI writes, kept
       // whole so `shadcn add` updates apply (AGENTS.md: generate, never
       // hand-write). Parts of it are unused until a list page needs them.
-      "ignore": ["src/components/data-table/**", "src/lib/data-table-*.ts"],
+      // Then what only a generated feature's pages import (the feature
+      // schematic's web-feature/templates.js); no feature ships.
+      "ignore": [
+        "src/components/data-table/**",
+        "src/lib/data-table-*.ts",
+        "src/components/records/bulk-run-filter.tsx",
+        "src/components/records/use-record-delete.tsx",
+        "src/components/records/recycle-bin.tsx",
+      ],
       // react-day-picker: the calendar of that same registry code.
       // tailwindcss: imported by the stylesheet (packages/ui), which
       // @tailwindcss/vite compiles; no JavaScript imports it.
-      "ignoreDependencies": ["react-day-picker", "tailwindcss"],
+      // @tanstack/router-generator: tools/feature-add.mjs loads it from here
+      // (createRequire) to write the route tree after a feature is added.
+      "ignoreDependencies": [
+        "react-day-picker",
+        "tailwindcss",
+        "@tanstack/router-generator",
+      ],
     },
     "apps/web-e2e": {
       "entry": ["test/**/*.ts", "scripts/*.mjs"],

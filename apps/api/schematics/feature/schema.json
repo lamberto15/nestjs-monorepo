@@ -21,6 +21,10 @@
         "index": 1
       }
     },
+    "webRoot": {
+      "type": "string",
+      "description": "The web app's src from the same root (apps/web/src): also write the feature's web pages. `pnpm feature:add` passes it."
+    },
     "flat": {
       "type": "boolean",
       "default": false,

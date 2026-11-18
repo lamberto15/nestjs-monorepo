@@ -1,6 +1,8 @@
 // The `feature` schematic: a feature's files in its folder (`path`, default
 // src/features/<name>), and its module in src/app.module.ts's imports, the
-// one central line a feature needs (`--skip-import` leaves it out). Plain
+// one central line a feature needs (`--skip-import` leaves it out). With
+// `--web-root` (the web app's src, from the same root: the repository's,
+// `pnpm feature:add`) also its web pages (web-feature/templates.js). Plain
 // ESM: Nest's CLI runs it as it is, no build step. Run it with
 // `nest g -c ./schematics/collection.json feature <name>` from apps/api, which
 // asks for what is not given (schema.json's prompts); docs/adding-a-feature.md.
@@ -12,6 +14,7 @@ import { ADDONS, parseAddons } from './addons.js';
 import { parseFields } from './fields.js';
 import { kebabOf, names } from './names.js';
 import * as templates from './templates.js';
+import * as web from '../web-feature/templates.js';
 
 /** The words an approvable action can't be: the record's own routes. */
 const RESERVED_ACTIONS = new Set([
@@ -82,12 +85,19 @@ export function context(options) {
   ) {
     throw new Error('--idempotency: required, optional or off.');
   }
+  const webRoot = options.webRoot ? clean(options.webRoot) : null;
+  if (webRoot && (webRoot.startsWith('..') || posix.isAbsolute(webRoot))) {
+    throw new Error(
+      '--web-root "' + options.webRoot + '": a folder inside the project.',
+    );
+  }
   const c = {
     t,
     fields,
     addons,
     dir,
     sourceRoot,
+    webRoot,
     softDelete: options.softDelete !== false,
     unit: options.unit === true,
     clientAccess: options.clientAccess === true,
@@ -99,7 +109,8 @@ export function context(options) {
     R: t.SINGULAR,
     T: t.pluralCamel,
     src: posix.relative(dir, sourceRoot),
-    test: posix.relative(dir, 'test'),
+    // The app's test/ beside its src/ (src → test; apps/api/src → apps/api/test).
+    test: posix.relative(dir, posix.join(posix.dirname(sourceRoot), 'test')),
     url: '/v1/' + t.plural,
     writer:
       options.grants === 'none' ? 'team.admin.headers' : 'team.editor.headers',
@@ -139,6 +150,27 @@ export function files(c) {
     [at('i18n/en.json')]: templates.texts(c),
     [at(t.plural + '.e2e-spec.ts')]: templates.e2e(c),
     [at('README.md')]: templates.readme(c),
+    ...(c.webRoot && webFiles(c)),
+  };
+}
+
+/** The feature's web pages, texts and test, under the web app's src (`webRoot`). */
+function webFiles(c) {
+  const paths = web.webPaths(c.t);
+  const at = (name) => posix.join(c.webRoot, name);
+  return {
+    [at(paths.api)]: web.api(c),
+    [at(paths.form)]: web.form(c),
+    [at(paths.remove)]: web.remove(c),
+    [at(paths.nav)]: web.nav(c),
+    [at(paths.test)]: web.test(c),
+    [at(paths.list)]: web.listPage(c),
+    [at(paths.new)]: web.newPage(c),
+    [at(paths.detail)]: web.detailPage(c),
+    [at(paths.edit)]: web.editPage(c),
+    // English only for now (AGENTS.md): the app loads every locales/en/*.json.
+    [at('locales/en/' + c.t.plural + '.json')]:
+      JSON.stringify(web.texts(c), null, 2) + '\n',
   };
 }
 

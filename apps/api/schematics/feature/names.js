@@ -85,6 +85,7 @@ export function names(plural, singularOverride) {
     singularCamel: camel(singular), // invoiceLine
     Plural: pascal(plural), // InvoiceLines: module, service, controller
     Singular: pascal(singular), // InvoiceLine: the permission subject
+    PLURAL: plural.split('-').join('_').toUpperCase(), // INVOICE_LINES: the web app's constants
     SINGULAR: singular.split('-').join('_').toUpperCase(), // INVOICE_LINE
     table: plural.split('-').join('_'), // invoice_lines
     nouns: plural.split('-').join(' '), // invoice lines

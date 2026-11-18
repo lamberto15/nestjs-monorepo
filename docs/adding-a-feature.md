@@ -1,8 +1,9 @@
 # Adding a feature
 
 A feature is a business record (invoices, tickets, customers): its routes,
-permissions, table, tests and the add-ons it takes. It lives in one folder,
-`apps/api/src/features/<name>/`, and one line of `src/app.module.ts`. The
+permissions, table, tests and the add-ons it takes, and its web pages. It
+lives in one folder, `apps/api/src/features/<name>/`, and one line of
+`src/app.module.ts`; its pages in `apps/web/src`. The
 template ships **no sample feature**: `src/features` starts empty.
 
 Features come from a generator, the `feature` schematic of the local Nest
@@ -20,8 +21,11 @@ the recycle bin and the units):
 ./node_modules/.bin/nest g -c ./schematics/collection.json feature invoices
 ```
 
-With every option on the command line (`nest g` accepts only its own flags,
-so this runs the schematics CLI Nest uses underneath):
+From the repository's root, with every option on the command line, the API's
+files and the web pages in one run (`tools/feature-add.mjs`: the schematics
+CLI Nest uses underneath, from the root with `--web-root apps/web/src`, then
+the router's route tree). `nest g` from `apps/api`, and `pnpm feature:add`
+there, write the API's files only:
 
 ```bash
 pnpm feature:add invoices --fields "title:string,amount:money,dueOn:date?,status:enum(draft|sent|paid)" --addons tags,comments,sequences
@@ -46,11 +50,19 @@ It writes `<item>.record.ts`, `<items>.tables.ts`, `<item>.schemas.ts`,
 `i18n/en.json`, `<items>.e2e-spec.ts` (the routes and one check per add-on;
 it passes as generated) and `README.md`, formatted with the repository's
 Prettier config, and adds the module to `src/app.module.ts` as `nest g module`
-does. Then:
+does. With `--web-root` (the root's `pnpm feature:add`) it also writes the
+web app's part (`schematics/web-feature/templates.js`): `features/<items>/`
+(`api.ts` queries, `<item>-form.tsx`, `use-<item>-delete.tsx`, `nav.ts`, the
+test `<items>.test.tsx`), `routes/_app/<items>/` (list, new, detail, edit) and
+`locales/en/<items>.json`. The app finds the nav entry and the texts by glob;
+nothing else is edited. The list takes `?bulkRun=<id>` (what a bulk run
+changed: the link of its notification). CI proves the pages by generating a
+feature, type-checking the app and running their test (`verify`). Then:
 
 ```bash
 ./node_modules/.bin/drizzle-kit generate --name invoices   # the table's migration
 ./node_modules/.bin/vitest run --config ./vitest.config.e2e.ts src/features/invoices/invoices.e2e-spec.ts
+pnpm client:generate        # from the root: the typed client the web pages use
 ```
 
 The business logic goes where the generated files say "Business logic": the

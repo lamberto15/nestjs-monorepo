@@ -129,6 +129,16 @@ jobs:
             git diff -- apps/api
             exit 1
           fi
+      # The generator's web pages compile against the app and pass their own
+      # test (its API half is proved by test/fixtures/generated-feature). Last
+      # in the job: it adds a feature to the checkout.
+      - name: A generated feature's web pages type-check and pass their test
+        run: |
+          pnpm feature:add smoke-items --fields "title:string,body:text?,status:enum(draft|done),amount:money?,dueOn:date?" --addons all --unit
+          pnpm client:generate
+          pnpm --filter @nestjs-monorepo/api-client build
+          pnpm --filter @nestjs-monorepo/web typecheck
+          pnpm --filter @nestjs-monorepo/web exec vitest run src/features/smoke-items
 
   # The e2e tests on real PostgreSQL and Redis. Their harness
   # (apps/api/test/global-setup.ts) needs a role that may create databases and
