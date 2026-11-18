@@ -1,5 +1,6 @@
 {
   "title": "Documents",
+  "name": "PDF in {{language}}",
   "empty": "No documents issued yet.",
   "error": "The documents could not be loaded.",
   "issue": "Issue PDF",
@@ -16,8 +17,6 @@
     "progressLabel": "Issuing the document",
     "queued": "Waiting to be made…",
     "rendering": "Making the PDF…",
-    "failed": "The document could not be made.",
-    "error": "The state of the document could not be loaded.",
-    "dismiss": "Dismiss"
+    "failed": "The document could not be made."
   }
 }

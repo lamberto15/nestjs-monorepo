@@ -25,6 +25,7 @@ type Suffix =
   | '/attachments/complete'
   | '/tags'
   | '/pdf'
+  | '/documents'
   | '/watch'
   | '/revisions'
   | '/revisions/{number}/restore'
@@ -92,7 +93,8 @@ export const panelKeys = {
     ['panels', base, id, 'attachments'] as const,
   revisions: (base: string, id: string) =>
     ['panels', base, id, 'revisions'] as const,
-  document: (id: string) => ['panels', 'document', id] as const,
+  documents: (base: string, id: string) =>
+    ['panels', base, id, 'documents'] as const,
   duplicates: (base: string, id: string) =>
     ['panels', base, id, 'duplicates'] as const,
   related: (base: string, id: string, path: string, field: string) =>
@@ -424,6 +426,18 @@ export const issueDocument = (base: string, id: string, lang: string) =>
     }),
   );
 
-/** `GET /v1/documents/{id}`: the job's state, then the issued PDF. */
-export const documentStatus = (id: string) =>
-  unwrap(api.GET('/v1/documents/{id}', { params: { path: { id } } }));
+export type RecordDocument = Schemas['RecordDocument'];
+
+/** The record's documents, newest first: running, failed and issued. */
+export const listDocuments = (base: string, id: string) =>
+  allPages((cursor) =>
+    unwrap(
+      call<Schemas['RecordDocumentPage']>('GET', base, '/documents', {
+        params: { path: { id }, query: { limit: PAGE_SIZE, cursor } },
+      }),
+    ),
+  );
+
+/** An issued document's PDF: a redirect to a signed link (GET /v1/documents/{id}/download). */
+export const documentDownloadUrl = (id: string) =>
+  `/v1/documents/${id}/download`;

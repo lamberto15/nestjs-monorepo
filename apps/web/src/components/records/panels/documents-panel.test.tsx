@@ -25,25 +25,32 @@ beforeEach(() => {
 
 const ID = '0199a3f2-0000-7000-8000-000000000601';
 const DOC = '0199a3f2-0000-7000-8000-000000000701';
-const PDF = {
-  id: 'att-1',
-  name: 'note-1.pdf',
-  size: 2048,
-  contentType: 'application/pdf',
-  uploadedBy: `user:${signedInUser.user.id}`,
-  locked: true,
-};
 const CAN = ['TestItem.read', 'TestItem.update'];
 
-/** The documents routes: what POST /pdf answers, and the job's states in turn. */
+/** One document of the record, as `GET …/{id}/documents` lists it. */
+const doc = (state: object = {}) => ({
+  id: DOC,
+  status: 'completed',
+  template: 'pdf-record',
+  language: 'en',
+  issuedBy: `user:${signedInUser.user.id}`,
+  issuedByName: 'Ada',
+  createdAt: '2026-10-17T09:00:00.000Z',
+  finishedAt: '2026-10-17T09:01:00.000Z',
+  error: null,
+  errorCode: null,
+  ...state,
+});
+
+/**
+ * The documents routes: what POST /pdf answers, and the record's documents
+ * list in turn (the last one stays).
+ */
 function useDocumentsApi(
-  options: {
-    issue?: () => Response;
-    states?: object[];
-  } = {},
+  options: { issue?: () => Response; lists?: object[][] } = {},
 ) {
   const issued: { id: string; lang: string | null; key: string | null }[] = [];
-  const states = [...(options.states ?? [])];
+  const lists = [...(options.lists ?? [[]])];
   server.use(
     http.post('/v1/test-items/:id/pdf', ({ params, request }) => {
       issued.push({
@@ -56,22 +63,12 @@ function useDocumentsApi(
         HttpResponse.json({ id: DOC, status: 'queued' }, { status: 202 })
       );
     }),
-    http.get('/v1/documents/:id', () => {
-      const state = states.length > 1 ? states.shift()! : states[0]!;
-      return HttpResponse.json({
-        id: DOC,
-        source: 'note',
-        subject: 'TestItem',
-        recordId: ID,
-        locale: 'en',
-        attachmentId: null,
-        error: null,
-        issuedAt: null,
-        createdAt: '2026-10-17T09:00:00.000Z',
-        updatedAt: '2026-10-17T09:00:00.000Z',
-        ...state,
-      });
-    }),
+    http.get('/v1/test-items/:id/documents', () =>
+      HttpResponse.json({
+        items: lists.length > 1 ? lists.shift()! : lists[0]!,
+        nextCursor: null,
+      }),
+    ),
   );
   return issued;
 }
@@ -96,51 +93,37 @@ async function openTab() {
 }
 
 describe('documents panel', () => {
-  it('lists the issued PDFs with a download link, not other files', async () => {
-    usePanelsApi({
-      capabilities: { pdf: true },
-      attachments: [
-        PDF,
-        { ...PDF, id: 'att-2', name: 'scan.pdf', locked: false },
+  it('lists the record’s documents from its documents route, with a download for an issued one', async () => {
+    usePanelsApi({ capabilities: { pdf: true } });
+    useDocumentsApi({
+      lists: [
+        [doc(), doc({ id: 'other', issuedBy: 'user:x', language: 'ar' })],
       ],
     });
-    useDocumentsApi({ states: [{ status: 'queued' }] });
     await mount();
     await openTab();
     const link = await screen.findByRole('link', {
-      name: 'Download note-1.pdf',
+      name: 'Download PDF in English',
     });
-    expect(link).toHaveAttribute('href', '/v1/attachments/att-1/download');
-    expect(screen.queryByText('scan.pdf')).not.toBeInTheDocument();
+    expect(link).toHaveAttribute('href', `/v1/documents/${DOC}/download`);
     expect(screen.getByText('By you')).toBeInTheDocument();
+    // Someone else's, by the name the tenant knows them by.
+    expect(screen.getByText('Ada')).toBeInTheDocument();
   });
 
-  it('issues a document in the chosen language, follows the job, and lists the PDF', async () => {
-    const attachments: (typeof PDF)[] = [];
+  it('issues a document in the chosen language, shows it running, then issued', async () => {
     usePanelsApi({ capabilities: { pdf: true } });
-    // The record's files as the worker leaves them: the PDF once it is done.
     server.use(
       // Two languages: with one there is nothing to choose and no field.
       http.get('/v1/features', () =>
         HttpResponse.json({ ...allFeatures, locales: ['en', 'ar'] }),
       ),
-      http.get('/v1/test-items/:id/attachments', () =>
-        HttpResponse.json({
-          items: attachments.map((a) => ({
-            subject: 'TestItem',
-            recordId: ID,
-            createdAt: '2026-10-17T09:40:00.000Z',
-            updatedAt: '2026-10-17T09:40:00.000Z',
-            ...a,
-          })),
-          nextCursor: null,
-        }),
-      ),
     );
     const issued = useDocumentsApi({
-      states: [
-        { status: 'queued' },
-        { status: 'completed', attachmentId: 'att-1' },
+      lists: [
+        [],
+        [doc({ status: 'queued', language: 'ar', finishedAt: null })],
+        [doc({ language: 'ar' })],
       ],
     });
     await mount();
@@ -152,15 +135,12 @@ describe('documents panel', () => {
     await user.click(await screen.findByRole('option', { name: 'العربية' }));
     await user.click(screen.getByRole('button', { name: 'Issue PDF' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Waiting to be made…',
-    );
+    expect(await screen.findByText('Waiting to be made…')).toBeVisible();
     expect(issued).toHaveLength(1);
     expect(issued[0]).toMatchObject({ id: ID, lang: 'ar' });
     expect(issued[0]!.key).toBeTruthy();
 
-    // The worker is done: the socket says so, and the PDF joins the files.
-    attachments.push(PDF);
+    // The worker is done: the socket says so, and the list is read again.
     await waitFor(() => expect(connections).toHaveLength(1));
     act(() =>
       connections[0]!.emit('document.ready', {
@@ -171,12 +151,12 @@ describe('documents panel', () => {
       }),
     );
     expect(
-      await screen.findByRole('link', { name: 'Download note-1.pdf' }),
+      await screen.findByRole('link', { name: 'Download PDF in العربية' }),
     ).toBeVisible();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting to be made…')).not.toBeInTheDocument();
   });
 
-  it('polls the job when there is no socket', async () => {
+  it('polls while one runs when there is no socket', async () => {
     server.use(
       http.get('/v1/features', () =>
         HttpResponse.json({ ...allFeatures, realtime: false }),
@@ -184,79 +164,47 @@ describe('documents panel', () => {
     );
     usePanelsApi({ capabilities: { pdf: true } });
     useDocumentsApi({
-      states: [
-        { status: 'queued' },
-        { status: 'completed', attachmentId: 'att-1' },
-      ],
+      lists: [[doc({ status: 'rendering', finishedAt: null })], [doc()]],
     });
     await mount();
-    const user = await openTab();
-    await user.click(await screen.findByRole('button', { name: 'Issue PDF' }));
-    expect(await screen.findByText('Waiting to be made…')).toBeVisible();
+    await openTab();
+    expect(await screen.findByText('Making the PDF…')).toBeVisible();
     await waitFor(
-      () => expect(screen.queryByRole('status')).not.toBeInTheDocument(),
+      () =>
+        expect(screen.queryByText('Making the PDF…')).not.toBeInTheDocument(),
       { timeout: 4000 },
     );
   }, 8000);
 
   it('sends the UI language by default', async () => {
     usePanelsApi({ capabilities: { pdf: true } });
-    const issued = useDocumentsApi({ states: [{ status: 'queued' }] });
+    const issued = useDocumentsApi();
     await mount();
     const user = await openTab();
     await user.click(await screen.findByRole('button', { name: 'Issue PDF' }));
     await waitFor(() => expect(issued[0]?.lang).toBe('en'));
   });
 
-  it('shows why a document failed, and lets it go', async () => {
+  it('shows why a document failed, with no download', async () => {
     usePanelsApi({ capabilities: { pdf: true } });
     useDocumentsApi({
-      states: [
-        { status: 'failed', error: 'The PDF service refused the page.' },
+      lists: [
+        [doc({ status: 'failed', error: 'The PDF service refused the page.' })],
       ],
     });
     await mount();
-    const user = await openTab();
-    await user.click(await screen.findByRole('button', { name: 'Issue PDF' }));
+    await openTab();
     expect(
       await screen.findByText('The PDF service refused the page.'),
     ).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
-    expect(
-      screen.queryByText('The PDF service refused the page.'),
-    ).not.toBeInTheDocument();
-  });
-
-  it('hears document.ready from the socket', async () => {
-    usePanelsApi({ capabilities: { pdf: true } });
-    useDocumentsApi({
-      states: [
-        { status: 'rendering' },
-        { status: 'completed', attachmentId: 'att-1' },
-      ],
-    });
-    await mount();
-    const user = await openTab();
-    await user.click(await screen.findByRole('button', { name: 'Issue PDF' }));
-    expect(await screen.findByText('Making the PDF…')).toBeVisible();
-    await waitFor(() => expect(connections).toHaveLength(1));
-    act(() =>
-      connections[0]!.emit('document.ready', {
-        id: DOC,
-        subject: 'TestItem',
-        recordId: ID,
-        attachmentId: 'att-1',
-      }),
-    );
-    await waitFor(() =>
-      expect(screen.queryByRole('status')).not.toBeInTheDocument(),
-    );
+    expect(screen.queryByRole('link', { name: /Download/ })).toBeNull();
   });
 
   it('on 503 documents_unavailable says so and hides the issue button', async () => {
-    usePanelsApi({ capabilities: { pdf: true }, attachments: [PDF] });
+    usePanelsApi({ capabilities: { pdf: true } });
     useDocumentsApi({
       issue: () => problem(503, 'documents_unavailable'),
+      lists: [[doc()]],
     });
     await mount();
     const user = await openTab();
@@ -269,15 +217,15 @@ describe('documents panel', () => {
     ).not.toBeInTheDocument();
     // What was issued before stays downloadable.
     expect(
-      screen.getByRole('link', { name: 'Download note-1.pdf' }),
+      screen.getByRole('link', { name: 'Download PDF in English' }),
     ).toBeVisible();
   });
 
-  it('follows the document already being made on 409 document_pending', async () => {
+  it('shows the document already being made on 409 document_pending', async () => {
     usePanelsApi({ capabilities: { pdf: true } });
     useDocumentsApi({
       issue: () => problem(409, 'document_pending', { id: DOC }),
-      states: [{ status: 'rendering' }],
+      lists: [[], [doc({ status: 'rendering', finishedAt: null })]],
     });
     await mount();
     const user = await openTab();

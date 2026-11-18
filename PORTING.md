@@ -134,7 +134,7 @@ repository.
       through a hook the usage module provides.
 - [x] One Webhooks menu entry for `manageEndpoints` or `manageSenders`; the
       page shows each section by permission.
-- [ ] The documents panel lists `GET /v1/<path>/{id}/documents`.
+- [x] The documents panel lists `GET /v1/<path>/{id}/documents`.
 - [ ] A `markdown` field type in the generator: a text column, the Markdown
       editor in forms, the viewer on detail pages.
 
