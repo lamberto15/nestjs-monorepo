@@ -54,6 +54,7 @@ import {
   attachments,
   attachmentVersions,
 } from './attachments.tables.js';
+import { isExtractable } from './attachments.extractor.js';
 
 /** How long a download link works. */
 export const DOWNLOAD_LINK_TTL = '5m';
@@ -271,6 +272,7 @@ export class AttachmentsService {
             renditionStatus: this.images.wants(file.contentType)
               ? 'pending'
               : null,
+            textPending: isExtractable(file.contentType),
           })
           .returning();
         await this.audit.record(principal, {

@@ -4,7 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
 import { StorageDisk, StorageFileNotFoundError } from '@nestjs/storage';
-import { and, asc, eq, inArray, isNull, lt, notExists } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt } from 'drizzle-orm';
 import type { Job } from 'bullmq';
 import { Counter } from 'prom-client';
 import type {
@@ -16,7 +16,6 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { TenantWorkerHost } from '../../core/tenancy/tenant-job.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import {
-  EXTRACTABLE_TYPES,
   isExtractable,
   TextExtractor,
   TextRejectedError,
@@ -94,8 +93,7 @@ export class AttachmentTextService {
           !row ||
           row.scanStatus !== 'clean' ||
           row.locked ||
-          row.fields !== null ||
-          !isExtractable(row.contentType)
+          row.fields !== null
         ) {
           return 'skipped';
         }
@@ -108,7 +106,11 @@ export class AttachmentTextService {
               eq(attachmentTexts.key, row.key),
             ),
           );
-        if (done) return 'skipped';
+        if (done || !isExtractable(row.contentType)) {
+          // Nothing to extract for this file: the retry stops looking at it.
+          await this.settled(row);
+          return 'skipped';
+        }
 
         let status: AttachmentTextStatus = 'ready';
         let text = '';
@@ -164,24 +166,14 @@ export class AttachmentTextService {
           .from(attachments)
           .where(
             and(
+              // attachments_text_pending_idx's predicate.
+              eq(attachments.textPending, true),
               eq(attachments.scanStatus, 'clean'),
               eq(attachments.locked, false),
               isNull(attachments.fields),
-              inArray(attachments.contentType, [...EXTRACTABLE_TYPES]),
               lt(
                 attachments.updatedAt,
                 new Date(now.getTime() - TEXT_RETRY_MS),
-              ),
-              notExists(
-                this.db
-                  .select({ id: attachmentTexts.id })
-                  .from(attachmentTexts)
-                  .where(
-                    and(
-                      eq(attachmentTexts.attachmentId, attachments.id),
-                      eq(attachmentTexts.key, attachments.key),
-                    ),
-                  ),
               ),
             ),
           )
@@ -215,8 +207,17 @@ export class AttachmentTextService {
           target: [attachmentTexts.tenantId, attachmentTexts.attachmentId],
           set: { key: row.key, status, text, updatedAt: new Date() },
         });
+      await this.settled(row);
       return true;
     });
+  }
+
+  /** The file at `row.key` needs no more extraction (if it is still the attachment's). */
+  private async settled(row: Attachment) {
+    await this.db
+      .update(attachments)
+      .set({ textPending: false })
+      .where(and(eq(attachments.id, row.id), eq(attachments.key, row.key)));
   }
 }
 

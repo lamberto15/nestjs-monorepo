@@ -41,6 +41,7 @@ import {
   attachments,
   attachmentVersions,
 } from './attachments.tables.js';
+import { isExtractable } from './attachments.extractor.js';
 
 /** The most versions one attachment keeps, the current one included: the bytes of all of them count in the tenant's storage. */
 export const MAX_ATTACHMENT_VERSIONS = 100;
@@ -250,6 +251,7 @@ export class AttachmentVersionsService {
         renditionStatus: this.images.wants(previous.contentType)
           ? 'pending'
           : null,
+        textPending: isExtractable(previous.contentType),
         renditions: {},
       })
       .where(
@@ -357,6 +359,7 @@ export class AttachmentVersionsService {
           renditionStatus: this.images.wants(next.contentType)
             ? 'pending'
             : null,
+          textPending: isExtractable(next.contentType),
           renditions: {},
         })
         .where(

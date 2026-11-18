@@ -1,0 +1,91 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "f8ee97ec-267d-4e97-9e5a-03c7d5ae5fd3",
+  "prevIds": [
+    "aa995b98-d3cb-47e1-bbca-311be19446f2"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "attachments",
+        "text_pending"
+      ],
+      "writes": [
+        "s|col|public.attachments.text_pending",
+        "n|col|public.attachments.text_pending",
+        "e|col|public.attachments.text_pending"
+      ],
+      "reads": [
+        "n|tbl|public.attachments",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "attachments",
+        "attachments_text_pending_idx"
+      ],
+      "writes": [
+        "s|idx|public.attachments_text_pending_idx",
+        "n|idx|public.attachments_text_pending_idx",
+        "e|idx|public.attachments_text_pending_idx",
+        "n|rel|public.attachments_text_pending_idx"
+      ],
+      "reads": [
+        "n|tbl|public.attachments",
+        "n|sch|public",
+        "n|col|public.attachments.updated_at"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "attachments",
+        "name": "text_pending",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "true",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "attachments",
+        "name": "attachments_text_pending_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "updated_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "\"text_pending\" and \"scan_status\" = 'clean' and not \"locked\" and \"fields\" is null",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    }
+  ]
+}

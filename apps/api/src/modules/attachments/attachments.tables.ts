@@ -69,6 +69,12 @@ export const attachments = tenantTable(
      * stays as uploaded). Null for what is not processed.
      */
     renditionStatus: text('rendition_status').$type<RenditionStatus>(),
+    /**
+     * Its current file's text is still to be extracted for search (set with
+     * an extractable file, cleared once its text is stored or it needs none).
+     * True by default: a row from before the column is looked at once.
+     */
+    textPending: boolean('text_pending').notNull().default(true),
     /** The thumbnail and the preview of an image: their keys on the private disk and sizes. `{}` until `ready`. */
     renditions: jsonb('renditions')
       .$type<StoredRenditions>()
@@ -95,6 +101,12 @@ export const attachments = tenantTable(
     index('attachments_rendition_pending_idx')
       .on(t.updatedAt)
       .where(sql`${t.renditionStatus} = 'pending'`),
+    // The text retry (attachments.text.ts): the files still waiting, alone.
+    index('attachments_text_pending_idx')
+      .on(t.updatedAt)
+      .where(
+        sql`${t.textPending} and ${t.scanStatus} = 'clean' and not ${t.locked} and ${t.fields} is null`,
+      ),
   ],
   { referenced: true },
 );

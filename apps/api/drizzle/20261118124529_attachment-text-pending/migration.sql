@@ -1,0 +1,2 @@
+ALTER TABLE "attachments" ADD COLUMN "text_pending" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+CREATE INDEX "attachments_text_pending_idx" ON "attachments" ("updated_at") WHERE "text_pending" and "scan_status" = 'clean' and not "locked" and "fields" is null;

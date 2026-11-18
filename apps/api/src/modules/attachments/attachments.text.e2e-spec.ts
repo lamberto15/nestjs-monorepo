@@ -152,6 +152,8 @@ describe('search inside attachments (e2e)', () => {
     const [row] = await inTenant(() =>
       db().select().from(attachments).where(eq(attachments.id, added.id)),
     );
+    // Its text stored, the retry job no longer looks at it.
+    expect(row!.textPending).toBe(false);
     const key = `${row!.key}.v2`;
     await app.get(StorageDisk).put(key, Buffer.from('A new lynxharbor memo.'), {
       contentType: row!.contentType,
@@ -159,7 +161,12 @@ describe('search inside attachments (e2e)', () => {
     await inTenant(() =>
       db()
         .update(attachments)
-        .set({ key, updatedAt: new Date(Date.now() - 10 * 60 * 1000) })
+        // As a new version does (attachments.versions.ts): a file to extract.
+        .set({
+          key,
+          textPending: true,
+          updatedAt: new Date(Date.now() - 10 * 60 * 1000),
+        })
         .where(eq(attachments.id, added.id)),
     );
     expect(await files(editor, 'ocelotprism')).toEqual([]);
