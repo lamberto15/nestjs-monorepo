@@ -1,5 +1,7 @@
 // web-push 4 ships no types: only what notifications.push.ts uses.
 declare module 'web-push' {
+  import type { Agent } from 'node:https';
+
   export interface PushSubscription {
     endpoint: string;
     keys: { p256dh: string; auth: string };
@@ -31,6 +33,8 @@ declare module 'web-push' {
       TTL?: number;
       urgency?: 'very-low' | 'low' | 'normal' | 'high';
       timeout?: number;
+      /** Used for the request (ignored when `proxy` is set). */
+      agent?: Agent;
     },
   ): Promise<{ statusCode: number }>;
 }

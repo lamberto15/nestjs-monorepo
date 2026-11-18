@@ -19,7 +19,7 @@ import {
 import { Counter } from 'prom-client';
 import { MetricsService } from '../metrics/metrics.service.js';
 import { abortable } from '../queues/abortable.js';
-import { DEFAULT_JOB_OPTIONS } from '../queues/queues.js';
+import { DEFAULT_JOB_OPTIONS, onceJob } from '../queues/queues.js';
 import {
   DEFAULT_MAIL_BRAND,
   MailBrand,
@@ -109,11 +109,11 @@ export class MailQueue {
     mail: Type<M>,
     options: MailableRenderOptions<Parameters<M['render']>[0]>,
     {
-      jobId = randomUUID(),
+      jobId,
       signal,
       essential = false,
     }: {
-      /** Your own job id when the call may repeat (a retried handler): the mail goes once. */
+      /** Your own job id when the call may repeat (a retried handler): the mail goes once (`onceJob()`). */
       jobId?: string;
       /** Stops waiting for Redis (the add may still land: the job id makes that harmless). */
       signal?: AbortSignal;
@@ -160,7 +160,7 @@ export class MailQueue {
           headers: { ...message.headers },
           essential: isEssential,
         },
-        { jobId },
+        jobId ? onceJob(jobId) : { jobId: randomUUID() },
       ),
     );
   }

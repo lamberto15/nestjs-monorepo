@@ -24,6 +24,26 @@ export const DEFAULT_JOB_OPTIONS: DefaultJobOptions = {
 };
 
 /**
+ * How long a job id given to `onceJob()` keeps a second add out: past an
+ * outbox handler's retries (20 attempts at most five minutes apart, about
+ * an hour) with a margin, as long as a finished job may stay.
+ */
+export const ONCE_TTL_MS = 24 * 3600 * 1000;
+
+/**
+ * The options of a job a retried caller (an outbox handler, a job) adds
+ * again with the same id: it runs once. A job id alone dedupes only while
+ * the job is kept, and `removeOnComplete` drops it after 1000 newer ones,
+ * so a retry after that would run it again. BullMQ's deduplication with a
+ * `ttl` (its "throttle mode") keeps the id for `ONCE_TTL_MS` whatever
+ * happened to the job.
+ */
+export const onceJob = (jobId: string) => ({
+  jobId,
+  deduplication: { id: jobId, ttl: ONCE_TTL_MS },
+});
+
+/**
  * The worker's connection from the queues' (producer) options: the offline
  * queue back on and `maxRetriesPerRequest: null`, which a worker needs to
  * wait out a Redis outage (https://docs.bullmq.io/guide/going-to-production).

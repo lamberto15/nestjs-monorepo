@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { listSchema, pageSchema } from '../../core/http/pagination.js';
+import { destinationProblem } from '../../core/http/safe-fetch.js';
 import {
   emailSettingSchema,
   pushSettingSchema,
@@ -184,7 +185,16 @@ export const registerDeviceSchema = z.object({
     .max(100)
     .meta({ example: 'Firefox on the laptop' }),
   subscription: z.object({
-    endpoint: z.url().max(2000),
+    endpoint: z
+      .url()
+      .max(2000)
+      .refine((value) => destinationProblem(new URL(value)) === undefined, {
+        message:
+          'A push service URL: https, no credentials, not a private or metadata address.',
+      })
+      .describe(
+        "The push service's URL. https only; private, loopback and metadata addresses are refused, also when a host name resolves to one at sending.",
+      ),
     keys: z.object({
       p256dh: z.string().min(1).max(200),
       auth: z.string().min(1).max(200),

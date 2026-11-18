@@ -124,9 +124,11 @@ export function addressAllowed(
 
 /**
  * The socket's lookup: every address of the host is resolved and checked,
- * and the socket connects to one of those (never asks DNS again).
+ * and the socket connects to one of those (never asks DNS again). A socket
+ * skips its lookup for an IP literal: `destinationProblem()` checks those.
+ * Exported for a client that is not `fetch` (web push's `https.Agent`).
  */
-function guardedLookup(allowPrivateNetworks: boolean): LookupFunction {
+export function guardedLookup(allowPrivateNetworks = false): LookupFunction {
   return (hostname, options, callback) => {
     dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
       if (error) {
@@ -164,6 +166,32 @@ function guardedLookup(allowPrivateNetworks: boolean): LookupFunction {
 /** The URL's host as a socket would use it: without IPv6 brackets. */
 const socketHost = (url: URL) => url.hostname.replace(/^\[(.*)\]$/, '$1');
 
+/**
+ * Why `url` is refused before anything is resolved, or undefined: not
+ * https (http with `allowHttp`), credentials in it, or an IP literal
+ * `addressAllowed` refuses. A host name is checked at connect time
+ * (`guardedLookup`). Also the rule of a schema that takes such a URL.
+ */
+export function destinationProblem(
+  url: URL,
+  options: Pick<SafeFetchOptions, 'allowHttp' | 'allowPrivateNetworks'> = {},
+): string | undefined {
+  if (
+    url.protocol !== 'https:' &&
+    !(options.allowHttp && url.protocol === 'http:')
+  ) {
+    return `${url.protocol} URL`;
+  }
+  if (url.username || url.password) {
+    return 'credentials in the URL';
+  }
+  const host = socketHost(url);
+  if (isIP(host) && !addressAllowed(host, options.allowPrivateNetworks)) {
+    return host;
+  }
+  return undefined;
+}
+
 /** A `fetch` that refuses unsafe destinations, follows no redirect and bounds time and size. */
 export function safeFetch(options: SafeFetchOptions): typeof fetch {
   const allowPrivate = options.allowPrivateNetworks === true;
@@ -172,18 +200,9 @@ export function safeFetch(options: SafeFetchOptions): typeof fetch {
   });
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input);
-    if (
-      url.protocol !== 'https:' &&
-      !(options.allowHttp && url.protocol === 'http:')
-    ) {
-      throw new UnsafeDestinationError(`${url.protocol} URL`);
-    }
-    if (url.username || url.password) {
-      throw new UnsafeDestinationError('credentials in the URL');
-    }
-    const host = socketHost(url);
-    if (isIP(host) && !addressAllowed(host, allowPrivate)) {
-      throw new UnsafeDestinationError(host);
+    const problem = destinationProblem(url, options);
+    if (problem) {
+      throw new UnsafeDestinationError(problem);
     }
     const signal = AbortSignal.any(
       [AbortSignal.timeout(options.timeoutMs), init?.signal].filter(

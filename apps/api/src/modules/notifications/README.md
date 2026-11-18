@@ -49,13 +49,18 @@ collapse on the type. The system principal is never notified.
 
 The recipient as they are now (nothing for a deactivated user or one who left
 the tenant), their preferences, the texts in their language, then: **email**
-(queued under the notification's id, so a retry sends once; `hourly`/`daily`
+(queued under the notification's id with `onceJob()` (core/queues), so a
+retry sends once, even after the first job left the queue; `hourly`/`daily`
 flag the row for `NotificationDigestJob`, hourly at :05, daily at
 NOTIFICATIONS_DIGEST_HOUR in the user's zone); **push** (one job per
 registered browser on the `push` queue, held until the user's quiet hours end
 unless `urgent`; sent only while the browser is still the recipient's, not
 once someone else registered it; a browser the push service says is gone is
-forgotten);
+forgotten). A browser's endpoint is a URL its owner names, so it takes
+safeFetch's rules (core/http): `PUT /devices` refuses one that is not https,
+has credentials or is a private, loopback or metadata IP (400), and the
+sending refuses, at connect time, a host that resolves to one (the job fails
+without retries);
 **realtime** after the commit (`notification`, `notification.read`,
 `notifications.read-all`, `notification.removed`, `notifications.unread-count`).
 Mail honours MAIL_DELIVERY; a mandatory type counts as essential mail. Every

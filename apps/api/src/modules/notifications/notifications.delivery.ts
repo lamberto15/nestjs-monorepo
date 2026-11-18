@@ -15,6 +15,7 @@ import type {
 } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { Events, OnDomainEvent } from '../../core/outbox/events.js';
+import { onceJob } from '../../core/queues/queues.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
@@ -48,8 +49,9 @@ import { quietUntil } from './quiet-hours.js';
  *   until the recipient's quiet hours end unless the type is `urgent`;
  * - **realtime**: the recipient's connections hear it, after the commit.
  *
- * The mail and push jobs have ids made from the notification, so a delivery
- * retried after a failure queues them once; the flags commit with the
+ * The mail and push jobs have ids made from the notification (`onceJob()`,
+ * core/queues), so a delivery retried after a failure queues them once,
+ * even after the first jobs left the queue; the flags commit with the
  * outbox's inbox record, so the delivery counts once.
  */
 @Injectable()
@@ -158,7 +160,7 @@ export class NotificationDelivery {
             urgent: declaration.urgent === true,
           },
           {
-            jobId: `push-${row.id}-${device.id}`,
+            ...onceJob(`push-${row.id}-${device.id}`),
             ...(quiet && { delay: Math.max(0, quiet.getTime() - Date.now()) }),
           },
         );

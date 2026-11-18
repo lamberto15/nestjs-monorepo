@@ -20,7 +20,11 @@ says how a route uses them.
   cursor and page pagination (`pagination.ts`; sorted cursors sealed by
   `cursor-seal.ts`), `@ApiListQuery()`.
 - `@Etag()` and `assertUnchanged()`, `@Deprecated()`, `redirectPath`,
-  `routeKey`, `safeFetch()` (an SSRF-guarded fetch).
+  `routeKey`, `safeFetch()` (an SSRF-guarded fetch). Its rules, for a client
+  that is not `fetch`: `destinationProblem(url)` (https, no credentials, an
+  IP literal's address; also a schema's check) and `guardedLookup()` (a
+  socket's `lookup` that refuses private, loopback, link-local and metadata
+  addresses at connect time). Web push uses both (modules/notifications).
 - **OpenAPI**: `setupOpenApi(app)` serves `/api` and `/api-json`.
 
 ## Variables

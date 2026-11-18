@@ -2,6 +2,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { abortable } from '../../core/queues/abortable.js';
+import { onceJob } from '../../core/queues/queues.js';
 import { clip } from './messaging.policy.js';
 import { MESSAGING, type PushJob, type SmsJob } from './messaging.queue.js';
 import { MessagingService } from './messaging.service.js';
@@ -67,7 +68,7 @@ export class MessagingSender {
     await abortable(
       signal,
       this.queue.add('sms', job, {
-        jobId: `sms-${message.messageId}`,
+        ...onceJob(`sms-${message.messageId}`),
         ...delayOf(message.sendAt),
       }),
     );
@@ -95,7 +96,7 @@ export class MessagingSender {
       await abortable(
         signal,
         this.queue.add('push', job, {
-          jobId: `push-${message.messageId}-${deviceId}`,
+          ...onceJob(`push-${message.messageId}-${deviceId}`),
           ...delayOf(message.sendAt),
         }),
       );

@@ -4,6 +4,7 @@ import { UnrecoverableError, type Job } from 'bullmq';
 import { DevicesService } from './notifications.devices.service.js';
 import {
   isGone,
+  isRefused,
   PUSH_QUEUE,
   type PushJob,
   WebPush,
@@ -11,8 +12,9 @@ import {
 
 /**
  * The worker's side of web push: sends one message to one browser. A
- * browser the push service says is gone (404, 410) is forgotten; any other
- * failure is retried by the queue with backoff.
+ * browser the push service says is gone (404, 410) is forgotten; an
+ * endpoint the address rules refuse fails for good; any other failure is
+ * retried by the queue with backoff.
  */
 @Processor(PUSH_QUEUE, { concurrency: 10 })
 export class PushProcessor extends WorkerHost {
@@ -46,6 +48,9 @@ export class PushProcessor extends WorkerHost {
         throw new UnrecoverableError(
           'The push service says the browser is gone.',
         );
+      }
+      if (isRefused(error)) {
+        throw new UnrecoverableError((error as Error).message);
       }
       throw error;
     }

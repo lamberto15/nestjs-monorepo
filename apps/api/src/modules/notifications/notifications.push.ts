@@ -1,6 +1,12 @@
+import { Agent } from 'node:https';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import * as webPush from 'web-push';
+import {
+  destinationProblem,
+  guardedLookup,
+  UnsafeDestinationError,
+} from '../../core/http/safe-fetch.js';
 import { Secrets } from '../../core/secrets/secrets.service.js';
 import { notificationsConfig } from './notifications.config.js';
 
@@ -28,19 +34,37 @@ export interface PushJob {
 /** The longest body sent: a push payload is limited (about 4 KB, encrypted). */
 export const PUSH_BODY_MAX = 500;
 
-/** The push service call, apart so a test can stand in for it. */
+/**
+ * The push service call, apart so a test can stand in for it. The endpoint
+ * is the browser's, so whoever registers a device names it: safeFetch's
+ * address rules (core/http) guard it. An IP literal is checked here, a host
+ * name at connect time by the agent's `lookup` (web-push's documented
+ * `agent` option), so a name that resolves to a private address is refused
+ * however DNS answers later. web-push makes one `https.request` and follows
+ * no redirect.
+ */
 @Injectable()
 export class WebPushTransport {
+  private readonly agent = new Agent({
+    keepAlive: true,
+    lookup: guardedLookup(),
+  });
+
   send(
     subscription: webPush.PushSubscription,
     payload: string,
     vapidDetails: webPush.VapidDetails,
     urgent: boolean,
   ) {
+    const problem = destinationProblem(new URL(subscription.endpoint));
+    if (problem) {
+      return Promise.reject(new UnsafeDestinationError(problem));
+    }
     return webPush.sendNotification(subscription, payload, {
       vapidDetails,
       urgency: urgent ? 'high' : 'normal',
       timeout: 10_000,
+      agent: this.agent,
     });
   }
 }
@@ -49,6 +73,10 @@ export class WebPushTransport {
 export const isGone = (error: unknown) =>
   error instanceof webPush.WebPushError &&
   (error.statusCode === 404 || error.statusCode === 410);
+
+/** Whether the endpoint is one the address rules refuse: retrying won't change that. */
+export const isRefused = (error: unknown) =>
+  error instanceof UnsafeDestinationError;
 
 /**
  * Web push (VAPID): the keys and the sending. The keys come from

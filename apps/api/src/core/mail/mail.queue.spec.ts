@@ -3,6 +3,7 @@ import type { Mailer } from '@nestjs/mail';
 import type { Queue } from 'bullmq';
 import { Registry } from 'prom-client';
 import type { MetricsService } from '../metrics/metrics.service.js';
+import { onceJob } from '../queues/queues.js';
 import { MailBrand } from './mail-brand.js';
 import { MailDeliveryPolicy, type MailDelivery } from './mail-delivery.js';
 import { EssentialMail } from './mail.essential.js';
@@ -59,13 +60,13 @@ describe('MailQueue', () => {
     return { queue, add, render };
   }
 
-  it('queues the rendered mail under its class name and job id', async () => {
+  it('queues the rendered mail under its class name and job id, once', async () => {
     const { queue, add } = queueWith();
     await queue.send(Hello, { to: 'a@example.com' } as never, { jobId: 'j1' });
     expect(add).toHaveBeenCalledWith(
       'Hello',
       expect.objectContaining({ subject: 'Hello', to: rendered.to }),
-      { jobId: 'j1' },
+      onceJob('j1'),
     );
   });
 

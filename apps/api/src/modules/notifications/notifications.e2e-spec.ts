@@ -1,3 +1,5 @@
+import { createECDH, randomBytes } from 'node:crypto';
+import { createServer, type AddressInfo } from 'node:net';
 import { Transactional } from '@nestjs-cls/transactional';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable, Module } from '@nestjs/common';
@@ -17,11 +19,13 @@ import { MAIL_QUEUE } from '../../core/mail/mail.queue.js';
 import { SharedOutboxModule } from '../../core/outbox/outbox.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { SecretsModule } from '../../core/secrets/secrets.module.js';
+import { UnsafeDestinationError } from '../../core/http/safe-fetch.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessRecordFinder } from '../../iam/access/access-record-finder.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { definePermissions } from '../../iam/access/permissions.js';
 import { Realtime } from '../realtime/realtime.service.js';
+import { NotificationDelivery } from './notifications.delivery.js';
 import { NotificationDigestJob } from './notifications.digest.job.js';
 import { NotificationsModule } from './notifications.module.js';
 import { PUSH_QUEUE, WebPushTransport } from './notifications.push.js';
@@ -760,4 +764,146 @@ describe('notifications (e2e)', () => {
       { timeout: 20_000 },
     );
   });
+
+  it('refuses a push endpoint that is not https, carries credentials, or is a private or metadata address', async () => {
+    const alice = await person();
+    for (const endpoint of [
+      'http://push.example.com/send/alice',
+      'https://user:secret@push.example.com/send/alice',
+      'https://169.254.169.254/latest/meta-data',
+      'https://127.0.0.1:8443/send',
+      'https://[::1]/send',
+      'https://10.0.0.5/send',
+    ]) {
+      const response = await call('PUT', '/v1/devices', alice.headers, {
+        name: 'Laptop',
+        subscription: {
+          endpoint,
+          keys: { p256dh: 'BPublicKey', auth: 'secret' },
+        },
+      });
+      expect(response.statusCode, endpoint).toBe(400);
+    }
+    expect(
+      (await call('GET', '/v1/devices', alice.headers)).json().items,
+    ).toEqual([]);
+  });
+
+  it('never connects the real push transport to a private address, by name or by IP literal', async () => {
+    // A listener on this machine stands for an internal service.
+    let connections = 0;
+    const listener = createServer((socket) => {
+      connections += 1;
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => listener.listen(0, resolve));
+    const { port } = listener.address() as AddressInfo;
+    // Real keys: web-push encrypts before it connects, and must get that far.
+    const ecdh = createECDH('prime256v1');
+    ecdh.generateKeys();
+    const keys = {
+      p256dh: ecdh.getPublicKey().toString('base64url'),
+      auth: randomBytes(16).toString('base64url'),
+    };
+    const real = new WebPushTransport();
+    pushed.mockImplementation((...args: Parameters<WebPushTransport['send']>) =>
+      real.send(...args),
+    );
+    try {
+      // A host name passes the schema; what it resolves to is refused at connect.
+      const alice = await person();
+      const register = await call('PUT', '/v1/devices', alice.headers, {
+        name: 'Laptop',
+        subscription: { endpoint: `https://localhost:${port}/send`, keys },
+      });
+      expect(register.statusCode).toBe(200);
+      const id = await testNotification(alice);
+      await delivered(id);
+      const queue = app.get<Queue>(getQueueToken(PUSH_QUEUE));
+      const [device] = (await call('GET', '/v1/devices', alice.headers)).json()
+        .items as { id: string }[];
+      const job = await vi.waitFor(
+        async () => {
+          const found = (await queue.getJob(`push-${id}-${device!.id}`))!;
+          expect(found.attemptsMade).toBeGreaterThan(0);
+          return found;
+        },
+        { timeout: 20_000 },
+      );
+      expect(connections).toBe(0);
+      // Refused for good: not retried.
+      expect(await job.getState()).toBe('failed');
+      expect(job.attemptsMade).toBe(1);
+
+      // A device stored before the rule, with an IP literal: refused at sending too.
+      await expect(
+        real.send(
+          { endpoint: `https://127.0.0.1:${port}/send`, keys },
+          'payload',
+          {
+            subject: 'mailto:ops@example.com',
+            ...(await import('web-push')).generateVAPIDKeys(),
+          },
+          false,
+        ),
+      ).rejects.toBeInstanceOf(UnsafeDestinationError);
+      expect(connections).toBe(0);
+    } finally {
+      pushed.mockReset().mockResolvedValue({ statusCode: 201 });
+      await new Promise((resolve) => listener.close(resolve));
+    }
+  });
+
+  it('mails once when a delivery is retried after its mail job left the queue', async () => {
+    const alice = await person();
+    const id = await testNotification(alice);
+    await delivered(id);
+    await vi.waitFor(() =>
+      expect(subjects(alice.email)).toEqual(['Test notification']),
+    );
+    // The queue keeps the last 1000 finished jobs: 1001 more push it out.
+    const mailQueue = app.get<Queue>(getQueueToken(MAIL_QUEUE));
+    await mailQueue.addBulk(
+      Array.from({ length: 1001 }, () => ({
+        name: 'filler',
+        data: {
+          from: { address: 'app@example.com' },
+          replyTo: [],
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: 'filler',
+          headers: {},
+        },
+      })),
+    );
+    await vi.waitFor(
+      async () =>
+        expect(await mailQueue.getJob(`notification-${id}`)).toBeUndefined(),
+      { timeout: 30_000 },
+    );
+
+    // The first attempt queued the mail and then rolled back (the row is as
+    // before it); the outbox runs the handler again.
+    await inTenant(tenantId, () =>
+      db()
+        .update(notifications)
+        .set({ deliveredAt: null, emailedAt: null })
+        .where(eq(notifications.id, id)),
+    );
+    const retry = {
+      // The tenant the event was published in (core/outbox/events.ts).
+      message: { headers: { tenantId } },
+      signal: new AbortController().signal,
+      processInTransaction: async (_tx: unknown, work: () => unknown) => {
+        await work();
+        return { duplicate: false };
+      },
+    } as unknown as Parameters<NotificationDelivery['deliver']>[1];
+    await app.get(NotificationDelivery).deliver({ notificationId: id }, retry);
+    await delivered(id);
+    await mailQueue.drain();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(subjects(alice.email)).toEqual(['Test notification']);
+  }, 60_000);
 });
