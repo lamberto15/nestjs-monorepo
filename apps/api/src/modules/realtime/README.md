@@ -17,8 +17,11 @@ included (it publishes through `@socket.io/redis-emitter`).
   `socket.emitWithAck('whoami')` answers who and which rooms.
 - A socket ends when its credential does: session sign-out, family or key
   revocation, deactivated membership, user, client or tenant (events below),
-  an access token at its `exp`, an API key at its expiry, and a key that
-  stops working at the next check (every 10 minutes). The server closes it
+  a browser session at its idle timeout or maximum age (the tenant's limits
+  under the environment's, `SessionLifetime`; at that time the session is
+  read again, untouched, and a request that used it since moves the idle
+  deadline), an access token at its `exp`, an API key at its expiry, and a
+  key that stops working at the next check (every 10 minutes). The server closes it
   (`io server disconnect`); connect again with a working credential. A
   handshake with the token of a revoked family is refused.
 - A tenant switch issues a new session: reconnect after switching.

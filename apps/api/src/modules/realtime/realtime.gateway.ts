@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import {
   CurrentUser,
   type JwtClaims,
+  type SessionRecord,
   WsAuthenticator,
 } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
@@ -16,8 +17,14 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Namespace, Socket } from 'socket.io';
 import { ApiKeyAuth } from '../../iam/auth/api-key-auth.provider.js';
+import { DrizzleAuthenticationStore } from '../../iam/auth/drizzle-authentication.store.js';
 import { JwtAuth } from '../../iam/auth/jwt-auth.provider.js';
-import { principalKey, type Principal } from '../../iam/auth/principal.js';
+import {
+  principalKey,
+  type Principal,
+  type UserPrincipal,
+} from '../../iam/auth/principal.js';
+import { SessionLifetime } from '../../iam/auth/session-lifetime.js';
 import { REALTIME_NAMESPACE } from './realtime.adapter.js';
 import {
   keyRoom,
@@ -75,6 +82,8 @@ export class RealtimeGateway
     private readonly wsAuth: WsAuthenticator,
     private readonly jwtAuth: JwtAuth,
     private readonly apiKeys: ApiKeyAuth,
+    private readonly sessions: DrizzleAuthenticationStore,
+    private readonly lifetime: SessionLifetime,
   ) {}
 
   afterInit(server: Namespace) {
@@ -128,6 +137,10 @@ export class RealtimeGateway
       session.userId === user.id
     ) {
       socket.data.sessionId = session.id;
+      const endsAt = await this.sessionEndsAt(session as SessionRecord, user);
+      if (endsAt !== null) {
+        socket.data.sessionEndsAt = endsAt;
+      }
     }
     // An access token (the session is its claims) of a family revoked since
     // it was issued opens nothing: the revocation that would end this
@@ -199,6 +212,16 @@ export class RealtimeGateway
     if (typeof client.data.keyId === 'string') {
       this.watchKey(client, client.data.keyId);
     }
+    if (
+      user.kind === 'user' &&
+      typeof client.data.sessionId === 'string' &&
+      typeof client.data.sessionEndsAt === 'number'
+    ) {
+      const sessionId = client.data.sessionId;
+      this.schedule(client, client.data.sessionEndsAt, () =>
+        this.recheckSession(client, user, sessionId),
+      );
+    }
   }
 
   /** A socket that ends has nothing left to time. */
@@ -262,6 +285,65 @@ export class RealtimeGateway
         // Unsure: the socket ends rather than outlive its key.
         this.logger.error(
           "Checking a realtime connection's key failed",
+          error instanceof Error ? error.stack : String(error),
+        );
+        client.disconnect(true);
+      },
+    );
+  }
+
+  /**
+   * When a browser session ends unless it is used again: its idle timeout
+   * from its last activity, or its maximum age, whichever comes first, as
+   * SessionLifetime describes it to the web app (the tenant's limits under
+   * the environment's). Null for what has no such lifetime (an
+   * impersonation, which has its own end).
+   */
+  private async sessionEndsAt(session: SessionRecord, user: UserPrincipal) {
+    const life = await this.lifetime.describe(session, user);
+    return life
+      ? Math.min(
+          Date.parse(life.expiresAt),
+          Date.parse(life.lastActiveAt) + life.idleMinutes * 60_000,
+        )
+      : null;
+  }
+
+  /**
+   * A session's time is up, unless a request used it since (activity moves
+   * the idle deadline): read again as stored, never touched (a socket is no
+   * activity), and judged by SessionLifetime's rule as a request would be.
+   * Ended (expired, or gone: a sign-out, a prune), the socket ends; else it
+   * waits for the new deadline.
+   */
+  private recheckSession(
+    client: Socket,
+    user: UserPrincipal,
+    sessionId: string,
+  ) {
+    void (async () => {
+      const session = await this.sessions.getSession(sessionId);
+      if (!session || (await this.lifetime.expired(session, user.tenantId))) {
+        return null;
+      }
+      return this.sessionEndsAt(session, user);
+    })().then(
+      (endsAt) => {
+        if (!client.connected) {
+          return;
+        }
+        if (endsAt === null || endsAt <= Date.now()) {
+          client.disconnect(true);
+          return;
+        }
+        this.schedule(client, endsAt, () =>
+          this.recheckSession(client, user, sessionId),
+        );
+      },
+      (error: unknown) => {
+        // Unsure: the socket ends rather than outlive its session.
+        this.logger.error(
+          "Checking a realtime connection's session failed",
           error instanceof Error ? error.stack : String(error),
         );
         client.disconnect(true);

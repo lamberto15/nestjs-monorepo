@@ -1,15 +1,20 @@
 import type { AddressInfo } from 'node:net';
 import { ConfigModule } from '@nestjs/config';
+import { getDrizzleToken } from '@nestjs/drizzle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { Test } from '@nestjs/testing';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { accessTokenFor, apiClient, signedInUser } from '../../../test/auth.js';
 import { accessModules } from '../../../test/access.js';
+import type { Database } from '../../core/database/database.js';
 import { HttpConventionsModule } from '../../core/http/http-conventions.module.js';
 import { createHttpAdapter, setupHttp } from '../../core/http/http-setup.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { authConfig } from '../../iam/auth/auth.config.js';
 import { AUTH_EVENTS } from '../../iam/auth/auth.events.js';
+import { sessions } from '../../iam/auth/auth.tables.js';
 // socket.io-client is a devDependency of apps/api (package.json).
 import { io, type Socket } from 'socket.io-client';
 import { setupRealtime } from './realtime.adapter.js';
@@ -218,6 +223,37 @@ describe('realtime', () => {
     expect((await closed)[0]).toBe('io server disconnect');
     expect(s2.connected).toBe(true);
   });
+
+  it('ends a passive socket when its session reaches its maximum age, nothing announcing it', async () => {
+    const { user, headers } = await signedInUser(app);
+    const db = app.get<Database>(getDrizzleToken());
+    // The session was signed in long ago: its maximum age is three seconds away.
+    const maxMs = app.get(authConfig.KEY).sessionMaxHours * 3_600_000;
+    await db
+      .update(sessions)
+      .set({ createdAt: new Date(Date.now() - maxMs + 3000) })
+      .where(eq(sessions.userId, user.id));
+    const { socket, error } = await connect({ extraHeaders: headers });
+    expect(error).toBeUndefined();
+    const [before] = await db
+      .select({ lastActiveAt: sessions.lastActiveAt })
+      .from(sessions)
+      .where(eq(sessions.userId, user.id));
+    const closed = once(socket, 'disconnect');
+    const [reason] = await Promise.race([
+      closed,
+      new Promise<unknown[]>((resolve) =>
+        setTimeout(() => resolve(['still connected']), 8000),
+      ),
+    ]);
+    expect(reason).toBe('io server disconnect');
+    // The check read the session; it did not count as activity.
+    const [after] = await db
+      .select({ lastActiveAt: sessions.lastActiveAt })
+      .from(sessions)
+      .where(eq(sessions.userId, user.id));
+    expect(after!.lastActiveAt).toEqual(before!.lastActiveAt);
+  }, 15_000);
 
   it("ends a tenant's sockets when it is deactivated, and not another tenant's", async () => {
     const inside = await signedInUser(app);
