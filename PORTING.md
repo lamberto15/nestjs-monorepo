@@ -112,6 +112,32 @@ repository.
       built web app, a database of their own; CI job `web-e2e`
 - [x] the image builds (`docker build`) and serves the page and the API
 
+## Decided by the owner on 2026-11-18, to do
+
+- [ ] Break-glass reads every GET an administrator may read (16 routes now
+      answer 403: their read checks a non-read action); writes stay refused.
+- [ ] Security alerts mail once: their email channel is fixed (the account
+      mails them), not offered in preferences; a changed password settles an
+      unread breach notice (`settle()`).
+- [ ] `auth.password-verified` carries the password's SHA-1, never the
+      plaintext.
+- [ ] The tenant export drops secret columns declared where the table is
+      (plus encrypted ones); a test flags a suspicious column left unmarked.
+- [ ] Presigned uploads tested against Garage (S3-compatible; MinIO is
+      deprecated): a `storage` profile in compose.dev.yaml and an e2e test,
+      run in CI.
+- [ ] Auth policy of a unit stays administrators' (`Access.manageAuthPolicy`);
+      a dry-run import validates custom values as the import does.
+- [ ] `/.well-known/security.txt` from SECURITY_CONTACT (none when unset);
+      no maintenance page (the host's job).
+- [ ] An API client's create takes `dailyQuota`, written in its transaction
+      through a hook the usage module provides.
+- [ ] One Webhooks menu entry for `manageEndpoints` or `manageSenders`; the
+      page shows each section by permission.
+- [ ] The documents panel lists `GET /v1/<path>/{id}/documents`.
+- [ ] A `markdown` field type in the generator: a text column, the Markdown
+      editor in forms, the viewer on detail pages.
+
 ## Not ported, on purpose
 
 - The bundled operations stack (backups, monitoring, load tests, pgbouncer,
@@ -121,6 +147,8 @@ repository.
 - `analytics` (nightly aggregates for a reporting role): analytical
   reporting is done outside the app, in a store fed by replication. Scheduled
   exports (`reports`) stay, with data-transfer.
+- Release Please, the commit-message workflow, CONTRIBUTING, SECURITY and
+  CODE_OF_CONDUCT (the owner, 2026-11-18): the local commitlint hook stays.
 - `feature:sync`, `feature:remove` and `capability:remove`: a feature is
   changed by editing its files and running `pnpm db:generate`; a feature or
   a capability is removed by deleting its folder and its line in a module.
