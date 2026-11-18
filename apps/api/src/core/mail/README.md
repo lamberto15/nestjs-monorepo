@@ -3,10 +3,10 @@
 `MailModule` (global `Mailer` from `@nestjs/mail`, and `MailQueue`) sends mail
 through a queue: the request renders it, a worker sends it, with retries over hours.
 
-A module adds a mail in its own folder, with nothing to register:
+A module adds a mail in its own folder, with nothing to register (an example; iam/account's real ones are in `account.mails.ts` and `templates/`):
 
 ```ts
-// iam/account/password-reset.mail.ts
+// an example: <module>/password-reset.mail.ts
 @EssentialMail() // optional: still sent with MAIL_DELIVERY=essential
 @Injectable()
 export class PasswordResetMail implements Mailable<{ link: string }> {
@@ -19,7 +19,7 @@ export class PasswordResetMail implements Mailable<{ link: string }> {
     };
   }
 }
-// iam/account/templates/password-reset.html (and password-reset.pt.html for locale pt): <a href="{{ link }}">...</a>
+// <module>/templates/password-reset.html (and password-reset.pt.html for locale pt): <a href="{{ link }}">...</a>
 // the service: await this.mailQueue.send(PasswordResetMail, { to, data: { link }, locale }, { jobId });
 ```
 
