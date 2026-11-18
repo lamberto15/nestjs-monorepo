@@ -1,6 +1,7 @@
 // `--fields "title:string,amount:money?,status:enum(draft|sent),code:string!unique"`:
 // the field types of modules/fields (field.ts), `?` optional, `!unique`
-// unique per tenant.
+// unique per tenant. `markdown` is a `text` field to the API; the web pages
+// edit it with the Markdown editor and show it rendered.
 
 const CAMEL = /^[a-z][a-zA-Z0-9]*$/;
 
@@ -25,6 +26,7 @@ const RESERVED = new Set([
 export const TYPES = [
   'string',
   'text',
+  'markdown',
   'int',
   'decimal',
   'money',
@@ -92,6 +94,10 @@ export function parseField(spec) {
     throw new Error('--fields: !unique applies to string and int fields.');
   if (unique && optional)
     throw new Error(`--fields: "${name}" can't be both optional and unique.`);
+  if (type === 'markdown') {
+    field.type = 'text';
+    field.markdown = true;
+  }
   return field;
 }
 

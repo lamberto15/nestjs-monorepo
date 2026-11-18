@@ -145,7 +145,18 @@ export function record(c) {
     ' = defineRecord({\n' +
     options.join(',\n') +
     ',\nfields: {\n' +
-    c.fields.map((f) => f.name + ': ' + builder(c, f) + ',').join('\n') +
+    c.fields
+      .map(
+        (f) =>
+          (f.markdown
+            ? '// Markdown: the web app edits it with the Markdown editor and shows it rendered.\n'
+            : '') +
+          f.name +
+          ': ' +
+          builder(c, f) +
+          ',',
+      )
+      .join('\n') +
     '\n},\n});\n'
   );
 }

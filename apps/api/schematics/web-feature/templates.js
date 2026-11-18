@@ -411,6 +411,9 @@ function control(t, f, first) {
     `<form.AppField name="${key}">{(field) => ${element}}</form.AppField>`;
   const text = (key, labelKey, props = '') =>
     wrap(key, `<field.TextField label={t('fields.${labelKey}')}${props} />`);
+  if (f.markdown) {
+    return wrap(name, `<field.MarkdownField label={t('fields.${name}')} />`);
+  }
   switch (f.type) {
     case 'text':
     case 'json':
@@ -1063,7 +1066,11 @@ function detail(t, f) {
   const shown = (element) => `${r} == null ? ${r} : ${element}`;
   switch (f.type) {
     case 'text':
-      return shown(`<p className="whitespace-pre-wrap">{${r}}</p>`);
+      return shown(
+        f.markdown
+          ? `<MarkdownText>{${r}}</MarkdownText>`
+          : `<p className="whitespace-pre-wrap">{${r}}</p>`,
+      );
     case 'money':
       return shown(tpl(`@{${r}.amount} @{${r}.currency}`));
     case 'bool':
@@ -1105,6 +1112,8 @@ export function detailPage({ t, fields, softDelete, addons }) {
     `import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';`,
     `import { ArrowLeftIcon, EllipsisIcon } from 'lucide-react';`,
     `import { useTranslation } from 'react-i18next';`,
+    fields.some((f) => f.markdown) &&
+      `import { MarkdownText } from '@/components/markdown/lazy';`,
     `import { Page, PageHeader } from '@/components/page-header';`,
     custom &&
       `import { CustomFieldValues } from '@/components/records/custom-field-values';`,
