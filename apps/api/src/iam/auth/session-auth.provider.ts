@@ -16,7 +16,12 @@ import { tenancyConfig } from '../../core/tenancy/tenancy.config.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { authConfig } from './auth.config.js';
 import { discoverOne } from './discover.js';
-import { HostTenantResolver, type HostTenants, hostOf } from './host-tenant.js';
+import {
+  HostTenantResolver,
+  type HostTenants,
+  hostOf,
+  requestHostname,
+} from './host-tenant.js';
 import {
   type ImpersonationEligibility,
   ImpersonationRules,
@@ -72,10 +77,27 @@ export class SessionAuth
   // in there; the host only ever narrows what a membership already allows.
   // With TENANCY=single every host is the one tenant's.
   override async authenticate(context: ExecutionContext) {
-    const tenantId = await this.tenantOfHost(context);
+    const tenantId = await this.tenantOfHost(hostOf(context));
     return tenantId
       ? this.hostTenant.run(tenantId, () => super.authenticate(context))
       : super.authenticate(context);
+  }
+
+  /**
+   * validate() of a stored session outside any request, as a request to
+   * `host` (its `Host` header) would run it: the realtime socket it opened
+   * asks again when the session's deadline passes. Reads, never touches it
+   * (a socket is no activity); the package's own expiry is the caller's
+   * (SessionLifetime.endsAt()).
+   */
+  async revalidate(
+    session: SessionRecord,
+    host: string | string[] | undefined,
+  ) {
+    const tenantId = await this.tenantOfHost(requestHostname(host));
+    return tenantId
+      ? this.hostTenant.run(tenantId, () => this.validate(session))
+      : this.validate(session);
   }
 
   // Every request: a deactivated or deleted account loses access at once, a
@@ -140,9 +162,8 @@ export class SessionAuth
       : null;
   }
 
-  private async tenantOfHost(context: ExecutionContext) {
+  private async tenantOfHost(host: string | undefined) {
     if (this.hosts) {
-      const host = hostOf(context);
       return host ? this.hosts.tenantOfHost(host) : null;
     }
     return this.tenancyMode.mode === 'single'

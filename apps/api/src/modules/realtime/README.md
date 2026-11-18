@@ -18,9 +18,14 @@ included (it publishes through `@socket.io/redis-emitter`).
 - A socket ends when its credential does: session sign-out, family or key
   revocation, deactivated membership, user, client or tenant (events below),
   a browser session at its idle timeout or maximum age (the tenant's limits
-  under the environment's, `SessionLifetime`; at that time the session is
-  read again, untouched, and a request that used it since moves the idle
-  deadline), an access token at its `exp`, an API key at its expiry, and a
+  under the environment's, `SessionLifetime.endsAt()`), an impersonation at
+  its end or the environment's limits, whichever comes first (at that time
+  the session is read again, untouched, and judged as a request would be,
+  `SessionAuth.revalidate()`: a rule that no longer holds ends it, a request
+  that used it since moves the idle deadline; an impersonation is also
+  judged so at once when roles, grants or units change anywhere,
+  `access.abilities-changed`), stopping an impersonation
+  (its session ends: `auth.session-ended`), an access token at its `exp`, an API key at its expiry, and a
   key that stops working at the next check (every 10 minutes). The server closes it
   (`io server disconnect`); connect again with a working credential. A
   handshake with the token of a revoked family is refused.
@@ -64,7 +69,8 @@ async push({ noteId, watcherKeys }: NoteCommented) {
 
 `@OnEvent` listeners (realtime.listeners.ts), emitted by the owner after
 the change commits: `auth.session-ended`, `auth.token-session-ended`,
-`access.member-deactivated` (exist), and `access.user-deactivated`
+`access.member-deactivated` (exist; `access.abilities-changed` is the
+gateway's own, a re-check of this instance's impersonation sockets), and `access.user-deactivated`
 `{ userId }`, `access.client-revoked` `{ clientId, tenantId }`,
 `access.keys-revoked` `{ keyIds }`, `tenancy.tenant-deactivated`
 `{ tenantId }`.

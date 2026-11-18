@@ -6,8 +6,19 @@ import type { NestNodeApplication } from '@nestjs/platform-node';
 import { Test } from '@nestjs/testing';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { accessTokenFor, apiClient, signedInUser } from '../../../test/auth.js';
-import { accessModules } from '../../../test/access.js';
+import {
+  accessTokenFor,
+  apiClient,
+  cookieOf,
+  signedInUser,
+  signIn,
+} from '../../../test/auth.js';
+import {
+  accessModules,
+  member,
+  roleIds,
+  tenantWithAdmin,
+} from '../../../test/access.js';
 import type { Database } from '../../core/database/database.js';
 import { HttpConventionsModule } from '../../core/http/http-conventions.module.js';
 import { createHttpAdapter, setupHttp } from '../../core/http/http-setup.js';
@@ -15,6 +26,8 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { authConfig } from '../../iam/auth/auth.config.js';
 import { AUTH_EVENTS } from '../../iam/auth/auth.events.js';
 import { sessions } from '../../iam/auth/auth.tables.js';
+import type { Impersonation } from '../../iam/auth/impersonation.js';
+import { ImpersonationModule } from '../../iam/impersonation/impersonation.module.js';
 // socket.io-client is a devDependency of apps/api (package.json).
 import { io, type Socket } from 'socket.io-client';
 import { setupRealtime } from './realtime.adapter.js';
@@ -25,6 +38,7 @@ import { Realtime } from './realtime.service.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
+  process.env.IMPERSONATION = 'on';
   process.env.REDIS_PREFIX = `test-realtime-${process.pid}-${Date.now()}`;
 });
 
@@ -40,6 +54,7 @@ async function boot() {
       ConfigModule.forRoot({ ignoreEnvFile: true }),
       HttpConventionsModule,
       ...accessModules(),
+      ImpersonationModule,
       RealtimeModule,
     ],
   }).compile();
@@ -282,5 +297,114 @@ describe('realtime', () => {
       .get(EventEmitter2)
       .emitAsync(REALTIME_DISCONNECT_EVENTS.keysRevoked, { keyIds: [keyId] });
     await closed;
+  });
+
+  /** An administrator acting as a member: the impersonation's cookie and its session's id. */
+  async function impersonating() {
+    const { tenantId, admin } = await tenantWithAdmin(app);
+    const editor = await member(app, tenantId, ['editor']);
+    const started = await app.inject({
+      method: 'POST',
+      url: `/v1/access/users/${editor.id}/impersonate`,
+      headers: (await signIn(app, admin.email)).headers,
+    });
+    expect(started.statusCode).toBe(204);
+    const cookie = cookieOf(started.headers['set-cookie']);
+    return { tenantId, admin, editor, headers: { cookie } };
+  }
+
+  /** The socket's disconnect reason, or 'still connected' after `ms`. */
+  const disconnected = (socket: Socket, ms: number) =>
+    Promise.race([
+      once(socket, 'disconnect').then(([reason]) => reason),
+      new Promise((resolve) =>
+        setTimeout(() => resolve('still connected'), ms),
+      ),
+    ]);
+
+  it("ends an impersonation's socket when it is stopped", async () => {
+    const { headers } = await impersonating();
+    const { socket, error } = await connect({ extraHeaders: headers });
+    expect(error).toBeUndefined();
+    const closed = disconnected(socket, 5000);
+    const stopped = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/impersonation/stop',
+      headers,
+    });
+    expect(stopped.statusCode).toBe(204);
+    expect(await closed).toBe('io server disconnect');
+  });
+
+  it("ends a passive impersonation's socket at the impersonation's end, nothing announcing it", async () => {
+    const { editor, headers } = await impersonating();
+    const db = app.get<Database>(getDrizzleToken());
+    // Its end is three seconds away (the session's own limits are hours).
+    const [row] = await db
+      .select({ id: sessions.id, metadata: sessions.metadata })
+      .from(sessions)
+      .where(eq(sessions.userId, editor.id));
+    const metadata = row!.metadata as { impersonator: Impersonation };
+    await db
+      .update(sessions)
+      .set({
+        metadata: {
+          ...metadata,
+          impersonator: {
+            ...metadata.impersonator,
+            endsAt: new Date(Date.now() + 3000).toISOString(),
+          },
+        },
+      })
+      .where(eq(sessions.id, row!.id));
+    const { socket, error } = await connect({ extraHeaders: headers });
+    expect(error).toBeUndefined();
+    expect(await whoami(socket)).toMatchObject({ id: editor.id });
+    expect(await disconnected(socket, 8000)).toBe('io server disconnect');
+    // The HTTP path refuses it too: one rule.
+    const after = await app.inject({
+      method: 'GET',
+      url: '/v1/auth/me',
+      headers,
+    });
+    expect(after.statusCode).toBe(401);
+  }, 15_000);
+
+  /** Sets a member's roles through the route, as an administrator does. */
+  const setRoles = async (
+    admin: { headers: Record<string, string> },
+    userId: string,
+    ids: string[],
+  ) => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/v1/access/users/${userId}`,
+      headers: admin.headers,
+      payload: { roleIds: ids },
+    });
+    expect(response.statusCode).toBe(204);
+  };
+
+  it("ends an impersonation's socket at once when a role change ends its rule", async () => {
+    const { tenantId, admin, editor, headers } = await impersonating();
+    const { socket, error } = await connect({ extraHeaders: headers });
+    expect(error).toBeUndefined();
+    const closed = disconnected(socket, 3000);
+    // The target made an administrator: nobody may act as them any more.
+    await setRoles(
+      admin,
+      editor.id,
+      await roleIds(app, tenantId, 'administrator'),
+    );
+    expect(await closed).toBe('io server disconnect');
+  });
+
+  it("keeps an impersonation's socket through a role change its rule survives", async () => {
+    const { tenantId, admin, headers } = await impersonating();
+    const other = await member(app, tenantId, ['editor']);
+    const { socket } = await connect({ extraHeaders: headers });
+    const closed = disconnected(socket, 1500);
+    await setRoles(admin, other.id, await roleIds(app, tenantId, 'viewer'));
+    expect(await closed).toBe('still connected');
   });
 });

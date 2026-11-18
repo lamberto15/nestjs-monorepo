@@ -85,7 +85,10 @@ nothing is written.
   (`?recordId=`), as its asker may read it.
 - Events (`access.events.ts`): `access.member-deactivated` (its actor an
   administrator or SCIM's API client), `access.member-reactivated` (iam/sso
-  reactivates an account its deprovisioning deactivated).
+  reactivates an account its deprovisioning deactivated),
+  `access.abilities-changed` (no payload, `emit()` on every instance when
+  `invalidate()` drops the cache there: modules/realtime re-checks its
+  impersonation sockets).
 - `GET /v1/access/roles` and `GET /v1/access/users` also answer whoever
   holds `Access.manageSso` (`openForSso`: the SSO page's pickers).
 

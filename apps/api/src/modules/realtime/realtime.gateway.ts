@@ -6,6 +6,7 @@ import {
   WsAuthenticator,
 } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
+import { OnEvent } from '@nestjs/event-emitter';
 import {
   ConnectedSocket,
   type OnGatewayConnection,
@@ -16,14 +17,12 @@ import {
 } from '@nestjs/websockets';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Namespace, Socket } from 'socket.io';
+import { ACCESS_EVENTS } from '../../iam/access/access.events.js';
 import { ApiKeyAuth } from '../../iam/auth/api-key-auth.provider.js';
 import { DrizzleAuthenticationStore } from '../../iam/auth/drizzle-authentication.store.js';
 import { JwtAuth } from '../../iam/auth/jwt-auth.provider.js';
-import {
-  principalKey,
-  type Principal,
-  type UserPrincipal,
-} from '../../iam/auth/principal.js';
+import { principalKey, type Principal } from '../../iam/auth/principal.js';
+import { SessionAuth } from '../../iam/auth/session-auth.provider.js';
 import { SessionLifetime } from '../../iam/auth/session-lifetime.js';
 import { REALTIME_NAMESPACE } from './realtime.adapter.js';
 import {
@@ -77,6 +76,8 @@ export class RealtimeGateway
   private readonly logger = new Logger('Realtime');
   /** Each socket's pending end (or key check): cleared on disconnect. */
   private readonly timers = new WeakMap<Socket, NodeJS.Timeout>();
+  /** This instance's sockets of the namespace. */
+  private server?: Namespace;
 
   constructor(
     private readonly wsAuth: WsAuthenticator,
@@ -84,9 +85,11 @@ export class RealtimeGateway
     private readonly apiKeys: ApiKeyAuth,
     private readonly sessions: DrizzleAuthenticationStore,
     private readonly lifetime: SessionLifetime,
+    private readonly sessionAuth: SessionAuth,
   ) {}
 
   afterInit(server: Namespace) {
+    this.server = server;
     server.use((socket, next) => {
       void this.authenticate(socket).then(
         (user) =>
@@ -137,7 +140,7 @@ export class RealtimeGateway
       session.userId === user.id
     ) {
       socket.data.sessionId = session.id;
-      const endsAt = await this.sessionEndsAt(session as SessionRecord, user);
+      const endsAt = await this.lifetime.endsAt(session as SessionRecord, user);
       if (endsAt !== null) {
         socket.data.sessionEndsAt = endsAt;
       }
@@ -219,7 +222,7 @@ export class RealtimeGateway
     ) {
       const sessionId = client.data.sessionId;
       this.schedule(client, client.data.sessionEndsAt, () =>
-        this.recheckSession(client, user, sessionId),
+        this.recheckSession(client, sessionId),
       );
     }
   }
@@ -293,40 +296,25 @@ export class RealtimeGateway
   }
 
   /**
-   * When a browser session ends unless it is used again: its idle timeout
-   * from its last activity, or its maximum age, whichever comes first, as
-   * SessionLifetime describes it to the web app (the tenant's limits under
-   * the environment's). Null for what has no such lifetime (an
-   * impersonation, which has its own end).
+   * A session's time is up (SessionLifetime.endsAt(): its idle timeout or
+   * maximum age, an impersonation's end), unless a request used it since
+   * (activity moves the idle deadline). Read again as stored, never touched
+   * (a socket is no activity), and judged as a request to the handshake's
+   * host would be (SessionAuth.revalidate(): the account, the membership,
+   * the tenant's limits, an impersonation's rules). Refused, past its
+   * deadline or gone (a sign-out, a prune), the socket ends; else it waits
+   * for the new deadline.
    */
-  private async sessionEndsAt(session: SessionRecord, user: UserPrincipal) {
-    const life = await this.lifetime.describe(session, user);
-    return life
-      ? Math.min(
-          Date.parse(life.expiresAt),
-          Date.parse(life.lastActiveAt) + life.idleMinutes * 60_000,
-        )
-      : null;
-  }
-
-  /**
-   * A session's time is up, unless a request used it since (activity moves
-   * the idle deadline): read again as stored, never touched (a socket is no
-   * activity), and judged by SessionLifetime's rule as a request would be.
-   * Ended (expired, or gone: a sign-out, a prune), the socket ends; else it
-   * waits for the new deadline.
-   */
-  private recheckSession(
-    client: Socket,
-    user: UserPrincipal,
-    sessionId: string,
-  ) {
+  private recheckSession(client: Socket, sessionId: string) {
     void (async () => {
       const session = await this.sessions.getSession(sessionId);
-      if (!session || (await this.lifetime.expired(session, user.tenantId))) {
-        return null;
-      }
-      return this.sessionEndsAt(session, user);
+      const user =
+        session &&
+        (await this.sessionAuth.revalidate(
+          session,
+          client.handshake.headers.host,
+        ));
+      return user ? this.lifetime.endsAt(session, user) : null;
     })().then(
       (endsAt) => {
         if (!client.connected) {
@@ -337,7 +325,7 @@ export class RealtimeGateway
           return;
         }
         this.schedule(client, endsAt, () =>
-          this.recheckSession(client, user, sessionId),
+          this.recheckSession(client, sessionId),
         );
       },
       (error: unknown) => {
@@ -349,6 +337,28 @@ export class RealtimeGateway
         client.disconnect(true);
       },
     );
+  }
+
+  /**
+   * Roles, grants or unit memberships changed (AccessService dropped its
+   * cache, on this instance as on every other): an impersonation's rule
+   * (who may act as whom) may no longer hold, so this instance's
+   * impersonation sockets are checked now, as at their deadline. Other
+   * sockets carry no rights of their own: what reaches them is decided when
+   * it is pushed, and each message is authorised as it comes.
+   */
+  @OnEvent(ACCESS_EVENTS.abilitiesChanged)
+  recheckImpersonations() {
+    for (const client of this.server?.sockets.values() ?? []) {
+      const user = client.data.principal as Principal | undefined;
+      if (
+        user?.kind === 'user' &&
+        user.impersonator &&
+        typeof client.data.sessionId === 'string'
+      ) {
+        this.recheckSession(client, client.data.sessionId);
+      }
+    }
   }
 
   /**

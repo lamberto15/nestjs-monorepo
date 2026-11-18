@@ -16,6 +16,12 @@ principal is for jobs only and the guard refuses it on a request.
   operators' tenant), `@RequiresSwitch('auth.impersonation',
 'IMPERSONATION')` (404 `feature_off`), `@UserThrottle()`,
   `@AddressThrottle()`, `@DuringOnboarding()`, `@DuringMfaEnrollment()`.
+- **A session checked outside a request** (a realtime socket's, at its
+  deadline): `SessionLifetime.endsAt(session, user)` is when it ends unless
+  used again (an impersonation: the environment's limits or its own end),
+  `SessionAuth.revalidate(session, host)` is the request's check, read
+  only (the account, the membership, the tenant's limits, an
+  impersonation's rules).
 - **Tests:** `test/auth.ts`: `authModules()`, `createUser`, `signIn`,
   `signedInUser`, `accessTokenFor`, `apiClient`.
 

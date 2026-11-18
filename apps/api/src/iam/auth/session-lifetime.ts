@@ -3,6 +3,7 @@ import { RefreshTokenError, type SessionRecord } from '@nestjs/authentication';
 import { createHash } from 'node:crypto';
 import { AuthPolicy } from './auth-policy.js';
 import { DrizzleAuthenticationStore } from './drizzle-authentication.store.js';
+import { impersonationOf } from './impersonation.js';
 
 /** The access tokens' lifetime (auth.module.ts): they outlive a revoked family by this much. */
 export const ACCESS_TOKEN_TTL_MS = 15 * 60_000;
@@ -70,6 +71,36 @@ export class SessionLifetime {
         ),
       ).toISOString(),
     };
+  }
+
+  /**
+   * When a stored session ends unless a request uses it again (epoch ms):
+   * a session at its idle timeout or maximum age as describe() gives them;
+   * an impersonation, which the tenant's limits don't bind (SessionAuth),
+   * at the environment's (the package's) or its own end, whichever comes
+   * first. Null for what is not a stored session. A realtime socket ends
+   * then, unless SessionAuth.revalidate() still accepts the session.
+   */
+  async endsAt(
+    session: SessionRecord,
+    user: { tenantId?: string | null; impersonator?: unknown },
+  ) {
+    const impersonation = impersonationOf(session);
+    if (!impersonation) {
+      const life = await this.describe(session, user);
+      return life
+        ? Math.min(
+            Date.parse(life.expiresAt),
+            Date.parse(life.lastActiveAt) + life.idleMinutes * 60_000,
+          )
+        : null;
+    }
+    const { idleMs } = await this.policy.sessionLimits(null);
+    return Math.min(
+      session.expiresAt.getTime(),
+      session.lastActiveAt.getTime() + idleMs,
+      Date.parse(impersonation.endsAt),
+    );
   }
 
   /**

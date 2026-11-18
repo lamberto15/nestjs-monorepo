@@ -15,6 +15,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   and,
   eq,
@@ -41,6 +42,7 @@ import {
   type Principal,
   principalKey,
 } from '../auth/principal.js';
+import { ACCESS_EVENTS } from './access.events.js';
 import { apiClientRoles, rolePermissions, userRoles } from './access.tables.js';
 import {
   type FieldComparison,
@@ -273,6 +275,7 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
     private readonly catalog: PermissionCatalog,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly discovery: DiscoveryService,
+    private readonly events: EventEmitter2,
   ) {}
 
   /** Pub/sub channels ignore ioredis' key prefix: the prefix goes into the name. */
@@ -308,9 +311,11 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
       .catch(() => undefined);
   }
 
+  /** Both paths of an invalidation (this instance's, another's by pub/sub) end here. */
   private clear() {
     this.version++;
     this.cache.clear();
+    this.events.emit(ACCESS_EVENTS.abilitiesChanged);
   }
 
   /** Whether the principal may do `action` on `subject`: on this record, or on some when there is none. */

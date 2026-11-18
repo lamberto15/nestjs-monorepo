@@ -4,6 +4,7 @@ import type { ApiKeyAuth } from '../../iam/auth/api-key-auth.provider.js';
 import type { DrizzleAuthenticationStore } from '../../iam/auth/drizzle-authentication.store.js';
 import type { JwtAuth } from '../../iam/auth/jwt-auth.provider.js';
 import type { Principal } from '../../iam/auth/principal.js';
+import type { SessionAuth } from '../../iam/auth/session-auth.provider.js';
 import { SessionLifetime } from '../../iam/auth/session-lifetime.js';
 import { RealtimeGateway } from './realtime.gateway.js';
 import { tokenRoom } from './realtime.rooms.js';
@@ -27,6 +28,7 @@ describe('RealtimeGateway and token families', () => {
       {} as ApiKeyAuth,
       {} as DrizzleAuthenticationStore,
       {} as SessionLifetime,
+      {} as SessionAuth,
     );
     let middleware:
       ((socket: Socket, next: (error?: Error) => void) => void) | undefined;
@@ -111,21 +113,41 @@ describe('RealtimeGateway and browser sessions', () => {
     vi.useRealTimers();
   });
 
-  /** A session as the store keeps it, last used at `lastActiveAt`. */
-  const stored = (lastActiveAt: number) => ({
+  /**
+   * A session as the store keeps it, last used at `lastActiveAt`; an
+   * impersonation's when it carries an `impersonator` ending at `endsAt`.
+   */
+  const stored = (lastActiveAt: number, endsAt?: number) => ({
     id: 's1',
     userId: 'u1',
     createdAt: new Date(Date.parse('2026-11-19T08:00:00Z')),
     expiresAt: new Date(Date.parse('2026-11-26T08:00:00Z')),
     lastActiveAt: new Date(lastActiveAt),
     extra: { previousActiveAt: new Date(lastActiveAt) },
+    ...(endsAt !== undefined && {
+      metadata: {
+        tenantId: 't1',
+        impersonator: {
+          id: 'admin',
+          tenantId: 't1',
+          endsAt: new Date(endsAt).toISOString(),
+        },
+      },
+    }),
   });
 
   /**
    * A gateway over a session store and the lifetime rule as the app has
-   * them (the tenant's idle and maximum, from SessionLifetime's own code).
+   * them (the tenant's idle and maximum, from SessionLifetime's own code),
+   * with SessionAuth's answer (`revalidate`: accepted by default).
    */
-  async function connected(getSession: ReturnType<typeof vi.fn>) {
+  async function connected(
+    getSession: ReturnType<typeof vi.fn>,
+    {
+      endsAt,
+      revalidate = vi.fn().mockResolvedValue(principal),
+    }: { endsAt?: number; revalidate?: ReturnType<typeof vi.fn> } = {},
+  ) {
     const lifetime = new SessionLifetime(
       {
         sessionLimits: () =>
@@ -136,14 +158,18 @@ describe('RealtimeGateway and browser sessions', () => {
     const gateway = new RealtimeGateway(
       {
         authenticateConnection: vi.fn().mockResolvedValue({
-          user: principal,
-          session: stored(Date.now()),
+          user:
+            endsAt === undefined
+              ? principal
+              : { ...principal, impersonator: { id: 'admin' } },
+          session: stored(Date.now(), endsAt),
         }),
       } as unknown as WsAuthenticator,
       {} as JwtAuth,
       {} as ApiKeyAuth,
       { getSession } as unknown as DrizzleAuthenticationStore,
       lifetime,
+      { revalidate } as unknown as SessionAuth,
     );
     let middleware:
       ((socket: Socket, next: (error?: Error) => void) => void) | undefined;
@@ -152,7 +178,7 @@ describe('RealtimeGateway and browser sessions', () => {
     } as unknown as Namespace);
     const disconnect = vi.fn();
     const socket = {
-      handshake: { auth: {}, headers: {} },
+      handshake: { auth: {}, headers: { host: 'app.example.com' } },
       data: {},
       join: vi.fn(),
       disconnect,
@@ -190,6 +216,60 @@ describe('RealtimeGateway and browser sessions', () => {
   it('ends the socket at the deadline when the session is gone (a prune)', async () => {
     const { disconnect } = await connected(
       vi.fn().mockResolvedValue(undefined),
+    );
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    expect(disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it('ends the socket at the deadline when SessionAuth no longer accepts the session', async () => {
+    const session = stored(Date.now());
+    const revalidate = vi.fn().mockResolvedValue(null); // e.g. the membership ended
+    const { disconnect } = await connected(vi.fn().mockResolvedValue(session), {
+      revalidate,
+    });
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    expect(revalidate).toHaveBeenCalledWith(session, 'app.example.com');
+    expect(disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("ends an impersonation's socket at its end, before the session's idle timeout", async () => {
+    const endsAt = Date.now() + 10 * 60_000;
+    const getSession = vi.fn().mockResolvedValue(stored(Date.now(), endsAt));
+    // As SessionAuth answers past the impersonation's end.
+    const revalidate = vi.fn().mockResolvedValue(null);
+    const { disconnect } = await connected(getSession, { endsAt, revalidate });
+    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1000);
+    expect(getSession).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(revalidate).toHaveBeenCalledTimes(1);
+    expect(disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("asks an impersonation's rules at the idle deadline, and ends it at its end however used", async () => {
+    const connectedAt = Date.now();
+    const endsAt = connectedAt + 45 * 60_000;
+    const usedAt = connectedAt + 20 * 60_000;
+    const getSession = vi.fn().mockResolvedValue(stored(usedAt, endsAt));
+    const revalidate = vi.fn().mockResolvedValue(principal);
+    const { disconnect } = await connected(getSession, { endsAt, revalidate });
+    // The idle deadline: still accepted, used since; the next one is its end.
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    expect(revalidate).toHaveBeenCalledTimes(1);
+    expect(disconnect).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(endsAt - Date.now() - 1000);
+    expect(revalidate).toHaveBeenCalledTimes(1);
+    // Accepted or not, a deadline past is the end (the package's expiry included).
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(revalidate).toHaveBeenCalledTimes(2);
+    expect(disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("ends an impersonation's socket at the idle deadline when its rule no longer holds", async () => {
+    const endsAt = Date.now() + 45 * 60_000;
+    const revalidate = vi.fn().mockResolvedValue(null); // a role changed
+    const { disconnect } = await connected(
+      vi.fn().mockResolvedValue(stored(Date.now(), endsAt)),
+      { endsAt, revalidate },
     );
     await vi.advanceTimersByTimeAsync(IDLE_MS);
     expect(disconnect).toHaveBeenCalledWith(true);
