@@ -98,6 +98,10 @@ export function texts({ t, fields, softDelete, addons }) {
       created: `${Noun} created`,
       saved: `${Noun} saved`,
       conflict: `Someone else changed this ${t.noun}. Reload the page, then make your changes again.`,
+      ...(addons.includes('sequences') && {
+        numbering: 'Numbering',
+        numberingHint: `Which series gives the ${t.noun} its number.`,
+      }),
     },
     detail: { back: `Back to ${t.nouns}` },
     actions: {
@@ -447,10 +451,44 @@ function control(t, f, first) {
   }
 }
 
-export function form({ t, fields }) {
+/** The numbering picker of a create form (the `sequences` add-on): shown only when there is a choice. */
+function seriesPicker(t) {
+  return lines(
+    '        {series.length > 1 && (',
+    '          <Field>',
+    `            <FieldLabel htmlFor="${t.singular}-numbering">{t('form.numbering')}</FieldLabel>`,
+    '            <Select',
+    '              items={series.map((s) => ({ value: s.id, label: ' +
+      tpl('@{s.label ?? s.pattern} (@{s.example})') +
+      ' }))}',
+    '              value={seriesId}',
+    '              onValueChange={(next) => next && setPickedSeries(next)}',
+    '            >',
+    `              <SelectTrigger id="${t.singular}-numbering" className="w-full">`,
+    '                <SelectValue />',
+    '              </SelectTrigger>',
+    '              <SelectContent>',
+    '                {series.map((s) => (',
+    '                  <SelectItem key={s.id} value={s.id}>',
+    '                    {s.label ?? s.pattern} ({s.example})',
+    '                  </SelectItem>',
+    '                ))}',
+    '              </SelectContent>',
+    '            </Select>',
+    `            <FieldDescription>{t('form.numberingHint')}</FieldDescription>`,
+    '          </Field>',
+    '        )}',
+  );
+}
+
+export function form({ t, fields, addons }) {
   const S = t.Singular;
   const P = t.PLURAL;
   const has = (...types) => fields.some((f) => types.includes(f.type));
+  const custom = addons.includes('custom-fields');
+  const numbered = addons.includes('sequences');
+  const title = titleField(fields);
+  const duplicates = addons.includes('merge') && title;
   const inputs = fields.flatMap((f) =>
     initial(f).map((entry) => [f, ...entry]),
   );
@@ -463,23 +501,61 @@ export function form({ t, fields }) {
       `'${f.name}.amount': '${f.name}Amount',`,
       `'${f.name}.currency': '${f.name}Currency',`,
     ]);
+  const fieldParts = [
+    (has('bool') || numbered) && 'Field',
+    numbered && 'FieldDescription',
+    'FieldGroup',
+    (has('bool') || numbered) && 'FieldLabel',
+  ].filter(Boolean);
+  // What the form keeps outside its own values: the unsaved-changes guard asks about it too.
+  const outside = [
+    custom && 'Object.keys(edits).length > 0',
+    numbered && 'pickedSeries !== undefined',
+  ].filter(Boolean);
+  const applyErrors =
+    moneyAliases.length > 0
+      ? [
+          '        // A money field is two inputs: its errors name `<field>.amount` and `<field>.currency`.',
+          '        const own = applyFieldErrors(form, caught, {',
+          ...moneyAliases,
+          '        });',
+        ]
+      : '        const own = applyFieldErrors(form, caught);';
   return lines(
+    custom && `import { isApiError } from '@nestjs-monorepo/api-client';`,
     has('bool') &&
       `import { Checkbox } from '@nestjs-monorepo/ui/components/checkbox';`,
     `import { Button } from '@nestjs-monorepo/ui/components/button';`,
-    `import { ${has('bool') ? 'Field, FieldGroup, FieldLabel' : 'FieldGroup'} } from '@nestjs-monorepo/ui/components/field';`,
-    `import { useMutation, useQueryClient } from '@tanstack/react-query';`,
+    `import { ${fieldParts.join(', ')} } from '@nestjs-monorepo/ui/components/field';`,
+    numbered &&
+      `import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@nestjs-monorepo/ui/components/select';`,
+    custom
+      ? `import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';`
+      : `import { useMutation, useQueryClient } from '@tanstack/react-query';`,
     `import { Link, useNavigate } from '@tanstack/react-router';`,
-    `import { useState } from 'react';`,
+    custom
+      ? `import { useMemo, useState } from 'react';`
+      : `import { useState } from 'react';`,
     `import { useTranslation } from 'react-i18next';`,
     `import { toast } from 'sonner';`,
+    custom &&
+      `import { CustomFieldInputs } from '@/components/records/custom-field-inputs';`,
+    duplicates &&
+      `import { DuplicatesWarning } from '@/components/records/duplicates-warning';`,
+    custom &&
+      `import { customFieldsQuery, type CustomField } from '@/lib/custom-fields';`,
+    custom &&
+      `import { customBody, draftErrors, initialDrafts, serverErrors, type CustomDrafts } from '@/lib/custom-values';`,
     `import { applyFieldErrors, errorMessage } from '@/lib/errors';`,
     `import { FormAlert, useAppForm } from '@/lib/form';`,
+    custom && `import { focusFirstInvalid } from '@/lib/form-focus';`,
+    numbered && `import { useSubjectNamingSeries } from '@/lib/naming-series';`,
     `import { isPreconditionFailed, useInvalidateRecords } from '@/lib/records';`,
     `import { useUnsavedChangesGuard } from '@/lib/unsaved-changes';`,
     `import { z } from '@/lib/zod';`,
     `import { ${P}_PATH, create${S}, update${S}, type ${S}, type ${S}Changes, type ${S}Create } from './api';`,
     '',
+    custom && ['const NO_FIELDS: CustomField[] = [];', ''],
     has('int') && 'const WHOLE = /^-?\\d+$/;',
     has('decimal', 'money') && 'const DECIMAL = /^-?\\d+(\\.\\d+)?$/;',
     has('date') && 'const DATE = /^\\d{4}-\\d{2}-\\d{2}$/;',
@@ -517,6 +593,29 @@ export function form({ t, fields }) {
     '  const queryClient = useQueryClient();',
     `  const invalidate = useInvalidateRecords(${P}_PATH);`,
     '  const [error, setError] = useState<string>();',
+    custom && [
+      "  const { t: tRecords } = useTranslation('records');",
+      "  // `custom` left out of a record (field-level permissions) is not edited.",
+      '  const showCustom = !record || record.custom !== undefined;',
+      '  const definitions = useQuery({',
+      `    ...customFieldsQuery('${S}'),`,
+      '    enabled: showCustom,',
+      '    meta: { errorToast: false },',
+      '  });',
+      '  const customFields = showCustom ? (definitions.data ?? NO_FIELDS) : NO_FIELDS;',
+      '  const baseline = useMemo(() => initialDrafts(customFields, record?.custom), [customFields, record?.custom]);',
+      '  const [edits, setEdits] = useState<CustomDrafts>({});',
+      '  const [customErrors, setCustomErrors] = useState<Record<string, string>>({});',
+      '  const drafts = useMemo(() => ({ ...baseline, ...edits }), [baseline, edits]);',
+    ],
+    numbered && [
+      "  // A new record takes the subject's default series unless another is",
+      '  // picked; the picker shows only when there is a choice.',
+      `  const namingSeries = useSubjectNamingSeries('${S}');`,
+      '  const series = record ? [] : (namingSeries.data ?? []);',
+      '  const [pickedSeries, setPickedSeries] = useState<string>();',
+      '  const seriesId = pickedSeries ?? (series.find((s) => s.isDefault) ?? series[0])?.id;',
+    ],
     '',
     '  const save = useMutation({',
     `    mutationFn: (body: ${S}Changes) =>`,
@@ -538,14 +637,34 @@ export function form({ t, fields }) {
     '    },',
     '    onSubmit: async ({ value }) => {',
     '      setError(undefined);',
+    custom && [
+      '      // The custom values are checked by their definitions, as the API checks them.',
+      '      const found = draftErrors(customFields, drafts, tRecords);',
+      '      setCustomErrors(found);',
+      '      if (Object.keys(found).length > 0) {',
+      '        focusFirstInvalid(form);',
+      '        return;',
+      '      }',
+    ],
     '      const before = initialValues(record);',
     '      const changed = (...keys: (keyof typeof value)[]) =>',
     '        !record || keys.some((key) => value[key] !== before[key]);',
-    `      const body: ${S}Changes = {};`,
+    numbered
+      ? `      const body: ${S}Changes & Pick<${S}Create, 'namingSeriesId'> = {};`
+      : `      const body: ${S}Changes = {};`,
     ...fields.map(
       (f) =>
         `      if (changed(${keysOf(f).map(quote).join(', ')})) { ${assign(f, S)} }`,
     ),
+    custom && [
+      '      // On create, what differs from the defaults; on an edit, only what changed.',
+      '      const custom = customBody(customFields, drafts, { stored: record?.custom, baseline });',
+      '      if (Object.keys(custom).length > 0) body.custom = custom;',
+    ],
+    numbered && [
+      '      // Only a new record, and only when the user had a choice.',
+      '      if (series.length > 1 && seriesId) body.namingSeriesId = seriesId;',
+    ],
     '      if (record && Object.keys(body).length === 0) {',
     '        // Nothing changed: no request, no new version.',
     `        await navigate({ to: '/${t.plural}/$id', params: { id: record.id }, ignoreBlocker: true });`,
@@ -564,19 +683,24 @@ export function form({ t, fields }) {
     '          await queryClient.invalidateQueries();',
     '          return;',
     '        }',
-    moneyAliases.length > 0
+    custom
       ? [
-          '        // A money field is two inputs: its errors name `<field>.amount` and `<field>.currency`.',
-          '        const own = applyFieldErrors(form, caught, {',
-          ...moneyAliases,
-          '        });',
+          '        // The API names a custom value as `custom.<key>`: its input shows the message.',
+          '        const customFound = serverErrors(isApiError(caught) ? caught.errors : []);',
+          '        setCustomErrors(customFound);',
+          applyErrors,
+          '        if (!own && Object.keys(customFound).length === 0) setError(errorMessage(caught));',
         ]
-      : '        const own = applyFieldErrors(form, caught);',
-    '        if (!own) setError(errorMessage(caught));',
+      : [applyErrors, '        if (!own) setError(errorMessage(caught));'],
     '      }',
     '    },',
     '  });',
-    '  useUnsavedChangesGuard(form);',
+    outside.length > 0
+      ? [
+          '  // The custom values and the series are kept outside the form.',
+          `  useUnsavedChangesGuard(form, ${outside.join(' || ')});`,
+        ]
+      : '  useUnsavedChangesGuard(form);',
     '',
     '  return (',
     '    <form',
@@ -589,7 +713,30 @@ export function form({ t, fields }) {
     '    >',
     '      <FormAlert message={error} />',
     '      <FieldGroup>',
-    ...fields.map((f, i) => control(t, f, i === first)),
+    ...fields.map((f, i) => [
+      control(t, f, i === first),
+      f === title &&
+        duplicates && [
+          '        {/* Likely duplicates of what is typed: a hint, never a block. */}',
+          `        <form.Subscribe selector={(state) => state.values.${f.name}}>`,
+          `          {(${f.name}) => <DuplicatesWarning subject="${S}" listPath={${P}_PATH} values={{ ${f.name} }} excludeId={record?.id} />}`,
+          '        </form.Subscribe>',
+        ],
+    ]),
+    numbered && seriesPicker(t),
+    custom && [
+      '        {showCustom && (',
+      '          <CustomFieldInputs',
+      '            fields={customFields}',
+      '            value={drafts}',
+      '            errors={customErrors}',
+      '            onChange={(key, draft) => {',
+      '              setEdits((current) => ({ ...current, [key]: draft }));',
+      '              setCustomErrors(({ [key]: _gone, ...rest }) => rest);',
+      '            }}',
+      '          />',
+      '        )}',
+    ],
     '      </FieldGroup>',
     '      <div className="flex gap-2">',
     '        <form.AppForm>',
@@ -942,9 +1089,10 @@ export function detailPage({ t, fields, softDelete, addons }) {
   const item = t.singularCamel;
   const title = titleField(fields);
   const enums = fields.some((f) => f.type === 'enum');
+  const custom = addons.includes('custom-fields');
+  const name = title ? `${item}.${title.name}` : `${item}.id`;
   return lines(
-    enums &&
-      `import { Badge } from '@nestjs-monorepo/ui/components/badge';`,
+    enums && `import { Badge } from '@nestjs-monorepo/ui/components/badge';`,
     `import { Button } from '@nestjs-monorepo/ui/components/button';`,
     `import {`,
     '  DropdownMenu,',
@@ -958,11 +1106,15 @@ export function detailPage({ t, fields, softDelete, addons }) {
     `import { ArrowLeftIcon, EllipsisIcon } from 'lucide-react';`,
     `import { useTranslation } from 'react-i18next';`,
     `import { Page, PageHeader } from '@/components/page-header';`,
+    custom &&
+      `import { CustomFieldValues } from '@/components/records/custom-field-values';`,
     `import { DetailItem, DetailList } from '@/components/records/detail-list';`,
     `import { RecordPanels } from '@/components/records/panels/record-panels';`,
     `import { RecordState } from '@/components/records/record-state';`,
     `import { ${item}Query, type ${S} } from '@/features/${t.plural}/api';`,
     `import { use${S}Delete } from '@/features/${t.plural}/use-${t.singular}-delete';`,
+    addons.includes('recents') &&
+      `import { useRecordRecent } from '@/features/work/api';`,
     `import { useDateTimeFormat } from '@/lib/date-time';`,
     `import { useWritesPaused } from '@/lib/mode';`,
     `import { useRecordCan } from '@/lib/records';`,
@@ -1008,11 +1160,15 @@ export function detailPage({ t, fields, softDelete, addons }) {
     softDelete &&
       `    onRestored: (restored) => void navigate({ to: '/${t.plural}/$id', params: { id: restored.id } }),`,
     '  });',
+    addons.includes('recents') && [
+      "  // The visit goes to the user's recent records.",
+      `  useRecordRecent({ subject: '${S}', recordId: ${item}.id, label: ${name} });`,
+    ],
     '',
     '  return (',
     '    <>',
     '      <PageHeader',
-    `        title={${title ? `${item}.${title.name}` : `${item}.id`}}`,
+    `        title={${name}}`,
     addons.includes('sequences') && `        description={${item}.number}`,
     '        actions={',
     '          (canUpdate || canDelete) && (',
@@ -1044,6 +1200,7 @@ export function detailPage({ t, fields, softDelete, addons }) {
       (f) =>
         `        <DetailItem label={t('fields.${f.name}')} value={${detail(t, f)}} />`,
     ),
+    custom && `        <CustomFieldValues subject="${S}" values={${item}.custom} />`,
     `        <DetailItem label={t('fields.updatedAt')} value={date(${item}.updatedAt)} />`,
     '      </DetailList>',
     `      <RecordPanels subject="${S}" path="/v1/${t.plural}/{id}" id={${item}.id} canUpdate={canUpdate}${addons.includes('tags') ? `  tags={${item}.tags}` : ''} />`,
@@ -1104,6 +1261,7 @@ export function test({ t, fields, softDelete, addons }) {
       number: `${S.slice(0, 3).toUpperCase()}-2026-00001`,
     }),
     ...Object.fromEntries(fields.map((f) => [f.name, sample(f).api])),
+    ...(addons.includes('custom-fields') && { custom: {} }),
     createdAt: '2026-10-17T09:00:00.000Z',
     updatedAt: '2026-10-17T09:00:00.000Z',
     deletedAt: null,
@@ -1115,6 +1273,18 @@ export function test({ t, fields, softDelete, addons }) {
   const expected = Object.fromEntries(
     required.map((f) => [f.name, sample(f).body]),
   );
+  const fill = typed.map((f) =>
+    lines(
+      `    await user.click(await screen.findByLabelText('${label(f.name)}'));`,
+      `    await user.paste(${JSON.stringify(sample(f).typed)});`,
+    ),
+  );
+  const on = (name) => addons.includes(name);
+  const createAndCheck = (expected) => [
+    `    await user.click(await screen.findByRole('button', { name: 'Create ${t.noun}' }));`,
+    '    await waitFor(() => expect(calls.created).toHaveLength(1));',
+    `    expect(calls.created[0]).toMatchObject(${expected});`,
+  ];
   const permissions = [
     'read',
     'create',
@@ -1127,6 +1297,10 @@ export function test({ t, fields, softDelete, addons }) {
     `import userEvent from '@testing-library/user-event';`,
     `import { http, HttpResponse } from 'msw/http';`,
     `import { describe, expect, it } from 'vitest';`,
+    on('custom-fields') &&
+      `import { field } from '@/features/custom-fields/test/custom-fields-api';`,
+    on('sequences') &&
+      `import { series } from '@/features/naming-series/test/naming-series-api';`,
     `import { panelsDescription } from '@/test/panels-api';`,
     `import { renderApp } from '@/test/render-app';`,
     `import { server } from '@/test/server';`,
@@ -1164,11 +1338,21 @@ export function test({ t, fields, softDelete, addons }) {
     '        limits: { defaultLimit: 50, maxLimit: 100 },',
     '        // No panels: the generated feature takes none until its capabilities say so.',
     '        ...panelsDescription(',
-    '          { comments: false, attachments: false, tags: false, revisions: false },',
+    on('merge')
+      ? '          { comments: false, attachments: false, tags: false, revisions: false, merge: true },'
+      : '          { comments: false, attachments: false, tags: false, revisions: false },',
     '          null,',
     '        ),',
     '      }),',
     '    ),',
+    on('custom-fields') &&
+      `    http.get('/v1/custom-fields', () => HttpResponse.json({ items: [] })),`,
+    on('sequences') &&
+      `    http.get('/v1/naming-series', () => HttpResponse.json({ items: [], nextCursor: null })),`,
+    on('merge') && [
+      `    http.post('${route}/duplicates', () => HttpResponse.json({ items: [] })),`,
+      `    http.get('${route}/:id/duplicates', () => HttpResponse.json({ items: [] })),`,
+    ],
     `    http.get('${route}', ({ request }) => {`,
     '      calls.listed.push(new URL(request.url));',
     '      return HttpResponse.json({ items: [sample()], page: 1, pageCount: 1 });',
@@ -1222,12 +1406,7 @@ export function test({ t, fields, softDelete, addons }) {
     '    const calls = useApi(ALL);',
     `    await renderApp('/${t.plural}/new');`,
     '    const user = userEvent.setup();',
-    ...typed.map((f) =>
-      lines(
-        `    await user.click(await screen.findByLabelText('${label(f.name)}'));`,
-        `    await user.paste(${JSON.stringify(sample(f).typed)});`,
-      ),
-    ),
+    ...fill,
     `    await user.click(await screen.findByRole('button', { name: 'Create ${t.noun}' }));`,
     '    await waitFor(() => expect(calls.created).toHaveLength(1));',
     `    expect(calls.created[0]).toMatchObject(${JSON.stringify(expected)});`,
@@ -1250,6 +1429,69 @@ export function test({ t, fields, softDelete, addons }) {
       `    expect(calls.patched[0]).toEqual({ body: { ${title.name}: 'Renamed' }, ifMatch: '"v1"' });`,
       `    await findToast('${cap(t.noun)} saved');`,
       '  });',
+      '});',
+    ],
+    ['custom-fields', 'merge', 'recents', 'sequences'].some(on) && [
+      '',
+      `describe('the add-ons of ${t.nouns}', () => {`,
+      on('custom-fields') && [
+        "  it('custom fields: the form sends their values', async () => {",
+        '    const calls = useApi(ALL);',
+        '    server.use(',
+        `      http.get('/v1/custom-fields', () => HttpResponse.json({ items: [field({ subject: '${S}', key: 'reference', label: 'Reference', type: 'text', options: null })] })),`,
+        '    );',
+        `    await renderApp('/${t.plural}/new');`,
+        '    const user = userEvent.setup();',
+        ...fill,
+        "    await user.click(await screen.findByLabelText('Reference'));",
+        "    await user.paste('R-1');",
+        ...createAndCheck("{ custom: { reference: 'R-1' } }"),
+        '  });',
+      ],
+      on('merge') &&
+        title && [
+          '',
+          "  it('merge: the form warns of a likely duplicate of what is typed', async () => {",
+          '    useApi(ALL);',
+          '    server.use(',
+          `      http.post('${route}/duplicates', () => HttpResponse.json({ items: [{ id: '0199a3f2-0000-7000-8000-000000000602', matched: [['${title.name}']], record: { ${title.name}: ${JSON.stringify(sample(title).api)} } }] })),`,
+          '    );',
+          `    await renderApp('/${t.plural}/new');`,
+          '    const user = userEvent.setup();',
+          `    await user.click(await screen.findByLabelText('${label(title.name)}'));`,
+          `    await user.paste(${JSON.stringify(sample(title).typed)});`,
+          "    expect(await screen.findByText('This may already exist:')).toBeVisible();",
+          '  });',
+        ],
+      on('recents') && [
+        '',
+        "  it('recents: the detail page records the visit', async () => {",
+        '    useApi(ALL);',
+        '    const visits: unknown[] = [];',
+        '    server.use(',
+        "      http.post('/v1/recents', async ({ request }) => {",
+        '        visits.push(await request.json());',
+        '        return HttpResponse.json({});',
+        '      }),',
+        '    );',
+        `    await renderApp(${tpl(`/${t.plural}/@{ID}`)});`,
+        `    await waitFor(() => expect(visits).toContainEqual({ subject: '${S}', recordId: ID, label: ${title ? JSON.stringify(sample(title).api) : 'ID'} }));`,
+        '  });',
+      ],
+      on('sequences') && [
+        '',
+        "  it('sequences: a new record takes the default of two series', async () => {",
+        '    const calls = useApi(ALL);',
+        '    server.use(',
+        `      http.get('/v1/naming-series', () => HttpResponse.json({ items: [series({ subject: '${S}' }), series({ id: 's2', subject: '${S}', label: 'Other', isDefault: false })], nextCursor: null })),`,
+        '    );',
+        `    await renderApp('/${t.plural}/new');`,
+        '    const user = userEvent.setup();',
+        "    expect(await screen.findByRole('combobox', { name: 'Numbering' })).toBeVisible();",
+        ...fill,
+        ...createAndCheck("{ namingSeriesId: 's1' }"),
+        '  });',
+      ],
       '});',
     ],
   );

@@ -36,6 +36,7 @@ export function toDraft(field: CustomField, value: unknown): CustomDraft {
 /**
  * What the inputs start with: the record's stored values, or on create the
  * fields' defaults (the API fills them in anyway; showing them says so).
+ * @public Used by a generated feature's pages (web-feature/templates.js).
  */
 export function initialDrafts(
   fields: readonly CustomField[],
@@ -127,7 +128,10 @@ export function draftError(
   return undefined;
 }
 
-/** Every draft's error, by key. */
+/**
+ * Every draft's error, by key.
+ * @public Used by a generated feature's pages (web-feature/templates.js).
+ */
 export function draftErrors(
   fields: readonly CustomField[],
   drafts: CustomDrafts,
@@ -153,6 +157,7 @@ export function valueOf(field: CustomField, draft: CustomDraft): unknown {
  * with: the API fills those in itself, and a user without access to
  * `custom` may still create). On update (`stored`), only the keys that
  * changed; one emptied is `null` (the API removes it).
+ * @public Used by a generated feature's pages (web-feature/templates.js).
  */
 export function customBody(
   fields: readonly CustomField[],
@@ -181,6 +186,7 @@ export function customBody(
 /**
  * The API's errors on `custom.<key>` as messages by key (a 400
  * `validation_failed` names the field, docs/custom-fields.md).
+ * @public Used by a generated feature's pages (web-feature/templates.js).
  */
 export function serverErrors(
   errors: readonly { path: string; message: string }[] | undefined,

@@ -61,6 +61,7 @@ export function useClearRecents() {
  * Notes that the person opened a record, once when its page shows (the
  * title only, never field content). Best effort: a failure is ignored (a
  * subject whose records can't be watched has no recents).
+ * @public Used by a generated feature's pages (web-feature/templates.js).
  */
 export function useRecordRecent(record: {
   subject: string;

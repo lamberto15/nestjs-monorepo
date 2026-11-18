@@ -56,7 +56,12 @@ web app's part (`schematics/web-feature/templates.js`): `features/<items>/`
 test `<items>.test.tsx`), `routes/_app/<items>/` (list, new, detail, edit) and
 `locales/en/<items>.json`. The app finds the nav entry and the texts by glob;
 nothing else is edited. The list takes `?bulkRun=<id>` (what a bulk run
-changed: the link of its notification). CI proves the pages by generating a
+changed: the link of its notification). The pages wire four add-ons when
+chosen: `custom-fields` (the form's inputs of the active custom fields, sent
+as `custom`; their values on the detail page), `merge` (the form warns of
+likely duplicates of the title), `recents` (the detail page records the
+visit) and `sequences` (a create form's numbering picker when there is more
+than one series); the test has a case for each. CI proves the pages by generating a
 feature, type-checking the app and running their test (`verify`). Then:
 
 ```bash

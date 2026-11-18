@@ -41,7 +41,16 @@
       // package.json script, which knip already reads as an entry).
       // public/push-sw.js: loaded into the generated service worker by
       // `workbox.importScripts` (vite.config.ts), a URL, not an import.
-      "entry": ["scripts/lighthouse-server.mjs", "public/push-sw.js"],
+      // The record components only a generated feature's pages import (the
+      // feature schematic's web-feature/templates.js; no feature ships):
+      // entries, not ignored, so what they import counts as used. Single
+      // exports only those pages use are tagged `@public` where they are.
+      "entry": [
+        "scripts/lighthouse-server.mjs",
+        "public/push-sw.js",
+        "src/components/records/custom-field-values.tsx",
+        "src/components/records/duplicates-warning.tsx",
+      ],
       // Dice UI's data table: registry output the shadcn CLI writes, kept
       // whole so `shadcn add` updates apply (AGENTS.md: generate, never
       // hand-write). Parts of it are unused until a list page needs them.

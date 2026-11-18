@@ -88,6 +88,7 @@ export function patternFields(
  * One subject's series, for a create form's picker. Reading them needs no
  * permission the form could lack: a refusal leaves the list empty (the picker
  * stays hidden and the record takes the default series).
+ * @public Used by a generated feature's pages (web-feature/templates.js).
  */
 export function useSubjectNamingSeries(subject: string) {
   return useQuery({
