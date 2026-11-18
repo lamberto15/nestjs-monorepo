@@ -116,7 +116,7 @@ repository.
 
 - [ ] Break-glass reads every GET an administrator may read (16 routes now
       answer 403: their read checks a non-read action); writes stay refused.
-- [ ] Security alerts mail once: their email channel is fixed (the account
+- [x] Security alerts mail once: their email channel is fixed (the account
       mails them), not offered in preferences; a changed password settles an
       unread breach notice (`settle()`).
 - [x] `auth.password-verified` carries the password's SHA-1, never the

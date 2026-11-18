@@ -11,6 +11,7 @@ import {
 } from '../../iam/auth/principal.js';
 import { NotificationCatalog } from './notifications.catalog.js';
 import { notificationsConfig } from './notifications.config.js';
+import { offered } from './notifications.preferences.js';
 import { notificationPreferences } from './notifications.tables.js';
 import type { PreferenceOverrides } from './notifications.types.js';
 import type { QuietHours } from './quiet-hours.js';
@@ -143,16 +144,23 @@ export class NotificationPreferencesService {
   private effective(principal: Principal, overrides: PreferenceOverrides) {
     return {
       types: Object.fromEntries(
-        this.catalog
-          .declarations()
-          .map((declaration) => [
+        this.catalog.declarations().map((declaration) => {
+          const settings = this.catalog.effective(
+            declaration,
+            overrides[declaration.type],
+            principal,
+          );
+          // Only what the caller is offered: not a type's fixed channels.
+          const own = offered(declaration, this.catalog.settable(principal));
+          return [
             declaration.type,
-            this.catalog.effective(
-              declaration,
-              overrides[declaration.type],
-              principal,
+            Object.fromEntries(
+              Object.entries(settings).filter(([name]) =>
+                (own as string[]).includes(name),
+              ),
             ),
-          ]),
+          ];
+        }),
       ),
     };
   }

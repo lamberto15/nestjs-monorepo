@@ -38,6 +38,7 @@ import {
 } from './notifications.events.js';
 import { Events } from '../../core/outbox/events.js';
 import { NOTIFICATION_LIST } from './notifications.lists.js';
+import { offered } from './notifications.preferences.js';
 import type { NotificationView } from './notifications.schemas.js';
 import { notifications } from './notifications.tables.js';
 
@@ -420,6 +421,27 @@ export class NotificationsService {
   }
 
   /** Tells the recipient's connections their unread count (after a change to it). */
+  /**
+   * Marks the recipient's unread notifications of `type` read, in the
+   * current transaction: news the change settles (a breached password that
+   * was changed). How many; the caller announces the unread count after the
+   * commit.
+   */
+  async settleType(recipient: Pick<Principal, 'kind' | 'id'>, type: string) {
+    const settled = await this.db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(
+        and(
+          eq(notifications.recipient, principalKey(recipient)),
+          eq(notifications.type, type),
+          isNull(notifications.readAt),
+        ),
+      )
+      .returning({ id: notifications.id });
+    return settled.length;
+  }
+
   async announceUnread(recipient: Pick<Principal, 'kind' | 'id'>) {
     this.realtime.toPrincipal(
       recipient,
@@ -445,7 +467,10 @@ export class NotificationsService {
       mandatory: declaration.mandatory === true,
       urgent: declaration.urgent === true,
       channels: Object.fromEntries(
-        settable.map((name) => [name, declaration[name] ?? false]),
+        offered(declaration, settable).map((name) => [
+          name,
+          declaration[name] ?? false,
+        ]),
       ),
     }));
   }

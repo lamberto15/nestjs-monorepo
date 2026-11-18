@@ -25,6 +25,13 @@ export type ChannelName = keyof typeof CHANNELS;
 export const emailSettingSchema = CHANNELS.email.schema;
 export const pushSettingSchema = CHANNELS.push.schema;
 
+/** The channels of a type the recipient is offered: those they may set, less its `fixed` ones. */
+export const offered = (
+  declaration: NotificationTypeDeclaration<any>,
+  settable: readonly ChannelName[],
+): ChannelName[] =>
+  settable.filter((name) => !declaration.fixed?.includes(name));
+
 /** Settings are small values (a boolean, a mode): equal when their JSON is. */
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -54,7 +61,11 @@ export function effectiveSettings(
     const override = overrides?.[name];
     const parsed =
       override === undefined ? undefined : schema.safeParse(override);
-    let value: unknown = parsed?.success ? parsed.data : fallback;
+    // A fixed channel keeps its default, whatever was stored.
+    let value: unknown =
+      parsed?.success && !declaration.fixed?.includes(name)
+        ? parsed.data
+        : fallback;
     if (declaration.mandatory && same(value, off) && !same(fallback, off)) {
       value = fallback;
     }
@@ -75,16 +86,17 @@ export function preferencesSchema(
   declarations: readonly NotificationTypeDeclaration<any>[],
   settable: readonly ChannelName[],
 ) {
-  const perType = (declaration: NotificationTypeDeclaration<any>) =>
-    z
+  const perType = (declaration: NotificationTypeDeclaration<any>) => {
+    const own = offered(declaration, settable);
+    return z
       .looseObject(
         Object.fromEntries(
-          settable.map((name) => [name, CHANNELS[name].schema.optional()]),
+          own.map((name) => [name, CHANNELS[name].schema.optional()]),
         ),
       )
       .superRefine((value, ctx) => {
         for (const name of Object.keys(value)) {
-          if (!(settable as readonly string[]).includes(name)) {
+          if (!(own as readonly string[]).includes(name)) {
             ctx.addIssue({
               code: 'custom',
               path: [name],
@@ -108,6 +120,7 @@ export function preferencesSchema(
           }
         }
       });
+  };
   const types = new Set(declarations.map((declaration) => declaration.type));
   return z
     .looseObject(

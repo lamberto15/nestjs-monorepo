@@ -3,6 +3,9 @@ import { InMemoryMailTransport, MailTransport } from '@nestjs/mail';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import type { Queue } from 'bullmq';
 import { getQueueToken } from '@nestjs/bullmq';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { NotificationsService } from './notifications.service.js';
 import { accessModules } from '../../../test/access.js';
 import { browser, CheapPasswordsModule } from '../../../test/account.js';
 import { createUser } from '../../../test/auth.js';
@@ -94,6 +97,50 @@ describe('security notifications (e2e)', () => {
     expect(preferences.statusCode).toBe(200);
     expect(JSON.stringify(preferences.json())).toContain(
       'security.password-changed',
+    );
+    // Its email is the account's own mail: not offered, refused by name.
+    expect(
+      preferences.json().types['security.password-changed'],
+    ).not.toHaveProperty('email');
+    const refused = await agent.put('/v1/notifications/preferences', {
+      'security.password-changed': { email: 'immediate' },
+    });
+    expect(refused.statusCode).toBe(400);
+  });
+
+  it('settles an unread breach notice when the password changes', async () => {
+    const user = await createUser(app);
+    await app.get(Tenancy).run(user.tenantId, () =>
+      app.get(TransactionHost).withTransaction(() =>
+        app.get(NotificationsService).notify({
+          type: 'security.password-breached',
+          to: { kind: 'user', id: user.user.id },
+          data: { ip: '127.0.0.1', at: new Date().toISOString() },
+        }),
+      ),
+    );
+    const agent = browser(app);
+    await agent.post('/v1/auth/sign-in', {
+      email: user.email,
+      password: user.password,
+    });
+    const breachNotice = async () =>
+      (await agent.get('/v1/notifications'))
+        .json()
+        .items.find(
+          (item: { type: string }) =>
+            item.type === 'security.password-breached',
+        );
+    expect(await breachNotice()).toMatchObject({ read: false });
+
+    const changed = await agent.post('/v1/auth/password/change', {
+      currentPassword: user.password,
+      newPassword: `new ${randomBytes(12).toString('hex')} pass`,
+    });
+    expect(changed.statusCode).toBe(204);
+    await vi.waitFor(
+      async () => expect(await breachNotice()).toMatchObject({ read: true }),
+      { timeout: 30_000, interval: 250 },
     );
   });
 });

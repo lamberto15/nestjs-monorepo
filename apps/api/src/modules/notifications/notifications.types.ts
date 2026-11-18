@@ -23,6 +23,11 @@ export interface NotificationTypeDeclaration<
   push?: boolean;
   /** The recipient may change a channel's frequency, never switch a channel that is on by default off. */
   mandatory?: boolean;
+  /**
+   * Channels the recipient is not offered: their default always holds. The
+   * security alerts' email, which iam/account mails itself (one mail).
+   */
+  fixed?: readonly ('email' | 'push')[];
   /** A sign-in alert: push goes at once, through the recipient's quiet hours. */
   urgent?: boolean;
   /** `notify()` without a `key` collapses on the type: one row per recipient, counted up. */

@@ -26,15 +26,16 @@ const TYPES = {
 
 /**
  * The account's security alerts as notifications: in-app and realtime, and
- * push when the person turns it on (through quiet hours). No mail by
- * default: iam/account mails every alert itself (SecurityAlertMail), with
- * or without this module and in no tenant, so the default is one mail per
- * alert. Mandatory: never switched off.
+ * push when the person turns it on (through quiet hours). Never mailed from
+ * here, and email not offered (`fixed`): iam/account mails every alert
+ * itself (SecurityAlertMail), with or without this module and in no tenant,
+ * so there is one mail per alert. Mandatory: never switched off.
  */
 export const SECURITY_NOTIFICATIONS = defineNotifications(
   Object.values(TYPES).map((type) => ({
     type,
     email: false as const,
+    fixed: ['email'] as const,
     push: false,
     mandatory: true,
     urgent: true,
@@ -66,17 +67,28 @@ export class SecurityNotices {
     if (!event.tenantId) {
       return;
     }
-    await this.tenancy.run(event.tenantId, () =>
+    const to = { kind: 'user' as const, id: event.userId };
+    const settled = await this.tenancy.run(event.tenantId, () =>
       this.txHost.withTransaction(async () =>
-        ctx.processInTransaction(this.txHost.tx, () =>
-          this.notifications.notify({
+        ctx.processInTransaction(this.txHost.tx, async () => {
+          await this.notifications.notify({
             type: TYPES[event.kind],
-            to: { kind: 'user', id: event.userId },
+            to,
             data: { ...event.args, at: event.at },
             link: '/account/security',
-          }),
-        ),
+          });
+          // A changed password settles an unread breach notice (in this
+          // tenant: one stored in another stays until read there).
+          return event.kind === 'passwordChanged'
+            ? this.notifications.settleType(to, TYPES.passwordBreached)
+            : 0;
+        }),
       ),
     );
+    if (settled) {
+      await this.tenancy.run(event.tenantId, () =>
+        this.notifications.announceUnread(to),
+      );
+    }
   }
 }

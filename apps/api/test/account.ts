@@ -19,6 +19,7 @@ type Injected = Awaited<ReturnType<NestNodeApplication['inject']>>;
 export interface Browser {
   get(url: string, headers?: Headers): Promise<Injected>;
   post(url: string, payload?: object, headers?: Headers): Promise<Injected>;
+  put(url: string, payload: object): Promise<Injected>;
   patch(url: string, payload: object): Promise<Injected>;
   delete(url: string): Promise<Injected>;
 }
@@ -31,7 +32,7 @@ export function browser(
 ): Browser {
   const cookies = new Map<string, string>();
   const send = async (
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
     payload?: object,
     headers: Headers = {},
@@ -65,6 +66,7 @@ export function browser(
       send('GET', url, undefined, headers),
     post: (url: string, payload?: object, headers?: Headers) =>
       send('POST', url, payload ?? {}, headers),
+    put: (url: string, payload: object) => send('PUT', url, payload),
     patch: (url: string, payload: object) => send('PATCH', url, payload),
     delete: (url: string) => send('DELETE', url),
   };

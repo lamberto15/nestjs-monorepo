@@ -1,5 +1,6 @@
 import {
   effectiveSettings,
+  offered,
   preferencesSchema,
 } from './notifications.preferences.js';
 import type { NotificationTypeDeclaration } from './notifications.types.js';
@@ -77,5 +78,31 @@ describe('preferencesSchema', () => {
     ]);
     expect(issues({ 'security.signIn': { email: 'daily' } })).toEqual([]);
     expect(issues({ 'note.changed': { email: false } })).toEqual([]);
+  });
+});
+
+describe('a fixed channel', () => {
+  const alert: NotificationTypeDeclaration = {
+    type: 'security.passkey-added',
+    email: false,
+    fixed: ['email'],
+    mandatory: true,
+  };
+
+  it('is not offered, keeps its default whatever was stored, and is refused by name', () => {
+    expect(offered(alert, ['email', 'push'])).toEqual(['push']);
+    expect(
+      effectiveSettings(alert, { email: 'immediate', push: true }, [
+        'email',
+        'push',
+      ]),
+    ).toEqual({ email: false, push: true });
+    const parsed = preferencesSchema([alert], ['email', 'push']).safeParse({
+      'security.passkey-added': { email: 'immediate' },
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues.map((issue) => issue.path.join('.'))).toEqual([
+      'security.passkey-added.email',
+    ]);
   });
 });
