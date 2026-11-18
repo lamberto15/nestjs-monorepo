@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { request } from 'node:http';
 import type { ConfigType } from '@nestjs/config';
 import type { httpConfig } from '../../core/http/http.config.js';
 import { createStorageOptions } from './storage.disks.js';
@@ -58,6 +59,33 @@ describe.runIf(endpoint)('storage on S3 (e2e)', () => {
       expect(download.headers.get('content-disposition')).toContain(
         'hello.txt',
       );
+
+      // The size is part of the signature: a body of another size (sent
+      // with its true length) is refused. node:http, as fetch() sets the
+      // length itself.
+      const larger = `${body}!`;
+      const status = await new Promise<number>((resolve, reject) => {
+        const sent = request(
+          upload.url,
+          {
+            method: upload.method,
+            headers: {
+              ...upload.headers,
+              'content-length': String(Buffer.byteLength(larger)),
+            },
+          },
+          (answer) => {
+            answer.resume();
+            resolve(answer.statusCode ?? 0);
+          },
+        );
+        sent.on('error', reject);
+        sent.end(larger);
+      });
+      expect(status).toBe(403);
+      expect(await files.stat(key)).toMatchObject({
+        size: Buffer.byteLength(body),
+      });
     } finally {
       await files.delete(key);
     }
