@@ -83,6 +83,8 @@ export const attachments = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The upload sweep's check that a key became an attachment's file.
+    index('attachments_key_idx').on(t.tenantId, t.key),
     index('attachments_record_idx').on(t.subject, t.recordId),
     index('attachments_uploaded_by_idx').on(t.uploadedBy),
     // The scan retry job looks for the uploads stuck pending (a pending file is rare).

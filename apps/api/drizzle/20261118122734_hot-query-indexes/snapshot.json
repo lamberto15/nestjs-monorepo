@@ -1,0 +1,341 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "aa995b98-d3cb-47e1-bbca-311be19446f2",
+  "prevIds": [
+    "37178ee7-37bd-4458-b61a-d89155ceb5de"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "approval_requests",
+        "approval_requests_unapplied_idx"
+      ],
+      "writes": [
+        "s|idx|public.approval_requests_unapplied_idx",
+        "n|idx|public.approval_requests_unapplied_idx",
+        "e|idx|public.approval_requests_unapplied_idx",
+        "n|rel|public.approval_requests_unapplied_idx"
+      ],
+      "reads": [
+        "n|tbl|public.approval_requests",
+        "n|sch|public",
+        "n|col|public.approval_requests.ended_at"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "attachments",
+        "attachments_key_idx"
+      ],
+      "writes": [
+        "s|idx|public.attachments_key_idx",
+        "n|idx|public.attachments_key_idx",
+        "e|idx|public.attachments_key_idx",
+        "n|rel|public.attachments_key_idx"
+      ],
+      "reads": [
+        "n|tbl|public.attachments",
+        "n|sch|public",
+        "n|col|public.attachments.tenant_id",
+        "n|col|public.attachments.key"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "data_quality_findings",
+        "data_quality_findings_open_idx"
+      ],
+      "writes": [
+        "s|idx|public.data_quality_findings_open_idx",
+        "n|idx|public.data_quality_findings_open_idx",
+        "e|idx|public.data_quality_findings_open_idx",
+        "n|rel|public.data_quality_findings_open_idx"
+      ],
+      "reads": [
+        "n|tbl|public.data_quality_findings",
+        "n|sch|public",
+        "n|col|public.data_quality_findings.tenant_id",
+        "n|col|public.data_quality_findings.subject",
+        "n|col|public.data_quality_findings.id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "favorites",
+        "favorites_target_idx"
+      ],
+      "writes": [
+        "s|idx|public.favorites_target_idx",
+        "n|idx|public.favorites_target_idx",
+        "e|idx|public.favorites_target_idx",
+        "n|rel|public.favorites_target_idx"
+      ],
+      "reads": [
+        "n|tbl|public.favorites",
+        "n|sch|public",
+        "n|col|public.favorites.tenant_id",
+        "n|col|public.favorites.kind",
+        "n|col|public.favorites.subject",
+        "n|col|public.favorites.target"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "notifications",
+        "notifications_read_at_idx"
+      ],
+      "writes": [
+        "s|idx|public.notifications_read_at_idx",
+        "n|idx|public.notifications_read_at_idx",
+        "e|idx|public.notifications_read_at_idx",
+        "n|rel|public.notifications_read_at_idx"
+      ],
+      "reads": [
+        "n|tbl|public.notifications",
+        "n|sch|public",
+        "n|col|public.notifications.read_at"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "recent_records",
+        "recent_records_record_idx"
+      ],
+      "writes": [
+        "s|idx|public.recent_records_record_idx",
+        "n|idx|public.recent_records_record_idx",
+        "e|idx|public.recent_records_record_idx",
+        "n|rel|public.recent_records_record_idx"
+      ],
+      "reads": [
+        "n|tbl|public.recent_records",
+        "n|sch|public",
+        "n|col|public.recent_records.tenant_id",
+        "n|col|public.recent_records.subject",
+        "n|col|public.recent_records.record_id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "approval_requests",
+        "name": "approval_requests_unapplied_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "ended_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "status = 'approved' and outcome_applied_at is null",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "attachments",
+        "name": "attachments_key_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "key",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "data_quality_findings",
+        "name": "data_quality_findings_open_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "subject",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "id",
+            "isExpression": false,
+            "asc": false,
+            "nullsFirst": true,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "(\"dismissed_at\" is null)",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "favorites",
+        "name": "favorites_target_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "kind",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "subject",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "target",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "notifications",
+        "name": "notifications_read_at_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "read_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "(\"read_at\" is not null)",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "recent_records",
+        "name": "recent_records_record_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "subject",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "record_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    }
+  ]
+}

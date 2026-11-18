@@ -22,6 +22,8 @@ export const recentRecords = tenantTable(
     viewedAt: at('viewed_at').notNull().defaultNow(),
   },
   (t) => [
+    // A record gone for good leaves everyone's history (forget()).
+    index('recent_records_record_idx').on(t.tenantId, t.subject, t.recordId),
     // Opening the same record again moves it to the top, not twice into the list.
     uniqueIndex('recent_records_owner_record_idx').on(
       t.tenantId,

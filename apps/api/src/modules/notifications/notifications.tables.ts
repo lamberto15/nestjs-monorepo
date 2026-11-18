@@ -49,6 +49,8 @@ export const notifications = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // Retention's `read_at < …` (or `created_at < …`): both sides indexed.
+    index('notifications_read_at_idx').on(t.readAt).where(isNotNull(t.readAt)),
     // The list (newest first) and its cursor, and the unread count.
     index('notifications_recipient_id_idx').on(t.tenantId, t.recipient, t.id),
     index('notifications_recipient_unread_idx')

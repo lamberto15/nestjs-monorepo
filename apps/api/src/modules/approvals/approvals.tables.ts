@@ -81,6 +81,11 @@ export const approvalRequests = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The stuck-outcome gauge (approvals.metrics.ts, every 15 s, across
+    // tenants): the few approved requests not applied yet, not every one.
+    index('approval_requests_unapplied_idx')
+      .on(t.endedAt)
+      .where(sql`status = 'approved' and outcome_applied_at is null`),
     index('approval_requests_record_idx').on(t.subject, t.recordId),
     index('approval_requests_requester_idx').on(t.requester),
     index('approval_requests_status_idx').on(t.status),

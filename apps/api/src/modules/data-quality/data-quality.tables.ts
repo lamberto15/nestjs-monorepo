@@ -1,3 +1,4 @@
+import { isNull } from 'drizzle-orm';
 import {
   index,
   integer,
@@ -48,6 +49,10 @@ export const dataQualityFindings = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // The open findings of a subject, newest first: one page of a range.
+    index('data_quality_findings_open_idx')
+      .on(t.tenantId, t.subject, t.id.desc().nullsFirst())
+      .where(isNull(t.dismissedAt)),
     uniqueIndex('data_quality_findings_key_idx').on(
       t.tenantId,
       t.subject,

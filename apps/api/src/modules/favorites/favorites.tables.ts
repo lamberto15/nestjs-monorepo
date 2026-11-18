@@ -28,6 +28,8 @@ export const favorites = tenantTable(
     ...timestamps(),
   },
   (t) => [
+    // A record merged or gone for good: everyone's favorites of it.
+    index('favorites_target_idx').on(t.tenantId, t.kind, t.subject, t.target),
     // The same thing twice in one person's favorites is refused (409).
     uniqueIndex('favorites_owner_target_idx').on(
       t.tenantId,
