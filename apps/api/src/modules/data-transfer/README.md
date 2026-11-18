@@ -65,8 +65,10 @@ that tenant on the same queue and files: 202 with a transfer id, followed at
 record: `kind` (its table; `tenant`; `member` for the members' accounts), `id`, `data`
 (JSON). The tables come from `tenantTables()` (core/tenancy), keyset-paged by primary
 key or a unique index, each page read in that tenant's scope and filtered by its
-`tenant_id`. Left out: any column named `…Hash` or `…Secret`, and every encrypted column
-and blind index; stored files appear as their rows only. The worker checks the operator
+`tenant_id`. Left out: the columns a table declares with `secretColumns()`
+(core/database, next to the table: a credential's hash, a secret) and every encrypted
+column and blind index. A test fails on a tenant column named like a secret
+(`hash`, `token`, `secret`…) that is not declared, unless it is listed there as not one; stored files appear as their rows only. The worker checks the operator
 again. Audited: `data.export-started` and `data.exported` in the operator's tenant, and
 `tenant.export-requested` in both tenants. It is no export name: `POST /v1/data/exports`
 answers 404 for it.

@@ -12,6 +12,7 @@ import {
   tenantTable,
 } from '../../core/tenancy/tenant-tables.js';
 import type { FormDefinition, FormFieldType } from './form-definition.js';
+import { secretColumns } from '../../core/database/secret-columns.js';
 
 /** `active`: takes submissions once published; `archived`: takes none, its submissions stay. */
 export const FORM_STATUSES = ['active', 'archived'] as const;
@@ -159,3 +160,5 @@ export const formPublicLinks = tenantTable(
 );
 
 export type FormPublicLinkRow = typeof formPublicLinks.$inferSelect;
+
+secretColumns(formPublicLinks, [formPublicLinks.tokenHash]);

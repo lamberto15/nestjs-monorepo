@@ -1,4 +1,5 @@
 import { InjectTransaction } from '@nestjs-cls/transactional';
+import { secretColumnsOf } from '../../core/database/secret-columns.js';
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, getColumns, gt, sql } from 'drizzle-orm';
 import { getTableConfig, PgColumn } from 'drizzle-orm/pg-core';
@@ -65,17 +66,15 @@ export function pagingKey(
 /** Rows read per page of a table. */
 const PAGE = 1000;
 
-/** Stored credentials' hashes and secrets: what they protect is never exported. */
-const HIDDEN = /(?:Hash|Secret|Verifier)$|^secret$/;
-
 /**
  * Every record of one tenant, for the operators' export
  * (`POST /v1/tenants/{id}/export`): first the tenant itself, then its
  * members' accounts (`member`: id, address, name), then every table that
  * names the tenant (`tenantTables()`, a module's own included), keyset-paged
  * by its primary key. One row per record: `kind` (its table), `id`, `data`
- * (all of it, as JSON). Left out: columns holding a hash or a secret, and
- * every encrypted column (and blind index); stored files are not in it, their
+ * (all of it, as JSON). Left out: the columns its table declares secret
+ * (secretColumns(): credentials' hashes, secrets), and every encrypted
+ * column (and blind index); stored files are not in it, their
  * rows are (names, sizes, keys).
  *
  * Each page is read in that tenant's scope (as any request of it) and
@@ -162,7 +161,8 @@ export class TenantExport {
           .limit(PAGE),
       )) as Record<string, unknown>[];
       if (rows.length === 0) return;
-      yield rows.map((record) => this.row(name, record, hidden));
+      const left = new Set([...hidden, ...secretColumnsOf(table)]);
+      yield rows.map((record) => this.row(name, record, left));
       if (rows.length < PAGE) return;
       const last = rows[rows.length - 1]!;
       after = keys.map((column) => last[propertyOf(column)]);
@@ -184,9 +184,7 @@ export class TenantExport {
     hidden: ReadonlySet<string>,
   ): TenantRow {
     const kept = Object.fromEntries(
-      Object.entries(record).filter(
-        ([property]) => !HIDDEN.test(property) && !hidden.has(property),
-      ),
+      Object.entries(record).filter(([property]) => !hidden.has(property)),
     );
     return {
       kind,

@@ -14,6 +14,7 @@ import {
   tenantReference,
   tenantTable,
 } from '../../core/tenancy/tenant-tables.js';
+import { secretColumns } from '../../core/database/secret-columns.js';
 
 /**
  * People who sign in. Global: one account per address, whatever tenants it
@@ -163,3 +164,5 @@ export const apiKeys = globalTable(
     ),
   ],
 );
+
+secretColumns(apiKeys, [apiKeys.keyHash]);

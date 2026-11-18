@@ -121,7 +121,7 @@ repository.
       unread breach notice (`settle()`).
 - [x] `auth.password-verified` carries the password's SHA-1, never the
       plaintext.
-- [ ] The tenant export drops secret columns declared where the table is
+- [x] The tenant export drops secret columns declared where the table is
       (plus encrypted ones); a test flags a suspicious column left unmarked.
 - [ ] Presigned uploads tested against Garage (S3-compatible; MinIO is
       deprecated): a `storage` profile in compose.dev.yaml and an e2e test,

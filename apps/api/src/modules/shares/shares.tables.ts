@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { at, timestamps, uuidPk } from '../../core/database/columns.js';
 import { tenantTable } from '../../core/tenancy/tenant-tables.js';
+import { secretColumns } from '../../core/database/secret-columns.js';
 
 /**
  * Read-only links to one record: who made it, which of the record's fields
@@ -52,3 +53,5 @@ export const recordShares = tenantTable(
 );
 
 export type RecordShareRow = typeof recordShares.$inferSelect;
+
+secretColumns(recordShares, [recordShares.tokenHash, recordShares.codeHash]);

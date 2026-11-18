@@ -24,6 +24,7 @@ import { roles, userRoles } from '../access/access.tables.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import { organizationalUnits } from '../organization/organization.tables.js';
 import type { Oauth2Mapping, Oauth2Preset } from './oauth2-mapping.js';
+import { secretColumns } from '../../core/database/secret-columns.js';
 
 /**
  * A tenant's enterprise sign-in (README.md): an OpenID Connect, a SAML 2.0
@@ -398,3 +399,10 @@ export const scimDeprovisionedUsers = pgTable('scim_deprovisioned_users', {
     .references(() => users.id, { onDelete: 'cascade' }),
   deprovisionedAt: at('deprovisioned_at').notNull().defaultNow(),
 });
+
+secretColumns(ssoConnections, [
+  ssoConnections.clientSecret,
+  ssoConnections.spPrivateKey,
+]);
+
+secretColumns(ssoRequests, [ssoRequests.bindingHash, ssoRequests.codeVerifier]);

@@ -14,6 +14,7 @@ import {
 import { tenantTable } from '../../core/tenancy/tenant-tables.js';
 import type { FlagRule } from './settings.rules.js';
 import type { SettingScope } from './settings.types.js';
+import { secretColumns } from '../../core/database/secret-columns.js';
 
 /**
  * The values administrators (and users, for their own preferences) set for
@@ -75,3 +76,5 @@ export const platformSettingValues = pgTable('platform_setting_values', {
 // refuses one without), so the boot check must not demand it of every app.
 encrypted(settingOverrides.secret);
 encrypted(platformSettingValues.secret);
+
+secretColumns(settingOverrides, [settingOverrides.secret]);

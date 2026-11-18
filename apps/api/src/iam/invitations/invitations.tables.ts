@@ -1,6 +1,7 @@
 import { index, jsonb, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { at, timestamps, uuidPk } from '../../core/database/columns.js';
 import { tenantTable } from '../../core/tenancy/tenant-tables.js';
+import { secretColumns } from '../../core/database/secret-columns.js';
 
 /**
  * The tenant's pending and accepted invitations, one record for the whole
@@ -39,3 +40,5 @@ export const invitations = tenantTable(
     index('invitations_tenant_email_idx').on(t.tenantId, t.email),
   ],
 );
+
+secretColumns(invitations, [invitations.tokenHash]);

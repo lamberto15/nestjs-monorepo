@@ -17,6 +17,7 @@ import {
   tenantTable,
 } from '../../core/tenancy/tenant-tables.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
+import { secretColumns } from '../../core/database/secret-columns.js';
 
 /** A signing secret as recorded: when it was made (its identifier) and when it stops signing, in epoch ms. */
 export interface SigningSecret {
@@ -109,3 +110,8 @@ export const webhookClientScopes = tenantTable(
     ),
   ],
 );
+
+secretColumns(incomingWebhookSenders, [
+  incomingWebhookSenders.secret,
+  incomingWebhookSenders.previousSecret,
+]);
