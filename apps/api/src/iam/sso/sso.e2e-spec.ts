@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Controller, Get, Module, VERSION_NEUTRAL } from '@nestjs/common';
-import { CurrentUser, MfaService } from '@nestjs/authentication';
+import { CurrentUser, MfaService, TokenService } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
@@ -28,12 +28,14 @@ import type { Database } from '../../core/database/database.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../audit/audit.tables.js';
-import { memberships } from '../auth/auth.tables.js';
+import { memberships, users } from '../auth/auth.tables.js';
+import { tokenClaims } from '../auth/authentication-method.js';
 import type { RequestPrincipal } from '../auth/principal.js';
 import { SsoModule } from './sso.module.js';
 import { SsoProcessor } from './sso.processor.js';
 import { SSO_TXT_RESOLVER, type TxtResolver } from './sso.queue.js';
-import { ssoConnections } from './sso.tables.js';
+import { ssoConnections, ssoIdentities } from './sso.tables.js';
+import { ssoProvider } from './sso-accounts.service.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
@@ -620,6 +622,94 @@ describe('enterprise SSO (e2e)', () => {
       expect((await call('GET', '/probe/me', viewer.headers)).statusCode).toBe(
         200,
       );
+    });
+
+    it('stops counting a connection once it is off, and ends the sessions it signed in', async () => {
+      const ssoSession = async () => {
+        const b = browser(app);
+        const login = await b.get(local(connection.loginUrl));
+        const params = idp.issue(login.headers.location as string, {
+          sub: randomUUID(),
+          email: `${randomUUID().slice(0, 8)}@${BETA}`,
+          email_verified: true,
+        });
+        const landed = await b.get(
+          `/v1/auth/sso/${beta.tenantId}/${connection.id}/oidc/callback?${new URLSearchParams(params)}`,
+        );
+        expect(failed(landed.headers.location as string)).toBe(false);
+        expect((await b.get('/probe/me')).statusCode).toBe(200);
+        return b;
+      };
+      const setEnabled = (enabled: boolean) =>
+        app
+          .get(Tenancy)
+          .run(beta.tenantId, () =>
+            db()
+              .update(ssoConnections)
+              .set({ enabled })
+              .where(eq(ssoConnections.id, connection.id)),
+          );
+      const first = await ssoSession();
+      expect((await setPolicy(true)).statusCode).toBe(200);
+      expect((await first.get('/probe/me')).statusCode).toBe(200);
+
+      // Off, its sessions left in place: they no longer satisfy SSO required.
+      await setEnabled(false);
+      const stale = await first.get('/probe/me');
+      expect(stale.statusCode).toBe(403);
+      expect(stale.json().code).toBe('sso_required');
+
+      // Turned off by an administrator: its sessions end.
+      await setEnabled(true);
+      const second = await ssoSession();
+      // A token client of the same person through the connection (a native
+      // app's handoff issues these), and one through a password.
+      const [{ userId }] = await app
+        .get(Tenancy)
+        .run(beta.tenantId, () =>
+          db()
+            .select({ userId: ssoIdentities.userId })
+            .from(ssoIdentities)
+            .innerJoin(users, eq(users.id, ssoIdentities.userId))
+            .where(eq(ssoIdentities.connectionId, connection.id))
+            .orderBy(desc(ssoIdentities.createdAt))
+            .limit(1),
+        );
+      const tokens = app.get(TokenService);
+      const issue = (method: string) =>
+        tokens.issue(userId!, {
+          method,
+          claims: tokenClaims([], new Date(), beta.tenantId, { method }),
+        });
+      const viaSso = await issue(ssoProvider(connection.id));
+      const viaLink = await issue('magic-link');
+      const off = await call(
+        'PATCH',
+        `/v1/sso/connections/${connection.id}`,
+        beta.admin.headers,
+        { enabled: false },
+      );
+      expect(off.statusCode).toBe(200);
+      expect((await second.get('/probe/me')).statusCode).toBe(401);
+      await expect(tokens.refresh(viaSso.refreshToken!)).rejects.toThrow();
+      await expect(tokens.refresh(viaLink.refreshToken!)).resolves.toEqual(
+        expect.objectContaining({ refreshToken: expect.any(String) }),
+      );
+
+      // Deleted: the same, SSO required or not.
+      expect((await setPolicy(false)).statusCode).toBe(200);
+      await setEnabled(true);
+      const third = await ssoSession();
+      expect(
+        (
+          await call(
+            'DELETE',
+            `/v1/sso/connections/${connection.id}`,
+            beta.admin.headers,
+          )
+        ).statusCode,
+      ).toBe(204);
+      expect((await third.get('/probe/me')).statusCode).toBe(401);
     });
   });
 

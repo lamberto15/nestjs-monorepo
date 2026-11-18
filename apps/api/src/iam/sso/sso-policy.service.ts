@@ -314,7 +314,7 @@ export class SsoPolicyService implements SignInGateProvider {
 
   /**
    * The user's way into a tenant that requires SSO (in its scope): `sso`
-   * (signed in through one of its connections), `exempt`, or false.
+   * (signed in through one of its enabled connections), `exempt`, or false.
    */
   private async wayIn(
     tenantId: string,
@@ -322,7 +322,8 @@ export class SsoPolicyService implements SignInGateProvider {
     authentication: CredentialAuthentication | null,
   ): Promise<'sso' | 'exempt' | false> {
     // The session's provider is the connection's id; under the tenant's
-    // row-level security, only its own connections are found.
+    // row-level security, only its own connections are found, and one
+    // turned off since no longer counts.
     const provider = authentication?.provider;
     if (authentication?.method === 'sso' && provider && UUID.test(provider)) {
       const [connection] = await this.db
@@ -332,6 +333,7 @@ export class SsoPolicyService implements SignInGateProvider {
           and(
             eq(ssoConnections.tenantId, tenantId),
             eq(ssoConnections.id, provider),
+            eq(ssoConnections.enabled, true),
           ),
         );
       if (connection) {

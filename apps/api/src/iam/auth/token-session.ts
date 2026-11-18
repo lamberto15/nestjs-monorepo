@@ -11,6 +11,15 @@ export const tokenSessionId = sql<
   string | null
 >`${refreshTokens.claims} ->> 'sid'`;
 
+/**
+ * The sign-in method a refresh family's tokens carry (tokenClaims()'s
+ * `method`: `sso:<connection>`, `oidc:google`), from the claims the family
+ * keeps; null for a password or passkey sign-in (`amr` says those).
+ */
+export const tokenSignInMethod = sql<
+  string | null
+>`${refreshTokens.claims} ->> 'method'`;
+
 /** The `sid`s of revoked rows, each once (a family has a row per rotation). */
 export const distinctTokenSessionIds = (rows: { sid: string | null }[]) => [
   ...new Set(

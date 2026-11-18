@@ -23,6 +23,7 @@ import { withTenant } from '../../core/tenancy/tenant-job.js';
 import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { Principal, UserPrincipal } from '../auth/principal.js';
+import { SsoAccounts } from './sso-accounts.service.js';
 import { ssoConfig } from './sso.config.js';
 import type { CreateConnection, UpdateConnection } from './sso.schemas.js';
 import { endpointProblem, presetDefaults } from './oauth2-mapping.js';
@@ -92,6 +93,7 @@ export class SsoConnectionsService {
     @Inject(httpConfig.KEY)
     private readonly http: ConfigType<typeof httpConfig>,
     @InjectQueue(SSO_QUEUE) private readonly queue: Queue<SsoJob>,
+    private readonly accounts: SsoAccounts,
   ) {}
 
   async list() {
@@ -299,11 +301,17 @@ export class SsoConnectionsService {
     if (issuerChanged) {
       await this.queueDiscovery(id);
     }
+    // Turned off: the sessions it signed in end, once that is committed.
+    if (before.enabled && changes.enabled === false) {
+      await this.accounts.endSessions(id, await this.accounts.usersOf(id));
+    }
     return this.get(row.id);
   }
 
   async remove(actor: UserPrincipal, id: string, ip?: string) {
-    await this.txHost.withTransaction(async () => {
+    const signedIn = await this.txHost.withTransaction(async () => {
+      // Read before the delete takes the identities with it.
+      const userIds = await this.accounts.usersOf(id);
       const [row] = await this.db
         .delete(ssoConnections)
         .where(eq(ssoConnections.id, id))
@@ -318,7 +326,9 @@ export class SsoConnectionsService {
         details: { name: row.name, protocol: row.protocol },
         ip,
       });
+      return userIds;
     });
+    await this.accounts.endSessions(id, signedIn);
   }
 
   /**

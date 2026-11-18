@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { SignInService } from '@nestjs/authentication';
+import { SessionService, SignInService } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   InjectTransaction,
@@ -16,9 +16,14 @@ import { AccessService } from '../access/access.service.js';
 import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AUTH_EVENTS, type SignedInEvent } from '../auth/auth.events.js';
-import { memberships, users } from '../auth/auth.tables.js';
-import { methodMetadata } from '../auth/authentication-method.js';
+import { memberships, refreshTokens, users } from '../auth/auth.tables.js';
+import {
+  authenticationOf,
+  methodMetadata,
+} from '../auth/authentication-method.js';
+import { DrizzleAuthenticationStore } from '../auth/drizzle-authentication.store.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import { tokenSignInMethod } from '../auth/token-session.js';
 import { normalizeEmail, UsersRepository } from '../auth/users.repository.js';
 import type { SsoConnection } from './sso-connections.service.js';
 import { emailDomain, SsoDomainsService } from './sso-domains.service.js';
@@ -78,6 +83,8 @@ export class SsoAccounts {
     private readonly domains: SsoDomainsService,
     private readonly audit: AuditService,
     private readonly signInService: SignInService,
+    private readonly sessions: SessionService,
+    private readonly store: DrizzleAuthenticationStore,
     private readonly roles: RolesService,
     private readonly access: AccessService,
     private readonly events: EventEmitter2,
@@ -458,6 +465,53 @@ export class SsoAccounts {
         userAgent: context.userAgent,
         tenantId: connection.tenantId,
       } satisfies SignedInEvent);
+    }
+  }
+
+  /** Who signed in through the connection: its identities' accounts. */
+  async usersOf(connectionId: string) {
+    const rows = await this.db
+      .selectDistinct({ userId: ssoIdentities.userId })
+      .from(ssoIdentities)
+      .where(eq(ssoIdentities.connectionId, connectionId));
+    return rows.map((row) => row.userId);
+  }
+
+  /**
+   * Ends what `userIds` signed in to through the connection, when it is
+   * turned off or deleted: their browser sessions (`method: sso`,
+   * `provider: <connection id>`, through SessionService) and their token
+   * clients' refresh families (claim `method: sso:<connection id>`). The
+   * package's TokenService revokes one token or all of a user's, so the
+   * families are found in iam/auth's table and revoked through its store,
+   * as iam/account's sign-out of one app does. Other sign-ins stay.
+   */
+  async endSessions(connectionId: string, userIds: readonly string[]) {
+    if (userIds.length === 0) return;
+    const families = await this.db
+      .selectDistinct({ familyId: refreshTokens.familyId })
+      .from(refreshTokens)
+      .where(
+        and(
+          inArray(refreshTokens.userId, [...userIds]),
+          eq(refreshTokens.revoked, false),
+          eq(tokenSignInMethod, ssoProvider(connectionId)),
+        ),
+      );
+    // The store announces each family's end (`auth.token-session-ended`).
+    for (const { familyId } of families) {
+      await this.store.revokeRefreshTokenFamily(familyId);
+    }
+    for (const userId of userIds) {
+      for (const session of await this.sessions.list(userId)) {
+        const authentication = authenticationOf(session);
+        if (
+          authentication?.method === 'sso' &&
+          authentication.provider === connectionId
+        ) {
+          await this.sessions.revoke(session.id, { userId });
+        }
+      }
     }
   }
 

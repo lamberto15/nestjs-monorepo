@@ -15,7 +15,11 @@ break-glass exemptions, and SCIM 2.0 provisioning of its users and groups.
 | `/v1/auth/sso/:tenantId/:connectionId/login`, `…/oidc/callback`, `…/oauth2/callback`, `POST …/saml/acs`, `…/saml/complete`, `…/saml/metadata` | public: the browser's sign-in                 |
 | `/v1/scim/*` (ServiceProviderConfig, ResourceTypes, Users, Groups)                                                                            | an API client key with `Access.provisionScim` |
 
-A connection starts off; a sign-in lands on the web app (`WEB_URL`, else
+A connection starts off. Turning it off or deleting it ends the browser
+sessions and the token clients' refresh families signed in through it
+(their `method` claim, `sso:<connection id>`); their access tokens live
+out their minutes, refused where SSO is required. A
+sign-in lands on the web app (`WEB_URL`, else
 `APP_URL`: core/http's), with `?error=sso_failed` when refused, the reason in the
 tenant's audit log (`auth.sign-in-failed`). A first sign-in provisions the
 person just in time (`jitProvisioning`) or links the account of a
@@ -40,7 +44,8 @@ through one of the tenant's connections or exempted. An exemption
 (break-glass) needs a confirmed second factor (`sso_exemption_needs_mfa`;
 without two-factor in the app, nobody can be exempted: fail closed). Then
 every session or token of the tenant not signed in through its own
-connection gets 403 `sso_required` on every route save those marked
+connection (an enabled one: turned off, it no longer counts) gets 403
+`sso_required` on every route save those marked
 `@WithoutSso()` (iam/auth: sign-out, the tenants list and switch, an
 invitation's acceptance, signing out everywhere); public routes are
 untouched. A password or passkey sign-in asks first (see "How it plugs in").
