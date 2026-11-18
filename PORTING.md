@@ -157,7 +157,9 @@ repository.
   stays), the mail signature partial, and the metrics
   `db_incidents_total{trigger=pool_waiting}`, `mail_budget_used_ratio` and
   `approvals_open`.
-- Release Please and the commit-message workflow: to add with the remote.
+- Staging and production deploys (the owner, 2026-11-19): CI builds the
+  image and publishes it to GHCR, from `main` and from a `v*` tag; where
+  it runs, and how, is the deployment's own for now.
 
 ## Changed on the way
 
