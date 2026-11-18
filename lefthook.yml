@@ -1,0 +1,53 @@
+# Git hooks (https://lefthook.dev). `pnpm install` sets them up: lefthook's
+# postinstall runs `lefthook install` (needs `lefthook: true` under allowBuilds
+# in pnpm-workspace.yaml; skipped where CI=true). `pnpm exec lefthook install`
+# redoes it. Every worktree shares them (.git/hooks).
+#
+# Fast checks on the staged files only. CI owns the slow ones (build, tests,
+# migrations, client:check). Skip them once with `git commit --no-verify`, or
+# `LEFTHOOK=0 git commit …`.
+
+# Hooks change only through `lefthook install`, never as a side effect of a
+# commit: the hooks are shared, and a commit in one worktree would point them
+# at its own binary.
+no_auto_install: true
+
+# Bash-like globs: `**/` also matches no directory, `{a,b}` either.
+glob_matcher: doublestar
+
+# Each job skips when its tool isn't installed in this checkout (`pnpm
+# install` not run yet): a `git merge origin/main` that brings this file in
+# then commits instead of failing.
+pre-commit:
+  # One after the other: oxlint reads what Prettier has written.
+  piped: true
+  jobs:
+    # TypeScript only, never docs/ or other Markdown (Prettier reflows its
+    # tables). Fixed files are restaged. Prettier is the API's devDependency.
+    - name: prettier
+      glob:
+        - 'apps/*/{src,test}/**/*.{ts,tsx}'
+        - 'packages/*/src/**/*.{ts,tsx}'
+      run: apps/api/node_modules/.bin/prettier --write {staged_files}
+      stage_fixed: true
+      skip:
+        - run: test ! -x apps/api/node_modules/.bin/prettier
+    # The API's `lint` (type-aware oxlint, apps/api/.oxlintrc.json) on the
+    # staged files alone.
+    - name: oxlint
+      glob: 'apps/api/{src,test}/**/*.ts'
+      run: apps/api/node_modules/.bin/oxlint --type-aware -c apps/api/.oxlintrc.json --tsconfig apps/api/tsconfig.json {staged_files}
+      skip:
+        - run: test ! -x apps/api/node_modules/.bin/oxlint
+    # The no-raw-SQL rule (AGENTS.md), when API code was staged.
+    - name: raw-sql
+      glob: 'apps/api/src/**/*.ts'
+      run: node tools/ci/raw-sql.mjs
+
+# Conventional Commits (commitlint.config.js). Merge commits pass as they are.
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}
+      skip:
+        - run: test ! -x node_modules/.bin/commitlint

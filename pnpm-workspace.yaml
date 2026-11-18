@@ -10,5 +10,7 @@ allowBuilds:
   '@scarf/scarf': false
   # bullmq's msgpackr: an optional native speedup with a prebuilt binary.
   msgpackr-extract: true
+  # Installs the git hooks of lefthook.yml.
+  lefthook: true
   protobufjs: false
   re2: true

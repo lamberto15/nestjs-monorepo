@@ -2,36 +2,36 @@
   "$schema": "./node_modules/turbo/schema.json",
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "env": ["GIT_SHA", "VITE_*"],
+      "outputs": ["dist/**", ".bundle-analysis/**", "*.tsbuildinfo"]
     },
     "lint": {
-      "dependsOn": [
-        "^build"
-      ]
+      "dependsOn": ["^build"]
     },
     "test": {
-      "dependsOn": [
-        "^build"
-      ]
+      "dependsOn": ["^build"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "test:e2e": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "cache": false,
-      "passThroughEnv": [
-        "TEST_DATABASE_URL",
-        "TEST_LOGS"
-      ]
+      "passThroughEnv": ["TEST_DATABASE_URL", "TEST_LOGS"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "size": {
+      "dependsOn": ["build"],
+      "inputs": ["dist/**", ".size-limit.json"]
+    },
+    "test:browser": {
+      "dependsOn": ["api#build", "@nestjs-monorepo/web#build"],
+      "cache": false
     }
   }
 }
