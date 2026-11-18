@@ -34,6 +34,9 @@ themselves (409 `mfa_enroll_first`); with AUTH_MFA off none can be set.
 - `GET|PUT /v1/access/auth-policy/units/{unitId}` (`Access.readAuthPolicy` /
   `updateAuthPolicy`, a recent sign-in for PUT): `{ requireMfa }`; `false`
   removes the unit's own rule. Audited `auth-policy.unit-updated`.
+  The tenant's administrators set it, never a unit's own managers: a unit
+  lead could otherwise lift a rule on the people they lead (decided on
+  purpose).
 - `GET|PUT /v1/access/auth-policy/platform` (`@OperatorOnly()` and
   `Access.managePlatformAuthPolicy`, a recent sign-in for PUT): `{ requireMfa }`.
   Audited `auth-policy.platform-updated`.

@@ -1001,17 +1001,28 @@ describe('custom fields (e2e)', () => {
     // Import: a file with the column creates a record holding the value; a bad value is that row's error.
     const boundary = '----custom';
     const csv = 'title,custom.region\r\nWith region,eu\r\nBad region,mars\r\n';
-    const imported = await app.inject({
-      method: 'POST',
-      url: '/v1/data/imports',
-      headers: {
-        ...team.admin.headers,
-        'content-type': `multipart/form-data; boundary=${boundary}`,
-      },
-      payload: Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\ntest-items\r\n--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="items.csv"\r\nContent-Type: text/csv\r\n\r\n${csv}\r\n--${boundary}--\r\n`,
-      ),
-    });
+    const upload = (dryRun: boolean) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/data/imports',
+        headers: {
+          ...team.admin.headers,
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+        },
+        payload: Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\ntest-items\r\n--${boundary}\r\nContent-Disposition: form-data; name="dryRun"\r\n\r\n${dryRun}\r\n--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="items.csv"\r\nContent-Type: text/csv\r\n\r\n${csv}\r\n--${boundary}--\r\n`,
+        ),
+      });
+
+    // A dry run refuses the bad value as the import would, and writes nothing.
+    const checked = await upload(true);
+    expect(checked.statusCode, checked.body).toBe(202);
+    const dry = await settled(checked.json<{ id: string }>().id);
+    expect(dry.result).toMatchObject({ imported: 1, failed: 1, dryRun: true });
+    const none = await call('GET', '/v1/test-items', team.admin.headers);
+    expect(none.json<{ items: unknown[] }>().items).toEqual([]);
+
+    const imported = await upload(false);
     expect(imported.statusCode, imported.body).toBe(202);
     const done = await settled(imported.json<{ id: string }>().id);
     expect(done.result).toMatchObject({ imported: 1, failed: 1 });

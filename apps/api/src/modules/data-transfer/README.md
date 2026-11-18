@@ -42,7 +42,7 @@ has a frozen header and date cells.
   key finds among the caller's readable ones.
 - `mapping`: JSON, file header to template column, or null to skip a column.
 
-A file may have `custom.<key>` columns: they are put in the row's `custom` and checked by the record's own write (a bad value is that row's error; a dry run does not check them).
+A file may have `custom.<key>` columns: they are put in the row's `custom` and checked by the record's own write (a bad value is that row's error); a dry run, which writes nothing, checks them the same way (the add-on's `importCheck()`).
 
 The upload streams to the disk under the tenant's prefix. Each row is the
 record's create body: it is validated by the field schemas and the field

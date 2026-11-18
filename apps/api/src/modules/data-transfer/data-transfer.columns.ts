@@ -26,6 +26,19 @@ export interface TransferColumnSource {
   importReader?(
     registration: RecordRegistration,
   ): Promise<(record: Record<string, unknown>) => Record<string, unknown>>;
+  /**
+   * Read once per dry run, which writes nothing: what the add-on's hooks
+   * would refuse in a row's body (its importReader() part), as the write's
+   * errors (`custom.<key>`).
+   */
+  importCheck?(
+    registration: RecordRegistration,
+  ): Promise<
+    (
+      body: Record<string, unknown>,
+      mode: 'create' | 'update',
+    ) => { path: string; message: string }[]
+  >;
 }
 
 /** Marks the provider that implements TransferColumnSource. */

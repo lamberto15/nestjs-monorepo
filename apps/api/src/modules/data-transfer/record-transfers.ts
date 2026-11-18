@@ -92,6 +92,19 @@ export class RecordTransfers {
       >;
   }
 
+  /** What the add-ons would refuse in a row's body (a dry run's check of their part). */
+  async importCheck(registration: RecordRegistration) {
+    const checks: Awaited<
+      ReturnType<NonNullable<TransferColumnSource['importCheck']>>
+    >[] = [];
+    for (const source of this.sources()) {
+      const check = await source.importCheck?.(registration);
+      if (check) checks.push(check);
+    }
+    return (body: Record<string, unknown>, mode: 'create' | 'update') =>
+      checks.flatMap((check) => check(body, mode));
+  }
+
   /** Every record that may be exported and imported. */
   all(): RecordRegistration[] {
     return this.records

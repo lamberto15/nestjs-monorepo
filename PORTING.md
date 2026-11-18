@@ -126,7 +126,7 @@ repository.
 - [ ] Presigned uploads tested against Garage (S3-compatible; MinIO is
       deprecated): a `storage` profile in compose.dev.yaml and an e2e test,
       run in CI.
-- [ ] Auth policy of a unit stays administrators' (`Access.manageAuthPolicy`);
+- [x] Auth policy of a unit stays administrators' (`Access.manageAuthPolicy`);
       a dry-run import validates custom values as the import does.
 - [ ] `/.well-known/security.txt` from SECURITY_CONTACT (none when unset);
       no maintenance page (the host's job).

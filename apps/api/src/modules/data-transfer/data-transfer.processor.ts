@@ -257,6 +257,11 @@ export class DataTransferProcessor extends TenantWorkerHost<
     const schema = importSchema(declaration);
     // What add-ons put in a row's body besides its fields (custom values).
     const addOns = await this.transfers.importReader(registration);
+    // A dry run writes nothing, so the add-ons' hooks never see its rows:
+    // their check runs here instead, with the same errors.
+    const addOnIssues = dryRun
+      ? await this.transfers.importCheck(registration)
+      : undefined;
     const dateColumns = new Set(
       columns.filter((column) => column.type === 'date').map((c) => c.name),
     );
@@ -367,7 +372,12 @@ export class DataTransferProcessor extends TenantWorkerHost<
             })),
           );
         } else if (dryRun) {
-          imported++;
+          const issues = addOnIssues!(addOns(record), action);
+          if (issues.length) {
+            refuse(issues.map((issue) => ({ row, ...issue })));
+          } else {
+            imported++;
+          }
         } else {
           group.push({
             row,

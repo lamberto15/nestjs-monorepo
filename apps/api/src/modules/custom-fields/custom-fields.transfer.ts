@@ -9,6 +9,7 @@ import type {
 } from '../data-transfer/data-transfer.types.js';
 import type { RecordRegistration } from '../records/records.service.js';
 import type { CustomFieldDefinition } from './custom-field.types.js';
+import { customValuesSchema } from './custom-field.values.js';
 import {
   CUSTOM_CAPABILITY,
   CustomFieldsService,
@@ -54,7 +55,8 @@ const importType = (field: CustomFieldDefinition): ImportColumn['type'] =>
  * `custom.<key>` (data-transfer finds this by `@TransferColumns()`): an
  * export has one column each instead of the `custom` object, an import
  * reads them into the body's `custom`, which the record's own write checks
- * (a refused value is that row's error, `custom.<key>`).
+ * (a refused value is that row's error, `custom.<key>`), and a dry run
+ * checks the same way (importCheck()).
  */
 @TransferColumns()
 @Injectable()
@@ -111,6 +113,25 @@ export class CustomFieldsTransfer implements TransferColumnSource {
         custom[field.key] = cell(field, value);
       }
       return Object.keys(custom).length > 0 ? { custom } : {};
+    };
+  }
+
+  /** A dry run's check of `custom`: the one the record's write makes (CustomValuesService). */
+  async importCheck(registration: RecordRegistration) {
+    const fields = this.applies(registration)
+      ? await this.fields.definitions(registration.declaration.subject)
+      : [];
+    return (body: Record<string, unknown>, mode: 'create' | 'update') => {
+      if (!fields.length) return [];
+      const parsed = customValuesSchema(fields, mode).safeParse(
+        body.custom ?? {},
+      );
+      return parsed.success
+        ? []
+        : parsed.error.issues.map((issue) => ({
+            path: ['custom', ...issue.path].join('.'),
+            message: issue.message,
+          }));
     };
   }
 }
