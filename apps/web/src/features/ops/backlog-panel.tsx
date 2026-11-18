@@ -1,4 +1,3 @@
-import { Badge } from '@nestjs-monorepo/ui/components/badge';
 import { Button } from '@nestjs-monorepo/ui/components/button';
 import { Checkbox } from '@nestjs-monorepo/ui/components/checkbox';
 import {
@@ -32,17 +31,18 @@ import {
 /**
  * Scoped recovery of a notification storm (docs/notifications.md,
  * "Recovering a backlog"): count the outbox and mail backlog of one tenant,
- * or of every tenant when asked, narrowed by notification type and mail
- * class; then discard or retry it. The API never discards a mandatory
- * notification or essential mail; every change is audited.
+ * or of every tenant when asked, narrowed by outbox topic and mail
+ * class; then discard or retry it. The API never discards essential mail or
+ * a message being delivered; every change is audited.
  */
 export function BacklogPanel() {
   const { t } = useTranslation('ops');
   const id = useId();
-  const canManage = useCan('Ops.manage');
+  const canDiscard = useCan('Access.discardJobs');
+  const canRetry = useCan('Access.retryJobs');
   const [tenantId, setTenantId] = useState('');
   const [global, setGlobal] = useState(false);
-  const [type, setType] = useState('');
+  const [topic, setTopic] = useState('');
   const [template, setTemplate] = useState('');
   const preview = useBacklogPreview();
   const discard = useBacklogAction('discard');
@@ -52,7 +52,7 @@ export function BacklogPanel() {
 
   const scope = (): BacklogScope => ({
     ...(global ? { global: true } : { tenantId: tenantId.trim() }),
-    ...(type.trim() ? { type: type.trim() } : {}),
+    ...(topic.trim() ? { topic: topic.trim() } : {}),
     ...(template.trim() ? { template: template.trim() } : {}),
   });
   const count = async () => {
@@ -101,12 +101,12 @@ export function BacklogPanel() {
           </FieldLabel>
         </Field>
         <Field className="w-56">
-          <FieldLabel htmlFor={`${id}-type`}>{t('backlog.type')}</FieldLabel>
+          <FieldLabel htmlFor={`${id}-topic`}>{t('backlog.topic')}</FieldLabel>
           <Input
-            id={`${id}-type`}
-            value={type}
-            onChange={(event) => setType(event.target.value)}
-            placeholder="note.published"
+            id={`${id}-topic`}
+            value={topic}
+            onChange={(event) => setTopic(event.target.value)}
+            placeholder="notification.stored"
           />
         </Field>
         <Field className="w-56">
@@ -145,7 +145,6 @@ export function BacklogPanel() {
                   <TableRow>
                     <TableHead>{t('backlog.kind')}</TableHead>
                     <TableHead>{t('outbox.topic')}</TableHead>
-                    <TableHead>{t('backlog.type')}</TableHead>
                     <TableHead className="text-end">
                       {t('backlog.number')}
                     </TableHead>
@@ -159,18 +158,10 @@ export function BacklogPanel() {
                     ] as const
                   ).flatMap(([kind, groups]) =>
                     groups.map((group) => (
-                      <TableRow key={`${kind}-${group.topic}-${group.type}`}>
+                      <TableRow key={`${kind}-${group.topic}`}>
                         <TableCell>{t(`backlog.kinds.${kind}`)}</TableCell>
                         <TableCell className="font-mono text-xs">
                           {group.topic}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {group.type}
-                          {group.mandatory && (
-                            <Badge variant="outline" className="ms-2">
-                              {t('backlog.kept')}
-                            </Badge>
-                          )}
                         </TableCell>
                         <TableCell className="text-end tabular-nums">
                           {group.count}
@@ -182,76 +173,86 @@ export function BacklogPanel() {
               </Table>
             </div>
           </section>
-          <section className="flex flex-col gap-2">
-            <h3 className="text-sm font-medium">{t('backlog.mail')}</h3>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('backlog.state')}</TableHead>
-                    <TableHead>{t('backlog.template')}</TableHead>
-                    <TableHead className="text-end">
-                      {t('backlog.number')}
-                    </TableHead>
-                    <TableHead className="text-end">
-                      {t('backlog.essential')}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.mail.groups.map((group) => (
-                    <TableRow key={`${group.state}-${group.template}`}>
-                      <TableCell>{group.state}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {group.template}
-                      </TableCell>
-                      <TableCell className="text-end tabular-nums">
-                        {group.count}
-                      </TableCell>
-                      <TableCell className="text-end tabular-nums">
-                        {group.essential}
-                      </TableCell>
+          {result.mail && (
+            <section className="flex flex-col gap-2">
+              <h3 className="text-sm font-medium">{t('backlog.mail')}</h3>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('backlog.state')}</TableHead>
+                      <TableHead>{t('backlog.template')}</TableHead>
+                      <TableHead className="text-end">
+                        {t('backlog.number')}
+                      </TableHead>
+                      <TableHead className="text-end">
+                        {t('backlog.essential')}
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            {result.mail.capped && (
-              <p className="text-sm text-muted-foreground">
-                {t('backlog.capped')}
-              </p>
-            )}
-          </section>
-          {canManage && (
-            <div className="flex flex-wrap gap-2">
-              {(['outbox', 'mail'] as const).map((target) => (
-                <ConfirmButton
-                  key={`discard-${target}`}
-                  variant="destructive"
-                  allowInMaintenance
-                  title={t(`backlog.discardTitle.${target}`)}
-                  description={t('backlog.discardDescription')}
-                  confirm={t(`backlog.discard.${target}`)}
-                  onConfirm={() => act('discard', target)}
-                >
-                  {t(`backlog.discard.${target}`)}
-                </ConfirmButton>
-              ))}
-              {(['outbox', 'mail'] as const).map((target) => (
-                <ConfirmButton
-                  key={`retry-${target}`}
-                  variant="outline"
-                  allowInMaintenance
-                  title={t(`backlog.retryTitle.${target}`)}
-                  description={t('backlog.retryDescription')}
-                  confirm={t(`backlog.retry.${target}`)}
-                  onConfirm={() => act('retry', target)}
-                >
-                  {t(`backlog.retry.${target}`)}
-                </ConfirmButton>
-              ))}
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {result.mail.groups.map((group) => (
+                      <TableRow key={`${group.state}-${group.template}`}>
+                        <TableCell>{group.state}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {group.template}
+                        </TableCell>
+                        <TableCell className="text-end tabular-nums">
+                          {group.count}
+                        </TableCell>
+                        <TableCell className="text-end tabular-nums">
+                          {group.essential}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {result.mail.capped && (
+                <p className="text-sm text-muted-foreground">
+                  {t('backlog.capped')}
+                </p>
+              )}
+            </section>
           )}
+          <div className="flex flex-wrap gap-2">
+            {(['outbox', 'mail'] as const)
+              .filter((target) => target === 'outbox' || result.mail)
+              .map(
+                (target) =>
+                  canDiscard && (
+                    <ConfirmButton
+                      key={`discard-${target}`}
+                      variant="destructive"
+                      allowInMaintenance
+                      title={t(`backlog.discardTitle.${target}`)}
+                      description={t('backlog.discardDescription')}
+                      confirm={t(`backlog.discard.${target}`)}
+                      onConfirm={() => act('discard', target)}
+                    >
+                      {t(`backlog.discard.${target}`)}
+                    </ConfirmButton>
+                  ),
+              )}
+            {(['outbox', 'mail'] as const)
+              .filter((target) => target === 'outbox' || result.mail)
+              .map(
+                (target) =>
+                  canRetry && (
+                    <ConfirmButton
+                      key={`retry-${target}`}
+                      variant="outline"
+                      allowInMaintenance
+                      title={t(`backlog.retryTitle.${target}`)}
+                      description={t('backlog.retryDescription')}
+                      confirm={t(`backlog.retry.${target}`)}
+                      onConfirm={() => act('retry', target)}
+                    >
+                      {t(`backlog.retry.${target}`)}
+                    </ConfirmButton>
+                  ),
+              )}
+          </div>
         </>
       )}
     </div>

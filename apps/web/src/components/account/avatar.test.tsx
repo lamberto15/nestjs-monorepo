@@ -12,10 +12,7 @@ import { allFeatures, problem, server, signedInUser } from '@/test/server';
 function useAccount(state: { avatarUrl: string | null; puts: string[] }) {
   server.use(
     http.get('/v1/auth/me', () =>
-      HttpResponse.json({
-        ...signedInUser,
-        user: { ...signedInUser.user, avatarUrl: state.avatarUrl },
-      }),
+      HttpResponse.json({ ...signedInUser, avatarUrl: state.avatarUrl }),
     ),
     http.get('/v1/features', () =>
       HttpResponse.json({ ...allFeatures, realtime: false }),

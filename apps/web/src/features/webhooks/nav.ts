@@ -8,5 +8,5 @@ export default {
   label: 'webhooks:nav.title',
   icon: WebhookIcon,
   feature: 'webhooks',
-  permission: 'Access.manageClients',
+  permission: 'Webhooks.manageEndpoints',
 } satisfies NavContribution;

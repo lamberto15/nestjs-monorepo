@@ -49,7 +49,9 @@ import {
   useDeleteClient,
   useRevokeKey,
   useRotateKey,
+  useSetQuota,
   useUpdateClient,
+  usageQuery,
   type Client,
 } from './queries';
 import { cidrList, cidrProblems } from './cidr';
@@ -116,7 +118,7 @@ export function ClientDetail(props: { id: string }) {
             key={client.updatedAt}
             client={client}
           />
-          <QuotaSection client={client} />
+          {hasUsage && <QuotaSection client={client} />}
           <AllowlistSection
             // Refetched after a change: the saved (normalized) list.
             key={client.updatedAt}
@@ -308,12 +310,37 @@ function RolesSection({ client }: { client: Client }) {
   );
 }
 
+/**
+ * The daily quota is the usage module's: read from today's usage report,
+ * set with its own route. Shown only with usage on.
+ */
 function QuotaSection({ client }: { client: Client }) {
+  // Today only (UTC): the report carries the quota whatever the range.
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const usage = useQuery(usageQuery(client.id, today, today));
+  if (usage.isPending) {
+    return <Spinner />;
+  }
+  if (!usage.data) {
+    return <FormAlert message={errorMessage(usage.error)} />;
+  }
+  return (
+    <QuotaForm
+      // Refetched after a change: the saved quota.
+      key={String(usage.data.dailyQuota)}
+      client={client}
+      dailyQuota={usage.data.dailyQuota}
+    />
+  );
+}
+
+function QuotaForm(props: { client: Client; dailyQuota: number | null }) {
+  const { client } = props;
   const { t } = useTranslation('api-clients');
-  const update = useUpdateClient(client.id);
+  const setQuota = useSetQuota();
   const [error, setError] = useState<string>();
   const form = useAppForm({
-    defaultValues: { dailyQuota: client.dailyQuota?.toString() ?? '' },
+    defaultValues: { dailyQuota: props.dailyQuota?.toString() ?? '' },
     validators: {
       onSubmit: z.object({
         dailyQuota: z
@@ -328,7 +355,8 @@ function QuotaSection({ client }: { client: Client }) {
       setError(undefined);
       try {
         const quota = value.dailyQuota.trim();
-        await update.mutateAsync({
+        await setQuota.mutateAsync({
+          id: client.id,
           dailyQuota: quota ? Number(quota) : null,
         });
         toast.success(t('detail.quota.saved'));
@@ -358,9 +386,7 @@ function QuotaSection({ client }: { client: Client }) {
               <field.TextField
                 label={t('detail.quota.label')}
                 description={
-                  client.dailyQuota === null
-                    ? t('detail.quota.none')
-                    : undefined
+                  props.dailyQuota === null ? t('detail.quota.none') : undefined
                 }
               />
             )}

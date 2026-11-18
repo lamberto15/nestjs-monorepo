@@ -207,7 +207,7 @@
     "stagesSummary": "Stages: {{names}}",
     "edit": "Edit",
     "editLabel": "Edit {{label}}",
-    "setting": "Switched on per unit by the setting",
+    "flag": "Switched on per tenant or unit by the flag",
     "saved": "Policy saved.",
     "notFound": {
       "title": "Policy not found",
@@ -243,7 +243,6 @@
       "title": "Condition",
       "only": "Only when a condition holds",
       "hint": "Otherwise every request needs approval.",
-      "fields": "Fields of the proposed change: {{fields}}.",
       "condition": "Condition",
       "inner": "Condition inside",
       "item": "Condition {{n}}",

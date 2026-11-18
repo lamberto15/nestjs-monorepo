@@ -26,6 +26,8 @@ export const signedInUser: Me = {
   hasPassword: true,
   mfaEnrollmentRequired: false,
   onboardingRequired: null,
+  session: null,
+  avatarUrl: null,
   authentication: {
     via: 'session',
     method: 'password',
@@ -40,6 +42,7 @@ export const signedInUser: Me = {
 export const allMethods: Methods = {
   password: true,
   signUp: true,
+  tenantSignUp: false,
   magicLink: true,
   passkeys: false,
   providers: ['google'],

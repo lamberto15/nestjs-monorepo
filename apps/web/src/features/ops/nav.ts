@@ -7,6 +7,6 @@ export default {
   to: '/ops',
   label: 'ops:nav',
   icon: ActivityIcon,
-  permission: 'Ops.view',
+  permission: 'Access.viewOps',
   operatorTenant: true,
 } satisfies NavContribution;

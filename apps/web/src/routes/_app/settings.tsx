@@ -7,7 +7,7 @@ import { ConfigBundleCard } from '@/features/settings/config-bundle';
 // Hiding the menu entry is for the user's sake; the route refuses too.
 export const Route = createFileRoute('/_app/settings')({
   beforeLoad: ({ context }) => {
-    if (context.me.can['Access.manageSettings'] !== true) {
+    if (context.me.can['Setting.read'] !== true) {
       throw redirect({ to: '/' });
     }
   },
@@ -22,7 +22,7 @@ function SettingsPage() {
       <PageHeader title={t('title')} />
       <AdminSettings />
       {/* A bundle carries roles too: both permissions (docs/settings.md). */}
-      {me.can['Access.manageRoles'] === true && <ConfigBundleCard />}
+      {me.can['ConfigBundle.export'] === true && <ConfigBundleCard />}
     </Page>
   );
 }

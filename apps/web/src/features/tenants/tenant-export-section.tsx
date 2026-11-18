@@ -30,7 +30,7 @@ import {
 export function ExportSection(props: { tenant: TenantRow }) {
   const { t } = useTranslation('tenants');
   const { t: tTransfer } = useTranslation('transfer');
-  const [format, setFormat] = useState<TenantExportFormat>('json');
+  const [format, setFormat] = useState<TenantExportFormat>('csv');
   const [jobId, setJobId] = useState<string>();
   const start = useExportTenant(props.tenant.id);
   return (
@@ -50,7 +50,7 @@ export function ExportSection(props: { tenant: TenantRow }) {
             }))}
             value={format}
             onValueChange={(value) =>
-              setFormat((value ?? 'json') as TenantExportFormat)
+              setFormat((value ?? 'csv') as TenantExportFormat)
             }
           >
             <SelectTrigger id="tenant-export-format" className="w-full">

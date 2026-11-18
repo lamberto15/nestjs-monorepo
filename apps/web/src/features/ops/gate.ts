@@ -4,7 +4,7 @@ import { meQuery } from '@/lib/session';
 import { canViewOps } from './queries';
 
 /**
- * The operations page is the operators' (the operator tenant, `Ops.view`):
+ * The operations page is the operators' (the operator tenant, `Access.viewOps`):
  * no such page for anyone else, and no request sent to be refused. Decided
  * from `/me`; the API refuses the same (403 `operator_required`).
  */

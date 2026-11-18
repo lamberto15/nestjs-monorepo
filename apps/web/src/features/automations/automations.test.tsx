@@ -6,7 +6,7 @@ import { renderApp } from '@/test/render-app';
 import { findToast } from '@/test/toast';
 import { RULE_ID, rule, useAutomationsApi } from './test/automations-api';
 
-const ADMIN = ['AutomationRule.read', 'AutomationRule.manage'];
+const ADMIN = ['AutomationRule.read', 'AutomationRule.configure'];
 
 describe('gating', () => {
   it('has a menu entry only with the permission', () => {
@@ -24,7 +24,7 @@ describe('gating', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
   });
 
-  it('shows the rules read-only without AutomationRule.manage', async () => {
+  it('shows the rules read-only without AutomationRule.configure', async () => {
     useAutomationsApi({ can: ['AutomationRule.read'] });
     await renderApp('/automations');
     expect(await screen.findByText('Tag urgent notes')).toBeVisible();
@@ -71,14 +71,13 @@ describe('the builder', () => {
     await user.click(await screen.findByRole('button', { name: 'New rule' }));
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByLabelText('Name'), 'Shout');
-    await user.click(
-      within(dialog).getByRole('button', { name: 'Add a condition' }),
+    await user.type(
+      within(dialog).getByLabelText('Expression'),
+      "title == 'urgent'",
     );
-    await user.type(within(dialog).getByLabelText('Filter'), 'title.contains');
-    await user.type(within(dialog).getAllByLabelText('Value')[0]!, 'urgent');
     await user.click(within(dialog).getByRole('combobox', { name: 'Field' }));
     await user.click(await screen.findByRole('option', { name: 'title' }));
-    await user.type(within(dialog).getAllByLabelText('Value')[1]!, 'Urgent');
+    await user.type(within(dialog).getByLabelText('Value'), 'Urgent');
 
     await user.click(within(dialog).getByRole('button', { name: 'Simulate' }));
     const result = await within(dialog).findByRole('region', {
@@ -91,7 +90,7 @@ describe('the builder', () => {
         subject: 'Note',
         trigger: 'created',
         field: null,
-        filters: { 'title.contains': 'urgent' },
+        condition: "title == 'urgent'",
         actions: [{ type: 'setField', field: 'title', value: 'Urgent' }],
         limit: 20,
       },
@@ -108,7 +107,7 @@ describe('the builder', () => {
         subject: 'Note',
         trigger: 'created',
         field: null,
-        filters: { 'title.contains': 'urgent' },
+        condition: "title == 'urgent'",
         actions: [{ type: 'setField', field: 'title', value: 'Urgent' }],
       },
     ]);

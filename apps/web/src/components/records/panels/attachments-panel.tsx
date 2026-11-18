@@ -31,14 +31,9 @@ import {
   removeAttachment,
   uploadAttachment,
   type Attachment,
+  type AttachmentLimits,
 } from './api';
 import { AttachmentVisual } from './attachment-visual';
-
-/**
- * What a file may be, as the upload route enforces it (`attachmentLimits` of
- * `GET /v1/lists/{subject}`: ATTACHMENT_MAX_MB, ATTACHMENT_ALLOWED_TYPES).
- */
-export type AttachmentLimits = { maxBytes: number; types: readonly string[] };
 
 /** "1.5 MB" in the UI's language. */
 export function formatSize(bytes: number, language: string): string {

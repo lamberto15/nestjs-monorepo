@@ -49,7 +49,7 @@ import {
 /** The API's limit (docs/reports.md). */
 export const MAX_RECIPIENTS = 20;
 
-const FORMATS: TransferFormat[] = ['csv', 'xlsx', 'json'];
+const FORMATS: TransferFormat[] = ['csv', 'xlsx'];
 
 /** What a new report starts from: an export's name and the list's filters and sort. */
 export interface ReportDraft {

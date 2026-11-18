@@ -3,7 +3,6 @@ import {
   etagOf,
   unwrap,
   type components,
-  type paths,
 } from '@nestjs-monorepo/api-client';
 import { api } from '@/lib/api';
 import { postMultipart, putFile, StoreUnreachableError } from '@/lib/upload';
@@ -11,11 +10,10 @@ import { postMultipart, putFile, StoreUnreachableError } from '@/lib/upload';
 /**
  * The record panels' routes (docs/comments.md, attachments.md, tags.md,
  * revisions.md). Every feature that registers a target has the same routes
- * under its own path, with the same shapes; the generated client types them
- * per feature, so the types below are those routes' answers, whichever
- * features have them. No feature's path is named here: `pnpm feature:remove`
- * may take any of them, the last one included. (Named schemas in the client,
- * #157, would type them without any feature.)
+ * under its own path, with the same shapes. The API publishes those shapes as
+ * named schemas (`Comment`, `Attachment`…) whether or not a feature has the
+ * add-on, so the answers below are typed from them and no feature's path is
+ * named here: a feature may be removed, the last one included.
  *
  * `base` is the record's route, `/v1/<plural>/{id}`.
  */
@@ -35,31 +33,16 @@ type Suffix =
   | '/merge'
   | '/merge/preview';
 
-/** Every feature's route ending in the suffix (`/v1/<plural>/{id}/comments`). */
-type At<S extends Suffix> = Extract<keyof paths, `/v1/${string}/{id}${S}`>;
-
-type Json<T> = T extends { content: { 'application/json': infer B } }
-  ? B
-  : never;
-
-/**
- * The 200 answer of `GET <base><suffix>`. With no feature keeping the route
- * (none has comments, say), nothing renders its panel: `any` then only lets
- * this module and the panels compile.
- */
-type Answer<S extends Suffix> = [At<S>] extends [never]
-  ? any
-  : paths[At<S>] extends { get: { responses: { 200: infer R } } }
-    ? Json<R>
-    : never;
-
-export type Comment = Answer<'/comments'>['items'][number];
-export type Attachment = Answer<'/attachments'>['items'][number];
-type PresignedUpload = components['schemas']['PresignedUpload'];
-export type Revision = Answer<'/revisions'>['items'][number];
-export type RevisionDiff = Answer<'/revisions/{a}/diff/{b}'>;
-export type Duplicate = components['schemas']['Duplicate'];
-export type MergePreview = components['schemas']['MergePreview'];
+type Schemas = components['schemas'];
+export type Comment = Schemas['Comment'];
+export type Attachment = Schemas['Attachment'];
+type PresignedUpload = Schemas['PresignedUpload'];
+export type Revision = Schemas['Revision'];
+export type RevisionDiff = Schemas['RevisionDiff'];
+export type Duplicate = Schemas['Duplicate'];
+export type MergePreview = Schemas['MergePreview'];
+/** What a file may be, as the upload route enforces it (`attachmentLimits` of `GET /v1/lists/{subject}`). */
+export type AttachmentLimits = Schemas['AttachmentLimits'];
 
 type Init = {
   params: {
@@ -134,13 +117,11 @@ async function allPages<T>(
   return items;
 }
 
-type Page<T> = { items: T[]; nextCursor?: string | null };
-
 /** The thread, oldest first (the newest last). */
 export const listComments = (base: string, id: string) =>
   allPages((cursor) =>
     unwrap(
-      call<Page<Comment>>('GET', base, '/comments', {
+      call<Schemas['CommentPage']>('GET', base, '/comments', {
         params: {
           path: { id },
           query: { limit: PAGE_SIZE, sort: 'createdAt', cursor },
@@ -180,7 +161,7 @@ export const removeComment = (base: string, id: string, commentId: string) =>
 export const listAttachments = (base: string, id: string) =>
   allPages((cursor) =>
     unwrap(
-      call<Page<Attachment>>('GET', base, '/attachments', {
+      call<Schemas['AttachmentPage']>('GET', base, '/attachments', {
         params: { path: { id }, query: { limit: PAGE_SIZE, cursor } },
       }),
     ),
@@ -235,7 +216,7 @@ export const searchRecords = (path: string, term: string) => {
 /** A record's likely duplicates (docs/merging.md): those the user may read. */
 export const listDuplicates = (base: string, id: string) =>
   unwrap(
-    call<components['schemas']['DuplicateList']>('GET', base, '/duplicates', {
+    call<Schemas['DuplicateList']>('GET', base, '/duplicates', {
       params: { path: { id } },
     }),
   );
@@ -254,7 +235,7 @@ export const findDuplicates = (
       params: { path: {} },
       body,
     }) as Promise<{
-      data?: components['schemas']['DuplicateList'];
+      data?: Schemas['DuplicateList'];
       response: Response;
     }>,
   );
@@ -374,7 +355,7 @@ async function uploadDirect(
 /** Watch the record: its owner and watchers are told of changes (docs/notifications.md). */
 export const watchRecord = (base: string, id: string) =>
   unwrap(
-    call<{ watching: boolean }>('POST', base, '/watch', {
+    call<Schemas['Watching']>('POST', base, '/watch', {
       params: { path: { id } },
     }),
   );
@@ -394,7 +375,7 @@ export const setTags = (base: string, id: string, tagIds: string[]) =>
 export const listRevisions = (base: string, id: string) =>
   allPages((cursor) =>
     unwrap(
-      call<Page<Revision>>('GET', base, '/revisions', {
+      call<Schemas['RevisionPage']>('GET', base, '/revisions', {
         params: { path: { id }, query: { limit: PAGE_SIZE, cursor } },
       }),
     ),
@@ -438,7 +419,7 @@ export async function restoreRevision(
  */
 export const issueDocument = (base: string, id: string, lang: string) =>
   unwrap(
-    call<{ id: string; status: 'queued' }>('POST', base, '/pdf', {
+    call<Schemas['DocumentQueued']>('POST', base, '/pdf', {
       params: { path: { id }, query: { lang } },
     }),
   );

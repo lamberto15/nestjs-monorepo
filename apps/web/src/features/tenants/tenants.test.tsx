@@ -213,10 +213,10 @@ function api(
         id: params.id,
         kind: 'export',
         name: 'tenant',
-        format: 'json',
+        format: 'csv',
         status: 'completed',
         progress: { processed: 12 },
-        result: { rows: 12, url: 'https://files.test/tenant.json' },
+        result: { rows: 12, url: 'https://files.test/tenant.csv' },
       }),
     ),
     http.post('/v1/tenants/:id/deletion', async ({ params, request }) => {
@@ -744,14 +744,14 @@ describe('exporting a tenant', () => {
       await screen.findByRole('button', { name: 'Export tenant data' }),
     );
     const download = await screen.findByRole('link', {
-      name: 'Download (json)',
+      name: 'Download (csv)',
     });
-    expect(download).toHaveAttribute('href', 'https://files.test/tenant.json');
+    expect(download).toHaveAttribute('href', 'https://files.test/tenant.csv');
     expect(screen.getByText('12 rows exported.')).toBeVisible();
     expect(state.exports).toHaveLength(1);
     expect(state.exports[0]).toMatchObject({
       id: GLOBEX,
-      body: { format: 'json' },
+      body: { format: 'csv' },
     });
     expect(state.exports[0]!.idempotencyKey).toBeTruthy();
   });

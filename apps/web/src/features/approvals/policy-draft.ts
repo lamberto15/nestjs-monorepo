@@ -109,24 +109,38 @@ export function toDraft(policy: PolicyView['policy']): PolicyDraft {
   };
 }
 
+type BodyStage = PolicyBody['stages'][number];
+
+/**
+ * A rule or mode as the body names it. The editor builds them from the
+ * registered types' JSON schemas (`GET /v1/approvals/policy-types`), so what
+ * their parameters hold is checked by the API (a 400 names the path), not by
+ * the compiler.
+ */
+const asRule = (entry: Typed) =>
+  typedToWire(entry) as BodyStage['approvers'][number];
+const asMode = (entry: Typed) => typedToWire(entry) as BodyStage['mode'];
+const asCondition = (entry: Typed) =>
+  conditionToWire(entry) as NonNullable<PolicyBody['when']>;
+
 /** The body of `PUT /v1/approvals/policies/{key}`: what is empty is left out. */
 export function toBody(draft: PolicyDraft): PolicyBody {
   return {
     enabled: draft.enabled,
-    ...(draft.when && { when: conditionToWire(draft.when) }),
+    ...(draft.when && { when: asCondition(draft.when) }),
     stages: draft.stages.map((stage) => {
       const escalate = stage.onOverdue === 'escalate';
       return {
         name: stage.name.trim(),
-        approvers: stage.approvers.map(typedToWire),
-        mode: typedToWire(stage.mode),
+        approvers: stage.approvers.map(asRule),
+        mode: asMode(stage.mode),
         ...(stage.remindAfter.trim() && {
           remindAfter: stage.remindAfter.trim(),
         }),
         ...(stage.dueAfter.trim() && { dueAfter: stage.dueAfter.trim() }),
         onOverdue: stage.onOverdue,
         // Only an escalation has someone to hand the stage to, and a deadline of its own.
-        ...(escalate && { escalateTo: stage.escalateTo.map(typedToWire) }),
+        ...(escalate && { escalateTo: stage.escalateTo.map(asRule) }),
         ...(escalate &&
           stage.escalationDueAfter.trim() && {
             escalationDueAfter: stage.escalationDueAfter.trim(),

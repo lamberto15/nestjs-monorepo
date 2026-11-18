@@ -122,7 +122,7 @@
     "same": "The records hold the same values: this record's are kept.",
     "choose": "Take the duplicate's value for",
     "take": "{{field}}: “{{value}}” instead of “{{current}}”",
-    "moves": "Moves here: {{tags}} tags, {{comments}} comments, {{attachments}} attachments, {{references}} references.",
+    "moves": "Moves here: {{references}} references.",
     "confirm": "Merge",
     "merged": "Merged: the duplicate is in the recycle bin.",
     "warning": "This may already exist:"

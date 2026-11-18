@@ -9,7 +9,7 @@ import { renderApp } from '@/test/render-app';
 import { useSignedIn } from '@/test/signed-in';
 import { findToast } from '@/test/toast';
 
-const ADMIN = ['Access.manageSettings'];
+const ADMIN = ['Branding.update'];
 
 const branding = (over: Partial<Branding> = {}): Branding => ({
   primaryColor: null,
@@ -64,7 +64,7 @@ describe('gating', () => {
         g.items.map((i) => i.to),
       );
     expect(entries({})).not.toContain('/branding');
-    expect(entries({ 'Access.manageSettings': true })).toContain('/branding');
+    expect(entries({ 'Branding.update': true })).toContain('/branding');
   });
 
   it('sends a user without the permission away', async () => {
@@ -320,7 +320,7 @@ describe('custom domains', () => {
     useSignedIn([...ADMIN, 'Access.manageDomains']);
     server.use(
       http.get('/v1/branding/domains', () =>
-        HttpResponse.json({ enabled, domains: state.domains }),
+        HttpResponse.json({ enabled, items: state.domains }),
       ),
       http.post('/v1/branding/domains', async ({ request }) => {
         const body = await request.json();

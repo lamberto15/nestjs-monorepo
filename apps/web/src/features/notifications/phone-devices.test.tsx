@@ -28,6 +28,13 @@ function messagingApi(
         createdAt: '2026-10-01T09:00:00.000Z',
       },
     ],
+    // Browsers: web push is `/v1/devices`, phones are `/v1/messaging/devices`.
+    browsers: [] as {
+      id: string;
+      name: string;
+      lastSeenAt: string;
+      createdAt: string;
+    }[],
     removedDevices: [] as string[],
     registered: [] as unknown[],
   };
@@ -67,20 +74,27 @@ function messagingApi(
       HttpResponse.json({ publicKey: options.publicKey ?? null }),
     ),
     http.put('/v1/devices', async ({ request }) => {
-      const body = (await request.json()) as { platform: 'web'; name: string };
+      const body = (await request.json()) as { name: string };
       state.registered.push(body);
       const device = {
         id: 'd2',
-        platform: body.platform,
         name: body.name,
         lastSeenAt: '2026-10-29T09:00:00.000Z',
         createdAt: '2026-10-29T09:00:00.000Z',
       };
-      state.devices = [...state.devices, device];
+      state.browsers = [...state.browsers, device];
       return HttpResponse.json(device);
     }),
-    http.get('/v1/devices', () => HttpResponse.json({ items: state.devices })),
+    http.get('/v1/devices', () => HttpResponse.json({ items: state.browsers })),
+    http.get('/v1/messaging/devices', () =>
+      HttpResponse.json({ items: state.devices }),
+    ),
     http.delete('/v1/devices/:id', ({ params }) => {
+      state.removedDevices.push(String(params.id));
+      state.browsers = state.browsers.filter((d) => d.id !== params.id);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete('/v1/messaging/devices/:id', ({ params }) => {
       state.removedDevices.push(String(params.id));
       state.devices = state.devices.filter((d) => d.id !== params.id);
       return new HttpResponse(null, { status: 204 });
@@ -243,9 +257,8 @@ describe('push on this browser', () => {
     });
     expect(state.registered).toEqual([
       {
-        platform: 'web',
         name: expect.any(String),
-        token: JSON.stringify(push.subscription.toJSON()),
+        subscription: push.subscription.toJSON(),
       },
     ]);
 

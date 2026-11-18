@@ -83,7 +83,7 @@ function ReasonBadge(props: { reason: SuppressionReason }) {
  * is not sent to, and the ones watched for soft bounces, for the deployment's
  * operators. Filters, sort and page are in the URL; an address can be added
  * (a manual entry) and removed (after a confirmation) with
- * `MailSuppression.manage`.
+ * `MailSuppression.create` and `MailSuppression.delete`.
  *
  * Not a `ListPage`: the API has no `GET /v1/lists/MailSuppression` (the
  * filter menu is built from it), so the filters are the few the list takes.
@@ -91,7 +91,7 @@ function ReasonBadge(props: { reason: SuppressionReason }) {
 export function SuppressionsPage() {
   const { t } = useTranslation('suppressions');
   const format = useDateTimeFormat();
-  const canManage = useCan('MailSuppression.manage');
+  const canManage = useCan('MailSuppression.delete');
   const [filters, setFilters] = useQueryStates(urlState);
   const { q, reason, status, sort } = filters;
   // ?page=0 or below would be a 400.
@@ -134,7 +134,7 @@ export function SuppressionsPage() {
         title={t('title')}
         description={t('description')}
         actions={
-          <Can permission="MailSuppression.manage">
+          <Can permission="MailSuppression.create">
             <Button onClick={() => setAdding(true)}>
               <PlusIcon />
               {t('add.open')}

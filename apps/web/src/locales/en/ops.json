@@ -47,8 +47,7 @@
       "leased": "Leased",
       "inFlight": "Publishing now",
       "deadLetters": "Dead letters",
-      "lag": "Lag",
-      "undelivered": "Undelivered notifications"
+      "lag": "Lag"
     },
     "deadLetters": "Dead letters",
     "empty": "No dead letters.",
@@ -115,14 +114,13 @@
       "ok": "OK",
       "configured": "Configured",
       "disabled": "Disabled",
-      "unconfigured": "Not configured",
       "unavailable": "Unavailable"
     }
   },
   "backlog": {
-    "intro": "Count and recover the outbox and mail backlog of one tenant, or of every tenant when you say so. A mandatory notification, essential mail and running work are never discarded. Every change is audited.",
+    "intro": "Count and recover the outbox and mail backlog of one tenant, or of every tenant when you say so. Essential mail and work being delivered are never discarded. Every change is audited.",
     "tenant": "Tenant ID",
-    "type": "Notification type",
+    "topic": "Outbox topic",
     "template": "Mail class",
     "count": "Count",
     "scopeHint": "Count first: the actions apply to the scope counted. Leave a filter empty to include everything.",
@@ -132,7 +130,6 @@
     "number": "Count",
     "state": "State",
     "essential": "Essential (kept)",
-    "kept": "Kept",
     "capped": "More jobs than counted: the numbers are a floor.",
     "kinds": {
       "pending": "Pending",

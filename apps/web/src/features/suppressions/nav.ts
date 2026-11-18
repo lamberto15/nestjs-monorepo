@@ -7,6 +7,6 @@ export default {
   to: '/mail-suppressions',
   label: 'suppressions:nav',
   icon: MailXIcon,
-  permission: 'MailSuppression.view',
+  permission: 'MailSuppression.read',
   operatorTenant: true,
 } satisfies NavContribution;

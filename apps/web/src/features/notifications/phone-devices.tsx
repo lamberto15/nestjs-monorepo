@@ -32,12 +32,30 @@ export const phoneQuery = queryOptions({
   queryFn: () => unwrap(api.GET('/v1/messaging/phone')),
 });
 
+type MobileDevice = GetResponse<'/v1/messaging/devices'>['items'][number];
+type Device = Omit<MobileDevice, 'platform'> & {
+  platform: 'web' | MobileDevice['platform'];
+};
+
+/** Browsers (`/v1/devices`, web push) and phones (`/v1/messaging/devices`) in one list. */
 export const devicesQuery = queryOptions({
   queryKey: ['messaging', 'devices'],
-  queryFn: () => unwrap(api.GET('/v1/devices')),
+  queryFn: async (): Promise<{ items: Device[] }> => {
+    const [browsers, phones] = await Promise.all([
+      unwrap(api.GET('/v1/devices')),
+      unwrap(api.GET('/v1/messaging/devices')),
+    ]);
+    return {
+      items: [
+        ...browsers.items.map((device) => ({
+          ...device,
+          platform: 'web' as const,
+        })),
+        ...phones.items,
+      ],
+    };
+  },
 });
-
-type Device = GetResponse<'/v1/devices'>['items'][number];
 
 const webPushQuery = queryOptions({
   queryKey: ['messaging', 'web-push'],
@@ -94,9 +112,11 @@ function WebPushToggle() {
       const device = await unwrap(
         api.PUT('/v1/devices', {
           body: {
-            platform: 'web',
             name: browserName().slice(0, 100),
-            token: JSON.stringify(subscribed),
+            subscription: subscribed.toJSON() as {
+              endpoint: string;
+              keys: { p256dh: string; auth: string };
+            },
           },
         }),
       );
@@ -349,9 +369,14 @@ export function DevicesSection() {
   const queryClient = useQueryClient();
   const devices = useQuery(devicesQuery);
   const remove = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (device: Device) => {
+      const { id } = device;
       await unwrap(
-        api.DELETE('/v1/devices/{id}', { params: { path: { id } } }),
+        device.platform === 'web'
+          ? api.DELETE('/v1/devices/{id}', { params: { path: { id } } })
+          : api.DELETE('/v1/messaging/devices/{id}', {
+              params: { path: { id } },
+            }),
       );
       // This browser's own row: its subscription goes with it.
       if (id === rememberedDevice()) await unsubscribe(id);
@@ -373,7 +398,7 @@ export function DevicesSection() {
         <Spinner />
       ) : devices.data?.items.length ? (
         <ul className="flex flex-col divide-y rounded-md border">
-          {devices.data.items.map((device: Device) => (
+          {devices.data.items.map((device) => (
             <li
               key={device.id}
               className="flex flex-wrap items-center gap-3 p-3"
@@ -399,7 +424,7 @@ export function DevicesSection() {
                 })}
                 confirm={t('devices.remove')}
                 label={t('devices.removeLabel', { name: device.name })}
-                onConfirm={() => remove.mutateAsync(device.id)}
+                onConfirm={() => remove.mutateAsync(device)}
               >
                 {t('devices.remove')}
               </ConfirmButton>

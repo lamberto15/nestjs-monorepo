@@ -37,7 +37,7 @@ function api(can = true) {
     http.get('/v1/auth/me', () =>
       HttpResponse.json({
         ...signedInUser,
-        can: { 'Access.manageClients': can },
+        can: { 'Webhooks.manageSenders': can },
       }),
     ),
     http.get('/v1/features', () => HttpResponse.json(allFeatures)),

@@ -17,18 +17,18 @@ export type QueueOverview = GetResponse<'/v1/ops/queues'>['items'][number];
 export type QueueCounts = QueueOverview['counts'];
 /** One message of the live log: a union by `source` (the engine), then `type`. */
 export type OpsEventData =
-  operations['OpsController_events_v1']['responses'][200]['content']['text/event-stream'];
+  operations['OpsController_eventStream_v1']['responses'][200]['content']['text/event-stream'];
 
 /** How often the counters are read again while the page is open. */
 const REFRESH_MS = 10_000;
 
 /**
  * Who sees the operations page: the API answers `/v1/ops/*` to users acting
- * in the operator tenant (any tenancy) who hold `Ops.view`, so the app asks
+ * in the operator tenant (any tenancy) who hold `Access.viewOps`, so the app asks
  * only then (anyone else would get 403 `operator_required`).
  */
 export function canViewOps(me: Me | null | undefined): boolean {
-  return me?.tenant?.operator === true && me.can['Ops.view'] === true;
+  return me?.tenant?.operator === true && me.can['Access.viewOps'] === true;
 }
 
 export const opsOutboxQuery = queryOptions({
@@ -39,6 +39,30 @@ export const opsOutboxQuery = queryOptions({
   // The panel shows the error itself.
   meta: { errorToast: false },
 });
+
+export const opsDeadLettersQuery = queryOptions({
+  queryKey: ['ops', 'dead-letters'],
+  queryFn: () => unwrap(api.GET('/v1/ops/dead-letters')),
+  refetchInterval: REFRESH_MS,
+  retry: false,
+  // The panel shows the error itself.
+  meta: { errorToast: false },
+});
+
+/** The latest failed jobs of a queue (their payloads are never shown). */
+export const opsFailedJobsQuery = (name: string) =>
+  queryOptions({
+    queryKey: ['ops', 'queues', name, 'failed-jobs'],
+    queryFn: () =>
+      unwrap(
+        api.GET('/v1/ops/queues/{name}/jobs', {
+          params: { path: { name }, query: { state: 'failed', limit: 5 } },
+        }),
+      ),
+    refetchInterval: REFRESH_MS,
+    retry: false,
+    meta: { errorToast: false },
+  });
 
 export const opsQueuesQuery = queryOptions({
   queryKey: ['ops', 'queues'],
@@ -131,12 +155,11 @@ export function useRequeueDeadLetters() {
   return useMutation({
     mutationFn: (ids?: string[]) =>
       unwrap(
-        api.POST('/v1/ops/dead-letters/requeue', {
+        api.POST('/v1/ops/dead-letters/retry', {
           body: ids ? { ids } : {},
         }),
       ),
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: opsOutboxQuery.queryKey }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['ops'] }),
   });
 }
 
@@ -146,10 +169,9 @@ export function usePurgeDeadLetters() {
   return useMutation({
     mutationFn: (ids?: string[]) =>
       unwrap(
-        api.POST('/v1/ops/dead-letters/purge', { body: ids ? { ids } : {} }),
+        api.POST('/v1/ops/dead-letters/discard', { body: ids ? { ids } : {} }),
       ),
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: opsOutboxQuery.queryKey }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['ops'] }),
   });
 }
 
@@ -166,10 +188,10 @@ export const opsDiagnosticsQuery = queryOptions({
 /** A safe connection test of one integration: its result, never a thrown failure. */
 export function useTestDiagnostic() {
   return useMutation({
-    mutationFn: (check: Diagnostic['check']) =>
+    mutationFn: (name: Diagnostic['name']) =>
       unwrap(
         api.POST('/v1/ops/diagnostics/{check}/test', {
-          params: { path: { check } },
+          params: { path: { check: name } },
         }),
       ),
   });

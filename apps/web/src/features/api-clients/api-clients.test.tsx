@@ -44,7 +44,6 @@ const client = (extra: object = {}) => ({
   id: '0199a3f2-0000-7000-8000-00000000c001',
   name: 'Billing exporter',
   active: true,
-  dailyQuota: 100 as number | null,
   allowedCidrs: [] as string[],
   createdAt: '2026-10-10T08:00:00.000Z',
   updatedAt: '2026-10-10T08:00:00.000Z',
@@ -65,6 +64,12 @@ function api(
     patches: [] as unknown[],
     deleted: [] as string[],
     usageQueries: [] as URLSearchParams[],
+    // The usage module's, by client (PUT …/daily-quota).
+    quotas: { '0199a3f2-0000-7000-8000-00000000c001': 100 } as Record<
+      string,
+      number | null
+    >,
+    quotaPuts: [] as { id: string; dailyQuota: number | null }[],
   };
   server.use(
     http.get('/v1/auth/me', () =>
@@ -98,7 +103,6 @@ function api(
       const created = client({
         id: '0199a3f2-0000-7000-8000-00000000c002',
         name: (state.created as { name: string }).name,
-        dailyQuota: null,
         keys: [key('2')],
       });
       state.clients = [...state.clients, created];
@@ -138,7 +142,7 @@ function api(
       state.revokedKeys.push(String(params.keyId));
       return new HttpResponse(null, { status: 204 });
     }),
-    http.get('/v1/access/clients/:id/usage', ({ request }) => {
+    http.get('/v1/access/clients/:id/usage', ({ params, request }) => {
       const query = new URL(request.url).searchParams;
       state.usageQueries.push(query);
       const to = query.get('to')!;
@@ -156,8 +160,25 @@ function api(
             : { day, total: 0, routes: {} },
         );
       }
-      return HttpResponse.json({ from, to, days, total: 40 });
+      return HttpResponse.json({
+        from,
+        to,
+        days,
+        total: 40,
+        dailyQuota: state.quotas[String(params.id)] ?? null,
+      });
     }),
+    http.put(
+      '/v1/access/clients/:id/daily-quota',
+      async ({ params, request }) => {
+        const { dailyQuota } = (await request.json()) as {
+          dailyQuota: number | null;
+        };
+        state.quotaPuts.push({ id: String(params.id), dailyQuota });
+        state.quotas[String(params.id)] = dailyQuota;
+        return HttpResponse.json({ dailyQuota });
+      },
+    ),
   );
   return state;
 }
@@ -268,7 +289,7 @@ describe('creating a client: the key is shown once', () => {
     expect(document.body).not.toHaveTextContent(SECRET);
   });
 
-  it('sends the quota and the roles with the create, in one request', async () => {
+  it('creates with the roles, then sets the quota on the usage route', async () => {
     const state = api();
     const user = userEvent.setup();
     await renderApp('/api-clients');
@@ -279,11 +300,12 @@ describe('creating a client: the key is shown once', () => {
     await user.click(await screen.findByRole('checkbox', { name: 'Exporter' }));
     await user.click(screen.getByRole('button', { name: 'Create client' }));
     await screen.findByRole('dialog', { name: 'Copy the key of Mail relay' });
-    expect(state.created).toEqual({
-      name: 'Mail relay',
-      dailyQuota: 250,
-      roleIds: [ROLE],
-    });
+    expect(state.created).toEqual({ name: 'Mail relay', roleIds: [ROLE] });
+    await waitFor(() =>
+      expect(state.quotaPuts).toEqual([
+        { id: '0199a3f2-0000-7000-8000-00000000c002', dailyQuota: 250 },
+      ]),
+    );
     expect(state.patches).toEqual([]);
   });
 });
@@ -418,12 +440,16 @@ describe('a client', () => {
     await user.clear(input);
     await user.type(input, '500');
     await user.click(screen.getByRole('button', { name: 'Save quota' }));
-    await waitFor(() => expect(state.patches).toEqual([{ dailyQuota: 500 }]));
+    const id = '0199a3f2-0000-7000-8000-00000000c001';
+    await waitFor(() =>
+      expect(state.quotaPuts).toEqual([{ id, dailyQuota: 500 }]),
+    );
     await user.clear(screen.getByLabelText('Requests a day'));
     await user.click(screen.getByRole('button', { name: 'Save quota' }));
     await waitFor(() =>
-      expect(state.patches.at(-1)).toEqual({ dailyQuota: null }),
+      expect(state.quotaPuts.at(-1)).toEqual({ id, dailyQuota: null }),
     );
+    expect(state.patches).toEqual([]);
   });
 
   it('shows the allowlist, one entry a line, and saves an edit', async () => {
@@ -536,7 +562,7 @@ describe('usage', () => {
 
   it('says so when the quota is used up', async () => {
     const state = api();
-    state.clients = [client({ dailyQuota: 40 })];
+    state.quotas['0199a3f2-0000-7000-8000-00000000c001'] = 40;
     await renderApp('/api-clients/usage');
     expect(await screen.findByText(/Quota reached/)).toBeVisible();
   });

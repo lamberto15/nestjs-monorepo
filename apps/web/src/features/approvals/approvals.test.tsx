@@ -757,7 +757,7 @@ describe('the approval page', () => {
     it('is offered to an administrator who manages approvals', async () => {
       const api = useApprovalsApi({
         request: stuck(),
-        can: { 'Approval.manage': true },
+        can: { 'Approval.abandon': true },
       });
       const user = userEvent.setup();
       await renderApp(`/approvals/${REQUEST_ID}`);
@@ -778,7 +778,7 @@ describe('the approval page', () => {
     it('tells the administrator when the outcome is still being applied (409)', async () => {
       useApprovalsApi({
         request: stuck(),
-        can: { 'Approval.manage': true },
+        can: { 'Approval.abandon': true },
       });
       server.use(
         http.post('/v1/approvals/:id/abandon', () =>
@@ -795,7 +795,7 @@ describe('the approval page', () => {
       ).toBeVisible();
     });
 
-    it('is not offered without Approval.manage', async () => {
+    it('is not offered without Approval.abandon', async () => {
       useApprovalsApi({ request: stuck() });
       await renderApp(`/approvals/${REQUEST_ID}`);
       await screen.findByRole('heading', { name: 'Q3 targets' });
@@ -807,7 +807,7 @@ describe('the approval page', () => {
     it('is not offered once the outcome was applied, or while the request is open', async () => {
       useApprovalsApi({
         request: stuck({ outcomeAppliedAt: '2026-10-17T09:00:00.000Z' }),
-        can: { 'Approval.manage': true },
+        can: { 'Approval.abandon': true },
       });
       await renderApp(`/approvals/${REQUEST_ID}`);
       await screen.findByRole('heading', { name: 'Q3 targets' });
@@ -820,7 +820,7 @@ describe('the approval page', () => {
       const now = new Date().toISOString();
       useApprovalsApi({
         request: stuck({ updatedAt: now, endedAt: now }),
-        can: { 'Approval.manage': true },
+        can: { 'Approval.abandon': true },
       });
       await renderApp(`/approvals/${REQUEST_ID}`);
       await screen.findByRole('heading', { name: 'Q3 targets' });
@@ -832,7 +832,7 @@ describe('the approval page', () => {
     it('is not offered for a pending request', async () => {
       useApprovalsApi({
         request: stuck({ status: 'pending' }),
-        can: { 'Approval.manage': true },
+        can: { 'Approval.abandon': true },
       });
       await renderApp(`/approvals/${REQUEST_ID}`);
       await screen.findByRole('heading', { name: 'Q3 targets' });

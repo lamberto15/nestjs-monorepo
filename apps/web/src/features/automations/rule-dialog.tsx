@@ -42,32 +42,30 @@ import {
   type Simulation,
 } from './api';
 
-type ActionType = AutomationAction['type'];
-const ACTION_TYPES: ActionType[] = ['setField', 'addTag', 'notify', 'webhook'];
+/** The built-in actions the form edits; another module's action keeps its type and no parameters here. */
+const ACTION_TYPES = ['setField', 'addTag', 'notify', 'webhook'];
 
 /** One action as the form edits it: every parameter as text. */
 type ActionDraft = {
-  type: ActionType;
+  type: string;
   field: string;
   value: string;
   tagId: string;
   userIds: string;
-  clientId: string;
 };
-type Condition = { key: string; value: string };
 
 const NO_FIELD = '-';
 
+/** A parameter of an action, as text (the API keeps them in an open map). */
+const text = (value: unknown) =>
+  typeof value === 'string' ? value : value == null ? '' : String(value);
+
 const draftOf = (action?: AutomationAction): ActionDraft => ({
   type: action?.type ?? 'setField',
-  field: action?.type === 'setField' ? action.field : '',
-  value:
-    action?.type === 'setField' && action.value !== null
-      ? String(action.value)
-      : '',
-  tagId: action?.type === 'addTag' ? action.tagId : '',
-  userIds: action?.type === 'notify' ? action.userIds.join(', ') : '',
-  clientId: action?.type === 'webhook' ? action.clientId : '',
+  field: text(action?.field),
+  value: text(action?.value),
+  tagId: text(action?.tagId),
+  userIds: Array.isArray(action?.userIds) ? action.userIds.join(', ') : '',
 });
 
 const actionOf = (draft: ActionDraft): AutomationAction => {
@@ -84,8 +82,8 @@ const actionOf = (draft: ActionDraft): AutomationAction => {
           .map((id) => id.trim())
           .filter(Boolean),
       };
-    case 'webhook':
-      return { type: 'webhook', clientId: draft.clientId.trim() };
+    default:
+      return { type: draft.type };
   }
 };
 
@@ -144,8 +142,8 @@ function Text(props: {
 }
 
 /**
- * The rule builder: a trigger on a subject, conditions in the subject's
- * list filters (`title.contains` = `urgent`), and up to 5 actions. "Simulate"
+ * The rule builder: a trigger on a subject, a condition (an expression on
+ * the record: `status == 'overdue'`), and up to 5 actions. "Simulate"
  * shows what the rule would do to the records as they are now, without
  * doing it (the API's evaluator, as the signed-in user); "Save" keeps it as
  * a draft, activated from the list.
@@ -163,9 +161,7 @@ export function RuleDialog(props: {
     rule?.trigger ?? 'created',
   );
   const [field, setField] = useState(rule?.field ?? NO_FIELD);
-  const [conditions, setConditions] = useState<Condition[]>(
-    Object.entries(rule?.filters ?? {}).map(([key, value]) => ({ key, value })),
-  );
+  const [condition, setCondition] = useState(rule?.condition ?? '');
   const [actions, setActions] = useState<ActionDraft[]>(
     rule ? rule.actions.map(draftOf) : [draftOf()],
   );
@@ -177,18 +173,18 @@ export function RuleDialog(props: {
   const chosen =
     subjects.data?.find((s) => s.subject === subject) ??
     (subjects.data?.length === 1 ? subjects.data[0] : undefined);
-  const tags = useTags(chosen?.subject ?? '', !!chosen?.tags);
+  // A subject takes tags when it lists the `addTag` action.
+  const tags = useTags(
+    chosen?.subject ?? '',
+    !!chosen?.actions.some((action) => action.type === 'addTag'),
+  );
 
   const body = (): RuleBody => ({
     name: name.trim(),
     subject: chosen?.subject ?? subject,
     trigger,
     field: trigger === 'updated' && field !== NO_FIELD ? field : null,
-    filters: Object.fromEntries(
-      conditions
-        .filter((c) => c.key.trim())
-        .map((c) => [c.key.trim(), c.value]),
-    ),
+    condition: condition.trim() || null,
     actions: actions.map(actionOf),
   });
 
@@ -272,54 +268,21 @@ export function RuleDialog(props: {
           </div>
 
           <FieldSet>
-            <FieldLegend>{t('builder.conditions')}</FieldLegend>
+            <FieldLegend>{t('builder.condition')}</FieldLegend>
             <p className="text-sm text-muted-foreground">
-              {t('builder.conditionsHint')}
+              {t('builder.conditionHint')}
+              {chosen &&
+                chosen.variables.length > 0 &&
+                ` ${t('builder.variables', {
+                  names: chosen.variables.map((v) => v.name).join(', '),
+                })}`}
             </p>
-            {conditions.map((condition, index) => (
-              <div key={index} className="flex items-end gap-2">
-                <Text
-                  label={t('builder.filter')}
-                  value={condition.key}
-                  placeholder="title.contains"
-                  onChange={(key) =>
-                    setConditions((all) =>
-                      all.map((c, i) => (i === index ? { ...c, key } : c)),
-                    )
-                  }
-                />
-                <Text
-                  label={t('builder.value')}
-                  value={condition.value}
-                  onChange={(value) =>
-                    setConditions((all) =>
-                      all.map((c, i) => (i === index ? { ...c, value } : c)),
-                    )
-                  }
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t('builder.removeCondition')}
-                  onClick={() =>
-                    setConditions((all) => all.filter((_, i) => i !== index))
-                  }
-                >
-                  <Trash2Icon />
-                </Button>
-              </div>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              className="self-start"
-              onClick={() =>
-                setConditions((all) => [...all, { key: '', value: '' }])
-              }
-            >
-              <PlusIcon />
-              {t('builder.addCondition')}
-            </Button>
+            <Text
+              label={t('builder.expression')}
+              value={condition}
+              placeholder="status == 'overdue'"
+              onChange={setCondition}
+            />
           </FieldSet>
 
           <FieldSet>
@@ -336,9 +299,7 @@ export function RuleDialog(props: {
                     value: type,
                     label: t(`action.${type}`),
                   }))}
-                  onChange={(type) =>
-                    patchAction(index, { type: type as ActionType })
-                  }
+                  onChange={(type) => patchAction(index, { type })}
                 />
                 <div className="grid gap-2 sm:grid-cols-2">
                   {action.type === 'setField' && (
@@ -346,7 +307,7 @@ export function RuleDialog(props: {
                       <Choice
                         label={t('builder.setField')}
                         value={action.field}
-                        options={(chosen?.settable ?? []).map((f) => ({
+                        options={(chosen?.fields ?? []).map((f) => ({
                           value: f,
                           label: f,
                         }))}
@@ -377,13 +338,6 @@ export function RuleDialog(props: {
                       label={t('builder.userIds')}
                       value={action.userIds}
                       onChange={(userIds) => patchAction(index, { userIds })}
-                    />
-                  )}
-                  {action.type === 'webhook' && (
-                    <Text
-                      label={t('builder.clientId')}
-                      value={action.clientId}
-                      onChange={(clientId) => patchAction(index, { clientId })}
                     />
                   )}
                 </div>

@@ -162,7 +162,8 @@ export function useEndBreakGlass(id: string) {
 }
 
 /** The formats of a tenant's export (`POST /v1/tenants/{id}/export`). */
-export const TENANT_EXPORT_FORMATS = ['json', 'csv', 'xlsx'] as const;
+// No JSON export: data transfer writes csv and xlsx (PORTING.md).
+export const TENANT_EXPORT_FORMATS = ['csv', 'xlsx'] as const;
 export type TenantExportFormat = (typeof TENANT_EXPORT_FORMATS)[number];
 
 /**

@@ -31,7 +31,7 @@ import type { TransferFormat } from '@/features/transfer/api';
 import { useDateTimeFormat } from '@/lib/date-time';
 import { useIsPast } from '@/lib/use-is-past';
 
-const FORMATS: TransferFormat[] = ['json', 'csv', 'xlsx'];
+const FORMATS: TransferFormat[] = ['csv', 'xlsx'];
 
 /**
  * A copy of everything held about you (`POST /v1/account/export`): the job
@@ -43,7 +43,7 @@ export function ExportSection() {
   const { t } = useTranslation('privacy');
   const { t: tt } = useTranslation('transfer');
   const queryClient = useQueryClient();
-  const [kind, setKind] = useState<TransferFormat>('json');
+  const [kind, setKind] = useState<TransferFormat>('csv');
   const exports = useInfiniteQuery({
     ...accountExportsQuery,
     meta: { errorToast: false },
@@ -68,7 +68,7 @@ export function ExportSection() {
             }))}
             value={kind}
             onValueChange={(value) =>
-              setKind((value ?? 'json') as TransferFormat)
+              setKind((value ?? 'csv') as TransferFormat)
             }
           >
             <SelectTrigger id="account-export-format" className="w-full">

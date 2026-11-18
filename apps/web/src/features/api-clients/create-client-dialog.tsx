@@ -20,21 +20,26 @@ import {
 } from '@/features/access/grants';
 import { RoleGrantsPicker } from '@/features/access/pickers';
 import { applyFieldErrors, errorMessage } from '@/lib/errors';
+import { useFeature } from '@/lib/features';
 import { FormAlert, useAppForm } from '@/lib/form';
 import { z } from '@/lib/zod';
 import { API_CLIENT_LIMITS, type CreateClientBody } from './queries';
 
 /**
- * Name, an optional daily quota and roles (on top of what every client may
- * do, each until a date if wanted); `onCreate` makes the client with all of
- * them in one call.
+ * Name, an optional daily quota (with usage on: it is the usage module's)
+ * and roles (on top of what every client may do, each until a date if
+ * wanted); `onCreate` makes the client with its roles, then sets the quota.
  */
 export function CreateClientDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (body: CreateClientBody) => Promise<unknown>;
+  onCreate: (
+    body: CreateClientBody,
+    dailyQuota: number | null,
+  ) => Promise<unknown>;
 }) {
   const { t } = useTranslation('api-clients');
+  const hasUsage = useFeature('usage');
   const [error, setError] = useState<string>();
   const roles = useQuery({ ...rolesQuery, enabled: props.open });
   const [grants, setGrants] = useState<GrantDraft>({});
@@ -64,14 +69,14 @@ export function CreateClientDialog(props: {
       if (pastEnd) return;
       const { roleIds, roleExpiresAt } = grantsBody(grants);
       try {
-        await props.onCreate({
-          name: value.name.trim(),
-          ...(value.dailyQuota.trim() && {
-            dailyQuota: Number(value.dailyQuota),
-          }),
-          ...(roleIds.length > 0 && { roleIds }),
-          ...(Object.keys(roleExpiresAt).length > 0 && { roleExpiresAt }),
-        });
+        await props.onCreate(
+          {
+            name: value.name.trim(),
+            ...(roleIds.length > 0 && { roleIds }),
+            ...(Object.keys(roleExpiresAt).length > 0 && { roleExpiresAt }),
+          },
+          value.dailyQuota.trim() ? Number(value.dailyQuota) : null,
+        );
         form.reset();
         setGrants({});
         props.onOpenChange(false);
@@ -107,14 +112,16 @@ export function CreateClientDialog(props: {
                 />
               )}
             </form.AppField>
-            <form.AppField name="dailyQuota">
-              {(field) => (
-                <field.TextField
-                  label={t('create.quota')}
-                  description={t('create.quotaHint')}
-                />
-              )}
-            </form.AppField>
+            {hasUsage && (
+              <form.AppField name="dailyQuota">
+                {(field) => (
+                  <field.TextField
+                    label={t('create.quota')}
+                    description={t('create.quotaHint')}
+                  />
+                )}
+              </form.AppField>
+            )}
             {roles.isPending ? (
               <Spinner />
             ) : roles.isError ? (

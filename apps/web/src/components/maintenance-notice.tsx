@@ -32,7 +32,7 @@ export function MaintenanceNotice() {
   const signOut = useSignOut();
   const me = useMe();
   const operator = me?.tenant?.operator === true;
-  const canManage = useCan('Access.manageSettings');
+  const canManage = useCan('Setting.update');
   // Only someone choosing among tenants has a way back (as the sidebar's
   // switcher: not with TENANCY=single, not while impersonating).
   const choosing =

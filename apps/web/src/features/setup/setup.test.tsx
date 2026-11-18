@@ -53,7 +53,7 @@ describe('the organization setup checklist', () => {
     useSignedIn([
       'Access.manageUsers',
       'Access.manageRoles',
-      'Access.manageSettings',
+      'Branding.update',
     ]);
     useTenant({ members: 3, roleKeys: ['administrator'], primaryColor: null });
     await renderApp('/');
@@ -71,7 +71,7 @@ describe('the organization setup checklist', () => {
   });
 
   it('reads the tenant, not the administrator: a second one sees the progress of the first', async () => {
-    useSignedIn(['Access.manageRoles', 'Access.manageSettings']);
+    useSignedIn(['Access.manageRoles', 'Branding.update']);
     useTenant({ roleKeys: ['administrator', null], primaryColor: '#336699' });
     await renderApp('/');
 

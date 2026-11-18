@@ -52,7 +52,7 @@ export const setupSteps: SetupStep[] = [
   {
     id: 'branding',
     to: '/branding',
-    permission: 'Access.manageSettings',
+    permission: 'Branding.update',
     done: async () => {
       const branding = await unwrap(api.GET('/v1/branding'));
       return Boolean(

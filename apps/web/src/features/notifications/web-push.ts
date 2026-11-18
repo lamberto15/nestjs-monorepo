@@ -1,7 +1,7 @@
 /**
  * This browser's Web Push subscription (docs/notifications.md, "Push and
  * SMS"): the service worker (vite-plugin-pwa, with public/push-sw.js) holds
- * it; the API keeps it as a device (`PUT /v1/devices`, platform `web`). The
+ * it; the API keeps it as a device (`PUT /v1/devices`). The
  * device's id is remembered here so "Disable on this browser" removes the
  * right one: the API never returns a token to match it by.
  */

@@ -197,8 +197,8 @@
       "unchanged": "Unchanged"
     },
     "types": {
-      "setting": "Setting",
-      "role": "Role"
+      "settings": "Setting",
+      "roles": "Role"
     }
   }
 }

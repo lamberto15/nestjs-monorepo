@@ -197,6 +197,7 @@ export const bob: Member = {
   ],
   unitIds: [ids.sales],
   managedByScim: false,
+  avatarUrl: null,
 };
 
 export const carol: Member = {

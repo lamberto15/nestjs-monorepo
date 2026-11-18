@@ -74,7 +74,7 @@ export function NavUser() {
               <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
             }
           >
-            <UserAvatar name={user.name} src={user.avatarUrl} />
+            <UserAvatar name={user.name} src={me.avatarUrl} />
             <div className="grid flex-1 text-start text-sm leading-tight">
               <span className="truncate font-medium">{user.name}</span>
               <span className="truncate text-xs">{user.email}</span>

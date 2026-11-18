@@ -318,7 +318,7 @@ function BulkRows(props: { runs: BulkRun[] }) {
           <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="outline">{t('kind.bulk')}</Badge>
             <span className="font-medium">
-              {run.name} · {run.action}
+              {run.subject} · {run.action}
             </span>
           </div>
           <BulkState run={run} />

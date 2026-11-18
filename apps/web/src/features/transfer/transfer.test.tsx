@@ -27,13 +27,13 @@ const catalog = {
       name: 'test-items',
       subject: 'TestItem',
       columns: ['id', 'title', 'createdAt'],
-      formats: ['csv', 'json', 'xlsx'],
+      formats: ['csv', 'xlsx'],
     },
   ],
   imports: [
     {
       name: 'test-items',
-      formats: ['csv', 'json', 'xlsx'],
+      formats: ['csv', 'xlsx'],
       matchKeys: [] as string[],
       columns: [
         { name: 'title', type: 'string', required: true, max: 200 },
@@ -545,7 +545,7 @@ describe('your exports and imports', () => {
       bulk: [
         {
           id: 'b1',
-          name: 'test-items',
+          subject: 'TestItem',
           action: 'delete',
           status: 'completed',
           progress: { processed: 5 },
@@ -622,7 +622,7 @@ describe('your exports and imports', () => {
       bulk: [
         {
           id: 'b1',
-          name: 'test-items',
+          subject: 'TestItem',
           action: 'delete',
           status: 'completed',
           progress: { processed: 5 },
@@ -701,8 +701,8 @@ describe('your exports and imports', () => {
     useSignedIn(ALL);
     const account = {
       ...exported('acc', 'account-export'),
-      format: 'json',
-      result: { rows: 9, url: 'https://files.test/acc.json' },
+      format: 'csv',
+      result: { rows: 9, url: 'https://files.test/acc.csv' },
     };
     const calls = useTransferApi({
       list: [exported('ok', 'good-export')],
@@ -714,8 +714,8 @@ describe('your exports and imports', () => {
       name: 'Account exports',
     });
     expect(
-      await within(accounts).findByRole('link', { name: 'Download (json)' }),
-    ).toHaveAttribute('href', 'https://files.test/acc.json');
+      await within(accounts).findByRole('link', { name: 'Download (csv)' }),
+    ).toHaveAttribute('href', 'https://files.test/acc.csv');
     expect(within(accounts).getByText('Account export')).toBeVisible();
     expect(screen.getByText('good-export')).toBeVisible();
 

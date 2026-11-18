@@ -55,18 +55,18 @@ const queue = (name: string, failed: number) => ({
   name,
   paused: false,
   counts: { waiting: 1, active: 2, delayed: 3, completed: 40, failed },
-  recentFailures: failed
-    ? [
-        {
-          id: '7',
-          name: 'send',
-          attempts: 3,
-          reason: '<b>boom</b>',
-          failedAt: '2026-10-20T08:00:00.000Z',
-        },
-      ]
-    : [],
+  workers: 1,
 });
+
+const failedJob = {
+  id: '7',
+  name: 'send',
+  tenantId: null,
+  attempts: 3,
+  reason: '<b>boom</b>',
+  queuedAt: '2026-10-20T07:00:00.000Z',
+  finishedAt: '2026-10-20T08:00:00.000Z',
+};
 
 const letter = (id: string, topic: string) => ({
   id,
@@ -99,8 +99,10 @@ function api(
         ...signedInUser,
         tenant: { ...signedInUser.tenant!, operator: options.operator ?? true },
         can: {
-          'Ops.view': options.view ?? true,
-          'Ops.manage': options.manage ?? true,
+          'Access.viewOps': options.view ?? true,
+          'Access.retryJobs': options.manage ?? true,
+          'Access.discardJobs': options.manage ?? true,
+          'Access.testIntegrations': options.manage ?? true,
         },
       }),
     ),
@@ -116,6 +118,9 @@ function api(
         items: [queue('mail', 2), queue('bulk', 0)],
       });
     }),
+    http.get('/v1/ops/queues/:name/jobs', () =>
+      HttpResponse.json({ items: [failedJob] }),
+    ),
     http.post('/v1/ops/queues/:name/retry-failed', ({ params }) => {
       state.retried.push(String(params.name));
       return HttpResponse.json({ retried: 2 });
@@ -131,18 +136,8 @@ function api(
           pending: {
             total: 3,
             groups: [
-              {
-                topic: 'notifications.deliver',
-                type: 'note.published',
-                count: 2,
-                mandatory: false,
-              },
-              {
-                topic: 'notifications.deliver',
-                type: 'security.passwordChanged',
-                count: 1,
-                mandatory: true,
-              },
+              { topic: 'notification.stored', count: 2 },
+              { topic: 'mail.send', count: 1 },
             ],
           },
           deadLetters: { total: 0, groups: [] },
@@ -174,32 +169,29 @@ function api(
       state.asked += 1;
       state.outboxReads += 1;
       return HttpResponse.json({
-        stats: {
-          pending: 4,
-          ready: 3,
-          leased: 1,
-          deadLetters: state.letters.length,
-          oldestDueAt: null,
-          lagMs: 4200,
-          inFlight: 1,
-        },
-        deadLetters: state.letters,
-        notifications: { undelivered: 6, undeliveredCapped: false },
-        canManage: true,
+        pending: 4,
+        ready: 3,
+        leased: 1,
+        deadLetters: state.letters.length,
+        lagMs: 4200,
+        inFlight: 1,
       });
     }),
-    http.post('/v1/ops/dead-letters/requeue', async ({ request }) => {
+    http.get('/v1/ops/dead-letters', () =>
+      HttpResponse.json({ items: state.letters }),
+    ),
+    http.post('/v1/ops/dead-letters/retry', async ({ request }) => {
       const body = (await request.json()) as { ids?: string[] };
       state.requeued.push(body);
-      return HttpResponse.json({ requeued: body.ids?.length ?? 2 });
+      return HttpResponse.json({ retried: body.ids?.length ?? 2 });
     }),
-    http.post('/v1/ops/dead-letters/purge', async ({ request }) => {
+    http.post('/v1/ops/dead-letters/discard', async ({ request }) => {
       const body = (await request.json()) as { ids?: string[] };
       state.purged.push(body);
       state.letters = body.ids
         ? state.letters.filter((l) => !body.ids!.includes(l.id))
         : [];
-      return HttpResponse.json({ purged: body.ids?.length ?? 2 });
+      return HttpResponse.json({ discarded: body.ids?.length ?? 2 });
     }),
   );
   return state;
@@ -230,7 +222,11 @@ describe('queues', () => {
     await renderApp('/ops');
     // Only the queue with failures offers it.
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Retry failed' }),
+      await screen.findByRole(
+        'button',
+        { name: 'Retry failed' },
+        { timeout: 15_000 },
+      ),
     );
     const dialog = await screen.findByRole('alertdialog');
     expect(state.retried).toEqual([]);
@@ -245,7 +241,11 @@ describe('queues', () => {
     const state = api();
     await renderApp('/ops');
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Pause mail' }),
+      await screen.findByRole(
+        'button',
+        { name: 'Pause mail' },
+        { timeout: 15_000 },
+      ),
     );
     const dialog = await screen.findByRole('alertdialog');
     await userEvent.click(
@@ -254,7 +254,7 @@ describe('queues', () => {
     await waitFor(() => expect(state.paused).toEqual(['mail']));
   });
 
-  it('offers no retry without Ops.manage', async () => {
+  it('offers no retry without Access.retryJobs', async () => {
     api({ manage: false });
     await renderApp('/ops');
     await screen.findByText('mail');
@@ -271,7 +271,7 @@ describe('backlog', () => {
     expect(count).toBeDisabled();
     await userEvent.type(screen.getByLabelText('Tenant ID'), 't-1');
     await userEvent.type(
-      screen.getByLabelText('Notification type'),
+      screen.getByLabelText('Outbox topic'),
       'note.published',
     );
     await userEvent.click(count);
@@ -281,10 +281,8 @@ describe('backlog', () => {
       ),
     ).toBeVisible();
     expect(state.previews).toEqual([
-      { tenantId: 't-1', type: 'note.published' },
+      { tenantId: 't-1', topic: 'note.published' },
     ]);
-    // The mandatory type is marked as kept.
-    expect(screen.getByText('Kept')).toBeVisible();
     expect(screen.getByText('NotificationMail')).toBeVisible();
 
     await userEvent.click(
@@ -297,12 +295,18 @@ describe('backlog', () => {
     );
     expect(await findToast('Discarded: 10002.')).toBeVisible();
     expect(state.discards).toEqual([
-      { target: 'outbox', scope: { tenantId: 't-1', type: 'note.published' } },
-      { target: 'outbox', scope: { tenantId: 't-1', type: 'note.published' } },
+      {
+        target: 'outbox',
+        scope: { tenantId: 't-1', topic: 'note.published' },
+      },
+      {
+        target: 'outbox',
+        scope: { tenantId: 't-1', topic: 'note.published' },
+      },
     ]);
   });
 
-  it('asks for every tenant explicitly, and offers no action without Ops.manage', async () => {
+  it('asks for every tenant explicitly, and offers no action without Access.discardJobs and retryJobs', async () => {
     const state = api({ manage: false });
     await renderApp('/ops');
     await openTab('Backlog');
@@ -319,7 +323,7 @@ describe('backlog', () => {
 });
 
 describe('diagnostics', () => {
-  it('shows each integration with its state and hint, and runs a safe test', async () => {
+  it('shows each integration with its state, and runs a safe test', async () => {
     api();
     const tested: string[] = [];
     server.use(
@@ -327,41 +331,39 @@ describe('diagnostics', () => {
         HttpResponse.json({
           items: [
             {
-              check: 'workers',
+              name: 'workers',
               state: 'unavailable',
               driver: 'bullmq',
               detail: 'No worker is connected to any queue.',
-              hint: 'Start a worker process.',
               testable: true,
             },
             {
-              check: 'realtime',
-              state: 'disabled',
-              driver: null,
+              name: 'storage',
+              state: 'configured',
+              driver: 's3',
               detail: null,
-              hint: 'REALTIME=off',
               testable: false,
             },
           ],
-          canTest: true,
         }),
       ),
       http.post('/v1/ops/diagnostics/:check/test', ({ params }) => {
         tested.push(String(params.check));
         return HttpResponse.json({
-          check: params.check,
+          name: params.check,
           ok: true,
           durationMs: 12,
           detail: null,
-          hint: null,
         });
       }),
     );
     await renderApp('/ops');
     await openTab('Diagnostics');
     expect(await screen.findByText('Unavailable')).toBeInTheDocument();
-    expect(screen.getByText('Disabled')).toBeInTheDocument();
-    expect(screen.getByText('Start a worker process.')).toBeInTheDocument();
+    expect(screen.getByText('Configured')).toBeInTheDocument();
+    expect(
+      screen.getByText('No worker is connected to any queue.'),
+    ).toBeInTheDocument();
     // Only the testable one offers a test.
     const buttons = screen.getAllByRole('button', { name: 'Test' });
     expect(buttons).toHaveLength(1);
@@ -377,7 +379,6 @@ describe('outbox', () => {
     await renderApp('/ops');
     await openTab('Outbox');
     expect(await screen.findByText('4.2 s')).toBeInTheDocument();
-    expect(screen.getByText('Undelivered notifications')).toBeInTheDocument();
     expect(await screen.findByText('orders.created')).toBeInTheDocument();
     expect(screen.getByText('mail.send')).toBeInTheDocument();
   });
@@ -588,7 +589,7 @@ describe('gating', () => {
     expect(screen.queryByRole('link', { name: 'Operations' })).toBeNull();
   });
 
-  it('has no page without Ops.view', async () => {
+  it('has no page without Access.viewOps', async () => {
     const state = api({ view: false });
     await renderApp('/ops');
     await screen.findByText(/not found|doesn.t exist/i);
@@ -600,8 +601,8 @@ describe('gating', () => {
       visibleGroups(nav, allFeatures, can, false, operatorTenant)
         .flatMap((g) => g.items)
         .map((i) => i.to);
-    expect(paths({ 'Ops.view': true }, true)).toContain('/ops');
-    expect(paths({ 'Ops.view': true }, false)).not.toContain('/ops');
+    expect(paths({ 'Access.viewOps': true }, true)).toContain('/ops');
+    expect(paths({ 'Access.viewOps': true }, false)).not.toContain('/ops');
     expect(paths({}, true)).not.toContain('/ops');
   });
 });

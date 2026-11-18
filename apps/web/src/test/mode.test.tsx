@@ -295,7 +295,7 @@ describe('a deployment in maintenance', () => {
   });
 
   it('lets an operator who manages settings end it from the notice', async () => {
-    const { state } = useDeployment('maintenance', ['Access.manageSettings']);
+    const { state } = useDeployment('maintenance', ['Setting.update']);
     const removed: string[] = [];
     server.use(
       http.delete('/v1/settings/:key/platform', ({ params }) => {
@@ -317,7 +317,7 @@ describe('a deployment in maintenance', () => {
   it('says it is still on when the environment sets the mode (APP_MODE)', async () => {
     // The API answers 204 whatever it removed: the stored value goes (or
     // there is none), the environment's mode stays.
-    useDeployment('maintenance', ['Access.manageSettings']);
+    useDeployment('maintenance', ['Setting.update']);
     let removed = 0;
     server.use(
       http.delete('/v1/settings/:key/platform', () => {
@@ -356,9 +356,7 @@ describe('a deployment in maintenance', () => {
     /** Maintenance, signed in to `acting` (one of the two tenants); a switch changes it. */
     function useTwoTenants(acting: 'client' | 'operator') {
       const state = { acting };
-      const deployment = useDeployment('maintenance', [
-        'Access.manageSettings',
-      ]);
+      const deployment = useDeployment('maintenance', ['Setting.update']);
       const switched: string[] = [];
       server.use(
         http.get('/v1/auth/me', () => {
@@ -367,7 +365,7 @@ describe('a deployment in maintenance', () => {
           return HttpResponse.json({
             ...signedInUser,
             tenant,
-            can: { 'Access.manageSettings': true },
+            can: { 'Setting.update': true },
           });
         }),
         http.get('/v1/auth/tenants', () =>

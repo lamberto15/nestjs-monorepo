@@ -56,8 +56,9 @@ function api(
         ...signedInUser,
         tenant: { ...signedInUser.tenant!, operator: options.operator ?? true },
         can: {
-          'MailSuppression.view': options.view ?? true,
-          'MailSuppression.manage': options.manage ?? true,
+          'MailSuppression.read': options.view ?? true,
+          'MailSuppression.create': options.manage ?? true,
+          'MailSuppression.delete': options.manage ?? true,
         },
       }),
     ),
@@ -181,7 +182,7 @@ describe('mail suppressions: who sees it', () => {
     ).toBeNull();
   });
 
-  it('is no page without MailSuppression.view', async () => {
+  it('is no page without MailSuppression.read', async () => {
     const state = api({ view: false });
     await renderApp('/mail-suppressions');
     expect(
@@ -204,7 +205,7 @@ describe('mail suppressions: who sees it', () => {
     ).toBeInTheDocument();
   });
 
-  it('hides adding and removing without MailSuppression.manage', async () => {
+  it('hides adding and removing without MailSuppression.create and delete', async () => {
     api({ manage: false });
     await renderApp('/mail-suppressions');
     await screen.findByText('person1@example.com');
@@ -217,7 +218,7 @@ describe('mail suppressions: who sees it', () => {
       visibleGroups(nav, allFeatures, can, false, operatorTenant)
         .flatMap((group) => group.items)
         .map((item) => item.to);
-    const view = { 'MailSuppression.view': true };
+    const view = { 'MailSuppression.read': true };
     expect(items(true, view)).toContain('/mail-suppressions');
     expect(items(false, view)).not.toContain('/mail-suppressions');
     expect(items(true, {})).not.toContain('/mail-suppressions');

@@ -109,7 +109,7 @@ export function DataQualityPage() {
 /** The last scan: when, how far, and a button to scan again. */
 function ScanCard({ scan }: { scan: DataQualityScan | null }) {
   const { t } = useTranslation('data-quality');
-  const canManage = useCan('DataQuality.manage');
+  const canManage = useCan('DataQuality.scan');
   const start = useStartScan();
   const running = scan?.status === 'queued' || scan?.status === 'running';
 
@@ -212,7 +212,7 @@ function Findings({ subject }: { subject: string }) {
 
 function FindingRow({ finding }: { finding: DataQualityFinding }) {
   const { t } = useTranslation('data-quality');
-  const canManage = useCan('DataQuality.manage');
+  const canManage = useCan('DataQuality.resolve');
   const dismiss = useDismissFinding();
   const recheck = useRecheckFinding();
   const problem = t(`check.${finding.check}`, {

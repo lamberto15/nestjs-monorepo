@@ -41,10 +41,10 @@ type JsonBody<T> = T extends {
  */
 export const API_CLIENT_LIMITS = { name: 80 } as const;
 
-/** What a create sends: the name, its daily quota and roles, at once. */
+/** What a create sends: the name and roles, at once (the quota is usage's: useSetQuota). */
 export type CreateClientBody = JsonBody<paths['/v1/access/clients']['post']>;
 
-/** What a PATCH changes: active, the quota, the roles and their ends. */
+/** What a PATCH changes: active, the allowlist, the roles and their ends. */
 export type ClientChanges = JsonBody<paths['/v1/access/clients/{id}']['patch']>;
 
 /** Per UTC day and route, `from` to `to` included (yyyy-mm-dd). */
@@ -116,6 +116,30 @@ export function useRotateKey(id: string) {
         }),
       ),
     onSettled: refresh,
+  });
+}
+
+/**
+ * Sets or removes (null) a client's daily request quota: the usage module's
+ * (`PUT /v1/access/clients/{id}/daily-quota`, USAGE=on), not the client's.
+ */
+export function useSetQuota() {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: ({
+      id,
+      dailyQuota,
+    }: {
+      id: string;
+      dailyQuota: number | null;
+    }) =>
+      unwrap(
+        api.PUT('/v1/access/clients/{id}/daily-quota', {
+          params: { path: { id } },
+          body: { dailyQuota },
+        }),
+      ),
+    onSuccess: refresh,
   });
 }
 

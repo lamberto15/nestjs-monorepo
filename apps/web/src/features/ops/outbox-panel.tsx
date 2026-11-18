@@ -22,6 +22,7 @@ import { errorMessage } from '@/lib/errors';
 import { useCan } from '@/lib/features';
 import { FormAlert } from '@/lib/form';
 import {
+  opsDeadLettersQuery,
   opsOutboxQuery,
   usePurgeDeadLetters,
   useRequeueDeadLetters,
@@ -39,16 +40,19 @@ export function formatLag(ms: number): string {
 export function OutboxPanel() {
   const { t } = useTranslation('ops');
   const outbox = useQuery(opsOutboxQuery);
+  const letters = useQuery(opsDeadLettersQuery);
   const requeue = useRequeueDeadLetters();
   const purge = usePurgeDeadLetters();
-  const canManage = useCan('Ops.manage');
-  if (outbox.isPending) {
+  const canManage = useCan('Access.retryJobs');
+  const canDiscard = useCan('Access.discardJobs');
+  if (outbox.isPending || letters.isPending) {
     return <Spinner />;
   }
-  if (outbox.isError) {
-    return <FormAlert message={errorMessage(outbox.error)} />;
+  if (outbox.isError || letters.isError) {
+    return <FormAlert message={errorMessage(outbox.error ?? letters.error)} />;
   }
-  const { stats, deadLetters, notifications } = outbox.data;
+  const stats = outbox.data;
+  const deadLetters = letters.data.items;
   const counters = [
     ['pending', stats.pending],
     ['ready', stats.ready],
@@ -56,12 +60,6 @@ export function OutboxPanel() {
     ['inFlight', stats.inFlight],
     ['deadLetters', stats.deadLetters],
     ['lag', formatLag(stats.lagMs)],
-    [
-      'undelivered',
-      notifications.undeliveredCapped
-        ? `${notifications.undelivered.toLocaleString('en-US')}+`
-        : notifications.undelivered,
-    ],
   ] as const;
   const requeued = (count: number) =>
     toast.success(t('outbox.requeued', { count }));
@@ -82,38 +80,38 @@ export function OutboxPanel() {
           {t('outbox.deadLetters')}
         </h2>
         {canManage && stats.deadLetters > 0 && (
-          <>
-            <ConfirmButton
-              // /v1/ops answers in read-only and maintenance mode too.
-              allowInMaintenance
-              onOpen={() => void outbox.refetch()}
-              title={t('outbox.requeueAllTitle')}
-              description={t('outbox.requeueAllDescription', {
-                count: stats.deadLetters,
-              })}
-              confirm={t('outbox.requeueAll')}
-              onConfirm={async () =>
-                requeued((await requeue.mutateAsync(undefined)).requeued)
-              }
-            >
-              {t('outbox.requeueAll')}
-            </ConfirmButton>
-            <ConfirmButton
-              variant="destructive"
-              allowInMaintenance
-              onOpen={() => void outbox.refetch()}
-              title={t('outbox.purgeAllTitle')}
-              description={t('outbox.purgeAllDescription', {
-                count: stats.deadLetters,
-              })}
-              confirm={t('outbox.purgeAll')}
-              onConfirm={async () =>
-                purged((await purge.mutateAsync(undefined)).purged)
-              }
-            >
-              {t('outbox.purgeAll')}
-            </ConfirmButton>
-          </>
+          <ConfirmButton
+            // /v1/ops answers in read-only and maintenance mode too.
+            allowInMaintenance
+            onOpen={() => void outbox.refetch()}
+            title={t('outbox.requeueAllTitle')}
+            description={t('outbox.requeueAllDescription', {
+              count: stats.deadLetters,
+            })}
+            confirm={t('outbox.requeueAll')}
+            onConfirm={async () =>
+              requeued((await requeue.mutateAsync(undefined)).retried)
+            }
+          >
+            {t('outbox.requeueAll')}
+          </ConfirmButton>
+        )}
+        {canDiscard && stats.deadLetters > 0 && (
+          <ConfirmButton
+            variant="destructive"
+            allowInMaintenance
+            onOpen={() => void outbox.refetch()}
+            title={t('outbox.purgeAllTitle')}
+            description={t('outbox.purgeAllDescription', {
+              count: stats.deadLetters,
+            })}
+            confirm={t('outbox.purgeAll')}
+            onConfirm={async () =>
+              purged((await purge.mutateAsync(undefined)).discarded)
+            }
+          >
+            {t('outbox.purgeAll')}
+          </ConfirmButton>
         )}
       </div>
       {deadLetters.length === 0 ? (
@@ -157,8 +155,8 @@ export function OutboxPanel() {
                     {formatDateTime(new Date(letter.failedAt).toISOString())}
                   </TableCell>
                   <TableCell className="text-end">
-                    {canManage && (
-                      <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-2">
+                      {canManage && (
                         <ConfirmButton
                           size="sm"
                           allowInMaintenance
@@ -169,12 +167,14 @@ export function OutboxPanel() {
                           confirm={t('outbox.requeue')}
                           onConfirm={async () =>
                             requeued(
-                              (await requeue.mutateAsync([letter.id])).requeued,
+                              (await requeue.mutateAsync([letter.id])).retried,
                             )
                           }
                         >
                           {t('outbox.requeue')}
                         </ConfirmButton>
+                      )}
+                      {canDiscard && (
                         <ConfirmButton
                           size="sm"
                           variant="destructive"
@@ -186,14 +186,14 @@ export function OutboxPanel() {
                           confirm={t('outbox.purge')}
                           onConfirm={async () =>
                             purged(
-                              (await purge.mutateAsync([letter.id])).purged,
+                              (await purge.mutateAsync([letter.id])).discarded,
                             )
                           }
                         >
                           {t('outbox.purge')}
                         </ConfirmButton>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

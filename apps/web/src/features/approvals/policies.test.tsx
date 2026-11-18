@@ -34,11 +34,7 @@ const view = (over: Record<string, unknown> = {}) => ({
   source: 'code',
   policy: policyOf(),
   default: policyOf(),
-  setting: 'testItems.publishApproval',
-  payloadSchema: {
-    type: 'object',
-    properties: { title: { type: 'string' }, amount: { type: 'number' } },
-  },
+  flag: 'testItems.publishApproval',
   ...over,
 });
 
@@ -362,10 +358,6 @@ describe('editing a policy', () => {
       screen.getByRole('switch', { name: 'Only when a condition holds' }),
     );
     const condition = await screen.findByRole('group', { name: 'Condition' });
-    // The fields of the proposed change are listed to write the path from.
-    expect(
-      screen.getByText(/Fields of the proposed change: title, amount/),
-    ).toBeVisible();
     await user.type(within(condition).getByLabelText('Path'), 'amount');
     await user.click(
       within(condition).getByRole('combobox', { name: 'Comparison' }),

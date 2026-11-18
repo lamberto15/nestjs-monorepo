@@ -116,14 +116,14 @@ export function DomainsSection(props: { locked: boolean }) {
           {errorMessage(domains.error)}
         </p>
       )}
-      {domains.isSuccess && domains.data.domains.length === 0 && (
+      {domains.isSuccess && domains.data.items.length === 0 && (
         <p role="status" className="text-sm text-muted-foreground">
           {t('domains.none')}
         </p>
       )}
       {domains.isSuccess && (
         <ul className="flex flex-col gap-3">
-          {domains.data.domains.map((item) => (
+          {domains.data.items.map((item) => (
             <DomainItem
               key={item.id}
               item={item}
@@ -151,7 +151,7 @@ export function DomainsSection(props: { locked: boolean }) {
 }
 
 function DomainItem(props: {
-  item: Domains['domains'][number];
+  item: Domains['items'][number];
   locked: boolean;
   checking: boolean;
   onVerify: () => void;

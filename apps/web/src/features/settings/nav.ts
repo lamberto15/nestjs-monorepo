@@ -7,5 +7,5 @@ export default {
   to: '/settings',
   label: 'settings:nav',
   icon: SlidersHorizontalIcon,
-  permission: 'Access.manageSettings',
+  permission: 'Setting.read',
 } satisfies NavContribution;

@@ -4,6 +4,6 @@ import { BrandingPage } from '@/features/branding/branding-page';
 
 // Hiding the menu entry is for the user; the route refuses too.
 export const Route = createFileRoute('/_app/branding')({
-  beforeLoad: requirePermission('Access.manageSettings'),
+  beforeLoad: requirePermission('Branding.update'),
   component: BrandingPage,
 });

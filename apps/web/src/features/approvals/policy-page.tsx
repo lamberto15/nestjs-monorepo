@@ -165,10 +165,6 @@ function PolicyForm(props: {
   });
   useUnsavedChangesGuard(form);
 
-  const payloadFields = Object.keys(
-    (policy.payloadSchema.properties as Record<string, unknown> | undefined) ??
-      {},
-  );
   const whenIssues = issues.filter((issue) => issue.path.startsWith('when'));
   const otherIssues = issues.filter(
     (issue) =>
@@ -184,9 +180,9 @@ function PolicyForm(props: {
           <>
             <code>{policy.key}</code>
             {policy.description && ` · ${policy.description}`}
-            {policy.setting && (
+            {policy.flag && (
               <span className="block">
-                {t('policies.setting')} <code>{policy.setting}</code>
+                {t('policies.flag')} <code>{policy.flag}</code>
               </span>
             )}
           </>
@@ -268,8 +264,6 @@ function PolicyForm(props: {
                         </FieldLabel>
                         <FieldDescription>
                           {t('policies.when.hint')}
-                          {payloadFields.length > 0 &&
-                            ` ${t('policies.when.fields', { fields: payloadFields.join(', ') })}`}
                         </FieldDescription>
                       </div>
                     </Field>

@@ -44,7 +44,7 @@ export function AvatarSection({ me }: { me: Me }) {
       toast.success(t('account.avatar.removed'));
     },
   });
-  const avatarLabel = user.avatarUrl
+  const avatarLabel = me.avatarUrl
     ? t('account.avatar.change')
     : t('account.avatar.choose');
   return (
@@ -53,7 +53,7 @@ export function AvatarSection({ me }: { me: Me }) {
         size="lg"
         className="size-16"
         name={user.name}
-        src={user.avatarUrl}
+        src={me.avatarUrl}
       />
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
@@ -108,7 +108,7 @@ export function AvatarSection({ me }: { me: Me }) {
               {avatarLabel}
             </FileUploadTrigger>
           </FileUpload>
-          {user.avatarUrl && (
+          {me.avatarUrl && (
             <Button
               variant="ghost"
               size="sm"

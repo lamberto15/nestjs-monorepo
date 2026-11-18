@@ -72,13 +72,6 @@ export const accountExportsQuery = infiniteQueryOptions({
     ),
 });
 
-/**
- * `POST /v1/account/export`: 202 with `{ id, status }`. The OpenAPI document
- * describes no body for the 202, so the type is written here.
- */
-export async function startAccountExport(format: TransferFormat) {
-  const started = (await unwrap(
-    api.POST('/v1/account/export', { body: { format } }),
-  )) as unknown as { id: string; status: string };
-  return started;
-}
+/** `POST /v1/account/export`: 202 with `{ id, status }`. */
+export const startAccountExport = (format: TransferFormat) =>
+  unwrap(api.POST('/v1/account/export', { body: { format } }));

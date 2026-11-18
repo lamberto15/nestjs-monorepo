@@ -7,5 +7,5 @@ export default {
   to: '/branding',
   label: 'branding:nav',
   icon: PaletteIcon,
-  permission: 'Access.manageSettings',
+  permission: 'Branding.update',
 } satisfies NavContribution;

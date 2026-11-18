@@ -141,22 +141,14 @@ export function UsagePage(props: { client?: string; days: UsageRange }) {
               </Select>
             </div>
           </div>
-          <UsageReport
-            id={selected.id}
-            days={props.days}
-            quota={selected.dailyQuota}
-          />
+          <UsageReport id={selected.id} days={props.days} />
         </>
       )}
     </Page>
   );
 }
 
-function UsageReport(props: {
-  id: string;
-  days: UsageRange;
-  quota: number | null;
-}) {
+function UsageReport(props: { id: string; days: UsageRange }) {
   const { t } = useTranslation('api-clients');
   const { from, to } = useMemo(() => rangeFor(props.days), [props.days]);
   const usage = useQuery(usageQuery(props.id, from, to));
@@ -172,7 +164,7 @@ function UsageReport(props: {
   const today = usage.data.days.find((entry) => entry.day === to)?.total ?? 0;
   const routes = byRoute(usage.data);
   const total = usage.data.total;
-  const quota = props.quota;
+  const quota = usage.data.dailyQuota;
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-3">

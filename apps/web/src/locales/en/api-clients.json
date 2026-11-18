@@ -11,13 +11,11 @@
     "columns": {
       "name": "Name",
       "status": "Status",
-      "quota": "Daily quota",
       "keys": "Active keys",
       "lastUsed": "Last used"
     },
     "open": "Open",
-    "never": "Never",
-    "noQuota": "None"
+    "never": "Never"
   },
   "status": {
     "active": "Active",

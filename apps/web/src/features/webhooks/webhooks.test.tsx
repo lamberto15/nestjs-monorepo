@@ -153,7 +153,7 @@ function api(
     http.get('/v1/auth/me', () =>
       HttpResponse.json({
         ...signedInUser,
-        can: { 'Access.manageClients': options.can ?? true },
+        can: { 'Webhooks.manageEndpoints': options.can ?? true },
       }),
     ),
     http.get('/v1/features', () =>

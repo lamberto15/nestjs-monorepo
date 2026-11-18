@@ -20,7 +20,7 @@ export const APPLY_GRACE_MS = 20 * 60 * 1000;
  * - approve, reject, and ask for changes (`can.decide`: the approver);
  * - resubmit (`can.resubmit`: the requester, after changes were asked);
  * - cancel (`can.cancel`);
- * - abandon: `Approval.manage`, for an approved request whose outcome was
+ * - abandon: `Approval.abandon`, for an approved request whose outcome was
  *   never applied. The API has no `can` for it (it refuses a request whose
  *   workflow still runs or retries, 409 `approval_not_stuck`, and the
  *   dialog says so), so the button follows the permission and the request's
@@ -44,7 +44,7 @@ export function ApprovalActions(props: {
 }) {
   const { t } = useTranslation('approvals');
   const impersonating = !!useMe()?.user.impersonator;
-  const manages = useCan('Approval.manage');
+  const manages = useCan('Approval.abandon');
   const [target, setTarget] = useState<DecisionTarget | null>(null);
   const { approval } = props;
   const open = (decision: DecisionTarget['decision']) =>

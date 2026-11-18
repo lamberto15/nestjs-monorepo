@@ -39,7 +39,7 @@ const STATUS_VARIANT = {
 export function AutomationsPage() {
   const { t } = useTranslation('automations');
   const format = useDateTimeFormat();
-  const manage = useCan('AutomationRule.manage');
+  const manage = useCan('AutomationRule.configure');
   const list = useInfiniteQuery({
     ...rulesQuery(),
     meta: { errorToast: false },

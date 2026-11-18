@@ -25,7 +25,7 @@ import { useFlag } from './use-flag';
 
 const admin = {
   ...signedInUser,
-  can: { 'Access.manageSettings': true, 'Access.manageUsers': true },
+  can: { 'Setting.read': true, 'Access.manageUsers': true },
 };
 
 // A setting as GET /v1/settings describes it (docs/settings.md): its type,
@@ -212,7 +212,7 @@ describe('gating', () => {
         g.items.map((i) => i.to),
       );
     expect(names({})).not.toContain('/settings');
-    expect(names({ 'Access.manageSettings': true })).toContain('/settings');
+    expect(names({ 'Setting.read': true })).toContain('/settings');
   });
 
   it('sends a user without the permission away from the route', async () => {
@@ -465,7 +465,7 @@ describe('admin settings', () => {
   it('searches members, never the principals, for whoever only manages settings', async () => {
     const settingsOnly = {
       ...signedInUser,
-      can: { 'Access.manageSettings': true },
+      can: { 'Setting.read': true },
     };
     api(settingsOnly);
     const refused: string[] = [];
@@ -1303,7 +1303,7 @@ describe('promoting configuration', () => {
     contents: { settings: [], roles: [] },
   };
 
-  it('needs Access.manageRoles too', async () => {
+  it('needs ConfigBundle.export too', async () => {
     api(admin);
     await renderApp('/settings');
     await screen.findByText('Rich text editor');
@@ -1312,7 +1312,7 @@ describe('promoting configuration', () => {
 
   it('previews a loaded bundle, then applies it with the preview version', async () => {
     const applied: unknown[] = [];
-    api({ ...admin, can: { ...admin.can, 'Access.manageRoles': true } });
+    api({ ...admin, can: { ...admin.can, 'ConfigBundle.export': true } });
     server.use(
       http.post('/v1/config-bundles/preview', () =>
         HttpResponse.json({
@@ -1320,8 +1320,8 @@ describe('promoting configuration', () => {
           errors: [],
           warnings: [{ ref: 'Editors', message: 'Check the unit.' }],
           changes: [
-            { type: 'role', ref: 'Editors', action: 'create' },
-            { type: 'setting', ref: 'x.y', action: 'unchanged' },
+            { section: 'roles', ref: 'Editors', action: 'create' },
+            { section: 'settings', ref: 'x.y', action: 'unchanged' },
           ],
           targetVersion: `sha256:${'b'.repeat(64)}`,
         }),

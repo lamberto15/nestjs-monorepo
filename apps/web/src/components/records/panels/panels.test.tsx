@@ -1487,10 +1487,6 @@ describe('the panels on a record', () => {
           ],
           result: { title: 'Acme', body: 'Old' },
           moves: {
-            tags: 1,
-            comments: 2,
-            attachments: 0,
-            watchers: 1,
             references: [{ subject: 'TestItem', field: 'parentId', count: 3 }],
           },
         }),
@@ -1508,9 +1504,7 @@ describe('the panels on a record', () => {
     );
     const dialog = await screen.findByRole('dialog');
     expect(
-      await within(dialog).findByText(
-        'Moves here: 1 tags, 2 comments, 0 attachments, 3 references.',
-      ),
+      await within(dialog).findByText('Moves here: 3 references.'),
     ).toBeVisible();
     // Only the fields that differ are offered.
     await userEvent.click(

@@ -157,13 +157,17 @@ export function ConfigBundleCard() {
               <ul className="flex flex-col gap-1 text-sm">
                 {changes.map((change) => (
                   <li
-                    key={`${change.type}:${change.ref}`}
+                    key={`${change.section}:${change.ref}`}
                     className="flex gap-2"
                   >
                     <Badge variant="outline">
                       {t(`bundle.actions.${change.action}`)}
                     </Badge>
-                    <span>{t(`bundle.types.${change.type}`)}</span>
+                    <span>
+                      {t(`bundle.types.${change.section}`, {
+                        defaultValue: change.section,
+                      })}
+                    </span>
                     <span className="font-mono">{change.ref}</span>
                   </li>
                 ))}

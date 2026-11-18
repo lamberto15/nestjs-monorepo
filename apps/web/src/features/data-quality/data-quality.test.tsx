@@ -7,7 +7,7 @@ import { findToast } from '@/test/toast';
 import { useDataQualityApi } from './test/data-quality-api';
 
 const READER = ['DataQuality.read'];
-const MANAGER = ['DataQuality.read', 'DataQuality.manage'];
+const MANAGER = ['DataQuality.read', 'DataQuality.scan', 'DataQuality.resolve'];
 
 describe('gating', () => {
   it('has a menu entry only with the permission', () => {

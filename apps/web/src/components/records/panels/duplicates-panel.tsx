@@ -205,9 +205,6 @@ function MergeDialog(props: {
             {moves && (
               <p className="text-muted-foreground">
                 {t('duplicates.moves', {
-                  tags: moves.tags,
-                  comments: moves.comments,
-                  attachments: moves.attachments,
                   references: moves.references.reduce(
                     (sum, reference) => sum + reference.count,
                     0,

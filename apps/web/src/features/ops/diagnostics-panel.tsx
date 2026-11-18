@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { errorMessage } from '@/lib/errors';
+import { useCan } from '@/lib/features';
 import { FormAlert } from '@/lib/form';
 import {
   opsDiagnosticsQuery,
@@ -24,42 +25,45 @@ import {
 const variant = (state: Diagnostic['state']) =>
   state === 'ok'
     ? 'default'
-    : state === 'unavailable' || state === 'unconfigured'
+    : state === 'unavailable'
       ? 'destructive'
       : 'outline';
 
 /**
  * The integrations (database, Redis, workers, mail, storage, realtime):
- * each one's state, driver, the masked error and a hint, and a safe test
+ * each one's state, driver, the masked error, and a safe test
  * for those that have one. The API's texts are remote: shown as text.
  */
 export function DiagnosticsPanel() {
   const { t } = useTranslation('ops');
   const diagnostics = useQuery(opsDiagnosticsQuery);
   const test = useTestDiagnostic();
+  const canTest = useCan('Access.testIntegrations');
   const [testing, setTesting] = useState<string | null>(null);
+  // A module may declare an integration the page has no name for: its own name.
+  const checkLabel = (name: string) =>
+    t(`diagnostics.checks.${name}`, { defaultValue: name });
   if (diagnostics.isPending) {
     return <Spinner />;
   }
   if (diagnostics.isError) {
     return <FormAlert message={errorMessage(diagnostics.error)} />;
   }
-  const run = async (check: Diagnostic['check']) => {
-    setTesting(check);
+  const run = async (name: Diagnostic['name']) => {
+    setTesting(name);
     try {
-      const result = await test.mutateAsync(check);
+      const result = await test.mutateAsync(name);
       if (result.ok) {
         toast.success(
           t('diagnostics.passed', {
-            check: t(`diagnostics.checks.${check}`),
+            check: checkLabel(name),
             ms: result.durationMs,
           }),
         );
       } else {
-        toast.error(
-          t('diagnostics.failed', { check: t(`diagnostics.checks.${check}`) }),
-          { description: result.detail ?? result.hint ?? undefined },
-        );
+        toast.error(t('diagnostics.failed', { check: checkLabel(name) }), {
+          description: result.detail ?? undefined,
+        });
       }
     } catch (error) {
       toast.error(errorMessage(error));
@@ -83,8 +87,8 @@ export function DiagnosticsPanel() {
         </TableHeader>
         <TableBody>
           {diagnostics.data.items.map((item) => (
-            <TableRow key={item.check}>
-              <TableCell>{t(`diagnostics.checks.${item.check}`)}</TableCell>
+            <TableRow key={item.name}>
+              <TableCell>{checkLabel(item.name)}</TableCell>
               <TableCell>
                 <Badge variant={variant(item.state)}>
                   {t(`diagnostics.states.${item.state}`)}
@@ -95,19 +99,16 @@ export function DiagnosticsPanel() {
               </TableCell>
               <TableCell className="max-w-md break-words whitespace-normal text-xs">
                 {item.detail && <p>{item.detail}</p>}
-                {item.hint && (
-                  <p className="text-muted-foreground">{item.hint}</p>
-                )}
               </TableCell>
               <TableCell className="text-end">
-                {diagnostics.data.canTest && item.testable && (
+                {canTest && item.testable && (
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={testing !== null}
-                    onClick={() => void run(item.check)}
+                    onClick={() => void run(item.name)}
                   >
-                    {testing === item.check ? (
+                    {testing === item.name ? (
                       <Spinner />
                     ) : (
                       t('diagnostics.test')

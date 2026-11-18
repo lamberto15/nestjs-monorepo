@@ -32,11 +32,10 @@ const encode = (value: unknown) => String(value);
 const decode = (value: string): Value =>
   value === 'true' ? true : value === 'false' ? false : value;
 
-/** The channels a user may set for a type (`webhook` is for API clients). */
+/** The channels a user may set for a type (in-app and realtime are always on). */
 function settable(type: NotificationType) {
-  return Object.keys(type.channels).filter(
-    (channel) =>
-      channel === 'email' || channel === 'webhook' || channel === 'push',
+  return (['email', 'push'] as const).filter(
+    (channel) => type.channels[channel] !== undefined,
   );
 }
 

@@ -17,6 +17,7 @@ import { errorMessage } from '@/lib/errors';
 import { useCan } from '@/lib/features';
 import { FormAlert } from '@/lib/form';
 import {
+  opsFailedJobsQuery,
   opsQueuesQuery,
   usePauseQueue,
   useRetryFailed,
@@ -37,7 +38,7 @@ export function QueuesPanel() {
   const queues = useQuery(opsQueuesQuery);
   const retry = useRetryFailed();
   const pause = usePauseQueue();
-  const canManage = useCan('Ops.manage');
+  const canManage = useCan('Access.retryJobs');
   if (queues.isPending) {
     return <Spinner />;
   }
@@ -145,45 +146,53 @@ export function QueuesPanel() {
         </Table>
       </div>
       {queues.data.items
-        .filter((queue) => queue.recentFailures.length > 0)
+        .filter((queue) => queue.counts.failed > 0)
         .map((queue) => (
-          <section key={queue.name} className="flex flex-col gap-2">
-            <h3 className="text-sm font-medium">
-              {t('queues.failures', { name: queue.name })}
-            </h3>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('queues.job')}</TableHead>
-                    <TableHead className="text-end">
-                      {t('queues.attempts')}
-                    </TableHead>
-                    <TableHead>{t('queues.reason')}</TableHead>
-                    <TableHead>{t('queues.failedAt')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {queue.recentFailures.map((job) => (
-                    <TableRow key={String(job.id)}>
-                      <TableCell className="font-mono text-xs">
-                        {job.name}
-                      </TableCell>
-                      <TableCell className="text-end tabular-nums">
-                        {job.attempts}
-                      </TableCell>
-                      {/* The job's error text: remote, shown as text. */}
-                      <TableCell className="max-w-md break-words whitespace-normal text-xs">
-                        {job.reason}
-                      </TableCell>
-                      <TableCell>{formatDateTime(job.failedAt)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </section>
+          <FailedJobs key={queue.name} name={queue.name} />
         ))}
     </div>
+  );
+}
+
+/** The latest failed jobs of one queue (asked only for a queue that has some). */
+function FailedJobs({ name }: { name: string }) {
+  const { t } = useTranslation('ops');
+  const jobs = useQuery(opsFailedJobsQuery(name));
+  if (!jobs.data || jobs.data.items.length === 0) {
+    return null;
+  }
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">{t('queues.failures', { name })}</h3>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('queues.job')}</TableHead>
+              <TableHead className="text-end">{t('queues.attempts')}</TableHead>
+              <TableHead>{t('queues.reason')}</TableHead>
+              <TableHead>{t('queues.failedAt')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {jobs.data.items.map((job) => (
+              <TableRow key={job.id ?? `${job.name}-${job.queuedAt}`}>
+                <TableCell className="font-mono text-xs">{job.name}</TableCell>
+                <TableCell className="text-end tabular-nums">
+                  {job.attempts}
+                </TableCell>
+                {/* The job's error text: remote, shown as text. */}
+                <TableCell className="max-w-md break-words whitespace-normal text-xs">
+                  {job.reason}
+                </TableCell>
+                <TableCell>
+                  {job.finishedAt ? formatDateTime(job.finishedAt) : '—'}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
   );
 }
