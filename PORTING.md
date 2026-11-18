@@ -161,10 +161,14 @@ repository.
   image and publishes it to GHCR, from `main` and from a `v*` tag; where
   it runs, and how, is the deployment's own for now.
 
-## Waiting on upstream
+## Declined upstream
 
 - `nest_outbox.messages` has no index by topic: the operator's backlog and
-  settle of notifications scan it (nestjs/outbox#90).
+  settle of notifications scan it. Upstream declined one (nestjs/outbox#90,
+  #91): the store never reads by topic. Accepted: the table is near-empty
+  outside an outage, and both are rare operator actions. If it ever
+  matters, add an index of our own (`app_*`, `CONCURRENTLY`) as #90
+  describes.
 
 ## Changed on the way
 
