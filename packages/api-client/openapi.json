@@ -45122,7 +45122,7 @@
                                 "type": "number"
                               },
                               "url": {
-                                "description": "The file, for 30m.",
+                                "description": "The file, for 30 minutes at most and never past `expiresAt`. Absent once the transfer has expired, or when you no longer hold the right it was started with.",
                                 "type": "string",
                                 "format": "uri"
                               },
@@ -45136,7 +45136,7 @@
                                 "type": "boolean"
                               },
                               "errorsUrl": {
-                                "description": "A CSV of the refused rows: row, field, message.",
+                                "description": "A CSV of the refused rows: row, field, message. Absent when `url` would be.",
                                 "type": "string",
                                 "format": "uri"
                               }
@@ -45310,7 +45310,7 @@
                           "type": "number"
                         },
                         "url": {
-                          "description": "The file, for 30m.",
+                          "description": "The file, for 30 minutes at most and never past `expiresAt`. Absent once the transfer has expired, or when you no longer hold the right it was started with.",
                           "type": "string",
                           "format": "uri"
                         },
@@ -45324,7 +45324,7 @@
                           "type": "boolean"
                         },
                         "errorsUrl": {
-                          "description": "A CSV of the refused rows: row, field, message.",
+                          "description": "A CSV of the refused rows: row, field, message. Absent when `url` would be.",
                           "type": "string",
                           "format": "uri"
                         }
@@ -45932,13 +45932,13 @@
                                 "type": "number"
                               },
                               "url": {
+                                "description": "The file, for 30 minutes at most and never past `expiresAt`. Absent once the export has expired.",
                                 "type": "string",
                                 "format": "uri"
                               }
                             },
                             "required": [
-                              "rows",
-                              "url"
+                              "rows"
                             ],
                             "additionalProperties": false
                           },
@@ -46076,13 +46076,13 @@
                           "type": "number"
                         },
                         "url": {
+                          "description": "The file, for 30 minutes at most and never past `expiresAt`. Absent once the export has expired.",
                           "type": "string",
                           "format": "uri"
                         }
                       },
                       "required": [
-                        "rows",
-                        "url"
+                        "rows"
                       ],
                       "additionalProperties": false
                     },

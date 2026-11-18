@@ -30391,7 +30391,7 @@ export interface operations {
                                 rows: number;
                                 /**
                                  * Format: uri
-                                 * @description The file, for 30m.
+                                 * @description The file, for 30 minutes at most and never past `expiresAt`. Absent once the transfer has expired, or when you no longer hold the right it was started with.
                                  */
                                 url?: string;
                                 imported?: number;
@@ -30399,7 +30399,7 @@ export interface operations {
                                 dryRun?: boolean;
                                 /**
                                  * Format: uri
-                                 * @description A CSV of the refused rows: row, field, message.
+                                 * @description A CSV of the refused rows: row, field, message. Absent when `url` would be.
                                  */
                                 errorsUrl?: string;
                             };
@@ -30470,7 +30470,7 @@ export interface operations {
                             rows: number;
                             /**
                              * Format: uri
-                             * @description The file, for 30m.
+                             * @description The file, for 30 minutes at most and never past `expiresAt`. Absent once the transfer has expired, or when you no longer hold the right it was started with.
                              */
                             url?: string;
                             imported?: number;
@@ -30478,7 +30478,7 @@ export interface operations {
                             dryRun?: boolean;
                             /**
                              * Format: uri
-                             * @description A CSV of the refused rows: row, field, message.
+                             * @description A CSV of the refused rows: row, field, message. Absent when `url` would be.
                              */
                             errorsUrl?: string;
                         };
@@ -30813,8 +30813,11 @@ export interface operations {
                             expiresAt: string | null;
                             result?: {
                                 rows: number;
-                                /** Format: uri */
-                                url: string;
+                                /**
+                                 * Format: uri
+                                 * @description The file, for 30 minutes at most and never past `expiresAt`. Absent once the export has expired.
+                                 */
+                                url?: string;
                             };
                             error?: string;
                         }[];
@@ -30872,8 +30875,11 @@ export interface operations {
                         expiresAt: string | null;
                         result?: {
                             rows: number;
-                            /** Format: uri */
-                            url: string;
+                            /**
+                             * Format: uri
+                             * @description The file, for 30 minutes at most and never past `expiresAt`. Absent once the export has expired.
+                             */
+                            url?: string;
                         };
                         error?: string;
                     };
