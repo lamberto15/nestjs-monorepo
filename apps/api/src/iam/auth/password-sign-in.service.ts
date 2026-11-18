@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { passwordSha1 } from './password-sha1.js';
 import { PasswordHasher, SignInService } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
@@ -86,7 +87,7 @@ export class PasswordSignIn {
     // The breach re-check (iam/account) starts here and is not waited for.
     await this.events.emitAsync(AUTH_EVENTS.passwordVerified, {
       user: found.user,
-      password,
+      passwordSha1: passwordSha1(password),
       passwordHash,
       ip,
     } satisfies PasswordVerifiedEvent);

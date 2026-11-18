@@ -119,7 +119,7 @@ repository.
 - [ ] Security alerts mail once: their email channel is fixed (the account
       mails them), not offered in preferences; a changed password settles an
       unread breach notice (`settle()`).
-- [ ] `auth.password-verified` carries the password's SHA-1, never the
+- [x] `auth.password-verified` carries the password's SHA-1, never the
       plaintext.
 - [ ] The tenant export drops secret columns declared where the table is
       (plus encrypted ones); a test flags a suspicious column left unmarked.

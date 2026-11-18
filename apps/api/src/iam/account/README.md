@@ -15,7 +15,7 @@ providers, re-authentication and security alerts.
   `GET /v1/auth/methods` (iam/auth's `@WhoAmIPart()`,
   `@SignInMethodsPart()`).
 - **Security alerts:** `SecurityAlerts` mails the owner (SecurityAlertMail, essential) of a new sign-in, a password changed or found in a breach, two-factor on or off, a passkey added or removed, and publishes each as the domain event `account.security-alerted` (`account.events.ts`: `{ userId, kind, args, tenantId, at }`, in the change's transaction; nothing without the outbox). modules/notifications stores it as an in-app notice in the tenant the person acted in; the mail is only ever sent here.
-- **Breach re-check at sign-in:** `SignInPasswordCheck` listens to iam/auth's `auth.password-verified` (in process) and checks the password against the breaches without delaying the sign-in, once per password per PASSWORD_BREACH_RECHECK_DAYS (a Redis key on a digest of the stored hash). A breached one is audited (`auth.password-breached`) and its owner told (`passwordBreached`).
+- **Breach re-check at sign-in:** `SignInPasswordCheck` listens to iam/auth's `auth.password-verified` (in process; it carries the password's SHA-1, never the password) and checks the password against the breaches without delaying the sign-in, once per password per PASSWORD_BREACH_RECHECK_DAYS (a Redis key on a digest of the stored hash). A breached one is audited (`auth.password-breached`) and its owner told (`passwordBreached`).
 - **Operators:** exports `AccountOperations` (a new password, removing two-factor, the lockout) for the `pnpm ops` commands (src/cli).
 - **Tenant policy:** a new password meets `AuthPolicy.assertPasswordLength()`
   and the stricter of PASSWORD_HISTORY and the tenants' history.

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { passwordSha1 } from '../auth/password-sha1.js';
 import {
   BadRequestException,
   Inject,
@@ -25,11 +25,12 @@ export interface HashRange {
  * 5 characters (the only part sent) and the other 35 (compared here).
  */
 export function hashRange(password: string): HashRange {
-  const hash = createHash('sha1') // NOSONAR S4790: the range API is defined on SHA-1, not a choice of ours
-    .update(password, 'utf8')
-    .digest('hex')
-    .toUpperCase();
-  return { prefix: hash.slice(0, 5), suffix: hash.slice(5) };
+  return rangeOfSha1(passwordSha1(password));
+}
+
+/** A password's SHA-1 (passwordSha1()) split for the range API. */
+export function rangeOfSha1(sha1: string): HashRange {
+  return { prefix: sha1.slice(0, 5), suffix: sha1.slice(5) };
 }
 
 /**

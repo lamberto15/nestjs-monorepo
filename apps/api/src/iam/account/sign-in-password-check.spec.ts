@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
+import { passwordSha1 } from '../auth/password-sha1.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import type { AccountWork } from './account-work.js';
 import {
@@ -142,7 +143,7 @@ describe('SignInPasswordCheck', () => {
     await expect(
       check.check(user, hashRange(password()), HASH, '127.0.0.1'),
     ).resolves.toBe('off');
-    check.start(user, password(), HASH, '127.0.0.1');
+    check.start(user, passwordSha1(password()), HASH, '127.0.0.1');
     await check.settled();
     expect(redis.set).not.toHaveBeenCalled();
     expect(breached.isBreachedIn).not.toHaveBeenCalled();
@@ -157,7 +158,7 @@ describe('SignInPasswordCheck', () => {
     const secret = password();
     check.passwordVerified({
       user,
-      password: secret,
+      passwordSha1: passwordSha1(secret),
       passwordHash: HASH,
       ip: '127.0.0.1',
     });
@@ -181,7 +182,9 @@ describe('SignInPasswordCheck', () => {
     const { check, redis } = setup({ breached: true });
     redis.set.mockRejectedValueOnce(new TypeError('connection lost'));
     const secret = password();
-    expect(() => check.start(user, secret, HASH, '127.0.0.1')).not.toThrow();
+    expect(() =>
+      check.start(user, passwordSha1(secret), HASH, '127.0.0.1'),
+    ).not.toThrow();
     await check.settled();
     expect(warn).toHaveBeenCalledOnce();
     expect(String(warn.mock.calls[0]?.[0])).toContain('TypeError');

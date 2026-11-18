@@ -19,7 +19,7 @@ import { AccountWork } from './account-work.js';
 import {
   BreachedPasswordsService,
   type HashRange,
-  hashRange,
+  rangeOfSha1,
 } from './breached-passwords.service.js';
 import { SecurityAlerts } from './security-alerts.service.js';
 
@@ -64,8 +64,8 @@ export type SignInCheckOutcome =
  * Custom code, and not a queue job, on purpose: the range API needs the
  * password's SHA-1, and a job's payload would keep that unsalted hash in
  * Redis (crackable for a weak password) until a worker ran it. Here the
- * plaintext is split at once (`hashRange`) and dropped; the suffix lives
- * only in this process's memory, for one HTTP call.
+ * SHA-1 (all the event carries: never the plaintext) is split at once and
+ * lives only in this process's memory, for one HTTP call.
  */
 @Injectable()
 export class SignInPasswordCheck implements BeforeApplicationShutdown {
@@ -87,21 +87,20 @@ export class SignInPasswordCheck implements BeforeApplicationShutdown {
 
   @OnEvent(AUTH_EVENTS.passwordVerified)
   passwordVerified(event: PasswordVerifiedEvent) {
-    this.start(event.user, event.password, event.passwordHash, event.ip);
+    this.start(event.user, event.passwordSha1, event.passwordHash, event.ip);
   }
 
-  /** Starts the check of a password that was just verified, and returns at once. */
+  /** Starts the check of a password that was just verified (its SHA-1), and returns at once. */
   start(
     user: UserPrincipal,
-    password: string,
+    passwordSha1: string,
     passwordHash: string,
     ip: string,
   ) {
     if (!this.breached.enabled) {
       return;
     }
-    // The plaintext stops here: only its split SHA-1 goes on.
-    const range = hashRange(password);
+    const range = rangeOfSha1(passwordSha1);
     const work = this.check(user, range, passwordHash, ip).catch(
       (error: unknown) => {
         this.logger.warn(

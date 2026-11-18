@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { getDrizzleToken } from '@nestjs/drizzle';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InMemoryMailTransport, MailTransport } from '@nestjs/mail';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import type { Queue } from 'bullmq';
@@ -13,7 +14,9 @@ import { MAIL_QUEUE } from '../../core/mail/mail.queue.js';
 import { SharedOutboxModule } from '../../core/outbox/outbox.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { auditLog } from '../audit/audit.tables.js';
+import { AUTH_EVENTS } from '../auth/auth.events.js';
 import { users } from '../auth/auth.tables.js';
+import { passwordSha1 } from '../auth/password-sha1.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
 import { AccountModule } from './account.module.js';
 import { BreachedPasswordsService } from './breached-passwords.service.js';
@@ -404,6 +407,7 @@ describe('account (e2e)', () => {
     const breached = app.get(BreachedPasswordsService);
     vi.spyOn(breached, 'enabled', 'get').mockReturnValue(true);
     const lookup = vi.spyOn(breached, 'isBreachedIn').mockResolvedValue(true);
+    const emitted = vi.spyOn(app.get(EventEmitter2), 'emitAsync');
     try {
       const created = await createUser(app);
       // Two sign-ins with the same password: checked once.
@@ -416,6 +420,15 @@ describe('account (e2e)', () => {
       }
       await app.get(SignInPasswordCheck).settled();
 
+      // The event carries the password's SHA-1, never the password.
+      const verified = emitted.mock.calls.filter(
+        ([name]) => name === AUTH_EVENTS.passwordVerified,
+      );
+      expect(verified).toHaveLength(2);
+      expect(verified[0]![1]).toMatchObject({
+        passwordSha1: passwordSha1(created.password),
+      });
+      expect(JSON.stringify(verified)).not.toContain(created.password);
       expect(lookup).toHaveBeenCalledOnce();
       const audited = await db
         .select({ action: auditLog.action })

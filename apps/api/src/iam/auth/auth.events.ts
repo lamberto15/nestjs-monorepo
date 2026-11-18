@@ -20,9 +20,9 @@ export const AUTH_EVENTS = {
   /** An API client's key was used from outside its allowlist (once per address and hour). */
   clientIpDenied: 'auth.client-ip-denied',
   /**
-   * A sign-in's password was verified. Carries the plaintext, for the
-   * breach re-check (iam/account): in process only, never stored, and no
-   * listener may log or keep it.
+   * A sign-in's password was verified. Carries its SHA-1 (passwordSha1()),
+   * for the breach re-check (iam/account), never the plaintext: in process
+   * only, never stored or logged.
    */
   passwordVerified: 'auth.password-verified',
 } as const;
@@ -48,7 +48,8 @@ export interface SignInFailedEvent {
 
 export interface PasswordVerifiedEvent {
   user: UserPrincipal;
-  password: string;
+  /** The password's SHA-1 (passwordSha1()): what the breach check needs, not the password. */
+  passwordSha1: string;
   /** The account's stored hash, after any rehash. */
   passwordHash: string;
   ip: string;
