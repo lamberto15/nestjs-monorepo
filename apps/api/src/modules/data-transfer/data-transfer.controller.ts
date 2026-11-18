@@ -51,6 +51,7 @@ import {
   type ImportRequest,
   ImportUpload,
 } from './import-upload.interceptor.js';
+import { TRANSFERS_KEPT } from './transfer-retention.js';
 
 /**
  * Exports and imports of the records that take them
@@ -176,7 +177,9 @@ export class DataTransferController {
   @ApiOperation({
     summary: 'The exports and imports you started in this tenant',
     description:
-      'Newest first, by cursor; `?kind=export|import`, `?status=`. Those started by you (or your scheduled reports), kept 7 days after they end. A filtered page may hold fewer than `limit` items while `nextCursor` is set: follow it until it is null.',
+      'Newest first, by cursor; `?kind=export|import`, `?status=`. Those started by you (or your scheduled reports), kept ' +
+      TRANSFERS_KEPT +
+      ' after they end. A filtered page may hold fewer than `limit` items while `nextCursor` is set: follow it until it is null.',
   })
   @ApiOkResponse({ standardSchema: pageSchema(statusSchema) })
   list(

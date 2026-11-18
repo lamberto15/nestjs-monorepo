@@ -10,14 +10,13 @@ import {
   AccountExportProcessor,
   AccountExports,
 } from './account-exports.service.js';
-import { AccountExportFilesSweep } from './transfer-files.sweep.js';
 
 /**
  * `POST /v1/account/export` and `GET /v1/account/exports`: a person's copy
  * of their data, written on the `account-exports` queue from every module's
- * `@PersonalData()` section, and the nightly sweep of the files past
- * TRANSFER_KEPT_MS. Needs QueuesModule, StorageModule, SharedLocksModule and
- * the app's PersonalDataModule.
+ * `@PersonalData()` section, each file deleted on the same queue (a delayed
+ * job) once past TRANSFER_KEPT_MS. Needs QueuesModule, StorageModule and the
+ * app's PersonalDataModule.
  */
 @Module({
   imports: [
@@ -30,6 +29,6 @@ import { AccountExportFilesSweep } from './transfer-files.sweep.js';
     PersonalDataModule,
   ],
   controllers: [AccountExportsController],
-  providers: [AccountExports, AccountExportProcessor, AccountExportFilesSweep],
+  providers: [AccountExports, AccountExportProcessor],
 })
 export class AccountExportsModule {}

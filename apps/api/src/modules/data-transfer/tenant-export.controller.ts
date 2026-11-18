@@ -30,6 +30,7 @@ import { RecentAuthentication } from '../../iam/auth/recent-authentication.js';
 import { startedSchema } from './data-transfer.schemas.js';
 import { DataTransferService } from './data-transfer.service.js';
 import { TRANSFER_FORMATS } from './data-transfer.types.js';
+import { LINK_LASTS } from './transfer-retention.js';
 
 /** Who may export a whole tenant: users only, never impersonating (`@OperatorOnly()` on the route too). */
 @Policy()
@@ -92,7 +93,7 @@ export class TenantExports {
 /**
  * A tenant's export, for the operators: every record of it as one file
  * (`kind`, `id`, `data` as JSON), made by a worker on the data transfers'
- * queue, behind a link of 30 minutes. See tenant-export.ts for what is in it.
+ * queue, behind a link of TRANSFER_LINK_TTL_MS. See tenant-export.ts for what is in it.
  */
 @ApiTags('tenants')
 @Controller('tenants')
@@ -108,7 +109,9 @@ export class TenantExportController {
   @ApiOperation({
     summary: 'Export every record of a tenant (operators)',
     description:
-      'Answers 202 with the transfer: follow it at GET /v1/data/transfers/{id} (yours, in your tenant), which gives the file’s link when done (valid 30 minutes; ask again for a new one). One row per record: `kind` (its table; `tenant`, `member` for its members’ accounts), `id`, `data` (JSON); hashes, secrets and encrypted columns are left out, stored files are listed by their rows. Wants a recent sign-in (`reauthentication_required`). Audited (`tenant.export-requested`) in your tenant and in that one.',
+      'Answers 202 with the transfer: follow it at GET /v1/data/transfers/{id} (yours, in your tenant), which gives the file’s link when done (valid ' +
+      LINK_LASTS +
+      ' at most; ask again for a new one). One row per record: `kind` (its table; `tenant`, `member` for its members’ accounts), `id`, `data` (JSON); hashes, secrets and encrypted columns are left out, stored files are listed by their rows. Wants a recent sign-in (`reauthentication_required`). Audited (`tenant.export-requested`) in your tenant and in that one.',
   })
   @ApiAcceptedResponse({ standardSchema: startedSchema })
   @ApiNotFoundResponse()

@@ -4,10 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { StorageDisk } from '@nestjs/storage';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { transferKey } from './data-transfer.service.js';
-import {
-  ACCOUNT_FILES,
-  isAccountExportKey,
-} from './account-exports.service.js';
 import { deleteUnkept } from './transfer-retention.js';
 
 /**
@@ -38,33 +34,6 @@ export class TransferFilesSweep {
     );
     const deleted = [...swept.values()].reduce((sum, count) => sum + count, 0);
     this.logger.log(`Expired transfer files deleted: ${deleted}`);
-    return deleted;
-  }
-}
-
-/**
- * Deletes the people's own exports no longer kept (TRANSFER_KEPT_MS), under
- * `accounts/<id>/exports/`, every night at 04:40 UTC on one instance. The
- * accounts' files are listed whole, their other files (a picture) kept.
- */
-@Injectable()
-export class AccountExportFilesSweep {
-  private readonly logger = new Logger('AccountExport');
-
-  constructor(private readonly disk: StorageDisk) {}
-
-  /** Returns how many files were deleted. */
-  @Cron('40 4 * * *', { name: 'account-export-files', timeZone: 'UTC' })
-  @OnOneInstance({ key: 'account-exports:files' })
-  @WithoutOverlapping()
-  async run(now = new Date()) {
-    const deleted = await deleteUnkept(
-      this.disk,
-      ACCOUNT_FILES,
-      now,
-      isAccountExportKey,
-    );
-    this.logger.log(`Expired account exports deleted: ${deleted}`);
     return deleted;
   }
 }

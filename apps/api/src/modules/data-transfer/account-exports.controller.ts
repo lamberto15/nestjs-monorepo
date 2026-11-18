@@ -29,8 +29,10 @@ import { UserOnly } from '../../iam/auth/user-only.decorator.js';
 import { AccountExports } from './account-exports.service.js';
 import { TRANSFER_FORMATS } from './data-transfer.types.js';
 import {
+  LINK_LASTS,
   TRANSFER_KEPT_MS,
   TRANSFER_LINK_TTL_MS,
+  TRANSFERS_KEPT,
 } from './transfer-retention.js';
 
 const requestSchema = z.object({
@@ -56,9 +58,7 @@ const exportSchema = z.object({
   expiresAt: z.iso
     .datetime()
     .nullable()
-    .describe(
-      `When it is no longer kept (${TRANSFER_KEPT_MS / 86_400_000} days after it ended).`,
-    ),
+    .describe(`When it is no longer kept (${TRANSFERS_KEPT} after it ended).`),
   result: z
     .object({
       rows: z.number(),
@@ -66,7 +66,7 @@ const exportSchema = z.object({
         .url()
         .optional()
         .describe(
-          `The file, for ${TRANSFER_LINK_TTL_MS / 60_000} minutes at most and never past \`expiresAt\`. Absent once the export has expired.`,
+          `The file, for ${LINK_LASTS} at most and never past \`expiresAt\`. Absent once the export has expired.`,
         ),
     })
     .optional(),
@@ -110,8 +110,7 @@ export class AccountExportsController {
   @Get('exports')
   @ApiOperation({
     summary: 'The copies of your data you asked for',
-    description:
-      'Newest first, by cursor. A completed one has its download link (30 minutes from this answer). Kept 7 days after they end.',
+    description: `Newest first, by cursor. A completed one has its download link (${LINK_LASTS} from this answer at most). Kept ${TRANSFERS_KEPT} after they end.`,
   })
   @ApiOkResponse({ standardSchema: pageSchema })
   list(

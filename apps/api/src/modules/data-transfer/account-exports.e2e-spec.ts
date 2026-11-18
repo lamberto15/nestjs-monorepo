@@ -22,10 +22,9 @@ import { userAvatars } from '../attachments/avatars/avatars.tables.js';
 import { FavoritesModule } from '../favorites/favorites.module.js';
 import { favorites } from '../favorites/favorites.tables.js';
 import { StorageModule } from '../storage/storage.module.js';
-import { ACCOUNT_EXPORTS } from './account-exports.service.js';
+import { ACCOUNT_EXPORTS, expiryOf } from './account-exports.service.js';
 import { AccountExportsModule } from './account-exports.module.js';
-import { AccountExportFilesSweep } from './transfer-files.sweep.js';
-import { TRANSFER_KEPT_MS } from './transfer-retention.js';
+import { keptUntil, TRANSFER_KEPT_MS } from './transfer-retention.js';
 
 vi.hoisted(() => {
   Object.assign(process.env, {
@@ -261,25 +260,58 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
     }
   });
 
-  it('deletes the exports past their retention, and keeps the fresh ones and the pictures', async () => {
+  it("deletes an export's file on its deadline, and keeps the fresh exports and the pictures", async () => {
     const disk = app.get(StorageDisk);
-    const owner = team.viewer.id;
-    const old = `accounts/${owner}/exports/old.csv`;
-    const picture = `accounts/${owner}/avatar/old.png`;
-    const fresh = `accounts/${owner}/exports/fresh.csv`;
-    vi.useFakeTimers({ toFake: ['Date'] });
-    try {
-      vi.setSystemTime(Date.now() - TRANSFER_KEPT_MS - 60_000);
-      await disk.put(old, 'old');
-      await disk.put(picture, 'png');
-    } finally {
-      vi.useRealTimers();
+    const queue = app.get<Queue>(getQueueToken(ACCOUNT_EXPORTS));
+    const owner = team.other;
+    const picture = `accounts/${owner.id}/avatar/kept.png`;
+    await disk.put(picture, 'png');
+    const exported = async () => {
+      const { id } = (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/account/export',
+          headers: owner.headers,
+          payload: { format: 'csv' },
+        })
+      ).json<{ id: string }>();
+      let done: { key: string; finishedOn: number } | undefined;
+      await vi.waitFor(
+        async () => {
+          const job = await queue.getJob(id);
+          expect(await job!.getState()).toBe('completed');
+          done = { key: job!.returnvalue.key, finishedOn: job!.finishedOn! };
+        },
+        { timeout: 60_000 },
+      );
+      return { id, ...done! };
+    };
+    const old = await exported();
+    const fresh = await exported();
+    for (const { key } of [old, fresh]) {
+      expect(await disk.exists(key)).toBe(true);
     }
-    await disk.put(fresh, 'fresh');
 
-    expect(await app.get(AccountExportFilesSweep).run()).toBe(1);
-    expect(await disk.exists(old)).toBe(false);
-    expect(await disk.exists(fresh)).toBe(true);
+    // Each export has its own deletion, waiting for the export's deadline.
+    const expiry = (await queue.getJob(expiryOf(old.id)))!;
+    expect(await expiry.getState()).toBe('delayed');
+    expect(expiry.data).toEqual({ tenantId: null, key: old.key });
+    expect(expiry.delay).toBe(TRANSFER_KEPT_MS);
+    const due = expiry.timestamp + expiry.delay;
+    expect(due).toBeLessThanOrEqual(keptUntil(old.finishedOn));
+    expect(keptUntil(old.finishedOn) - due).toBeLessThan(5_000);
+
+    // Its deadline reached (promoted, rather than waited for).
+    await expiry.promote();
+    await vi.waitFor(
+      async () => expect(await disk.exists(old.key)).toBe(false),
+      { timeout: 30_000 },
+    );
+    expect(await queue.getJob(expiryOf(old.id))).toBeUndefined();
+    expect(await disk.exists(fresh.key)).toBe(true);
     expect(await disk.exists(picture)).toBe(true);
+    expect(await (await queue.getJob(expiryOf(fresh.id)))!.getState()).toBe(
+      'delayed',
+    );
   });
 });

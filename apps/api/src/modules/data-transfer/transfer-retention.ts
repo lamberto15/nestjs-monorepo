@@ -6,9 +6,14 @@ export const TRANSFER_LINK_TTL_MS = 30 * 60 * 1000;
 /**
  * How long a finished transfer is kept, its file included: listed, found,
  * its link given (BullMQ's `removeOnComplete` and `removeOnFail`, the
- * `expiresAt` shown, the links, the sweep of the files).
+ * `expiresAt` shown, the links, the sweep of the transfers' files, the
+ * delayed deletion of an account export's file).
  */
 export const TRANSFER_KEPT_MS = 7 * 24 * 3600 * 1000;
+
+/** The two durations as the route descriptions say them: derived, never written out. */
+export const LINK_LASTS = `${TRANSFER_LINK_TTL_MS / 60_000} minutes`;
+export const TRANSFERS_KEPT = `${TRANSFER_KEPT_MS / 86_400_000} days`;
 
 /** The shortest link a disk signs (`@nestjs/storage`: 1 second). */
 const SHORTEST_LINK_MS = 1000;
@@ -34,20 +39,19 @@ export async function linkWhileKept(
 }
 
 /**
- * Deletes the files under `prefix` (those `only` accepts) written longer
- * ago than TRANSFER_KEPT_MS, and answers how many. A file is written when
- * its transfer ends, so its age is the transfer's.
+ * Deletes the files under `prefix` written longer ago than TRANSFER_KEPT_MS,
+ * and answers how many. A file is written when its transfer ends, so its age
+ * is the transfer's.
  */
 export async function deleteUnkept(
   disk: StorageDisk,
   prefix: string,
   now: Date,
-  only: (key: string) => boolean = () => true,
 ) {
   const before = now.getTime() - TRANSFER_KEPT_MS;
   const keys: string[] = [];
   for await (const entry of disk.listAll({ prefix })) {
-    if (entry.lastModified.getTime() < before && only(entry.key)) {
+    if (entry.lastModified.getTime() < before) {
       keys.push(entry.key);
     }
   }

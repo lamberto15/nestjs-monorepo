@@ -28,27 +28,14 @@ export const ACCOUNT_EXPORTS = 'account-exports';
 /** Where a person's export is written (`accounts/<id>/exports/…`). */
 const exportsOf = (userId: string) => accountFileKey(userId, 'exports/');
 
-/**
- * Every account's files: the part of accountFileKey() before the user id,
- * derived from it so the layout stays written once (storage.keys.ts).
- */
-const NIL_UUID = '00000000-0000-0000-0000-000000000000';
-export const ACCOUNT_FILES = accountFileKey(NIL_UUID, '').slice(
-  0,
-  -`${NIL_UUID}/`.length,
-);
-
-/** Whether a key under ACCOUNT_FILES is a person's export (not their picture). */
-export function isAccountExportKey(key: string) {
-  const userId = key.slice(ACCOUNT_FILES.length).split('/')[0]!;
-  try {
-    return key.startsWith(exportsOf(userId));
-  } catch {
-    return false; // not an account's id: nothing of ours
-  }
-}
-
 type ExportJob = TenantEnvelope & { userId: string; format: TransferFormat };
+/** The deletion of a finished export's file once it is no longer kept. */
+type ExpiryJob = TenantEnvelope & { key: string };
+
+/** The name and id of an export's expiry job: one per export, however often it runs. */
+const EXPIRY = 'expire';
+export const expiryOf = (exportId: string) => `${exportId}-expiry`;
+
 interface ExportResult {
   key: string;
   rows: number;
@@ -166,15 +153,21 @@ export class AccountExports {
   }
 }
 
-/** Writes the file on a worker, for a person who is still active. */
+/**
+ * Writes the file on a worker, for a person who is still active, and queues
+ * its deletion for when it is no longer kept: nothing else names the file
+ * once the export's job is pruned.
+ */
 @Processor(ACCOUNT_EXPORTS)
 export class AccountExportProcessor extends TenantWorkerHost<
-  ExportJob,
-  ExportResult
+  ExportJob | ExpiryJob,
+  ExportResult | void
 > {
   private readonly logger = new Logger('AccountExport');
 
   constructor(
+    @InjectQueue(ACCOUNT_EXPORTS)
+    private readonly queue: Queue<ExpiryJob>,
     private readonly personalData: PersonalDataService,
     private readonly users: UsersRepository,
     private readonly disk: StorageDisk,
@@ -182,7 +175,16 @@ export class AccountExportProcessor extends TenantWorkerHost<
     super();
   }
 
-  async handle(job: Job<ExportJob>): Promise<ExportResult> {
+  async handle(job: Job<ExportJob | ExpiryJob>) {
+    if ('key' in job.data) {
+      // Run late if no worker was up at the deadline; a missing file is no error.
+      await this.disk.delete(job.data.key);
+      return;
+    }
+    return this.export(job as Job<ExportJob>);
+  }
+
+  private async export(job: Job<ExportJob>): Promise<ExportResult> {
     const { userId, format } = job.data;
     if (!(await this.users.findActive(userId))) {
       throw new Error('The account is no longer active.');
@@ -216,13 +218,31 @@ export class AccountExportProcessor extends TenantWorkerHost<
       writer.destroy(error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
+    // Due when the export stops being kept (keptUntil): it ends right after
+    // this. A run again (stalled) keeps the first one, by its id.
+    await this.queue
+      .add(
+        EXPIRY,
+        { tenantId: null, key },
+        {
+          jobId: expiryOf(job.id!),
+          delay: TRANSFER_KEPT_MS,
+          removeOnComplete: true,
+        },
+      )
+      .catch(async (error: unknown) => {
+        // Not queued, the file would outlive its retention: the export fails instead.
+        await this.disk.delete(key);
+        throw error;
+      });
     return { key, rows };
   }
 
   @OnWorkerEvent('failed')
-  onFailed(job: Job<ExportJob> | undefined, error: Error) {
-    this.logger.warn('An account export failed', {
+  onFailed(job: Job<ExportJob | ExpiryJob> | undefined, error: Error) {
+    this.logger.warn('An account export job failed', {
       id: job?.id,
+      name: job?.name,
       error: error.message,
     });
   }

@@ -122,8 +122,13 @@ with an id; a worker on the `account-exports` queue walks every module's
 per record (`kind`, `tenantId`, `id`, `data` as JSON) under
 `accounts/<id>/exports/`. `GET /v1/account/exports` lists them and
 `GET /v1/account/exports/{id}` gives the link (30 minutes, never past
-`expiresAt`), kept 7 days: after that the export is shown with no `url`, and
-`AccountExportFilesSweep` (every night at 04:40 UTC, on one instance) deletes
-the files under `accounts/<id>/exports/`, leaving the accounts' other files.
-Users only, never while impersonating. Needs QueuesModule, StorageModule,
-SharedLocksModule and PersonalDataModule.
+`expiresAt`), kept 7 days: after that the export is shown with no `url`.
+Once the file is written, the worker adds a delayed `expire` job on the same
+queue (`delay: TRANSFER_KEPT_MS`, id `<export id>-expiry`) that deletes that
+file and nothing else, so the cleanup costs one job per export, never a
+listing of the accounts' files. A worker down at the deadline deletes it when
+it is back; the job is removed once done and kept with the failed ones
+otherwise (retry at `/v1/ops/queues`). If it cannot be queued, the file is
+deleted and the export fails: ask again. A new request is a new export with a
+file and an expiry of its own. Users only, never while impersonating. Needs
+QueuesModule, StorageModule and PersonalDataModule.
