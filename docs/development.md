@@ -93,6 +93,27 @@ outside production), and in a deployment once per deploy with
 `node dist/migrate` (`pnpm --filter api start:migrate`), as the owner role. Both
 run under an advisory lock.
 
+### Indexes
+
+The tests have a few rows, where a missing index never shows, so two checks
+stand in for real sizes:
+
+- `core/database/indexes.e2e-spec.ts` reads the migrated schema (the app's
+  tables and the fixtures'): every foreign key has an index leading with its
+  columns (a tenant key `(tenant_id, x)` may lead with `x`), and no plain index
+  is the leading part of another. Index a foreign key in its table file.
+- A query-plan test (`test/query-plans.ts`) seeds a table with many rows of
+  other tenants, runs the app's own work through `captured()` and expects
+  `fullScans()` to find no statement that reads the whole table. The
+  generated feature's lists and the notification retention have one; add one
+  for a list or a sweep on a table that grows without bound.
+
+Lead an index with the equality columns (`tenant_id` first on a tenant
+table: row-level security adds it to every query), then the sort or range
+column. A sweep (`where status = … and at < …`) gets a partial index on its
+own predicate. Index creation in a migration runs in its transaction and
+locks the table's writes while it builds.
+
 ## Tests
 
 - **Unit tests** sit next to the code, `<name>.spec.ts`. They run with
