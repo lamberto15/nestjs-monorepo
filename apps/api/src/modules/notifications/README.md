@@ -16,6 +16,7 @@ export const NOTE_NOTIFICATIONS = defineNotifications([
     push: true, // web push, when WEB_PUSH_SUBJECT is set
     mandatory: false, // true: a channel on by default can't be switched off
     urgent: false, // true: push goes through quiet hours
+    // fixed: ['email'], // channels not offered: the default always holds (security alerts)
     data: z.object({ noteId: z.uuid(), title: z.string() }), // the texts' placeholders
   },
 ]);
