@@ -135,7 +135,7 @@ repository.
 - [x] One Webhooks menu entry for `manageEndpoints` or `manageSenders`; the
       page shows each section by permission.
 - [x] The documents panel lists `GET /v1/<path>/{id}/documents`.
-- [ ] A `markdown` field type in the generator: a text column, the Markdown
+- [x] A `markdown` field type in the generator: a text column, the Markdown
       editor in forms, the viewer on detail pages.
 
 ## Not ported, on purpose

@@ -13,7 +13,8 @@ const Editor = lazy(() =>
 
 /**
  * A Markdown body; until its chunk arrives, the text as written. The viewer
- * of what `form.MarkdownField` writes; no shipped page shows one yet.
+ * of what `form.MarkdownField` writes: the detail page of a feature with a
+ * `markdown` field (`pnpm feature:add`) shows it.
  * @public
  */
 export function MarkdownText(props: { children: string }) {

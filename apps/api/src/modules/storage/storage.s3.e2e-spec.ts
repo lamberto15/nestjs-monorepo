@@ -28,7 +28,7 @@ describe.runIf(endpoint)('storage on S3 (e2e)', () => {
       } as ConfigType<typeof storageConfig>,
       { appUrl: 'http://localhost:3000' } as ConfigType<typeof httpConfig>,
     );
-    return options.disks.files!;
+    return options.disks!.files!;
   };
 
   it('takes a presigned upload and serves it back through a presigned link', async () => {
