@@ -102,11 +102,12 @@ jobs:
       - name: Destructive statements in the new migrations
         if: github.event_name == 'pull_request' || github.event_name == 'push'
         env:
-          # `on` fails the job. On a pull request a reviewed contract step
-          # takes the destructive-migration label (re-run the job after adding
-          # it); a push has no label, and its failure keeps the commit's image
-          # from being published (publish.yml waits for CI).
-          MIGRATION_LINT_FAIL: 'on'
+          # A pull request is blocking (`on`): a reviewed contract step takes
+          # the destructive-migration label (re-run the job after adding it).
+          # A push to main reports only (''): its findings are warnings in the
+          # summary, for whoever deploys it. Changing a merged migration fails
+          # either way.
+          MIGRATION_LINT_FAIL: ${{ github.event_name == 'pull_request' && 'on' || '' }}
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

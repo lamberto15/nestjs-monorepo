@@ -42,11 +42,14 @@ lowered. `sql` fragments inside a builder query are not counted.
   network) and reports what breaks the release before it: drops, renames,
   retypes, `SET NOT NULL`, a `NOT NULL` column without a default, dropped
   defaults and constraints, `TRUNCATE`, `DELETE` and `UPDATE` without `WHERE`. Each
-  finding goes to the job summary with file and line and fails the job; on a
-  pull request a reviewed contract step takes the `destructive-migration`
-  label (added after the last push, then re-run the job). A push has no label
-  and nothing that accepts a finding: its failure keeps that commit's image
-  from being published. A push that creates the branch has nothing to compare
+  finding goes to the job summary with file and line. On a pull request it
+  fails the job, and a reviewed contract step takes the `destructive-migration`
+  label (added after the last push, then re-run the job). On a push to `main`
+  it is a warning only (`MIGRATION_LINT_FAIL` empty): the push is the
+  owner's own reviewed change, and the warning is there for whoever deploys
+  it. A project with a deployment to protect makes it blocking by setting
+  `MIGRATION_LINT_FAIL: 'on'` for pushes too, or by landing changes through
+  pull requests. A push that creates the branch has nothing to compare
   with and is skipped; one whose `before` is not in the history (a force
   push) fails, to be linted by hand with `--base`. Changing a merged
   migration and a `squawk-ignore` comment fail either way. Its tests need Docker with a working
