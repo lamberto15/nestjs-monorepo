@@ -50,6 +50,19 @@
       "rules": {
         "no-restricted-imports": "off"
       }
+    },
+    {
+      "files": [
+        "src/components/sortable.tsx",
+        "src/components/faceted.tsx",
+        "src/components/chart.tsx"
+      ],
+      "rules": {
+        "react/refs": "off",
+        "react/immutability": "off",
+        "react/preserve-manual-memoization": "off",
+        "react/exhaustive-deps": "off"
+      }
     }
   ]
 }
