@@ -1,5 +1,6 @@
 {
   "name": "nestjs-monorepo",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "packageManager": "pnpm@12.21.0",
   "devEngines": {
     "packageManager": {

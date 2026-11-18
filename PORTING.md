@@ -98,13 +98,13 @@ repository.
 
 ## Around the API
 
-- [ ] the typed client (`packages/api-client`)
+- [x] the typed client (`packages/api-client`)
 - [ ] the web app (`apps/web`, `packages/ui`)
 - [x] the worker process (`node dist/worker`)
 - [x] the operator CLI (`pnpm ops`)
 - [x] repository tooling: the raw SQL check, knip, git hooks, commit
       message rules, migration lint, setup, the demo seed
-- [ ] the docs pages
+- [x] the docs pages
 - [x] CI (one workflow, the image, Dependabot: `docs/ci.md`)
 
 ## Not ported, on purpose
@@ -234,4 +234,30 @@ repository.
 - Workflow inputs and outputs are encrypted when `DATA_ENCRYPTION_KEYS` is
   set.
 - A record add-on's routes are in the OpenAPI document only when a feature
-  uses the add-on, so with no feature the typed client has none of them.
+  uses the add-on. Its shapes (`Comment`, `Attachment`, `Revision`,
+  `Duplicate`, `MergePreview`…) and realtime events are published as named
+  components regardless, so the web app's record panels are typed with no
+  feature.
+- `GET /v1/auth/me`, `/v1/auth/methods` and `/v1/features` are typed from
+  what each module declares; `avatarUrl` is a top-level key of `/v1/auth/me`.
+- Permissions are named by their module: `Access.viewOps`, `retryJobs`,
+  `discardJobs`, `testIntegrations` (were `Ops.view`, `Ops.manage`);
+  `Setting.read`, `Setting.update` and `Branding.update` (were
+  `Access.manageSettings`); `Webhooks.manageEndpoints` and `manageSenders`;
+  `MailSuppression.read`, `create`, `delete`; `ConfigBundle.export`;
+  `DataQuality.scan`, `resolve`; `Approval.abandon`;
+  `AutomationRule.configure`.
+- Ops: outbox stats are flat on `GET /v1/ops/outbox`; dead letters are
+  `GET /v1/ops/dead-letters` with `POST …/retry` and `…/discard`; a queue's
+  failed jobs are `GET /v1/ops/queues/{name}/jobs?state=failed`; the backlog
+  preview groups by `topic`.
+- An API client's daily quota belongs to usage:
+  `PUT /v1/access/clients/{id}/daily-quota`, not a field of the client.
+- Account and tenant exports are CSV or Excel (no JSON).
+- Branding domains answer `{ enabled, items }`; `PUT /v1/devices` takes
+  `{ name, subscription }`; notification preferences have no `webhook`
+  channel.
+- Merge preview `moves` is `{ references }`; an approval policy has `flag`
+  (not `setting`) and no `payloadSchema`; an automation rule has `condition`
+  (an expression) instead of `filters`, and its webhook action no `clientId`;
+  a bulk run shows `subject`.
