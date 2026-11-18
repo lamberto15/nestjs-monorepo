@@ -11,6 +11,6 @@
  * workers.
  */
 process.env.APP_ROLE = 'api';
-// Before the app: it starts the tracing SDK, which patches what is loaded after it.
+// Before the app: it loads .env.
 await import('./core/observability/instrument.js');
 await import('./cli/run.js');
