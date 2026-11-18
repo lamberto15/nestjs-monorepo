@@ -9,7 +9,7 @@
 # Every base image is pinned by digest; Dependabot raises both tag and digest.
 
 # pnpm's own binary, at the version of package.json's packageManager.
-FROM ghcr.io/pnpm/pnpm:12.21.0@sha256:168feba88e6a1684c99a62cbf4fe361d4e683e2a6c920d3b0acde7e15a28b62d AS pnpm
+FROM ghcr.io/pnpm/pnpm:12.22.0@sha256:81346f048d668195928d441b80efc0df300474ed8bf81789e4554ec0079079d0 AS pnpm
 
 # Debian 13 (glibc), so the native modules installed here run in the final stage.
 FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS build
