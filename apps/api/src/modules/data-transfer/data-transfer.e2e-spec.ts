@@ -1,8 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { getQueueToken } from '@nestjs/bullmq';
+import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
+import { StorageDisk } from '@nestjs/storage';
 import type { Queue } from 'bullmq';
+import { eq } from 'drizzle-orm';
 import { readXlsx } from 'turbosheet';
+import { member } from '../../../test/access.js';
+import { accessTokenFor } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
 import { TEST_ITEM } from '../../../test/fixtures/test-items/test-item.record.js';
 import { testItemsModule } from '../../../test/fixtures/test-items/test-items.module.js';
@@ -12,7 +17,12 @@ import {
   recordsTenant,
   testItemModules,
 } from '../../../test/records.js';
+import type { Database } from '../../core/database/database.js';
+import { SharedLocksModule } from '../../core/locks/locks.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
+import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { userRoles } from '../../iam/access/access.tables.js';
+import { AccessService } from '../../iam/access/access.service.js';
 import { Realtime } from '../realtime/realtime.service.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { DataTransferModule } from './data-transfer.module.js';
@@ -22,7 +32,9 @@ import {
   dataImportFinished,
   dataProgress,
 } from './data-transfer.events.js';
-import { DATA_TRANSFERS } from './data-transfer.service.js';
+import { DATA_TRANSFERS, transferKey } from './data-transfer.service.js';
+import { TransferFilesSweep } from './transfer-files.sweep.js';
+import { TRANSFER_KEPT_MS } from './transfer-retention.js';
 
 vi.hoisted(() => {
   Object.assign(process.env, {
@@ -88,6 +100,7 @@ describe('data transfer (e2e)', () => {
       ...testItemModules(),
       QueuesModule,
       StorageModule,
+      SharedLocksModule,
       testItemsModule({ imports: [DataTransferModule.forRecord(TEST_ITEM)] }),
     );
     team = await recordsTenant(app);
@@ -447,5 +460,100 @@ describe('data transfer (e2e)', () => {
       ),
     );
     push.mockRestore();
+  });
+
+  /** The transfer as its detail and its list item tell it. */
+  async function shown(id: string, headers: Headers) {
+    const detail = (await get(`/v1/data/transfers/${id}`, headers)).json<
+      Transfer & { expiresAt: string }
+    >();
+    const listed = (await get('/v1/data/transfers?kind=export', headers))
+      .json<{ items: Transfer[] }>()
+      .items.find((item) => item.id === id);
+    return { detail, listed };
+  }
+
+  it('gives no link to a starter who lost the right to read the record, and keeps the transfer', async () => {
+    const reader = await member(app, team.tenantId, ['viewer']);
+    await createTestItem(app, team.editor.headers, { title: 'Readable' });
+    const exported = await exportOf({ format: 'csv' }, reader.headers);
+    expect(exported.result!.url).toEqual(expect.any(String));
+
+    await app
+      .get(Tenancy)
+      .run(team.tenantId, () =>
+        app
+          .get<Database>(getDrizzleToken())
+          .delete(userRoles)
+          .where(eq(userRoles.userId, reader.id)),
+      );
+    app.get(AccessService).invalidate();
+
+    const { detail, listed } = await shown(exported.id, reader.headers);
+    for (const transfer of [detail, listed]) {
+      expect(transfer).toMatchObject({
+        id: exported.id,
+        status: 'completed',
+        result: { rows: exported.result!.rows },
+      });
+      expect(transfer!.result).not.toHaveProperty('url');
+    }
+  });
+
+  it('gives no link once the transfer has expired, and never one that outlives it', async () => {
+    await createTestItem(app, team.editor.headers, { title: 'Expiring' });
+    const exported = await exportOf({ format: 'csv' });
+    const { detail } = await shown(exported.id, team.editor.headers);
+    const expiresAt = Date.parse(detail.expiresAt);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      // A minute before it ends: a link, signed for that minute only.
+      vi.setSystemTime(expiresAt - 60_000);
+      const { headers } = await accessTokenFor(
+        app,
+        team.editor.id,
+        team.tenantId,
+      );
+      const late = (await shown(exported.id, headers)).detail;
+      const signedUntil = Number(
+        new URL(late.result!.url!).searchParams.get('expires'),
+      );
+      expect(signedUntil * 1000).toBeLessThanOrEqual(expiresAt);
+
+      vi.setSystemTime(expiresAt + 1);
+      const fresh = await accessTokenFor(app, team.editor.id, team.tenantId);
+      const { detail: gone, listed } = await shown(exported.id, fresh.headers);
+      for (const transfer of [gone, listed]) {
+        expect(transfer).toMatchObject({
+          status: 'completed',
+          result: { rows: exported.result!.rows },
+        });
+        expect(transfer!.result).not.toHaveProperty('url');
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("deletes the tenant's transfer files past their retention, and nothing else", async () => {
+    const disk = app.get(StorageDisk);
+    const old = transferKey(team.tenantId, 'old.csv');
+    const other = `tenants/${team.tenantId}/attachments/old.bin`;
+    const fresh = transferKey(team.tenantId, 'fresh.csv');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() - TRANSFER_KEPT_MS - 60_000);
+      await disk.put(old, 'old');
+      await disk.put(other, 'not a transfer');
+    } finally {
+      vi.useRealTimers();
+    }
+    await disk.put(fresh, 'fresh');
+
+    expect(await app.get(TransferFilesSweep).run()).toBeGreaterThanOrEqual(1);
+    expect(await disk.exists(old)).toBe(false);
+    expect(await disk.exists(fresh)).toBe(true);
+    expect(await disk.exists(other)).toBe(true);
   });
 });

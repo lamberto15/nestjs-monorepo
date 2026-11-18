@@ -34,6 +34,7 @@ import {
   TenantExports,
 } from './tenant-export.controller.js';
 import { TenantExport } from './tenant-export.js';
+import { TransferFilesSweep } from './transfer-files.sweep.js';
 
 /**
  * Exports and imports (README.md): the routes under /v1/data, the
@@ -41,7 +42,8 @@ import { TenantExport } from './tenant-export.js';
  * import limits. A record takes part by importing
  * `DataTransferModule.forRecord(DECLARATION)` in its feature module, which
  * brings this module along. Needs QueuesModule, StorageModule,
- * SharedOutboxModule, JobsModule's Redis and what AccessModule needs.
+ * SharedOutboxModule, SharedLocksModule (the sweep of the files), JobsModule's
+ * Redis and what AccessModule needs.
  */
 @Module({
   imports: [
@@ -75,6 +77,7 @@ import { TenantExport } from './tenant-export.js';
     TenantExport,
     TenantExportPolicy,
     TenantExports,
+    TransferFilesSweep,
   ],
   exports: [DataTransferService, PrincipalNow],
 })

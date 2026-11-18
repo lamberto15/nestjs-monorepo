@@ -19,7 +19,8 @@ the same 400s and 403 `field_forbidden`. The worker walks every page of the
 list as the caller (`RecordStore.findPage()` and `RecordPresenter.many()`,
 so permissions, field redaction and add-ons apply). It writes the file to the
 private disk. `GET /v1/data/transfers/{id}` then gives a signed link that
-works for 30 minutes.
+works for 30 minutes (see Status: only while the transfer is kept and the
+caller still may read the record).
 
 The columns are:
 
@@ -61,7 +62,8 @@ template has a guide sheet and dropdowns. Saved mappings live under
 `POST /v1/tenants/{id}/export { format?: csv | xlsx }` (`@OperatorOnly()`, `Access.exportTenants`,
 a recent sign-in, optional Idempotency-Key) queues an export of every record of
 that tenant on the same queue and files: 202 with a transfer id, followed at
-`GET /v1/data/transfers/{id}` in the operator's own tenant (30 minute link). One row per
+`GET /v1/data/transfers/{id}` in the operator's own tenant (30 minute link,
+only while the operator still holds `Access.exportTenants`). One row per
 record: `kind` (its table; `tenant`; `member` for the members' accounts), `id`, `data`
 (JSON). The tables come from `tenantTables()` (core/tenancy), keyset-paged by primary
 key or a unique index, each page read in that tenant's scope and filtered by its
@@ -83,9 +85,29 @@ kept with the job.
 ## Status
 
 `GET /v1/data/transfers` and `/{id}` show only the caller's own
-transfers, in this tenant. A finished transfer is kept for 7 days. When a
+transfers, in this tenant. A finished transfer is kept for 7 days
+(`TRANSFER_KEPT_MS`, transfer-retention.ts: the jobs, `expiresAt`, the links
+and the files all go by it). When a
 transfer ends, `transferFinished` is published (data-transfer.events.ts).
 Scheduled reports subscribe to it.
+
+The links (`url`, `errorsUrl`) are signed in one place, each time a
+transfer is read, and only:
+
+- while the caller still holds the right the transfer was started with,
+  checked as the start and the worker check it: `Access.exportTenants` for a
+  tenant's export (`TenantExport.allowed()`), reading the record for an
+  export, importing it for an import's report;
+- while it is kept: a link works for 30 minutes (`TRANSFER_LINK_TTL_MS`) and
+  never past `expiresAt`.
+
+Otherwise the transfer is still shown, its status and rows, with no link.
+
+`TransferFilesSweep` (transfer-files.sweep.ts, every night at 04:35 UTC on
+one instance) deletes the files under every tenant's `tenants/<id>/transfers/`
+(exports, import reports, uploads an import never got to) written longer ago
+than `TRANSFER_KEPT_MS`, the disk's own listing telling their age. It walks
+the tenants, deactivated ones too. Needs SharedLocksModule in the app.
 
 Another module's own columns: a provider marked `@TransferColumns()` (data-transfer.columns.ts) implements `exportColumns`, `importColumns` and `importReader` for the records it applies to. Custom fields do (`custom-fields.transfer.ts`); data-transfer imports none of them.
 
@@ -99,6 +121,9 @@ with an id; a worker on the `account-exports` queue walks every module's
 `@PersonalData()` section (`PersonalDataService.export()`) and writes one row
 per record (`kind`, `tenantId`, `id`, `data` as JSON) under
 `accounts/<id>/exports/`. `GET /v1/account/exports` lists them and
-`GET /v1/account/exports/{id}` gives the link (30 minutes), kept 7 days.
-Users only, never while impersonating. Needs QueuesModule, StorageModule and
-PersonalDataModule.
+`GET /v1/account/exports/{id}` gives the link (30 minutes, never past
+`expiresAt`), kept 7 days: after that the export is shown with no `url`, and
+`AccountExportFilesSweep` (every night at 04:40 UTC, on one instance) deletes
+the files under `accounts/<id>/exports/`, leaving the accounts' other files.
+Users only, never while impersonating. Needs QueuesModule, StorageModule,
+SharedLocksModule and PersonalDataModule.

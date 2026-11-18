@@ -28,6 +28,10 @@ import type { UserPrincipal } from '../../iam/auth/principal.js';
 import { UserOnly } from '../../iam/auth/user-only.decorator.js';
 import { AccountExports } from './account-exports.service.js';
 import { TRANSFER_FORMATS } from './data-transfer.types.js';
+import {
+  TRANSFER_KEPT_MS,
+  TRANSFER_LINK_TTL_MS,
+} from './transfer-retention.js';
 
 const requestSchema = z.object({
   format: z.enum(TRANSFER_FORMATS).default('csv'),
@@ -52,8 +56,20 @@ const exportSchema = z.object({
   expiresAt: z.iso
     .datetime()
     .nullable()
-    .describe('When it is no longer kept (7 days after it ended).'),
-  result: z.object({ rows: z.number(), url: z.url() }).optional(),
+    .describe(
+      `When it is no longer kept (${TRANSFER_KEPT_MS / 86_400_000} days after it ended).`,
+    ),
+  result: z
+    .object({
+      rows: z.number(),
+      url: z
+        .url()
+        .optional()
+        .describe(
+          `The file, for ${TRANSFER_LINK_TTL_MS / 60_000} minutes at most and never past \`expiresAt\`. Absent once the export has expired.`,
+        ),
+    })
+    .optional(),
   error: z.string().optional(),
 });
 const pageSchema = z.object({

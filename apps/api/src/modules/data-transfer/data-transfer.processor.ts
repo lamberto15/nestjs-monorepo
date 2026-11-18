@@ -20,7 +20,6 @@ import {
   transferFinished,
   type TransferFinished,
 } from './data-transfer.events.js';
-import { TRANSFER_LINK_TTL } from './data-transfer.schemas.js';
 import {
   DATA_TRANSFERS,
   publicReason,
@@ -48,6 +47,7 @@ import {
   TENANT_EXPORT_COLUMNS,
   TenantExport,
 } from './tenant-export.js';
+import { TRANSFER_LINK_TTL_MS } from './transfer-retention.js';
 import { bodyOf, importSchema } from './record-transfer.js';
 import { type ImportRow, RecordTransfers } from './record-transfers.js';
 
@@ -219,7 +219,7 @@ export class DataTransferProcessor extends TenantWorkerHost<
       id: job.id!,
       name,
       rows,
-      url: await this.disk.signedUrl(key, { expiresIn: TRANSFER_LINK_TTL }),
+      url: await this.disk.signedUrl(key, { expiresIn: TRANSFER_LINK_TTL_MS }),
     });
     await this.audit.record(principal, {
       action: 'data.exported',

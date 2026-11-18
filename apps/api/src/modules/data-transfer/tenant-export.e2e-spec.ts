@@ -19,6 +19,8 @@ import {
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { RolesService } from '../../iam/access/roles.service.js';
+import { userRoles } from '../../iam/access/access.tables.js';
+import { AccessService } from '../../iam/access/access.service.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { DataTransferModule } from './data-transfer.module.js';
 import { DATA_TRANSFERS } from './data-transfer.service.js';
@@ -46,6 +48,7 @@ describe("a tenant's export by the operators (e2e)", () => {
   let app: NestNodeApplication;
   let team: Awaited<ReturnType<typeof recordsTenant>>;
   let operator: Record<string, string>;
+  let opsId: string;
   let keyHash: string;
 
   beforeAll(async () => {
@@ -69,6 +72,7 @@ describe("a tenant's export by the operators (e2e)", () => {
           .withTransaction(() => app.get(RolesService).seedTenantRoles()),
       );
     }
+    opsId = ops.id;
     operator = (await member(app, ops.id, ['administrator'])).headers;
     team = await recordsTenant(app);
     const other = await recordsTenant(app);
@@ -158,5 +162,53 @@ describe("a tenant's export by the operators (e2e)", () => {
       ).json(),
     );
     expect(JSON.stringify(entries)).toContain('tenant.export-requested');
+  });
+
+  it('gives no link to an operator who lost exportTenants since, and keeps the transfer', async () => {
+    const leaving = await member(app, opsId, ['administrator']);
+    const { id } = (await post(leaving.headers)).json<{ id: string }>();
+    const read = async () => {
+      const detail = (
+        await app.inject({
+          method: 'GET',
+          url: `/v1/data/transfers/${id}`,
+          headers: leaving.headers,
+        })
+      ).json<{ status: string; result?: { rows: number; url?: string } }>();
+      const listed = (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/data/transfers?kind=export',
+          headers: leaving.headers,
+        })
+      )
+        .json<{ items: { id: string; result?: { url?: string } }[] }>()
+        .items.find((item) => item.id === id);
+      return { detail, listed };
+    };
+    await vi.waitFor(
+      async () => expect((await read()).detail.status).toBe('completed'),
+      { timeout: 10_000, interval: 50 },
+    );
+    expect((await read()).detail.result!.url).toEqual(expect.any(String));
+
+    await app
+      .get(Tenancy)
+      .run(opsId, () =>
+        app
+          .get<Database>(getDrizzleToken())
+          .delete(userRoles)
+          .where(eq(userRoles.userId, leaving.id)),
+      );
+    app.get(AccessService).invalidate();
+
+    const { detail, listed } = await read();
+    expect(detail).toMatchObject({
+      status: 'completed',
+      result: { rows: expect.any(Number) },
+    });
+    expect(detail.result).not.toHaveProperty('url');
+    expect(listed).toMatchObject({ id, status: 'completed' });
+    expect(listed!.result).not.toHaveProperty('url');
   });
 });

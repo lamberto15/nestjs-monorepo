@@ -2,13 +2,16 @@ import { TransactionHost } from '@nestjs-cls/transactional';
 import { getQueueToken } from '@nestjs/bullmq';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
+import { StorageDisk } from '@nestjs/storage';
 import type { Queue } from 'bullmq';
 import { eq } from 'drizzle-orm';
+import { accessTokenFor } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
 import { TEST_ITEM } from '../../../test/fixtures/test-items/test-item.record.js';
 import { testItemsModule } from '../../../test/fixtures/test-items/test-items.module.js';
 import { recordsTenant, testItemModules } from '../../../test/records.js';
 import type { Database } from '../../core/database/database.js';
+import { SharedLocksModule } from '../../core/locks/locks.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
@@ -21,6 +24,8 @@ import { favorites } from '../favorites/favorites.tables.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { ACCOUNT_EXPORTS } from './account-exports.service.js';
 import { AccountExportsModule } from './account-exports.module.js';
+import { AccountExportFilesSweep } from './transfer-files.sweep.js';
+import { TRANSFER_KEPT_MS } from './transfer-retention.js';
 
 vi.hoisted(() => {
   Object.assign(process.env, {
@@ -52,6 +57,7 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
       PersonalDataModule,
       AvatarsModule,
       AccountExportsModule,
+      SharedLocksModule,
       testItemsModule({ imports: [FavoritesModule.forRecord(TEST_ITEM)] }),
     );
     db = app.get<Database>(getDrizzleToken());
@@ -194,5 +200,86 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
           .where(eq(userAvatars.userId, team.editor.id)),
       ),
     ).toEqual([]);
+  });
+
+  it('gives no link once the export has expired', async () => {
+    const started = await app.inject({
+      method: 'POST',
+      url: '/v1/account/export',
+      headers: team.viewer.headers,
+      payload: { format: 'csv' },
+    });
+    const { id } = started.json<{ id: string }>();
+    type Shown = {
+      status: string;
+      expiresAt: string;
+      result?: { rows: number; url?: string };
+    };
+    const read = async (headers: Record<string, string>) => ({
+      detail: (
+        await app.inject({
+          method: 'GET',
+          url: `/v1/account/exports/${id}`,
+          headers,
+        })
+      ).json<Shown>(),
+      listed: (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/account/exports',
+          headers,
+        })
+      )
+        .json<{ items: (Shown & { id: string })[] }>()
+        .items.find((item) => item.id === id),
+    });
+    let expiresAt = 0;
+    await vi.waitFor(
+      async () => {
+        const { detail } = await read(team.viewer.headers);
+        expect(detail.status).toBe('completed');
+        expect(detail.result!.url).toEqual(expect.any(String));
+        expiresAt = Date.parse(detail.expiresAt);
+      },
+      { timeout: 60_000 },
+    );
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(expiresAt + 1);
+      const { headers } = await accessTokenFor(app, team.viewer.id, null);
+      const { detail, listed } = await read(headers);
+      for (const shown of [detail, listed]) {
+        expect(shown).toMatchObject({
+          status: 'completed',
+          result: { rows: expect.any(Number) },
+        });
+        expect(shown!.result).not.toHaveProperty('url');
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('deletes the exports past their retention, and keeps the fresh ones and the pictures', async () => {
+    const disk = app.get(StorageDisk);
+    const owner = team.viewer.id;
+    const old = `accounts/${owner}/exports/old.csv`;
+    const picture = `accounts/${owner}/avatar/old.png`;
+    const fresh = `accounts/${owner}/exports/fresh.csv`;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() - TRANSFER_KEPT_MS - 60_000);
+      await disk.put(old, 'old');
+      await disk.put(picture, 'png');
+    } finally {
+      vi.useRealTimers();
+    }
+    await disk.put(fresh, 'fresh');
+
+    expect(await app.get(AccountExportFilesSweep).run()).toBe(1);
+    expect(await disk.exists(old)).toBe(false);
+    expect(await disk.exists(fresh)).toBe(true);
+    expect(await disk.exists(picture)).toBe(true);
   });
 });

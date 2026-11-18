@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { jobStatusFilter } from '../../core/jobs/job-status.js';
 import { DEFAULT_LIMIT, MAX_LIMIT } from '../../core/http/pagination.js';
 import { TRANSFER_FORMATS } from './data-transfer.types.js';
+import {
+  TRANSFER_KEPT_MS,
+  TRANSFER_LINK_TTL_MS,
+} from './transfer-retention.js';
 import { isTimeZone } from './zoned-time.js';
-
-/** How long a download link works. */
-export const TRANSFER_LINK_TTL = '30m';
 
 /** At most this many saved mappings per import, and columns in one. */
 export const MAX_MAPPINGS_PER_IMPORT = 50;
@@ -177,18 +178,27 @@ export const statusSchema = z.object({
   expiresAt: z.iso
     .datetime()
     .nullable()
-    .describe('When it is no longer kept (7 days after it ended).'),
+    .describe(
+      `When it is no longer kept (${TRANSFER_KEPT_MS / 86_400_000} days after it ended).`,
+    ),
   result: z
     .object({
       rows: z.number(),
-      url: z.url().optional().describe(`The file, for ${TRANSFER_LINK_TTL}.`),
+      url: z
+        .url()
+        .optional()
+        .describe(
+          `The file, for ${TRANSFER_LINK_TTL_MS / 60_000} minutes at most and never past \`expiresAt\`. Absent once the transfer has expired, or when you no longer hold the right it was started with.`,
+        ),
       imported: z.number().optional(),
       failed: z.number().optional(),
       dryRun: z.boolean().optional(),
       errorsUrl: z
         .url()
         .optional()
-        .describe('A CSV of the refused rows: row, field, message.'),
+        .describe(
+          'A CSV of the refused rows: row, field, message. Absent when `url` would be.',
+        ),
     })
     .optional(),
   error: z.string().optional(),

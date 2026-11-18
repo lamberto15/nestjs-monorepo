@@ -14,13 +14,39 @@ import { AuditService } from '../../iam/audit/audit.service.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
 import { PersonalDataService } from '../../iam/personal-data/personal-data.service.js';
 import { accountFileKey } from '../storage/storage.keys.js';
-import { TRANSFER_LINK_TTL } from './data-transfer.schemas.js';
-import { TRANSFER_KEPT_MS } from './data-transfer.service.js';
 import type { TransferFormat } from './data-transfer.types.js';
 import { CONTENT_TYPES, createWriter } from './formats.js';
+import {
+  keptUntil,
+  linkWhileKept,
+  TRANSFER_KEPT_MS,
+} from './transfer-retention.js';
 
 /** The queue of the people's own data exports. */
 export const ACCOUNT_EXPORTS = 'account-exports';
+
+/** Where a person's export is written (`accounts/<id>/exports/…`). */
+const exportsOf = (userId: string) => accountFileKey(userId, 'exports/');
+
+/**
+ * Every account's files: the part of accountFileKey() before the user id,
+ * derived from it so the layout stays written once (storage.keys.ts).
+ */
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+export const ACCOUNT_FILES = accountFileKey(NIL_UUID, '').slice(
+  0,
+  -`${NIL_UUID}/`.length,
+);
+
+/** Whether a key under ACCOUNT_FILES is a person's export (not their picture). */
+export function isAccountExportKey(key: string) {
+  const userId = key.slice(ACCOUNT_FILES.length).split('/')[0]!;
+  try {
+    return key.startsWith(exportsOf(userId));
+  } catch {
+    return false; // not an account's id: nothing of ours
+  }
+}
 
 type ExportJob = TenantEnvelope & { userId: string; format: TransferFormat };
 interface ExportResult {
@@ -107,6 +133,11 @@ export class AccountExports {
       (state === 'completed' || state === 'failed') && job.finishedOn
         ? job.finishedOn
         : null;
+    // The person's own file: no right to check again, only its retention.
+    const url =
+      state === 'completed' && finishedAt
+        ? await linkWhileKept(this.disk, job.returnvalue.key, finishedAt)
+        : undefined;
     return {
       id: job.id!,
       kind: 'export' as const,
@@ -126,16 +157,10 @@ export class AccountExports {
           : {},
       createdAt: new Date(job.timestamp).toISOString(),
       finishedAt: finishedAt && new Date(finishedAt).toISOString(),
-      expiresAt:
-        finishedAt && new Date(finishedAt + TRANSFER_KEPT_MS).toISOString(),
+      expiresAt: finishedAt && new Date(keptUntil(finishedAt)).toISOString(),
       ...(state === 'failed' && { error: 'The export failed: ask again.' }),
       ...(state === 'completed' && {
-        result: {
-          rows: job.returnvalue.rows,
-          url: await this.disk.signedUrl(job.returnvalue.key, {
-            expiresIn: TRANSFER_LINK_TTL,
-          }),
-        },
+        result: { rows: job.returnvalue.rows, ...(url && { url }) },
       }),
     };
   }
@@ -162,7 +187,7 @@ export class AccountExportProcessor extends TenantWorkerHost<
     if (!(await this.users.findActive(userId))) {
       throw new Error('The account is no longer active.');
     }
-    const key = accountFileKey(userId, `exports/${job.id}.${format}`);
+    const key = `${exportsOf(userId)}${job.id}.${format}`;
     const writer = createWriter(format, COLUMNS);
     const stored = this.disk.put(key, writer.output, {
       contentType: CONTENT_TYPES[format],

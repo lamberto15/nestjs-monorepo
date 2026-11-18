@@ -24,10 +24,9 @@ import {
 import type { RecordRegistration } from '../records/records.service.js';
 import { tenantFileKey } from '../storage/storage.keys.js';
 import { dataTransferConfig } from './data-transfer.config.js';
-import {
-  TRANSFER_LINK_TTL,
-  type TransferStatus,
-  type TransfersQuery,
+import type {
+  TransferStatus,
+  TransfersQuery,
 } from './data-transfer.schemas.js';
 import {
   type ImportColumn,
@@ -45,16 +44,15 @@ import {
 import { type ImportMapping, mappingProblems } from './import-mapping.js';
 import { ImportLimits } from './import-limits.js';
 import { RecordTransfers } from './record-transfers.js';
-import { TENANT_EXPORT } from './tenant-export.js';
+import { TENANT_EXPORT, TenantExport } from './tenant-export.js';
+import {
+  keptUntil,
+  linkWhileKept,
+  TRANSFER_KEPT_MS,
+} from './transfer-retention.js';
 
 /** The queue of exports and imports. */
 export const DATA_TRANSFERS = 'data-transfers';
-
-/**
- * How long a finished transfer is kept (BullMQ's `removeOnComplete` and
- * `removeOnFail`): listed, found, its link given.
- */
-export const TRANSFER_KEPT_MS = 7 * 24 * 3600 * 1000;
 
 /** The JobIndex list of a principal's transfers, or of one kind of them. */
 const transferList = (kind?: TransferJob['kind']) =>
@@ -118,6 +116,7 @@ export class DataTransferService {
     private readonly disk: StorageDisk,
     private readonly jobs: JobIndex,
     private readonly limits: ImportLimits,
+    private readonly tenantExport: TenantExport,
     private readonly i18n: I18nService,
     @Inject(dataTransferConfig.KEY)
     private readonly config: ConfigType<typeof dataTransferConfig>,
@@ -414,7 +413,7 @@ export class DataTransferService {
     if (!job || !this.isOwn(principal, job)) {
       throw new NotFoundException(`Transfer ${id} not found.`);
     }
-    return this.view(job);
+    return this.view(principal, job);
   }
 
   /** The transfers this principal started in this tenant, newest first, by cursor. */
@@ -429,7 +428,9 @@ export class DataTransferService {
       query,
       async (id) => {
         const job = await this.queue.getJob(id);
-        return job && this.isOwn(principal, job) ? this.view(job) : null;
+        return job && this.isOwn(principal, job)
+          ? this.view(principal, job)
+          : null;
       },
       // Only those in this state: skipped, not forgotten.
       (transfer) =>
@@ -444,7 +445,30 @@ export class DataTransferService {
     );
   }
 
+  /**
+   * Whether the principal still holds the right its transfer was started
+   * with, as the start and the worker check it: a tenant's export
+   * (TenantExport.allowed), reading the record (mayExport), importing it
+   * (mayImport). Without it, the transfer is shown with no links.
+   */
+  private async mayStillHold(principal: Principal, job: TransferJob) {
+    if (job.kind === 'export' && job.name === TENANT_EXPORT) {
+      return this.tenantExport.allowed(principal);
+    }
+    const registration = this.transfers.find(job.name);
+    if (!registration) return false;
+    return job.kind === 'export'
+      ? this.mayExport(principal, registration)
+      : this.transfers.mayImport(principal, registration, job.matchOn);
+  }
+
+  /**
+   * The one place a transfer's links are signed: for its own principal, only
+   * while they still hold its right and while it is kept (TRANSFER_KEPT_MS),
+   * never for longer than that. Otherwise it is shown without them.
+   */
   private async view(
+    principal: Principal,
     read: Job<TransferJob, TransferResult>,
   ): Promise<TransferStatus> {
     let job = read;
@@ -471,7 +495,7 @@ export class DataTransferService {
       expiresAt:
         finishedAt === null
           ? null
-          : new Date(finishedAt + TRANSFER_KEPT_MS).toISOString(),
+          : new Date(keptUntil(finishedAt)).toISOString(),
       status:
         state === 'completed'
           ? ('completed' as const)
@@ -490,22 +514,25 @@ export class DataTransferService {
     }
     if (state !== 'completed') return base;
     const result = job.returnvalue;
-    const link = (key: string) =>
-      this.disk.signedUrl(key, { expiresIn: TRANSFER_LINK_TTL });
-    return result.kind === 'export'
-      ? { ...base, result: { rows: result.rows, url: await link(result.key) } }
-      : {
-          ...base,
-          result: {
-            rows: result.rows,
-            imported: result.imported,
-            failed: result.failed,
-            dryRun: result.dryRun,
-            ...(result.errorsKey && {
-              errorsUrl: await link(result.errorsKey),
-            }),
-          },
-        };
+    const allowed =
+      finishedAt !== null && (await this.mayStillHold(principal, job.data));
+    const link = async (key: string) =>
+      allowed ? linkWhileKept(this.disk, key, finishedAt) : undefined;
+    if (result.kind === 'export') {
+      const url = await link(result.key);
+      return { ...base, result: { rows: result.rows, ...(url && { url }) } };
+    }
+    const errorsUrl = result.errorsKey && (await link(result.errorsKey));
+    return {
+      ...base,
+      result: {
+        rows: result.rows,
+        imported: result.imported,
+        failed: result.failed,
+        dryRun: result.dryRun,
+        ...(errorsUrl && { errorsUrl }),
+      },
+    };
   }
 
   private async enqueue(
