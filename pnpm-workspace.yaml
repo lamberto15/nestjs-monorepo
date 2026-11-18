@@ -22,5 +22,3 @@ auditConfig:
     # picomatch ReDoS (2026-10-19, no patched version): only through
     # re2 > node-gyp, the native build at install time, never at runtime.
     - GHSA-fc5q-39xc-vjpf
-minimumReleaseAgeExclude:
-  - '@nestrix-js/nestjs@0.6.0'

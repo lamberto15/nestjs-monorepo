@@ -10,17 +10,16 @@ import { NestFactory } from '@nestjs/core';
  *   node dist/worker
  */
 process.env.APP_ROLE = 'worker';
-// Before the app: it loads .env, which the instrument below reads.
+// Before the app: it starts the tracing SDK, which patches what is loaded after it.
 await import('./core/observability/instrument.js');
 // After the role is set: AppModule is not loaded before this line.
 const { AppModule } = await import('./app.module.js');
 const { createLogger } = await import('./core/logging/logging.js');
 const { observeInstrument } = await import('./core/observability/observe.js');
-const { nestrixInstrument } = await import('./core/observability/nestrix.js');
 
 const app = await NestFactory.createApplicationContext(AppModule, {
   bufferLogs: true,
-  instrument: observeInstrument() ?? nestrixInstrument(),
+  instrument: observeInstrument(),
 });
 app.useLogger(createLogger());
 // On SIGTERM the workers finish the jobs they run, then the modules close what they hold.

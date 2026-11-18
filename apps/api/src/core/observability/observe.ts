@@ -10,9 +10,9 @@ import { logRedaction } from '../logging/redaction.js';
 import {
   type ObservabilityEnv,
   observabilityConfig,
-  observeConfigured,
   schema,
 } from './observability.config.js';
+import { observeConfigured } from './telemetry.js';
 
 /**
  * NestJS Observe (@nestjs/observe): traces of every request, job and
@@ -22,7 +22,7 @@ import {
  *
  * With `OTEL_EXPORTER_OTLP_ENDPOINT` set as well, Observe joins the
  * OpenTelemetry setup instead of running beside a second SDK
- * (`observeOtlpOptions`; Nestrix then stays off, nestrix.ts). `x-request-id` from the proxy or the
+ * (`observeOtlpOptions`, telemetry.ts). `x-request-id` from the proxy or the
  * client becomes the trace id (the SDK's default), so one id follows a
  * request through the logs and the traces.
  */
@@ -99,9 +99,9 @@ export const observeInstrument = (env: ObservabilityEnv = readEnv(schema)) =>
  * What Observe does about OpenTelemetry. With the OTLP endpoint set, Observe
  * reads and sends W3C `traceparent` (`openTelemetry`) and exports its spans
  * to that collector (`otlp: true` reads the endpoint, headers, protocol and
- * service name from the standard `OTEL_*` variables), and Nestrix is not
- * started (nestrix.ts), so http and pg are instrumented once and each trace
- * is exported once.
+ * service name from the standard `OTEL_*` variables), and the standalone SDK
+ * is not started (telemetry.ts), so http and pg are instrumented once and each
+ * trace is exported once.
  */
 export const observeOtlpOptions = (endpoint: string | undefined) =>
   endpoint?.trim() ? { openTelemetry: true, otlp: true } : {};

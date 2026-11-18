@@ -3,14 +3,14 @@
 Production telemetry. Off until a backend's variables are set, and it costs nothing while off. There are two backends, swapped by configuration alone:
 
 - **NestJS Observe** (hosted; `OBSERVE_APP_KEY`, `OBSERVE_APP_SECRET`): traces, runtime metrics, errors and logs of requests and jobs (`observe.ts`). `main.ts` and `worker.ts` pass `observeInstrument()` to Nest.
-- **Nestrix** (self-hosted, over OpenTelemetry; `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`): [`@nestrix-js/nestjs`](https://github.com/nestrix-js/nestrix) (`nestrix.ts`) traces every request by route, the app's own controllers, services and processors (`nestrixInstrument()` in `main.ts` and `worker.ts`), pg queries, outgoing calls and BullMQ jobs (`jobTelemetry()`, core/queues), with runtime metrics, over OTLP/HTTP. The backend meant for it is the Nestrix server, which takes OTLP on port 4318; any OpenTelemetry collector works too. With Observe on as well, Observe exports to that endpoint and Nestrix stays off, so nothing is recorded twice. Redis commands get no spans: Nestrix's ioredis integration is opt-in, because it turns an unawaited failing command's crash into silence.
+- **Self-hosted, over OpenTelemetry** (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`): traces and metrics over OTLP/HTTP (`telemetry.ts`, started by `instrument.ts`). The backend meant for it is the [Nestrix](https://github.com/nestrix-js/nestrix) server, which takes OTLP on port 4318; any OpenTelemetry collector works too. With Observe on as well, Observe exports to that endpoint and the standalone SDK stays off, so nothing is recorded twice.
 
-`instrument.ts` loads `.env` before Nest builds the app, so both `instrument` choices read it. Gaps found in Nestrix are fixed there (https://github.com/nestrix-js/nestrix/issues/49 tracks them), not worked around here.
+Today the self-hosted path sends plain OpenTelemetry to the Nestrix server. Nestrix's own NestJS module (`@nestrix-js/nestjs`: Nest-aware spans for controllers, services and jobs) replaces `telemetry.ts` once its open work is done: https://github.com/nestrix-js/nestrix/issues/49 lists it (missing BullMQ spans in ESM apps and silent export failures are the two blockers). Nothing else in the app changes then, because:
 
 What the app's own code uses is backend-neutral (the OpenTelemetry API), so it works with either:
 
 - **`reportError()`**: the problem-details filter reports the 5xx errors it answers; call it for an error you handled but that should be seen. It lands on the active span.
 - **`traceCorrelation()`**: the active trace id on log lines.
-- **Refused uploads:** a backend that turns telemetry away (401, 403, 429) leaves the app blind and running. Observe's are counted in `telemetry_rejected_total{target,status}` (`core/metrics`); Nestrix logs a warning when its exports start failing and when they work again.
+- **Refused uploads:** a backend that turns telemetry away (401, 403, 429) leaves the app blind and running. It is counted in `telemetry_rejected_total{target,status}` (`core/metrics`).
 - **Also read:** `SERVICE_NAME`, `GIT_SHA` (the release), `NODE_ENV`.
-- **Remove:** delete this folder and its line in `app.module.ts`, the import of `instrument.ts` and the `instrument` option in `main.ts`, `worker.ts` and `cli.ts`, `jobTelemetry()` in `core/queues`, and the two calls in `core/http` and `core/logging`.
+- **Remove:** delete this folder and its line in `app.module.ts`, the import of `instrument.ts` and `observeInstrument()` in `main.ts` and `worker.ts`, and the two calls in `core/http` and `core/logging`.

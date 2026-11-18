@@ -3,7 +3,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
 import { DiscoveryModule } from '@nestjs/core';
 import type { ConnectionOptions } from 'bullmq';
-import { jobTelemetry } from '../observability/nestrix.js';
 import { redisConfig } from '../redis/redis.config.js';
 import { producerRedisOptions } from '../redis/redis.js';
 import { RedisModule } from '../redis/redis.module.js';
@@ -36,10 +35,6 @@ BullModule.workerClass = QueueWorker;
         connection: producerRedisOptions(config) as ConnectionOptions,
         prefix: `${config.prefix}:bull`,
         defaultJobOptions: DEFAULT_JOB_OPTIONS,
-        // Spans for adding and running jobs, and the trace context in each
-        // job, so a job's trace continues the request that queued it. Looks
-        // its tracer up on first use: a no-op while no backend is on.
-        telemetry: jobTelemetry(),
       }),
       extraOptions: { manualRegistration: true },
     }),
