@@ -1,23 +1,23 @@
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import pg from 'pg';
-import { bootModules } from '../../boot.js';
-import { captured, fullScans } from '../../query-plans.js';
-import { recordsTenant, testItemModules, unitWithLead } from '../../records.js';
-import type { Member } from '../../records.js';
-import { QueuesModule } from '../../../src/core/queues/queues.module.js';
-import { MetricsModule } from '../../../src/core/metrics/metrics.module.js';
-import { SharedHttpClientModule } from '../../../src/core/http-client/http-client.module.js';
-import { SharedWorkflowsModule } from '../../../src/core/workflows/workflows.module.js';
-import { HoldsModule } from '../../../src/iam/holds/holds.module.js';
-import { StorageModule } from '../../../src/modules/storage/storage.module.js';
-import { NotificationsModule } from '../../../src/modules/notifications/notifications.module.js';
-import { WebhooksModule } from '../../../src/modules/webhooks/webhooks.module.js';
-import { AutomationsModule } from '../../../src/modules/automations/automations.module.js';
-import { ChoicesModule } from '../../../src/modules/choices/choices.module.js';
-import { RecurrenceModule } from '../../../src/modules/recurrence/recurrence.module.js';
-import { RetentionModule } from '../../../src/modules/retention/retention.module.js';
-import { McpModule } from '../../../src/modules/mcp/mcp.module.js';
-import { GeneratedItemsModule } from './generated-items.module.js';
+import { bootModules } from '../boot.js';
+import { captured, fullScans } from '../query-plans.js';
+import { recordsTenant, testItemModules, unitWithLead } from '../records.js';
+import type { Member } from '../records.js';
+import { QueuesModule } from '../../src/core/queues/queues.module.js';
+import { MetricsModule } from '../../src/core/metrics/metrics.module.js';
+import { SharedHttpClientModule } from '../../src/core/http-client/http-client.module.js';
+import { SharedWorkflowsModule } from '../../src/core/workflows/workflows.module.js';
+import { HoldsModule } from '../../src/iam/holds/holds.module.js';
+import { StorageModule } from '../../src/modules/storage/storage.module.js';
+import { NotificationsModule } from '../../src/modules/notifications/notifications.module.js';
+import { WebhooksModule } from '../../src/modules/webhooks/webhooks.module.js';
+import { AutomationsModule } from '../../src/modules/automations/automations.module.js';
+import { ChoicesModule } from '../../src/modules/choices/choices.module.js';
+import { RecurrenceModule } from '../../src/modules/recurrence/recurrence.module.js';
+import { RetentionModule } from '../../src/modules/retention/retention.module.js';
+import { McpModule } from '../../src/modules/mcp/mcp.module.js';
+import { GeneratedItemsModule } from './generated-feature/generated-items.module.js';
 
 vi.hoisted(() => {
   Object.assign(process.env, {
