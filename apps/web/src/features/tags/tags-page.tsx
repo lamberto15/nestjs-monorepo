@@ -33,7 +33,7 @@ import {
   subjectTagsQuery,
   TagBadge,
   type Tag,
-} from '@/lib/tags';
+} from '@/features/tags/tags';
 import { useDeleteTag } from './api';
 import { TagDialog } from './tag-dialog';
 

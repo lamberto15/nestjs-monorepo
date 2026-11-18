@@ -517,5 +517,11 @@
   "banners": {
     "more": "+{{count}} more",
     "fewer": "Show less"
+  },
+  "actors": {
+    "you": "You",
+    "someone": "Someone",
+    "anonymous": "Anonymous",
+    "system": "System"
   }
 }

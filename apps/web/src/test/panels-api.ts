@@ -24,7 +24,9 @@ export const MAYA = {
 export type PanelCapabilities = {
   comments: boolean;
   attachments: boolean;
+  // capability:tags begin
   tags: boolean;
+  // capability:tags end
   revisions: boolean;
   /** PDF documents of the record; off unless a test asks. */
   pdf?: boolean;
@@ -37,10 +39,13 @@ export type PanelCapabilities = {
 export const EVERY_PANEL: PanelCapabilities = {
   comments: true,
   attachments: true,
+  // capability:tags begin
   tags: true,
+  // capability:tags end
   revisions: true,
 };
 
+// capability:attachments begin
 /** The object store's origin, in the tests of direct uploads. */
 const STORE = 'https://files.example.test';
 
@@ -50,6 +55,7 @@ const BUCKET_CORS = {
   'access-control-allow-methods': 'PUT',
   'access-control-allow-headers': '*',
 };
+// capability:attachments end
 
 export const ATTACHMENT_LIMITS = {
   maxBytes: 25 * 1024 * 1024,
@@ -94,6 +100,7 @@ export type TestRendition = {
   contentType: string;
 };
 
+// capability:comments begin
 type Comment = {
   id: string;
   subject: string;
@@ -107,7 +114,9 @@ type Comment = {
   createdAt: string;
   updatedAt: string;
 };
+// capability:comments end
 
+// capability:revisions begin
 export type TestRevision = {
   number: number;
   changes: Record<string, { from: unknown; to: unknown }> | null;
@@ -133,6 +142,7 @@ export const sampleRevisions: TestRevision[] = [
   },
   { number: 1, changes: null, changedBy: `user:${signedInUser.user.id}` },
 ];
+// capability:revisions end
 
 export function panelHandlers(
   options: {
@@ -147,7 +157,10 @@ export function panelHandlers(
     attachmentLimits?: typeof ATTACHMENT_LIMITS;
     /** The tenant's people, as `GET /v1/people?q=` searches them. */
     people?: (typeof MAYA)[];
+    // capability:comments begin
     comments?: Partial<Comment>[];
+    // capability:comments end
+    // capability:attachments begin
     attachments?: {
       id: string;
       name: string;
@@ -162,10 +175,16 @@ export function panelHandlers(
       /** Empty until `renditionStatus` is `ready`. */
       renditions?: { thumb?: TestRendition; preview?: TestRendition };
     }[];
+    // capability:attachments end
+    // capability:tags begin
     tags?: { id: string; name: string; color: string | null }[];
+    // capability:tags end
+    // capability:revisions begin
     revisions?: TestRevision[];
     /** The ETag the restore must carry; another is a 412. */
     restoreEtag?: string;
+    // capability:revisions end
+    // capability:attachments begin
     uploadStatus?: number;
     /** What an upload is stored as: `pending` as with MALWARE_SCANNER on. */
     uploadScanStatus?: 'pending' | 'clean';
@@ -179,33 +198,47 @@ export function panelHandlers(
       presign?: { status: number; code: string };
       store?: 'ok' | 'unreachable' | 'refused';
     };
+    // capability:attachments end
   } = {},
 ) {
   const { subject, path } = options.record ?? TEST_RECORD;
   // msw's form of the route: `/v1/test-items/:id`.
   const route = path.replace('{id}', ':id');
   const calls = {
+    // capability:comments begin
     commented: [] as { id: string; body: unknown }[],
     edited: [] as { commentId: string; body: unknown }[],
     removedComments: [] as string[],
+    // capability:comments end
+    // capability:attachments begin
     uploaded: [] as { name: string; type: string; size: number }[],
     /** Direct uploads: what was announced, what the store received, what was completed. */
     presigned: [] as { name: string; size: number; contentType: string }[],
     stored: [] as { url: string; type: string | null; size: number }[],
     completed: [] as string[],
     removedAttachments: [] as string[],
+    // capability:attachments end
+    // capability:tags begin
     tagged: [] as { id: string; tagIds: string[] }[],
     tagsCreated: [] as unknown[],
+    // capability:tags end
+    // capability:revisions begin
     restored: [] as { number: string; ifMatch: string | null }[],
     diffs: [] as string[],
+    // capability:revisions end
     /** The `q` of each `GET /v1/people` ('' without one). */
     peopleQueries: [] as string[],
     /** How often the test-only subject's `GET /v1/lists/{subject}` was asked. */
     described: 0,
+    // capability:attachments begin
     /** How often the attachments were listed. */
     attachmentListings: 0,
+    // capability:attachments end
+    // capability:comments begin
     /** How often the comments were listed. */
     commentListings: 0,
+    // capability:comments end
+    // capability:attachments begin
     /** The scan of a pending file ends clean (the next listing shows it). */
     scanClean(id: string) {
       attachments.find((a) => a.id === id)!.scanStatus = 'clean';
@@ -226,7 +259,9 @@ export function panelHandlers(
         1,
       );
     },
+    // capability:attachments end
   };
+  // capability:comments begin
   const comments: Comment[] = (options.comments ?? []).map((c, i) => ({
     id: `c${i}`,
     subject,
@@ -241,12 +276,19 @@ export function panelHandlers(
     updatedAt: '2026-10-17T09:30:00.000Z',
     ...c,
   }));
+  // capability:comments end
+  // capability:attachments begin
   // Copies: scanClean() changes an item, which a test's shared fixture must not see.
   const attachments = (options.attachments ?? []).map((a) => ({ ...a }));
+  // capability:attachments end
+  // capability:revisions begin
   const revisions = options.revisions ?? [];
+  // capability:revisions end
+  // capability:attachments begin
   /** The file the last presign announced: what its completion attaches. */
   let announced:
     { name: string; size: number; contentType: string } | undefined;
+  // capability:attachments end
   const page = (items: unknown[]) =>
     HttpResponse.json({ items, nextCursor: null });
 
@@ -288,6 +330,7 @@ export function panelHandlers(
           })),
       });
     }),
+    // capability:tags begin
     http.get('/v1/tags', () => page(options.tags ?? [])),
     http.post('/v1/tags', async ({ request }) => {
       const body = (await request.json()) as { name: string };
@@ -297,6 +340,8 @@ export function panelHandlers(
         { status: 201 },
       );
     }),
+    // capability:tags end
+    // capability:comments begin
     http.get(`${route}/comments`, () => {
       calls.commentListings += 1;
       return page(comments);
@@ -345,6 +390,8 @@ export function panelHandlers(
       );
       return new HttpResponse(null, { status: 204 });
     }),
+    // capability:comments end
+    // capability:attachments begin
     http.get(`${route}/attachments`, () => {
       calls.attachmentListings += 1;
       return page(
@@ -448,6 +495,8 @@ export function panelHandlers(
       attachments.push(added);
       return HttpResponse.json(added, { status: 201 });
     }),
+    // capability:attachments end
+    // capability:attachments begin
     http.delete('/v1/attachments/:id', ({ params }) => {
       calls.removedAttachments.push(params.id as string);
       attachments.splice(
@@ -456,11 +505,15 @@ export function panelHandlers(
       );
       return new HttpResponse(null, { status: 204 });
     }),
+    // capability:attachments end
+    // capability:tags begin
     http.put(`${route}/tags`, async ({ params, request }) => {
       const body = (await request.json()) as { tagIds: string[] };
       calls.tagged.push({ id: params.id as string, tagIds: body.tagIds });
       return HttpResponse.json({ items: [] });
     }),
+    // capability:tags end
+    // capability:revisions begin
     http.get(`${route}/revisions`, () =>
       page(
         revisions.map((r) => ({
@@ -493,6 +546,7 @@ export function panelHandlers(
       }
       return HttpResponse.json({}, { headers: { etag: '"restored"' } });
     }),
+    // capability:revisions end
   ];
   return { calls, handlers };
 }

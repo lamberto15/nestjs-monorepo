@@ -60,6 +60,7 @@ export const setupSteps: SetupStep[] = [
       );
     },
   },
+  // capability:tags begin
   {
     id: 'tags',
     to: '/tags',
@@ -69,6 +70,7 @@ export const setupSteps: SetupStep[] = [
         unwrap(api.GET('/v1/tags', { params: { query: { limit: 1 } } })),
       ),
   },
+  // capability:tags end
   {
     id: 'customFields',
     to: '/custom-fields',

@@ -1,0 +1,9 @@
+{
+  "name": "generated-items",
+  "path": "test/fixtures/generated-feature",
+  "flat": true,
+  "skipImport": true,
+  "unit": true,
+  "addons": "all",
+  "fields": "title:string,body:text?,status:enum(draft|done),amount:money?,dueOn:date?,code:string!unique"
+}

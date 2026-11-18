@@ -37,13 +37,17 @@ const { NestFactory } = await import('@nestjs/core');
 const { AppModule } = await import('./app.module.js');
 const { buildOpenApiDocument } = await import('./core/http/openapi.js');
 // Record add-ons that AppModule does not list (a feature takes them with
-// `forRecord()`) put their schemas and realtime events in the document when
-// loaded: the client's record panels type their routes from those.
-await Promise.all([
-  import('./modules/comments/comments.module.js'),
-  import('./modules/merge/merge.module.js'),
-  import('./modules/revisions/revisions.module.js'),
-]);
+// `forRecord()`, comments for one) put their schemas and realtime events in
+// the document when loaded: the client's record panels type their routes
+// from those. Every module's file is loaded, found in the build rather than
+// listed, so removing a module leaves nothing here to edit.
+// One by one, sorted: the document's order stays the same on every machine.
+const { globSync } = await import('node:fs');
+for (const file of globSync('modules/*/*.module.js', {
+  cwd: import.meta.dirname,
+}).sort()) {
+  await import(`./${file}`);
+}
 
 const app = await NestFactory.create(AppModule, {
   preview: true,

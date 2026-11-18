@@ -239,4 +239,20 @@ describe('user avatars (e2e)', () => {
     expect(await count()).toBe(0);
     expect(await keyOf(ada.id)).toBeUndefined();
   });
+
+  it('adds the picture to who-am-I', async () => {
+    const ada = await member(app, tenantId, ['viewer']);
+    const me = () =>
+      app
+        .inject({ method: 'GET', url: '/v1/auth/me', headers: ada.headers })
+        .then((response) => response.json<{ avatarUrl: string | null }>());
+    expect((await me()).avatarUrl).toBeNull();
+    await app.get(Tenancy).run(null, () =>
+      app
+        .get<Database>(getDrizzleToken())
+        .insert(userAvatars)
+        .values({ userId: ada.id, key: `accounts/${ada.id}/avatar/one.png` }),
+    );
+    expect((await me()).avatarUrl).toContain(`/v1/people/${ada.id}/avatar`);
+  });
 });

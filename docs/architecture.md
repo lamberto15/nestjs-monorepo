@@ -6,14 +6,14 @@ they fit together.
 
 ## The repository
 
-| Path                  | What it is                                                                                        |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| `apps/api`            | The NestJS API: every module, the migrations (`drizzle/`), the feature generator (`schematics/`). |
-| `apps/web`            | The web app (Vite, React, TanStack Router and Query). The API serves its build.                   |
-| `apps/web-e2e`        | Playwright tests of the built web app against the built API.                                      |
-| `packages/ui`         | The web app's components.                                                                         |
-| `packages/api-client` | The typed client: types generated from the API's OpenAPI document, plus the realtime client.      |
-| `tools`               | Repository scripts: setup, `env.example` generation, the raw SQL check, the migration lint.       |
+| Path                  | What it is                                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `apps/api`            | The NestJS API: every module, the migrations (`drizzle/`), the feature generator (`schematics/`).              |
+| `apps/web`            | The web app (Vite, React, TanStack Router and Query). The API serves its build.                                |
+| `apps/web-e2e`        | Playwright tests of the built web app against the built API.                                                   |
+| `packages/ui`         | The web app's components.                                                                                      |
+| `packages/api-client` | The typed client: types generated from the API's OpenAPI document, plus the realtime client.                   |
+| `tools`               | Repository scripts: setup, `env.example` generation, removing a module, the raw SQL check, the migration lint. |
 
 The workspace is pnpm and Turborepo (`pnpm-workspace.yaml`, `turbo.json`). Commands
 run from the root: [development.md](development.md).

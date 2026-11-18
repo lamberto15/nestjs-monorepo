@@ -75,7 +75,7 @@ own.
 ## Tests
 
 `retention.e2e-spec.ts`, `retention.rules.spec.ts`; fixture
-`test/fixtures/retention-items.ts`.
+`test/fixtures/retention/retention-items.ts`.
 
 Remove: delete this folder and its line in `app.module.ts`, and the
 `RetentionModule.forFeature()` / `@RecordPurge()` declarations of the

@@ -8,7 +8,7 @@ import {
   tenantWithAdmin,
 } from '../../../test/access.js';
 import { bootModules } from '../../../test/boot.js';
-import { NumberedWidgetsModule } from '../../../test/fixtures/numbered-widgets.js';
+import { NumberedWidgetsModule } from '../../../test/fixtures/sequences/numbered-widgets.js';
 import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';

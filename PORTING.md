@@ -149,9 +149,11 @@ repository.
   exports (`reports`) stay, with data-transfer.
 - Release Please, the commit-message workflow, CONTRIBUTING, SECURITY and
   CODE_OF_CONDUCT (the owner, 2026-11-18): the local commitlint hook stays.
-- `feature:sync`, `feature:remove` and `capability:remove`: a feature is
-  changed by editing its files and running `pnpm db:generate`; a feature or
-  a capability is removed by deleting its folder and its line in a module.
+- `feature:sync`: a feature is changed by editing its files and running
+  `pnpm db:generate`. `feature:remove` and `capability:remove` became one
+  command, `pnpm module:remove` (the owner, 2026-11-19;
+  [docs/removing-a-module.md](docs/removing-a-module.md)): a dry run by
+  default, refused while anything uses the module.
 - Caddy's certificate route (`/internal/domains/allowed`) and `FILES_ORIGIN`.
 - The deployment-wide `mail.dailyLimit` (a tenant's `mail.perDay` quota
   stays), the mail signature partial, and the metrics

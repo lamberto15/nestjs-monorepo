@@ -17,9 +17,24 @@ import { findToast } from '@/test/toast';
  * Signs in and serves the switches with `state.mode`, which a test may change
  * (the operators' write, or time passing). Counts what the app asked for.
  */
+/** What the app asked for, by route. */
+type Asked = {
+  features: number;
+  notifications: number;
+  // capability:approvals begin
+  approvals: number;
+  // capability:approvals end
+};
+
 function useDeployment(initial: Mode, can: string[] = []) {
   const state = { mode: initial };
-  const asked = { features: 0, approvals: 0, notifications: 0 };
+  const asked: Asked = {
+    features: 0,
+    notifications: 0,
+    // capability:approvals begin
+    approvals: 0,
+    // capability:approvals end
+  };
   useSignedIn(can);
   server.use(
     http.get('/v1/features', () => {
@@ -30,10 +45,12 @@ function useDeployment(initial: Mode, can: string[] = []) {
         mode: state.mode,
       });
     }),
+    // capability:approvals begin
     http.get('/v1/approvals', () => {
       asked.approvals += 1;
       return HttpResponse.json({ items: [], nextCursor: null, total: 0 });
     }),
+    // capability:approvals end
     http.get('/v1/notifications', () => {
       asked.notifications += 1;
       return HttpResponse.json({ items: [], nextCursor: null });
@@ -178,16 +195,18 @@ describe('the rest of the layout, without realtime', () => {
     });
 
   /** The page, with the approvals count and the breached-password alert asked once. */
-  async function open(asked: { approvals: number; notifications: number }) {
+  async function open(asked: Asked) {
     await renderApp('/account/profile');
     await screen.findByRole('button', { name: 'Save' });
     // Not Testing Library's waitFor: it polls on setInterval, which a test
     // may have faked.
     await vi.waitFor(() => {
+      // capability:approvals begin
       expect(asked.approvals).toBeGreaterThan(0);
+      // capability:approvals end
       expect(asked.notifications).toBeGreaterThan(0);
     });
-    return { approvals: asked.approvals, notifications: asked.notifications };
+    return { ...asked };
   }
 
   it('asks for the approvals count and the alerts on no timer: an unattended tab must time out', async () => {
@@ -200,7 +219,9 @@ describe('the rest of the layout, without realtime', () => {
     await act(async () => {
       vi.advanceTimersByTime(60 * MODE_POLL.normal);
     });
+    // capability:approvals begin
     expect(asked.approvals).toBe(before.approvals);
+    // capability:approvals end
     expect(asked.notifications).toBe(before.notifications);
   });
 
@@ -211,7 +232,9 @@ describe('the rest of the layout, without realtime', () => {
 
     // Just asked: the input costs no request.
     await input();
+    // capability:approvals begin
     expect(asked.approvals).toBe(before.approvals);
+    // capability:approvals end
     expect(asked.notifications).toBe(before.notifications);
 
     await act(async () => {
@@ -219,12 +242,16 @@ describe('the rest of the layout, without realtime', () => {
     });
     await input();
     await waitFor(() => {
+      // capability:approvals begin
       expect(asked.approvals).toBe(before.approvals + 1);
+      // capability:approvals end
       expect(asked.notifications).toBe(before.notifications + 1);
     });
     // Once for the burst of input, not once per event.
     await input();
+    // capability:approvals begin
     expect(asked.approvals).toBe(before.approvals + 1);
+    // capability:approvals end
     expect(asked.notifications).toBe(before.notifications + 1);
   });
 });
@@ -238,7 +265,9 @@ describe('a deployment in maintenance', () => {
     expect(screen.queryByText('Dashboard', { selector: 'h1' })).toBeNull();
     expect(screen.queryByRole('navigation')).toBeNull();
     // Not the menu's approvals count, not the home page's cards.
+    // capability:approvals begin
     expect(asked.approvals).toBe(0);
+    // capability:approvals end
     expect(asked.notifications).toBe(0);
   });
 
@@ -264,7 +293,7 @@ describe('a deployment in maintenance', () => {
   it('turns into the notice when a request is refused with 503 maintenance', async () => {
     const { state } = useDeployment('normal');
     server.use(
-      http.get('/v1/approvals', () => {
+      http.get('/v1/notifications', () => {
         state.mode = 'maintenance';
         return problem(503, 'maintenance');
       }),

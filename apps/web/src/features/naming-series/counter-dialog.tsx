@@ -27,7 +27,7 @@ import {
   patternFields,
   type NamingField,
   type NamingSeries,
-} from '@/lib/naming-series';
+} from '@/features/naming-series/series';
 import { counterQuery, previewQuery, useSetCounter } from './api';
 
 /** The API's values for what the inputs hold: numbers as numbers. */

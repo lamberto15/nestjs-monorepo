@@ -4,7 +4,7 @@ import { api } from '@/lib/api';
 import type {
   NamingSeriesChanges,
   NamingSeriesCreate,
-} from '@/lib/naming-series';
+} from '@/features/naming-series/series';
 
 /**
  * A series changed: the admin lists and the create forms' pickers

@@ -3,7 +3,10 @@ import type { NestNodeApplication } from '@nestjs/platform-node';
 import { SharedIdempotencyModule } from '../src/core/idempotency/idempotency.module.js';
 import { SharedOutboxModule } from '../src/core/outbox/outbox.module.js';
 import { SecretsModule } from '../src/core/secrets/secrets.module.js';
+import { Tenancy } from '../src/core/tenancy/tenancy.service.js';
+import { systemPrincipal } from '../src/iam/auth/principal.js';
 import { ListsModule } from '../src/modules/lists/lists.module.js';
+import { Records } from '../src/modules/records/records.service.js';
 import { SearchModule } from '../src/modules/search/search.module.js';
 import { accessModules, member, tenantWithAdmin } from './access.js';
 
@@ -98,4 +101,26 @@ export async function createTestItem(
     );
   }
   return response.json<Record<string, unknown> & { id: string }>();
+}
+
+/**
+ * What a merge tells the add-ons once it moved `fromId` into `toId`, in its
+ * transaction (RecordStore.merged, which modules/merge calls): each
+ * extension's `merged` hook moves what it keeps about the duplicate. An
+ * add-on's test of its hook calls this, without the merge module, so either
+ * can be removed alone.
+ */
+export async function mergeTestItems(
+  app: NestNodeApplication,
+  tenantId: string,
+  fromId: string,
+  toId: string,
+) {
+  const { store } = app.get(Records).of('TestItem');
+  const by = systemPrincipal({ key: 'test-merge', label: 'Test merge' });
+  await app.get(Tenancy).run(tenantId, async () => {
+    const from = await store.findOne(fromId);
+    const to = await store.findOne(toId);
+    await store.merged(by, from, to);
+  });
 }

@@ -1,22 +1,10 @@
+import type { Type } from '@nestjs/common';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import pg from 'pg';
 import { bootModules } from '../boot.js';
 import { captured, fullScans } from '../query-plans.js';
 import { recordsTenant, testItemModules, unitWithLead } from '../records.js';
 import type { Member } from '../records.js';
-import { QueuesModule } from '../../src/core/queues/queues.module.js';
-import { MetricsModule } from '../../src/core/metrics/metrics.module.js';
-import { SharedHttpClientModule } from '../../src/core/http-client/http-client.module.js';
-import { SharedWorkflowsModule } from '../../src/core/workflows/workflows.module.js';
-import { HoldsModule } from '../../src/iam/holds/holds.module.js';
-import { StorageModule } from '../../src/modules/storage/storage.module.js';
-import { NotificationsModule } from '../../src/modules/notifications/notifications.module.js';
-import { WebhooksModule } from '../../src/modules/webhooks/webhooks.module.js';
-import { AutomationsModule } from '../../src/modules/automations/automations.module.js';
-import { ChoicesModule } from '../../src/modules/choices/choices.module.js';
-import { RecurrenceModule } from '../../src/modules/recurrence/recurrence.module.js';
-import { RetentionModule } from '../../src/modules/retention/retention.module.js';
-import { McpModule } from '../../src/modules/mcp/mcp.module.js';
 import { GeneratedItemsModule } from './generated-feature/generated-items.module.js';
 
 vi.hoisted(() => {
@@ -31,6 +19,26 @@ vi.hoisted(() => {
     REDIS_PREFIX: `test-generated-plans-${process.pid}-${Date.now()}`,
   });
 });
+
+/**
+ * What the generated e2e spec boots besides testItemModules(), for every
+ * add-on: the generator's own account (schematics/feature/addons.js, plain
+ * JavaScript, so imported by a computed path), so a removed module's add-on
+ * is gone from both.
+ */
+async function addonModules() {
+  const generator = '../../schematics/feature/addons.js';
+  const { ADDONS, bootOf } = (await import(generator)) as {
+    ADDONS: Record<string, unknown>;
+    bootOf: (addons: string[]) => [string, string][];
+  };
+  return Promise.all(
+    bootOf(Object.keys(ADDONS)).map(
+      async ([name, path]) =>
+        ((await import(`../../src/${path}`)) as Record<string, Type>)[name]!,
+    ),
+  );
+}
 
 /** Rows of another tenant, so a list that reads the whole table shows. */
 const OTHER_TENANT_ROWS = 20_000;
@@ -74,19 +82,7 @@ describe('generated-items query plans (e2e)', () => {
   beforeAll(async () => {
     app = await bootModules(
       ...testItemModules(),
-      QueuesModule,
-      MetricsModule,
-      SharedHttpClientModule,
-      SharedWorkflowsModule,
-      HoldsModule,
-      StorageModule,
-      NotificationsModule,
-      WebhooksModule,
-      AutomationsModule,
-      ChoicesModule,
-      RecurrenceModule,
-      RetentionModule,
-      McpModule,
+      ...(await addonModules()),
       GeneratedItemsModule,
     );
     team = await recordsTenant(app);

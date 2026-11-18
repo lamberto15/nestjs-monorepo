@@ -37,7 +37,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/empty-state';
 import { Page, PageHeader } from '@/components/page-header';
-import { formatSize } from '@/components/records/panels/attachments-panel';
+import { formatSize } from '@/lib/format-size';
 import {
   catalogQuery,
   type ImportMapping,

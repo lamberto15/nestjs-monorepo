@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw/http';
-import type { Tag } from '@/lib/tags';
+import type { Tag } from '@/features/tags/tags';
 import { problem, server } from '@/test/server';
 import { useSignedIn } from '@/test/signed-in';
 

@@ -31,7 +31,9 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { errorMessage } from '@/lib/errors';
 import { FormAlert } from '@/lib/form';
-import { useTags } from '@/lib/tags';
+// capability:tags begin
+import { useTags } from '@/features/tags/tags';
+// capability:tags end
 import {
   subjectsQuery,
   useSaveRule,
@@ -173,11 +175,13 @@ export function RuleDialog(props: {
   const chosen =
     subjects.data?.find((s) => s.subject === subject) ??
     (subjects.data?.length === 1 ? subjects.data[0] : undefined);
+  // capability:tags begin
   // A subject takes tags when it lists the `addTag` action.
   const tags = useTags(
     chosen?.subject ?? '',
     !!chosen?.actions.some((action) => action.type === 'addTag'),
   );
+  // capability:tags end
 
   const body = (): RuleBody => ({
     name: name.trim(),
@@ -322,6 +326,7 @@ export function RuleDialog(props: {
                       />
                     </>
                   )}
+                  {/* capability:tags begin */}
                   {action.type === 'addTag' && (
                     <Choice
                       label={t('builder.tag')}
@@ -333,6 +338,7 @@ export function RuleDialog(props: {
                       onChange={(tagId) => patchAction(index, { tagId })}
                     />
                   )}
+                  {/* capability:tags end */}
                   {action.type === 'notify' && (
                     <Text
                       label={t('builder.userIds')}

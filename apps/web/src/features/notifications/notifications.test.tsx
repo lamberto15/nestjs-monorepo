@@ -128,14 +128,14 @@ beforeEach(() => {
   connections.length = 0;
 });
 
-// The popover's rows are read on /approvals: the home page lists the unread
+// The popover's rows are read on /account/profile: the home page lists the unread
 // notifications itself (the dashboard's card), which would match the same texts.
 describe('the bell and realtime', () => {
   it('shows the unread count and follows the socket', async () => {
     api();
     // The dashboard mounts another unread observer; its initial HTTP response
     // can overwrite this test's synthetic socket count before it is asserted.
-    await renderApp('/approvals');
+    await renderApp('/account/profile');
     expect(await bellWith(2)).toBeVisible();
     expect(connections).toHaveLength(1);
     expect(connections[0]!.connects).toBe(1);
@@ -148,7 +148,7 @@ describe('the bell and realtime', () => {
 
   it('says 1,000+ when the count stopped at its limit', async () => {
     api();
-    await renderApp('/approvals');
+    await renderApp('/account/profile');
     expect(await bellWith(2)).toBeVisible();
     act(() =>
       connections[0]!.emit('notifications.unread-count', {
@@ -166,7 +166,7 @@ describe('the bell and realtime', () => {
   it('puts a new notification on top of the popover', async () => {
     api();
     const user = userEvent.setup();
-    await renderApp('/approvals');
+    await renderApp('/account/profile');
     await user.click(await bell());
     expect(await screen.findByText('Title a')).toBeVisible();
 
@@ -261,7 +261,7 @@ describe('the bell and realtime', () => {
   it('marks one read and all read, in the cache', async () => {
     const state = api();
     const user = userEvent.setup();
-    await renderApp('/approvals');
+    await renderApp('/account/profile');
     await user.click(await bell());
     const row = (await screen.findByText('Title a')).closest('li')!;
     await user.click(within(row).getByRole('button', { name: 'Mark as read' }));
@@ -280,7 +280,7 @@ describe('the bell and realtime', () => {
   it('offers no changes while impersonating', async () => {
     api({ impersonating: true });
     const user = userEvent.setup();
-    await renderApp('/approvals');
+    await renderApp('/account/profile');
     await user.click(await bell());
     await screen.findByText('Title a');
     expect(

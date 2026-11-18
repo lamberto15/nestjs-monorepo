@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Page, PageHeader } from '@/components/page-header';
 import { RecordState } from '@/components/records/record-state';
-import { HexPicker } from '@/features/tags/tag-dialog';
+import { HexPicker } from '@/components/hex-picker';
 import { api } from '@/lib/api';
 import { brandingQuery, type Branding } from '@/lib/branding';
 import { useCan } from '@/lib/features';

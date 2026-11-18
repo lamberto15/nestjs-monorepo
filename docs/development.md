@@ -55,6 +55,7 @@ Run from the root. Turborepo runs a script in every package that has it
 | `pnpm run setup`                            | Writes `apps/api/.env`.                                                 |
 | `pnpm env:example`, `pnpm env:check`        | Writes or checks `apps/api/env.example`.                                |
 | `pnpm feature:add <name> …`                 | Generates a feature ([adding-a-feature.md](adding-a-feature.md)).       |
+| `pnpm module:list`, `pnpm module:remove`    | Removes a module ([removing-a-module.md](removing-a-module.md)).        |
 | `pnpm ops <command>`                        | The operator CLI ([`cli`](../apps/api/src/cli/README.md)).              |
 | `pnpm openapi:dump`                         | Builds the API and writes its OpenAPI document.                         |
 | `pnpm client:generate`, `pnpm client:check` | The typed client ([below](#typed-client)).                              |

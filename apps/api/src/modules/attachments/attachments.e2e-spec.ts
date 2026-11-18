@@ -10,6 +10,7 @@ import {
   createTestItem,
   type Headers,
   type Member,
+  mergeTestItems,
   recordsTenant,
   testItemModules,
 } from '../../../test/records.js';
@@ -1328,5 +1329,33 @@ describe('attachments on test items (e2e)', () => {
         code: 'presigned_uploads_unavailable',
       });
     });
+  });
+
+  // modules/merge calls the hook; its test of every hook is its own.
+  it("moves a merged duplicate's files to the survivor (RecordHooks.merged)", async () => {
+    const survivor = await createTestItem(app, admin.headers);
+    const duplicate = await createTestItem(app, admin.headers);
+    const name = `contract-${randomUUID()}.pdf`;
+    await inTenant(() =>
+      db()
+        .insert(attachments)
+        .values({
+          subject: 'TestItem',
+          recordId: duplicate.id,
+          key: `tenants/${tenantId}/${name}`,
+          name,
+          size: 10,
+          contentType: 'application/pdf',
+          uploadedBy: `user:${admin.id}`,
+        }),
+    );
+    await mergeTestItems(app, tenantId, duplicate.id, survivor.id);
+    const files = await inTenant(() =>
+      db()
+        .select({ recordId: attachments.recordId })
+        .from(attachments)
+        .where(eq(attachments.name, name)),
+    );
+    expect(files).toEqual([{ recordId: survivor.id }]);
   });
 });

@@ -1,5 +1,6 @@
 import { TransactionHost } from '@nestjs-cls/transactional';
 import { getQueueToken } from '@nestjs/bullmq';
+import { Injectable, Module } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { StorageDisk } from '@nestjs/storage';
@@ -7,8 +8,6 @@ import type { Queue } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { accessTokenFor } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
-import { TEST_ITEM } from '../../../test/fixtures/test-items/test-item.record.js';
-import { testItemsModule } from '../../../test/fixtures/test-items/test-items.module.js';
 import { recordsTenant, testItemModules } from '../../../test/records.js';
 import type { Database } from '../../core/database/database.js';
 import { SharedLocksModule } from '../../core/locks/locks.module.js';
@@ -16,11 +15,12 @@ import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { PersonalDataModule } from '../../iam/personal-data/personal-data.module.js';
+import {
+  PersonalData,
+  type PersonalDataSection,
+  type PersonalDataSubject,
+} from '../../iam/personal-data/personal-data.js';
 import { PersonalDataService } from '../../iam/personal-data/personal-data.service.js';
-import { AvatarsModule } from '../attachments/avatars/avatars.module.js';
-import { userAvatars } from '../attachments/avatars/avatars.tables.js';
-import { FavoritesModule } from '../favorites/favorites.module.js';
-import { favorites } from '../favorites/favorites.tables.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { ACCOUNT_EXPORTS, expiryOf } from './account-exports.service.js';
 import { AccountExportsModule } from './account-exports.module.js';
@@ -43,7 +43,32 @@ const local = (url: string) => {
   return pathname + search;
 };
 
-describe('account export, personal data sections and who-am-I parts (e2e)', () => {
+/**
+ * What two modules hold about a person, in a tenant and in no tenant: a
+ * module's real section is tested beside it (<name>.personal-data.e2e-spec.ts);
+ * these show the export and the deletion go through every section.
+ */
+const held = new Map<string, string>();
+const notes = (subject: PersonalDataSubject) =>
+  held.has(`${subject.tenantId}:${subject.userId}`)
+    ? [{ note: held.get(`${subject.tenantId}:${subject.userId}`) }]
+    : [];
+@PersonalData({ name: 'test-notes', scopes: ['tenant'] })
+@Injectable()
+class TenantNotes implements PersonalDataSection {
+  rows = (subject: PersonalDataSubject) => Promise.resolve(notes(subject));
+  erase(subject: PersonalDataSubject) {
+    held.delete(`${subject.tenantId}:${subject.userId}`);
+    return Promise.resolve();
+  }
+}
+@PersonalData({ name: 'test-account-notes', scopes: ['account'] })
+@Injectable()
+class AccountNotes extends TenantNotes {}
+@Module({ providers: [TenantNotes, AccountNotes] })
+class NotesModule {}
+
+describe('account export (e2e)', () => {
   let app: NestNodeApplication;
   let db: Database;
   let team: Awaited<ReturnType<typeof recordsTenant>>;
@@ -54,10 +79,9 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
       QueuesModule,
       StorageModule,
       PersonalDataModule,
-      AvatarsModule,
       AccountExportsModule,
       SharedLocksModule,
-      testItemsModule({ imports: [FavoritesModule.forRecord(TEST_ITEM)] }),
+      NotesModule,
     );
     db = app.get<Database>(getDrizzleToken());
     team = await recordsTenant(app);
@@ -71,35 +95,9 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
 
   const tenancy = () => app.get(Tenancy);
 
-  it('adds the picture to who-am-I', async () => {
-    const me = () =>
-      app
-        .inject({
-          method: 'GET',
-          url: '/v1/auth/me',
-          headers: team.editor.headers,
-        })
-        .then((response) => response.json());
-    expect((await me()).avatarUrl).toBeNull();
-    await tenancy().run(null, () =>
-      db.insert(userAvatars).values({
-        userId: team.editor.id,
-        key: `accounts/${team.editor.id}/avatar/one.png`,
-      }),
-    );
-    expect((await me()).avatarUrl).toContain(
-      `/v1/people/${team.editor.id}/avatar`,
-    );
-  });
-
   it('exports what the sections hold about the person, to them alone, then erases it', async () => {
-    const pinned = await app.inject({
-      method: 'POST',
-      url: '/v1/favorites',
-      headers: team.editor.headers,
-      payload: { kind: 'page', target: '/test-items', label: 'Test items' },
-    });
-    expect(pinned.statusCode).toBe(201);
+    held.set(`${team.tenantId}:${team.editor.id}`, 'Test items');
+    held.set(`null:${team.editor.id}`, 'Account note');
 
     const started = await app.inject({
       method: 'POST',
@@ -134,9 +132,9 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
       { timeout: 60_000 },
     );
     const file = (await app.inject({ method: 'GET', url: local(url) })).body;
-    expect(file).toContain('favorites');
+    expect(file).toContain('test-notes');
     expect(file).toContain('Test items');
-    expect(file).toContain('avatar');
+    expect(file).toContain('Account note');
 
     // The request is audited in no tenant, as the person's own.
     const entries = await tenancy().run(null, () =>
@@ -183,22 +181,7 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
     await tenancy().run(null, () =>
       tx.withTransaction(() => personal.erase(team.editor.id, null)),
     );
-    expect(
-      await tenancy().run(team.tenantId, () =>
-        db
-          .select()
-          .from(favorites)
-          .where(eq(favorites.owner, `user:${team.editor.id}`)),
-      ),
-    ).toEqual([]);
-    expect(
-      await tenancy().run(null, () =>
-        db
-          .select()
-          .from(userAvatars)
-          .where(eq(userAvatars.userId, team.editor.id)),
-      ),
-    ).toEqual([]);
+    expect([...held.keys()]).toEqual([]);
   });
 
   it('gives no link once the export has expired', async () => {
@@ -260,11 +243,11 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
     }
   });
 
-  it("deletes an export's file on its deadline, and keeps the fresh exports and the pictures", async () => {
+  it("deletes an export's file on its deadline, and keeps the fresh exports and the account's other files", async () => {
     const disk = app.get(StorageDisk);
     const queue = app.get<Queue>(getQueueToken(ACCOUNT_EXPORTS));
     const owner = team.other;
-    const picture = `accounts/${owner.id}/avatar/kept.png`;
+    const picture = `accounts/${owner.id}/kept.png`;
     await disk.put(picture, 'png');
     const exported = async () => {
       const { id } = (

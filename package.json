@@ -23,6 +23,8 @@
     "env:check": "pnpm --filter api build && node tools/env-example.mjs --check",
     "test:tools": "node --test tools/",
     "feature:add": "node tools/feature-add.mjs",
+    "module:list": "node tools/module.mjs list",
+    "module:remove": "node tools/module.mjs remove",
     "ops": "pnpm --filter api ops",
     "openapi:dump": "pnpm --filter api openapi:dump",
     "client:generate": "pnpm openapi:dump && pnpm --filter @nestjs-monorepo/api-client generate",

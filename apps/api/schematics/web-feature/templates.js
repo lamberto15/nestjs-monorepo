@@ -8,6 +8,7 @@
 // bulk run changed, the link of its notification), a form of the fields, the
 // detail with RecordPanels (it shows the panels the record's add-ons have).
 // Bulk actions, import, watching, favorites and the rest are added by hand.
+import { ADDONS } from '../feature/addons.js';
 import { titleField } from '../feature/fields.js';
 
 /** `dueOn` → `Due on`; `widgetId` → `Widget`: a field's label. */
@@ -544,7 +545,7 @@ export function form({ t, fields, addons }) {
     custom &&
       `import { CustomFieldInputs } from '@/components/records/custom-field-inputs';`,
     duplicates &&
-      `import { DuplicatesWarning } from '@/components/records/duplicates-warning';`,
+      `import { DuplicatesWarning } from '@/features/merge/duplicates-warning';`,
     custom &&
       `import { customFieldsQuery, type CustomField } from '@/lib/custom-fields';`,
     custom &&
@@ -552,7 +553,7 @@ export function form({ t, fields, addons }) {
     `import { applyFieldErrors, errorMessage } from '@/lib/errors';`,
     `import { FormAlert, useAppForm } from '@/lib/form';`,
     custom && `import { focusFirstInvalid } from '@/lib/form-focus';`,
-    numbered && `import { useSubjectNamingSeries } from '@/lib/naming-series';`,
+    numbered && `import { useSubjectNamingSeries } from '@/features/naming-series/series';`,
     `import { isPreconditionFailed, useInvalidateRecords } from '@/lib/records';`,
     `import { useUnsavedChangesGuard } from '@/lib/unsaved-changes';`,
     `import { z } from '@/lib/zod';`,
@@ -1123,7 +1124,7 @@ export function detailPage({ t, fields, softDelete, addons }) {
     `import { ${item}Query, type ${S} } from '@/features/${t.plural}/api';`,
     `import { use${S}Delete } from '@/features/${t.plural}/use-${t.singular}-delete';`,
     addons.includes('recents') &&
-      `import { useRecordRecent } from '@/features/work/api';`,
+      `import { useRecordRecent } from '@/features/recents/api';`,
     `import { useDateTimeFormat } from '@/lib/date-time';`,
     `import { useWritesPaused } from '@/lib/mode';`,
     `import { useRecordCan } from '@/lib/records';`,
@@ -1347,9 +1348,13 @@ export function test({ t, fields, softDelete, addons }) {
     '        limits: { defaultLimit: 50, maxLimit: 100 },',
     '        // No panels: the generated feature takes none until its capabilities say so.',
     '        ...panelsDescription(',
-    on('merge')
-      ? '          { comments: false, attachments: false, tags: false, revisions: false, merge: true },'
-      : '          { comments: false, attachments: false, tags: false, revisions: false },',
+    // Off: each record panel whose module is there (a removed one has no key).
+    `          { ${[
+      ...['comments', 'attachments', 'tags', 'revisions']
+        .filter((name) => name in ADDONS)
+        .map((name) => `${name}: false`),
+      ...(on('merge') ? ['merge: true'] : []),
+    ].join(', ')} },`,
     '          null,',
     '        ),',
     '      }),',

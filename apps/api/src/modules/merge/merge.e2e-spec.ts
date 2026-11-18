@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { InjectTransaction } from '@nestjs-cls/transactional';
-import { Injectable, Module } from '@nestjs/common';
+import { type DynamicModule, Injectable, Module } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { and, eq } from 'drizzle-orm';
@@ -20,6 +20,14 @@ import { defineEvent, OnDomainEvent } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { tenantWithAdmin } from '../../../test/access.js';
+import type { RecordDeclaration, RecordRow } from '../records/record.js';
+import {
+  InjectRecord,
+  RECORD,
+  RecordExtension,
+  type RecordHooks,
+} from '../records/record-extension.js';
+import { RecordsModule } from '../records/records.module.js';
 import type { RecordMergedPayload } from './merge.events.js';
 import { MergeModule } from './merge.module.js';
 
@@ -56,6 +64,33 @@ class MarksFollowMerge {
 @Module({ providers: [MarksFollowMerge] })
 class MarksFollowModule {}
 
+/** Each merge the add-ons were told of (RecordHooks.merged), from → to. */
+const told: [string, string][] = [];
+
+/**
+ * An add-on's `merged` hook, as tags, comments, attachments, favorites and
+ * watchers have: run in the merge's transaction. Each add-on tests its own
+ * hook (test/records.ts, mergeTestItems); this proves the merge calls it.
+ */
+@RecordExtension()
+@Injectable()
+class MergedHookProbe implements RecordHooks {
+  constructor(@InjectRecord() readonly record: RecordDeclaration) {}
+
+  merged({ from, to }: { from: RecordRow; to: RecordRow }) {
+    told.push([from.id, to.id]);
+    return Promise.resolve();
+  }
+}
+
+@Module({})
+class MergedHookHost {}
+const mergedHook: DynamicModule = {
+  module: MergedHookHost,
+  imports: [RecordsModule],
+  providers: [{ provide: RECORD, useValue: TEST_ITEM }, MergedHookProbe],
+};
+
 describe('merging duplicates (e2e)', () => {
   let app: NestNodeApplication;
   let tenantId: string;
@@ -67,7 +102,9 @@ describe('merging duplicates (e2e)', () => {
     app = await bootModules(
       ...testItemModules(),
       MarksFollowModule,
-      testItemsModule({ imports: [MergeModule.forRecord(TEST_ITEM)] }),
+      testItemsModule({
+        imports: [MergeModule.forRecord(TEST_ITEM), mergedHook],
+      }),
     );
     ({ tenantId, admin, editor, viewer } = await recordsTenant(app));
   });
@@ -343,5 +380,14 @@ describe('merging duplicates (e2e)', () => {
     expect(() =>
       MergeModule.forRecord({ ...TEST_ITEM, softDelete: false }),
     ).toThrow(/softDelete/);
+  });
+
+  it("tells the add-ons' merged hooks, from the duplicate to the survivor", async () => {
+    const title = `Hooked ${randomUUID()}`;
+    const survivor = await item({ title });
+    const duplicate = await item({ title });
+    const merged = await merge(survivor.id, { duplicateId: duplicate.id });
+    expect(merged.statusCode, merged.body).toBe(200);
+    expect(told).toContainEqual([duplicate.id, survivor.id]);
   });
 });

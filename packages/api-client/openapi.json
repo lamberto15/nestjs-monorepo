@@ -68176,6 +68176,149 @@
         ],
         "additionalProperties": false
       },
+      "CommentPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Comment"
+            }
+          },
+          "nextCursor": {
+            "nullable": true,
+            "description": "Pass it as `cursor` for the next page; null: no more (and with `page`).",
+            "type": "string"
+          },
+          "page": {
+            "description": "With `page`: this page.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "nextPage": {
+            "description": "With `page`: the next page; null: no more.",
+            "nullable": true,
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "pageCount": {
+            "description": "With `page` and `count=true`: ceil(total / limit).",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "total": {
+            "description": "With `count=true`: the rows matching the filters, all pages; the cap when totalCapped.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "totalCapped": {
+            "description": "true: there are more than `total` (show \"10,000+\").",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "additionalProperties": false
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "example": "Note"
+          },
+          "recordId": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string",
+            "description": "Who wrote it: `user:<id>` or `client:<id>`."
+          },
+          "authorName": {
+            "nullable": true,
+            "description": "The author's name, as every member of the tenant sees it; null for anyone the tenant never had.",
+            "example": "Maya Patel",
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The people mentioned (`@<email>` or `@user:<id>` in the body) who may read the record, as `user:<id>`."
+          },
+          "mentionNames": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true,
+              "type": "string"
+            },
+            "description": "The name of each key in `mentions`: `{ \"user:<id>\": \"Maya Patel\" }`. A mention written as an address (`@maya@example.com`) is named under that address too (lower-cased); an address that mentioned nobody has no entry. A person who left the tenant keeps their name; null for anyone the tenant never had."
+          },
+          "editedAt": {
+            "nullable": true,
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "parentId": {
+            "nullable": true,
+            "description": "The top-level comment this one answers; null for a top-level comment.",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "nullable": true,
+            "description": "When its thread was resolved; null if open (always null on a reply).",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "resolvedBy": {
+            "nullable": true,
+            "description": "Who resolved the thread: `user:<id>` or `client:<id>`.",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "recordId",
+          "author",
+          "authorName",
+          "body",
+          "mentions",
+          "mentionNames",
+          "editedAt",
+          "parentId",
+          "resolvedAt",
+          "resolvedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
       "DuplicateList": {
         "type": "object",
         "properties": {
@@ -68510,149 +68653,6 @@
           "from",
           "to",
           "changes"
-        ],
-        "additionalProperties": false
-      },
-      "CommentPage": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Comment"
-            }
-          },
-          "nextCursor": {
-            "nullable": true,
-            "description": "Pass it as `cursor` for the next page; null: no more (and with `page`).",
-            "type": "string"
-          },
-          "page": {
-            "description": "With `page`: this page.",
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          },
-          "nextPage": {
-            "description": "With `page`: the next page; null: no more.",
-            "nullable": true,
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          },
-          "pageCount": {
-            "description": "With `page` and `count=true`: ceil(total / limit).",
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          },
-          "total": {
-            "description": "With `count=true`: the rows matching the filters, all pages; the cap when totalCapped.",
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          },
-          "totalCapped": {
-            "description": "true: there are more than `total` (show \"10,000+\").",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "items",
-          "nextCursor"
-        ],
-        "additionalProperties": false
-      },
-      "Comment": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string",
-            "example": "Note"
-          },
-          "recordId": {
-            "type": "string"
-          },
-          "author": {
-            "type": "string",
-            "description": "Who wrote it: `user:<id>` or `client:<id>`."
-          },
-          "authorName": {
-            "nullable": true,
-            "description": "The author's name, as every member of the tenant sees it; null for anyone the tenant never had.",
-            "example": "Maya Patel",
-            "type": "string"
-          },
-          "body": {
-            "type": "string"
-          },
-          "mentions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The people mentioned (`@<email>` or `@user:<id>` in the body) who may read the record, as `user:<id>`."
-          },
-          "mentionNames": {
-            "type": "object",
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
-            "description": "The name of each key in `mentions`: `{ \"user:<id>\": \"Maya Patel\" }`. A mention written as an address (`@maya@example.com`) is named under that address too (lower-cased); an address that mentioned nobody has no entry. A person who left the tenant keeps their name; null for anyone the tenant never had."
-          },
-          "editedAt": {
-            "nullable": true,
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-          },
-          "parentId": {
-            "nullable": true,
-            "description": "The top-level comment this one answers; null for a top-level comment.",
-            "type": "string"
-          },
-          "resolvedAt": {
-            "nullable": true,
-            "description": "When its thread was resolved; null if open (always null on a reply).",
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-          },
-          "resolvedBy": {
-            "nullable": true,
-            "description": "Who resolved the thread: `user:<id>` or `client:<id>`.",
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-          }
-        },
-        "required": [
-          "id",
-          "subject",
-          "recordId",
-          "author",
-          "authorName",
-          "body",
-          "mentions",
-          "mentionNames",
-          "editedAt",
-          "parentId",
-          "resolvedAt",
-          "resolvedBy",
-          "createdAt",
-          "updatedAt"
         ],
         "additionalProperties": false
       }

@@ -7965,6 +7965,56 @@ export interface components {
             /** @description Why it failed, as a code: `rejected`, `unavailable`… */
             errorCode: string | null;
         };
+        CommentPage: {
+            items: components["schemas"]["Comment"][];
+            /** @description Pass it as `cursor` for the next page; null: no more (and with `page`). */
+            nextCursor: string | null;
+            /** @description With `page`: this page. */
+            page?: number;
+            /** @description With `page`: the next page; null: no more. */
+            nextPage?: number | null;
+            /** @description With `page` and `count=true`: ceil(total / limit). */
+            pageCount?: number;
+            /** @description With `count=true`: the rows matching the filters, all pages; the cap when totalCapped. */
+            total?: number;
+            /** @description true: there are more than `total` (show "10,000+"). */
+            totalCapped?: boolean;
+        };
+        Comment: {
+            id: string;
+            /** @example Note */
+            subject: string;
+            recordId: string;
+            /** @description Who wrote it: `user:<id>` or `client:<id>`. */
+            author: string;
+            /**
+             * @description The author's name, as every member of the tenant sees it; null for anyone the tenant never had.
+             * @example Maya Patel
+             */
+            authorName: string | null;
+            body: string;
+            /** @description The people mentioned (`@<email>` or `@user:<id>` in the body) who may read the record, as `user:<id>`. */
+            mentions: string[];
+            /** @description The name of each key in `mentions`: `{ "user:<id>": "Maya Patel" }`. A mention written as an address (`@maya@example.com`) is named under that address too (lower-cased); an address that mentioned nobody has no entry. A person who left the tenant keeps their name; null for anyone the tenant never had. */
+            mentionNames: {
+                [key: string]: string | null;
+            };
+            /** Format: date-time */
+            editedAt: string | null;
+            /** @description The top-level comment this one answers; null for a top-level comment. */
+            parentId: string | null;
+            /**
+             * Format: date-time
+             * @description When its thread was resolved; null if open (always null on a reply).
+             */
+            resolvedAt: string | null;
+            /** @description Who resolved the thread: `user:<id>` or `client:<id>`. */
+            resolvedBy: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         DuplicateList: {
             items: components["schemas"]["Duplicate"][];
         };
@@ -8093,56 +8143,6 @@ export interface components {
                     to: unknown;
                 };
             };
-        };
-        CommentPage: {
-            items: components["schemas"]["Comment"][];
-            /** @description Pass it as `cursor` for the next page; null: no more (and with `page`). */
-            nextCursor: string | null;
-            /** @description With `page`: this page. */
-            page?: number;
-            /** @description With `page`: the next page; null: no more. */
-            nextPage?: number | null;
-            /** @description With `page` and `count=true`: ceil(total / limit). */
-            pageCount?: number;
-            /** @description With `count=true`: the rows matching the filters, all pages; the cap when totalCapped. */
-            total?: number;
-            /** @description true: there are more than `total` (show "10,000+"). */
-            totalCapped?: boolean;
-        };
-        Comment: {
-            id: string;
-            /** @example Note */
-            subject: string;
-            recordId: string;
-            /** @description Who wrote it: `user:<id>` or `client:<id>`. */
-            author: string;
-            /**
-             * @description The author's name, as every member of the tenant sees it; null for anyone the tenant never had.
-             * @example Maya Patel
-             */
-            authorName: string | null;
-            body: string;
-            /** @description The people mentioned (`@<email>` or `@user:<id>` in the body) who may read the record, as `user:<id>`. */
-            mentions: string[];
-            /** @description The name of each key in `mentions`: `{ "user:<id>": "Maya Patel" }`. A mention written as an address (`@maya@example.com`) is named under that address too (lower-cased); an address that mentioned nobody has no entry. A person who left the tenant keeps their name; null for anyone the tenant never had. */
-            mentionNames: {
-                [key: string]: string | null;
-            };
-            /** Format: date-time */
-            editedAt: string | null;
-            /** @description The top-level comment this one answers; null for a top-level comment. */
-            parentId: string | null;
-            /**
-             * Format: date-time
-             * @description When its thread was resolved; null if open (always null on a reply).
-             */
-            resolvedAt: string | null;
-            /** @description Who resolved the thread: `user:<id>` or `client:<id>`. */
-            resolvedBy: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
         };
     };
     responses: never;

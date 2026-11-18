@@ -85,13 +85,16 @@ export const handlers = [
   http.get('/v1/auth/methods', () => HttpResponse.json(allMethods)),
   http.get('/v1/features', () => HttpResponse.json(allFeatures)),
   http.get('/v1/settings', () => HttpResponse.json({ items: [] })),
+  // capability:favorites begin
   // The sidebar's favorites, asked on every signed-in page: none, unless a test says so.
   http.get('/v1/favorites', () => HttpResponse.json({ items: [] })),
+  // capability:favorites end
   // The work surfaces (docs/work-surfaces.md), asked on every signed-in page
   // and record: an empty inbox and history, nobody else on the record.
   http.get('/v1/inbox', () =>
     HttpResponse.json({ items: [], nextCursor: null }),
   ),
+  // capability:recents begin
   http.get('/v1/recents', () => HttpResponse.json({ items: [] })),
   http.post('/v1/recents', async ({ request }) =>
     HttpResponse.json({
@@ -100,6 +103,7 @@ export const handlers = [
       viewedAt: new Date().toISOString(),
     }),
   ),
+  // capability:recents end
   // capability:presence begin
   http.get('/v1/presence/:subject/:recordId', () =>
     HttpResponse.json({ items: [] }),
@@ -112,10 +116,12 @@ export const handlers = [
     () => new HttpResponse(null, { status: 204 }),
   ),
   // capability:presence end
+  // capability:approvals begin
   // The sidebar's approvals badge asks for its count on every signed-in page.
   http.get('/v1/approvals', () =>
     HttpResponse.json({ items: [], nextCursor: null, total: 0 }),
   ),
+  // capability:approvals end
   // The tenant's branding (docs/branding.md), read on every signed-in page: none, unless a test says so.
   http.get('/v1/branding', () =>
     HttpResponse.json({

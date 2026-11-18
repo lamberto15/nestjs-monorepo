@@ -1,0 +1,22 @@
+{
+  "title": "History",
+  "empty": "No history yet.",
+  "error": "The history could not be loaded.",
+  "revision": "Revision {{number}}",
+  "current": "Current",
+  "restoredFrom": "Restored from {{number}}",
+  "by": "By {{name}}",
+  "unknown": "an unknown author",
+  "pick": "Select revision {{number}} to compare",
+  "pickHint": "Select two revisions to compare them.",
+  "compare": "Compare",
+  "diffTitle": "Changes from revision {{a}} to {{b}}",
+  "noDiff": "The two revisions do not differ.",
+  "restore": "Restore",
+  "restoreTitle": "Restore revision {{number}}?",
+  "restoreDescription": "The record is set back to revision {{number}}. This adds a new revision; nothing is lost.",
+  "restored": "Revision restored",
+  "conflictTitle": "The record changed meanwhile",
+  "conflictDescription": "Someone else changed it since you opened it. Reload it, then restore again.",
+  "reload": "Reload"
+}

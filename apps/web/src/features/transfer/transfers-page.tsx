@@ -26,13 +26,14 @@ import { Page, PageHeader } from '@/components/page-header';
 import { useDateTimeFormat } from '@/lib/date-time';
 import { useLivePoll, useRealtimeEvent, withProgress } from '@/lib/realtime';
 import {
-  bulkListQuery,
   transfersListQuery,
-  type BulkRun,
   type Transfer,
   type TransferKind,
   type TransferState,
 } from './api';
+// capability:bulk begin
+import { bulkListQuery, type BulkRun } from './api';
+// capability:bulk end
 import { TransferView } from './transfer-status';
 
 type JobItem = {
@@ -59,7 +60,9 @@ export function TransfersPage() {
   const [state, setState] = useState<StatusFilter>('all');
   const status = state === 'all' ? undefined : state;
   const showTransfers = show !== 'bulk' && show !== 'account';
+  // capability:bulk begin
   const showBulk = show === 'all' || show === 'bulk';
+  // capability:bulk end
   // An account export is an export, in no tenant: its own list.
   const showAccount = show === 'all' || show === 'export' || show === 'account';
   const kind = show === 'export' || show === 'import' ? show : undefined;
@@ -72,10 +75,12 @@ export function TransfersPage() {
     ...transfersListQuery(kind, status, poll.interval),
     enabled: showTransfers,
   });
+  // capability:bulk begin
   const bulk = useInfiniteQuery({
     ...bulkListQuery(status, poll.interval),
     enabled: showBulk,
   });
+  // capability:bulk end
   // The same query as the account page's export section (shared cache). The
   // API has no status filter for it: the few it keeps are filtered here.
   const account = useInfiniteQuery({
@@ -86,14 +91,20 @@ export function TransfersPage() {
   const ended = (event: { id: string }) => {
     poll.push(event.id);
     void queryClient.invalidateQueries({ queryKey: ['data', 'transfers'] });
+    // capability:bulk begin
     void queryClient.invalidateQueries({ queryKey: ['data', 'bulk-runs'] });
+    // capability:bulk end
     void queryClient.invalidateQueries({ queryKey: ACCOUNT_EXPORTS_KEY });
   };
   useRealtimeEvent('data.export-ready', ended);
   useRealtimeEvent('data.import-finished', ended);
+  // capability:bulk begin
   useRealtimeEvent('bulk.finished', ended);
+  // capability:bulk end
   useRealtimeEvent('data.failed', ended);
+  // capability:bulk begin
   useRealtimeEvent('bulk.failed', ended);
+  // capability:bulk end
   // Progress events update the counters of the shown item in place.
   const progressed = (
     key: 'transfers' | 'bulk-runs',
@@ -116,14 +127,15 @@ export function TransfersPage() {
   useRealtimeEvent('data.progress', ({ id, processed, imported, failed }) =>
     progressed('transfers', id, { processed, imported, failed }),
   );
+  // capability:bulk begin
   useRealtimeEvent('bulk.progress', ({ id, processed, done, failed }) =>
     progressed('bulk-runs', id, { processed, done, failed }),
   );
+  // capability:bulk end
 
   const items = showTransfers
     ? (transfers.data?.pages.flatMap((page) => page.items) ?? [])
     : [];
-  const runs = showBulk ? (bulk.data?.pages.flatMap((p) => p.items) ?? []) : [];
   const accountItems = showAccount
     ? (account.data?.pages
         .flatMap((page) => page.items)
@@ -132,21 +144,31 @@ export function TransfersPage() {
   // The account list may be refused (an impersonated session): that alone
   // does not hide the rest, unless it is all there is.
   const accountOnly = show === 'account';
-  const pending =
+  let pending =
     (showTransfers && transfers.isPending) ||
-    (showBulk && bulk.isPending) ||
     (showAccount && account.isPending);
-  const failed =
-    (showTransfers && transfers.isError) ||
-    (showBulk && bulk.isError) ||
-    (accountOnly && account.isError);
+  let failed =
+    (showTransfers && transfers.isError) || (accountOnly && account.isError);
+  let empty =
+    items.length === 0 &&
+    accountItems.length === 0 &&
+    !(showTransfers && transfers.hasNextPage) &&
+    !(showAccount && account.hasNextPage);
+  // capability:bulk begin
+  const runs = showBulk ? (bulk.data?.pages.flatMap((p) => p.items) ?? []) : [];
+  pending ||= showBulk && bulk.isPending;
+  failed ||= showBulk && bulk.isError;
+  empty &&= runs.length === 0 && !(showBulk && bulk.hasNextPage);
+  // capability:bulk end
 
   const filters: { value: Show; label: string }[] = [
     { value: 'all', label: t('mine.filter.all') },
     { value: 'export', label: t('mine.filter.export') },
     { value: 'import', label: t('mine.filter.import') },
     { value: 'account', label: t('mine.filter.account') },
+    // capability:bulk begin
     { value: 'bulk', label: t('mine.filter.bulk') },
+    // capability:bulk end
   ];
   const states: { value: StatusFilter; label: string }[] = [
     { value: 'all', label: t('mine.state.all') },
@@ -210,12 +232,7 @@ export function TransfersPage() {
         <p role="alert" className="text-sm text-destructive">
           {t('mine.error')}
         </p>
-      ) : items.length === 0 &&
-        runs.length === 0 &&
-        accountItems.length === 0 &&
-        !(showTransfers && transfers.hasNextPage) &&
-        !(showBulk && bulk.hasNextPage) &&
-        !(showAccount && account.hasNextPage) ? (
+      ) : empty ? (
         <EmptyState
           title={status ? t('mine.emptyFiltered') : t('mine.empty')}
         />
@@ -241,6 +258,7 @@ export function TransfersPage() {
               onClick={() => void account.fetchNextPage()}
             />
           )}
+          {/* capability:bulk begin */}
           {runs.length > 0 && <BulkRows runs={runs} />}
           {showBulk && bulk.hasNextPage && (
             <MoreButton
@@ -248,6 +266,7 @@ export function TransfersPage() {
               onClick={() => void bulk.fetchNextPage()}
             />
           )}
+          {/* capability:bulk end */}
         </>
       )}
     </Page>
@@ -309,6 +328,7 @@ function TransferRows(props: {
   );
 }
 
+// capability:bulk begin
 function BulkRows(props: { runs: BulkRun[] }) {
   const { t } = useTranslation('transfer');
   return (
@@ -358,3 +378,4 @@ function BulkState(props: { run: BulkRun }) {
     </p>
   );
 }
+// capability:bulk end

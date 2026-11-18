@@ -7,6 +7,7 @@ import { bootModules } from '../../../test/boot.js';
 import {
   createTestItem,
   type Headers,
+  mergeTestItems,
   recordsTenant,
   testItemModules,
 } from '../../../test/records.js';
@@ -601,5 +602,22 @@ describe('comments on test items (e2e)', () => {
         .where(and(eq(comments.recordId, item.id))),
     );
     expect(left).toEqual([]);
+  });
+
+  // modules/merge calls the hook; its test of every hook is its own.
+  it("moves a merged duplicate's comments to the survivor (RecordHooks.merged)", async () => {
+    const writer = await person(['editor'], 'Merle');
+    const survivor = await createTestItem(app, writer.headers);
+    const duplicate = await createTestItem(app, writer.headers);
+    await comment(writer, duplicate.id, 'Same customer');
+    await mergeTestItems(app, tenantId, duplicate.id, survivor.id);
+    const listed = await call(
+      'GET',
+      `/v1/test-items/${survivor.id}/comments`,
+      writer.headers,
+    );
+    expect(listed.json().items.map((c: { body: string }) => c.body)).toEqual([
+      'Same customer',
+    ]);
   });
 });

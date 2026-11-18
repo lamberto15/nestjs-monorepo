@@ -455,7 +455,9 @@ describe('ListPage', () => {
     mocks.fetch.mockImplementation(async (request?: Request) => {
       const url = request?.url ?? '';
       if (url.includes('/v1/lists/')) return json(list);
+      // capability:tags begin
       if (url.includes('/v1/tags')) return json(extra.tags);
+      // capability:tags end
       if (url.includes('/v1/people')) {
         const people = extra.people as (url: URL) => unknown;
         return json(people(new URL(url)));
@@ -533,6 +535,7 @@ describe('ListPage', () => {
     });
   });
 
+  // capability:tags begin
   it("filters by the tenant's tags through the tag picker", async () => {
     respond(
       {
@@ -563,6 +566,7 @@ describe('ListPage', () => {
     // Never a column of its own, never asked for.
     expect(list?.searchParams.get('fields')).toBe('title,status');
   });
+  // capability:tags end
 
   // jsdom has neither, and the popovers and the lists measure and scroll.
   const stubLayout = () => {

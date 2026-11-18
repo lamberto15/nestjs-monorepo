@@ -238,7 +238,8 @@ describe('documents panel gating', () => {
   it('has no tab when the subject takes no PDF', async () => {
     usePanelsApi({ capabilities: { pdf: false } });
     await mount();
-    await screen.findByRole('tab', { name: 'Comments' });
+    // The tabs of the other panels: the subject's description has arrived.
+    await screen.findByRole('tablist');
     expect(
       screen.queryByRole('tab', { name: 'Documents' }),
     ).not.toBeInTheDocument();
@@ -252,7 +253,8 @@ describe('documents panel gating', () => {
     );
     usePanelsApi({ capabilities: { pdf: true } });
     await mount();
-    await screen.findByRole('tab', { name: 'Comments' });
+    // The tabs of the other panels: the subject's description has arrived.
+    await screen.findByRole('tablist');
     expect(
       screen.queryByRole('tab', { name: 'Documents' }),
     ).not.toBeInTheDocument();

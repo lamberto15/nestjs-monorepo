@@ -6,7 +6,9 @@ import type { FilterOption, OptionSearch } from '@/lib/data-table-types';
 import type { ListField } from '@/lib/list-query';
 import { usePeopleNames } from '@/lib/people';
 import { meQuery } from '@/lib/session';
-import { tagOptions, useTags } from '@/lib/tags';
+// capability:tags begin
+import { tagOptions, useTags } from '@/features/tags/tags';
+// capability:tags end
 
 /**
  * What a list's reference fields point at (`ref` in GET /v1/lists/{subject},
@@ -120,22 +122,30 @@ export function refKinds(fields: readonly ListField[]): Set<string> {
   );
 }
 
-/** The sources of the refs a list's fields point at (only those are fetched). */
-export function useListRefs(
-  subject: string,
-  fields: readonly ListField[],
-): RefSources {
+/**
+ * The sources of the refs a list's fields point at (only those are fetched).
+ * The subject is for the sources kept per subject (a module's, marked).
+ */
+export function useListRefs(list: {
+  subject: string;
+  fields: readonly ListField[];
+}): RefSources {
+  const { fields } = list;
   const kinds = useMemo(() => refKinds(fields), [fields]);
-  const tags = useTags(subject, kinds.has('tag'));
+  // capability:tags begin
+  const tags = useTags(list.subject, kinds.has('tag'));
+  // capability:tags end
   const units = useQuery({ ...unitRefsQuery, enabled: kinds.has('unit') });
   // Who is signed in, as the app already knows it: never fetched from here.
   const me = useQuery({ ...meQuery, enabled: false }).data;
 
   return useMemo(() => {
     const sources: RefSources = {};
+    // capability:tags begin
     if (kinds.has('tag')) {
       sources.tag = { options: tagOptions(tags.data ?? []) };
     }
+    // capability:tags end
     if (kinds.has('unit')) {
       sources.unit = { options: unitOptions(units.data ?? []) };
     }
@@ -148,5 +158,12 @@ export function useListRefs(
       };
     }
     return sources;
-  }, [kinds, tags.data, units.data, me]);
+  }, [
+    kinds,
+    // capability:tags begin
+    tags.data,
+    // capability:tags end
+    units.data,
+    me,
+  ]);
 }

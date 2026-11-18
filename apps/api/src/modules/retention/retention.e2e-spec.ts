@@ -13,7 +13,7 @@ import { bootModules } from '../../../test/boot.js';
 import {
   createRetentionItems,
   retentionItems,
-} from '../../../test/fixtures/retention-items.js';
+} from '../../../test/fixtures/retention/retention-items.js';
 import type { Database } from '../../core/database/database.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';

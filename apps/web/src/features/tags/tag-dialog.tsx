@@ -1,13 +1,6 @@
 import { isApiError } from '@nestjs-monorepo/api-client';
 import { Button } from '@nestjs-monorepo/ui/components/button';
 import {
-  ColorPicker,
-  ColorPickerArea,
-  ColorPickerContent,
-  ColorPickerHueSlider,
-  ColorPickerInput,
-} from '@nestjs-monorepo/ui/components/color-picker';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -22,12 +15,13 @@ import {
   FieldLabel,
 } from '@nestjs-monorepo/ui/components/field';
 import { PaletteIcon, XIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { HexPicker } from '@/components/hex-picker';
 import { applyFieldErrors, errorMessage } from '@/lib/errors';
 import { FormAlert, useAppForm } from '@/lib/form';
-import { TagBadge, type Tag } from '@/lib/tags';
+import { TagBadge, type Tag } from '@/features/tags/tags';
 import { z } from '@/lib/zod';
 import { TAG_LIMITS, useUpdateTag, type TagChanges } from './api';
 
@@ -205,42 +199,5 @@ export function TagDialog(props: {
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/**
- * Dice UI's color picker on a hex color. It passes the color through HSV when
- * it mounts and reports the rounded result (`#ef4444` comes back as
- * `#f04343`), which would recolour a tag the user only opened: so its changes
- * count from the first pointer, key or input event on it, and it starts from
- * `value` (uncontrolled: the parent remounts it for another color).
- */
-export function HexPicker(props: {
-  value: string;
-  onChange: (hex: string) => void;
-}) {
-  const touched = useRef(false);
-  const touch = () => {
-    touched.current = true;
-  };
-  return (
-    <div
-      onPointerDownCapture={touch}
-      onKeyDownCapture={touch}
-      onChangeCapture={touch}
-    >
-      <ColorPicker
-        inline
-        format="hex"
-        defaultValue={props.value}
-        onValueChange={(next) => touched.current && props.onChange(next)}
-      >
-        <ColorPickerContent className="w-full p-0">
-          <ColorPickerArea />
-          <ColorPickerHueSlider />
-          <ColorPickerInput withoutAlpha />
-        </ColorPickerContent>
-      </ColorPicker>
-    </div>
   );
 }

@@ -103,8 +103,11 @@ pnpm services:up          # PostgreSQL and Redis (compose.dev.yaml)
 pnpm run setup            # writes apps/api/.env from env.example, with generated keys
 pnpm dev                  # the API on http://localhost:3000, the web app on http://localhost:5173
 pnpm feature:add          # a new feature (docs/adding-a-feature.md)
+pnpm module:list          # what can be removed (docs/removing-a-module.md)
+pnpm module:remove <name> # a dry run; --apply removes it and regenerates
 pnpm build && pnpm lint && pnpm test && pnpm test:e2e
 pnpm client:check         # after route changes (pnpm client:generate fixes it)
+pnpm ops tenant:export <slug> --out <dir>  # a tenant to its own server (docs/moving-a-tenant.md)
 ```
 
 `.env` files are the owner's: an agent never writes them (`pnpm run setup`
@@ -122,6 +125,8 @@ are what comes before them:
   the typed client, git hooks, the demo seed.
 - [adding-a-feature](docs/adding-a-feature.md): the generator and what it
   writes.
+- [removing-a-module](docs/removing-a-module.md): `pnpm module:remove`, what
+  it removes and regenerates, and when it refuses.
 - [api-conventions](docs/api-conventions.md): versions, errors, validation,
   lists, ETags, idempotency, rate limits.
 - [identity](docs/identity.md): accounts, tenants, sign-in, roles and
@@ -130,5 +135,7 @@ are what comes before them:
   outbox and events, workflows, mail.
 - [deployment](docs/deployment.md): the image, what a deployment needs, what
   the host provides.
+- [moving-a-tenant](docs/moving-a-tenant.md): a tenant from a shared server
+  to its own, with `tenant:export`, `tenant:import` and `tenant:moved`.
 - [ci](docs/ci.md): the workflow and the image build.
 - [pitfalls](docs/pitfalls.md): mistakes already made.

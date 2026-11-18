@@ -6,7 +6,9 @@ import {
 } from '@/features/access/api';
 import { API_CLIENT_LIMITS } from '@/features/api-clients/queries';
 import { REPORT_LIMITS } from '@/features/reports/api';
+// capability:tags begin
 import { TAG_LIMITS } from '@/features/tags/api';
+// capability:tags end
 import { TENANT_LIMITS } from '@/features/tenants/queries';
 import { SENDER_LIMITS } from '@/features/webhooks/sender-queries';
 import { AUTH_LIMITS } from '@/lib/auth-limits';
@@ -78,6 +80,7 @@ const forms: {
       slug: { maxLength: TENANT_LIMITS.slug },
     },
   },
+  // capability:tags begin
   {
     form: 'a tag',
     requests: [
@@ -89,6 +92,7 @@ const forms: {
       description: { maxLength: TAG_LIMITS.description },
     },
   },
+  // capability:tags end
   {
     form: 'an incoming webhook sender',
     requests: [

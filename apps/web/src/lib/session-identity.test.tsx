@@ -32,7 +32,8 @@ import { useSignedIn } from '@/test/signed-in';
 
 const otherTenantId = '0199a3f2-0000-7000-8000-00000000002a';
 const otherUserId = '0199a3f2-0000-7000-8000-00000000000b';
-const recordKey = recordKeys.detail('/v1/tags', 'tag-a');
+// Any record's key: the path names no route.
+const recordKey = recordKeys.detail('/v1/widgets', 'widget-a');
 
 /** The signed-in `me`: this account, in tenant `tenantId`. */
 const meInTenant = (tenantId: string) =>

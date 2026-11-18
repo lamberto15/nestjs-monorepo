@@ -7,6 +7,7 @@ import { bootModules } from '../../../test/boot.js';
 import {
   createTestItem,
   type Headers,
+  mergeTestItems,
   recordsTenant,
   testItemModules,
 } from '../../../test/records.js';
@@ -456,5 +457,22 @@ describe('tags (e2e)', () => {
         .tags.map((t) => t.name);
     expect(await tagsOf(done.id)).toEqual(['Urgent']);
     expect(await tagsOf(other.id)).toEqual([]);
+  });
+
+  // modules/merge calls the hook; its test of every hook is its own.
+  it("moves a merged duplicate's tags to the survivor (RecordHooks.merged)", async () => {
+    const survivor = await createTestItem(app, team.admin.headers);
+    const duplicate = await createTestItem(app, team.admin.headers);
+    const vip = await tag('vip');
+    expect(
+      (await set(team.admin.headers, duplicate.id, [vip.id])).statusCode,
+    ).toBe(200);
+    await mergeTestItems(app, team.tenantId, duplicate.id, survivor.id);
+    const read = await call(
+      'GET',
+      `/v1/test-items/${survivor.id}`,
+      team.admin.headers,
+    );
+    expect(names(read.json().tags)).toEqual(['vip']);
   });
 });

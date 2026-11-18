@@ -4,39 +4,9 @@
 // schematic formats them with Prettier, so these strings need only be valid
 // TypeScript.
 
-import { titleField } from './fields.js';
-import { ADDONS, BOOT } from './addons.js';
+import { ADDONS, bootOf } from './addons.js';
+import { cap, importLines, src } from './kit.js';
 import { label } from './names.js';
-
-/** Import lines from [name, module] pairs, grouped by module, in first-seen order. */
-function importLines(entries, typeOnly = new Set()) {
-  const byModule = new Map();
-  for (const [name, from] of entries) {
-    if (!byModule.has(from)) byModule.set(from, []);
-    const names = byModule.get(from);
-    if (!names.includes(name)) names.push(name);
-  }
-  return [...byModule]
-    .map(([from, names]) => {
-      const all = names.every((n) => typeOnly.has(n));
-      const list = names.map((n) =>
-        !all && typeOnly.has(n) ? 'type ' + n : n,
-      );
-      return (
-        'import ' +
-        (all ? 'type ' : '') +
-        '{ ' +
-        list.join(', ') +
-        " } from '" +
-        from +
-        "';"
-      );
-    })
-    .join('\n');
-}
-
-/** A module path under src, from the feature's folder. */
-const src = (c, path) => (path.startsWith('node:') ? path : c.src + '/' + path);
 
 /** The pieces the chosen add-ons give one key (body, response, columns). */
 function pieces(c, key) {
@@ -80,7 +50,6 @@ function pieceImports(c, key) {
 
 const camel = (kebab) =>
   kebab.replace(/-([a-z0-9])/g, (_, l) => l.toUpperCase());
-const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 /** A field as its declaration (modules/fields): field.money().optional(). */
 function builder(c, f) {
@@ -650,158 +619,6 @@ export function moduleFile(c) {
   );
 }
 
-/** The effect of each approvable action (modules/approvals). */
-export function approvalsFile(c) {
-  return (
-    importLines(
-      [
-        ['Injectable', '@nestjs/common'],
-        ['ApprovalEffect', src(c, 'modules/approvals/approvals.registry.js')],
-        [
-          'ApprovalEffectHandler',
-          src(c, 'modules/approvals/approvals.registry.js'),
-        ],
-      ],
-      new Set(['ApprovalEffectHandler']),
-    ) +
-    '\n' +
-    c.approvals
-      .map(
-        (a) =>
-          '\n/**\n * What `' +
-          a.action +
-          '` does once it is applied: at once while its approval is\n' +
-          ' * off (the setting `' +
-          c.t.pluralCamel +
-          '.' +
-          a.action +
-          'Approval`), else once approved.\n */\n' +
-          "@ApprovalEffect({ subject: '" +
-          c.t.Singular +
-          "', action: '" +
-          a.action +
-          "' })\n@Injectable()\n" +
-          'export class ' +
-          a.className +
-          ' implements ApprovalEffectHandler {\n' +
-          'apply(): Promise<void> {\n' +
-          '// Business logic: what "' +
-          a.label +
-          '" does to the record, from\n' +
-          '// `apply(applied: ApprovalApplied)` (`applied.id`, `applied.actor`), through its\n' +
-          "// store: `records.of('" +
-          c.t.Singular +
-          "').store.update(applied.actor, applied.id, { … })`\n" +
-          '// (Records, modules/records). It may run more than once: make it idempotent.\n' +
-          'return Promise.resolve();\n}\n}\n',
-      )
-      .join('')
-  );
-}
-
-/** The record's computed fields (modules/computed-fields). */
-export function computedFile(c) {
-  const title = titleField(c.fields);
-  const entry = title
-    ? title.name + "Length: computed.int('length(" + title.name + ")')"
-    : "edited: computed.bool('updatedAt != createdAt')";
-  return (
-    importLines([
-      ['computed', src(c, 'modules/computed-fields/computed-fields.js')],
-      ['defineComputed', src(c, 'modules/computed-fields/computed-fields.js')],
-      [c.R, './' + c.t.singular + '.record.js'],
-    ]) +
-    '\n\n' +
-    '/**\n * Values derived from ' +
-    c.t.aNoun +
-    "'s fields on every read, never stored.\n" +
-    ' * Business logic: the computed fields (expressions of modules/expressions).\n */\n' +
-    'export const ' +
-    c.R +
-    '_COMPUTED = defineComputed(' +
-    c.R +
-    ', {\n' +
-    entry +
-    ',\n});\n'
-  );
-}
-
-/** The choices of its first enum field (modules/choices). */
-export function choicesFile(c) {
-  const f = c.enumField;
-  const key = c.t.singular + '-' + c.kebab(f.name);
-  return (
-    importLines(
-      [
-        ['Injectable', '@nestjs/common'],
-        ['ChoiceProvider', src(c, 'modules/choices/choices.registry.js')],
-        ['ChoiceSet', src(c, 'modules/choices/choices.registry.js')],
-        ['ChoiceSource', src(c, 'modules/choices/choices.registry.js')],
-      ],
-      new Set(['ChoiceProvider', 'ChoiceSet']),
-    ) +
-    '\n\n' +
-    '/** The values of `' +
-    f.name +
-    '` (' +
-    c.t.singular +
-    '.record.ts). */\n' +
-    'const VALUES: readonly string[] = [' +
-    f.values.map((v) => "'" + v + "'").join(', ') +
-    '];\n\n' +
-    '/**\n * The ' +
-    label(f.name).toLowerCase() +
-    ' a writer may pick: every value of the field.\n' +
-    ' * Business logic: narrow them by `principal` or by a parent field (`params`).\n */\n' +
-    '@ChoiceSource()\n@Injectable()\nexport class ' +
-    c.t.Singular +
-    'Choices implements ChoiceProvider {\n' +
-    "readonly key = '" +
-    key +
-    "';\n" +
-    "readonly label = '" +
-    cap(c.t.noun) +
-    ' ' +
-    label(f.name).toLowerCase() +
-    "';\n" +
-    'readonly params = {};\n' +
-    'mayUse = () => Promise.resolve(true);\n' +
-    'options = () => Promise.resolve(VALUES.map((value) => ({ value, label: value })));\n' +
-    'has = ({ value }: { value: string }) => Promise.resolve(VALUES.includes(value));\n}\n\n' +
-    '/** The fields chosen together: `ChoicesModule.forRecord(' +
-    c.R +
-    ', ' +
-    c.R +
-    '_CHOICES)`. */\n' +
-    'export const ' +
-    c.R +
-    '_CHOICES: ChoiceSet = {\n' +
-    "key: '" +
-    key +
-    "',\nlabel: '" +
-    label(f.name) +
-    "',\n" +
-    'fields: { ' +
-    f.name +
-    ": { provider: '" +
-    key +
-    "' } },\n};\n"
-  );
-}
-
-/** Its PDF's page (modules/documents): Handlebars, wrapped in the module's layout. */
-export function documentTemplate(c) {
-  return (
-    '<!-- ' +
-    cap(c.t.aNoun) +
-    "'s PDF. Business logic: its layout; the context has\n" +
-    '     title, record (field to text), rows and labels (modules/documents). -->\n' +
-    '<header>\n  <p class="eyebrow">{{ labels.document }}</p>\n  <h1>{{ title }}</h1>\n</header>\n' +
-    '<table class="facts">\n  {{#each rows}}\n  <tr>\n    <th>{{ this.label }}</th>\n    <td>{{ this.value }}</td>\n  </tr>\n  {{/each}}\n</table>\n' +
-    '<footer>{{ labels.issued }}</footer>\n'
-  );
-}
-
 /** Its texts (core/i18n): the permission catalog's. */
 export function texts(c) {
   const actions = {
@@ -812,9 +629,7 @@ export function texts(c) {
     ...(c.softDelete && {
       restore: 'Restore ' + c.t.nouns + ' from the recycle bin',
     }),
-    ...(c.addons.includes('shares') && {
-      share: 'Share ' + c.t.nouns + ' by a link',
-    }),
+    ...Object.assign({}, ...c.addons.map((name) => ADDONS[name].actions?.(c))),
   };
   return (
     JSON.stringify(
@@ -859,9 +674,6 @@ const CHANGES = {
 };
 const WRONG = { int: "'x'", money: "'x'", bool: "'x'", json: "'x'" };
 
-/** BOOT's order is the dependency order: what is used first. */
-const bootOrder = (boot) => Object.keys(BOOT).filter((n) => boot.includes(n));
-
 /** The e2e spec: the generated routes, and one check of each add-on. */
 export function e2e(c) {
   const { t } = c;
@@ -869,9 +681,7 @@ export function e2e(c) {
   const changed =
     c.fields.find((f) => f.type !== 'ref' && !f.unique) ?? sampled[0];
   const first = sampled[0];
-  const boot = bootOrder([
-    ...new Set(c.addons.flatMap((name) => ADDONS[name].boot ?? [])),
-  ]);
+  const boot = bootOf(c.addons);
   const env = Object.assign(
     { SCHEDULER: 'off', IDEMPOTENCY: 'optional' },
     ...c.addons.map((name) => ADDONS[name].env ?? {}),
@@ -892,7 +702,7 @@ export function e2e(c) {
         ['bootModules', c.test + '/boot.js'],
         ['recordsTenant', c.test + '/records.js'],
         ['testItemModules', c.test + '/records.js'],
-        ...boot.map((n) => [n, src(c, BOOT[n])]),
+        ...boot.map(([n, path]) => [n, src(c, path)]),
         [t.Plural + 'Module', './' + t.plural + '.module.js'],
       ],
       new Set(['NestNodeApplication']),
@@ -911,7 +721,7 @@ export function e2e(c) {
     " (e2e)', () => {\n" +
     'let app: NestNodeApplication;\nlet team: Awaited<ReturnType<typeof recordsTenant>>;\n\n' +
     'beforeAll(async () => {\napp = await bootModules(...testItemModules(), ' +
-    [...boot, t.Plural + 'Module'].join(', ') +
+    [...boot.map(([n]) => n), t.Plural + 'Module'].join(', ') +
     ');\n' +
     'team = await recordsTenant(app);\n});\n\nafterAll(async () => {\nawait app?.close();\n});\n\n' +
     "const call = (\nmethod: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',\nurl: string,\nheaders: Record<string, string>,\npayload?: object,\n) => app.inject({ method, url, headers, ...(payload && { payload }) });\n\n" +
@@ -1086,22 +896,7 @@ export function readme(c) {
       '.policy.ts`: abilities of its own; `' +
       t.singular +
       '.permissions.ts`: fields granted one by one, conditions.',
-    ...(c.addons.includes('approvals')
-      ? [
-          '- `' +
-            t.singular +
-            '.approvals.ts`: what each approvable action does.',
-        ]
-      : []),
-    ...(c.addons.includes('computed-fields')
-      ? ['- `' + t.singular + '.computed.ts`: the computed fields.']
-      : []),
-    ...(c.addons.includes('choices')
-      ? ['- `' + t.singular + '.choices.ts`: the choices a writer may pick.']
-      : []),
-    ...(c.addons.includes('documents')
-      ? ['- `templates/' + t.singular + '.html`: the PDF.']
-      : []),
+    ...c.addons.flatMap((name) => ADDONS[name].readme?.(c) ?? []),
     '',
     'Tests: `' +
       t.plural +

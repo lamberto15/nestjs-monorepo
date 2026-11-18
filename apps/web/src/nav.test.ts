@@ -50,7 +50,9 @@ describe('mergeNav', () => {
       '/',
       '/work',
       '/notifications',
+      // capability:approvals begin
       '/approvals',
+      // capability:approvals end
       '/transfers',
     ]);
     expect(tos('workspace')).toContain('/reports');

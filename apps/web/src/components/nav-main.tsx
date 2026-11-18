@@ -16,8 +16,12 @@ import {
 import { ChevronRightIcon } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+// capability:favorites begin
 import { NavFavorites } from '@/features/favorites/nav-favorites';
-import { NavRecents } from '@/features/work/nav-recents';
+// capability:favorites end
+// capability:recents begin
+import { NavRecents } from '@/features/recents/nav-recents';
+// capability:recents end
 import { useOperator } from '@/features/tenants/queries';
 import { useFeatures, useMe } from '@/lib/features';
 import {
@@ -120,8 +124,12 @@ export function NavMain() {
       return (
         <Fragment key={group.id}>
           <SidebarGroup aria-label={t(group.label)}>{menu}</SidebarGroup>
+          {/* capability:favorites begin */}
           <NavFavorites groups={groups} />
+          {/* capability:favorites end */}
+          {/* capability:recents begin */}
           <NavRecents groups={groups} />
+          {/* capability:recents end */}
         </Fragment>
       );
     }

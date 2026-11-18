@@ -6,15 +6,22 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+// capability:comments begin
 import { QueryClient } from '@tanstack/react-query';
+// capability:comments end
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RealtimeProvider } from '@/lib/realtime';
 import { recordKeys } from '@/lib/records';
-import { meQuery, type Features } from '@/lib/session';
+import type { Features } from '@/lib/session';
+// capability:comments begin
+import { meQuery } from '@/lib/session';
+// capability:comments end
 import { createFakeRealtime, type FakeRealtime } from '@/test/fake-realtime';
+// capability:comments begin
+import { MAYA } from '@/test/panels-api';
+// capability:comments end
 import {
-  MAYA,
   TEST_RECORD,
   sampleRevisions,
   panelsDescription,
@@ -23,8 +30,10 @@ import {
 import { renderComponent } from '@/test/render-component';
 import { findToast } from '@/test/toast';
 import { problem, server, signedInUser } from '@/test/server';
-import { CommentEditor } from './comments-panel';
-import { splitMentions } from './comment-text';
+// capability:comments begin
+import { CommentEditor } from '@/features/comments/comments-panel';
+import { splitMentions } from '@/features/comments/comment-text';
+// capability:comments end
 import { RecordPanels } from './record-panels';
 
 const connections: FakeRealtime[] = [];
@@ -64,7 +73,9 @@ async function mountPanels(can: string[], features?: Partial<Features>) {
         subject={TEST_RECORD.subject}
         path={TEST_RECORD.path}
         id={ID}
+        // capability:tags begin
         tags={[{ id: 't1', name: 'Internal', color: '#6b7280' }]}
+        // capability:tags end
       />
     </RealtimeProvider>,
     { can, features },
@@ -83,6 +94,7 @@ const open = async (tab: string) => {
   return user;
 };
 
+// capability:comments begin
 describe('comments', () => {
   it('shows the thread with mentions marked, as plain text', async () => {
     usePanelsApi({
@@ -516,7 +528,9 @@ describe('comments', () => {
     ]);
   });
 });
+// capability:comments end
 
+// capability:attachments begin
 describe('attachments', () => {
   it('uploads a file as multipart and lists it', async () => {
     const calls = usePanelsApi();
@@ -941,7 +955,9 @@ describe('attachments', () => {
     });
   });
 });
+// capability:attachments end
 
+// capability:tags begin
 describe('tags', () => {
   const tags = [
     { id: 't1', name: 'Internal', color: '#6b7280' },
@@ -1000,7 +1016,9 @@ describe('tags', () => {
     expect(screen.queryByRole('button', { name: 'Edit tags' })).toBeNull();
   });
 });
+// capability:tags end
 
+// capability:revisions begin
 describe('revisions', () => {
   it('compares two revisions side by side', async () => {
     const calls = usePanelsApi({ revisions: sampleRevisions });
@@ -1080,6 +1098,7 @@ describe('revisions', () => {
     expect(screen.queryByRole('button', { name: 'Restore' })).toBeNull();
   });
 });
+// capability:revisions end
 
 describe('realtime', () => {
   const socket = async () => {
@@ -1087,6 +1106,7 @@ describe('realtime', () => {
     return connections[0]!;
   };
 
+  // capability:comments begin
   it("reloads the comments on the record's record.commented, not another's", async () => {
     usePanelsApi({ comments: [{ body: 'First' }] });
     await mountPanels(ALL);
@@ -1128,7 +1148,9 @@ describe('realtime', () => {
     await waitFor(() => expect(requests).toBe(1));
     server.events.removeListener('request:start', count);
   });
+  // capability:comments end
 
+  // capability:attachments begin
   it('reloads the files on record.attachments.changed', async () => {
     usePanelsApi();
     await mountPanels(ALL);
@@ -1167,7 +1189,9 @@ describe('realtime', () => {
     );
     expect(await screen.findByText('issued.pdf')).toBeVisible();
   });
+  // capability:attachments end
 
+  // capability:attachments begin
   it('turns a scanned file downloadable on record.attachments.changed (scanned)', async () => {
     const calls = usePanelsApi({
       attachments: [
@@ -1201,7 +1225,9 @@ describe('realtime', () => {
     ).toHaveAttribute('href', '/v1/attachments/a1/download');
     expect(screen.queryByText('Scanning…')).toBeNull();
   });
+  // capability:attachments end
 
+  // capability:attachments begin
   it('shows the thumbnail of an image on record.attachments.changed (processed)', async () => {
     const calls = usePanelsApi({
       attachments: [
@@ -1257,7 +1283,9 @@ describe('realtime', () => {
       screen.queryByRole('img', { name: 'Preparing preview…' }),
     ).toBeNull();
   });
+  // capability:attachments end
 
+  // capability:attachments begin
   it('drops a file the scan rejected and tells its uploader why', async () => {
     const calls = usePanelsApi({
       attachments: [
@@ -1329,7 +1357,9 @@ describe('realtime', () => {
     await act(() => Promise.resolve());
     expect(screen.queryByText('A note was published')).toBeNull();
   });
+  // capability:attachments end
 
+  // capability:attachments begin
   it("drops a rejected file on the uploader's notification when the removed event does not reach them", async () => {
     // The uploader is no watcher of the record: `removed` (sent by the system
     // principal) goes to the watchers only; the notification is theirs.
@@ -1375,14 +1405,26 @@ describe('realtime', () => {
     await screen.findByText('No files attached.');
     expect(screen.queryByText('virus.pdf')).toBeNull();
   });
+  // capability:attachments end
 });
 
 describe('the panels on a record', () => {
   it('shows only the panels the feature supports', async () => {
-    usePanelsApi({ capabilities: { attachments: false, tags: false } });
+    usePanelsApi({
+      capabilities: {
+        attachments: false,
+        // capability:tags begin
+        tags: false,
+        // capability:tags end
+      },
+    });
     await mountPanels(ALL);
+    // capability:comments begin
     expect(await screen.findByRole('tab', { name: 'Comments' })).toBeVisible();
-    expect(screen.getByRole('tab', { name: 'History' })).toBeVisible();
+    // capability:comments end
+    // capability:revisions begin
+    expect(await screen.findByRole('tab', { name: 'History' })).toBeVisible();
+    // capability:revisions end
     expect(screen.queryByRole('tab', { name: 'Attachments' })).toBeNull();
     expect(screen.queryByText('Tags')).toBeNull();
   });
@@ -1398,7 +1440,9 @@ describe('the panels on a record', () => {
       capabilities: {
         comments: false,
         attachments: false,
+        // capability:tags begin
         tags: false,
+        // capability:tags end
         revisions: false,
       },
     });
@@ -1450,6 +1494,7 @@ describe('the panels on a record', () => {
     expect(asked[0]?.get('limit')).toBe('10');
   });
 
+  // capability:merge begin
   it('lists the likely duplicates and merges one, taking the values ticked', async () => {
     usePanelsApi({ capabilities: { merge: true } });
     const merged: unknown[] = [];
@@ -1523,6 +1568,7 @@ describe('the panels on a record', () => {
       { duplicateId: 'd1', fields: { body: 'duplicate' } },
     ]);
   });
+  // capability:merge end
 
   it('shows nothing to a user who may not read the record', async () => {
     const calls = usePanelsApi();

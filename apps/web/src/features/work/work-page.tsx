@@ -23,8 +23,10 @@ export function WorkPage() {
   const refresh = () =>
     void queryClient.invalidateQueries({ queryKey: workQuery.queryKey });
   useRealtimeEvent('notification', refresh);
+  // capability:approvals begin
   useRealtimeEvent('approval.assigned', refresh);
   useRealtimeEvent('approval.decided', refresh);
+  // capability:approvals end
   const items = list.data?.pages.flatMap((page) => page.items) ?? [];
 
   const open = (item: WorkItem) => {

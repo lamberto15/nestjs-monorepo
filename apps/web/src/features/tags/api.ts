@@ -1,6 +1,7 @@
 import { unwrap, type paths } from '@nestjs-monorepo/api-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { call } from '@/components/records/panels/api';
 import { recordKeys } from '@/lib/records';
 
 /**
@@ -59,3 +60,12 @@ export function useDeleteTag() {
     onSuccess: refresh,
   });
 }
+
+/** Replaces the record's tags (`PUT <base>/tags`). */
+export const setTags = (base: string, id: string, tagIds: string[]) =>
+  unwrap(
+    call<unknown>('PUT', base, '/tags', {
+      params: { path: { id } },
+      body: { tagIds },
+    }),
+  );

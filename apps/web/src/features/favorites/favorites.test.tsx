@@ -44,9 +44,10 @@ const page = (id: string, target: string, label: string): Favorite => ({
 
 describe('favorites', () => {
   it('lists them in the sidebar in their order, leaving out pages the menu does not show', async () => {
-    useSignedIn(['Access.manageTags']);
+    // A page of a module favorites does not depend on.
+    useSignedIn(['Access.readAudit']);
     useFavoritesApi([
-      page('f1', '/tags', 'My tags'),
+      page('f1', '/audit', 'My audit'),
       page('f2', '/tenants', 'Not mine to see'),
     ]);
     await renderApp('/');
@@ -54,9 +55,9 @@ describe('favorites', () => {
       await screen.findByRole('navigation', { name: 'Main menu' }),
     );
     expect(await menu.findByText('Favorites')).toBeVisible();
-    expect(menu.getByRole('link', { name: 'My tags' })).toHaveAttribute(
+    expect(menu.getByRole('link', { name: 'My audit' })).toHaveAttribute(
       'href',
-      '/tags',
+      '/audit',
     );
     expect(menu.queryByRole('link', { name: 'Not mine to see' })).toBeNull();
   });

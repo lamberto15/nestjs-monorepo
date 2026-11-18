@@ -28,9 +28,10 @@ import { DataTableSkeleton } from '@/components/data-table/data-table-skeleton';
 import { DataTableSortMenu } from '@/components/data-table/data-table-sort-menu';
 import { EmptyState } from '@/components/empty-state';
 import { Page, PageHeader } from '@/components/page-header';
-import { ListBulkBar } from '@/components/list-bulk-bar';
+// capability:favorites begin
 import { useCurrentPath } from '@/features/favorites/api';
 import { FavoriteButton } from '@/features/favorites/favorite-button';
+// capability:favorites end
 import { ScheduleReportButton } from '@/features/reports/schedule-button';
 import { useExporterFor } from '@/features/transfer/api';
 import { ExportButton } from '@/features/transfer/export-button';
@@ -40,7 +41,10 @@ import {
   ViewSwitcher,
 } from '@/features/record-views/record-views';
 import { ViewsPicker } from '@/features/views/views-picker';
+// capability:bulk begin
+import { ListBulkBar } from '@/features/bulk/list-bulk-bar';
 import type { BulkContext } from '@/features/bulk/types';
+// capability:bulk end
 import { useWritesPaused } from '@/lib/mode';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useDebouncedCallback } from '@/hooks/use-debounced-callback';
@@ -104,12 +108,14 @@ export interface ListPageProps<P extends ListPath> {
   exportable?: boolean;
   /** A checkbox column: rows can be selected (the pagination counts them). */
   selectable?: boolean;
+  // capability:bulk begin
   /**
    * The action bar of a selection (implies `selectable`): what it renders in
    * the bar for the chosen rows (`ActionBarItem`s, see features/bulk).
    * The selection is cleared when the list's filter or search changes.
    */
   bulkActions?: (context: BulkContext) => ReactNode;
+  // capability:bulk end
 }
 
 /**
@@ -117,7 +123,9 @@ export interface ListPageProps<P extends ListPath> {
  * state is in the URL (nuqs), the page comes from the API (TanStack Query).
  */
 export function ListPage<P extends ListPath>(props: ListPageProps<P>) {
+  // capability:favorites begin
   const path = useCurrentPath();
+  // capability:favorites end
   const description = useListDescription(props.subject);
   const { t } = useTranslation();
 
@@ -128,10 +136,12 @@ export function ListPage<P extends ListPath>(props: ListPageProps<P>) {
         description={props.subtitle}
         actions={
           <>
+            {/* capability:favorites begin */}
             {/* A page of its own (not a list under another's heading): it can be a favorite. */}
             {props.headingLevel !== 2 && (
               <FavoriteButton kind="page" target={path} label={props.title} />
             )}
+            {/* capability:favorites end */}
             {props.toolbarActions}
           </>
         }
@@ -163,17 +173,22 @@ function ListTable<P extends ListPath>({
   rowActions,
   exportable = true,
   selectable,
+  // capability:bulk begin
   bulkActions,
+  // capability:bulk end
 }: ListPageProps<P> & { description: ListDescription }) {
   const { t, i18n } = useTranslation();
   const router = useRouter({ warn: false });
-  const checkable = selectable || bulkActions !== undefined;
+  let checkable = !!selectable;
+  // capability:bulk begin
+  checkable ||= bulkActions !== undefined;
+  // capability:bulk end
   // The board, calendar and timeline the subject declares, besides the table.
   const kinds = viewKinds(description.views);
   const [kind, setKind] = useViewKind(kinds);
   const paused = useWritesPaused();
   // What the reference fields point at: tags, units, users (`ref`).
-  const refs = useListRefs(subject, description.fields);
+  const refs = useListRefs({ subject, fields: description.fields });
   // The caller's columns, then what the list's metadata adds to them: the
   // reference fields (by name; a filter-only one like `tag` never shown)
   // and the custom fields, hidden at first.
@@ -325,6 +340,7 @@ function ListTable<P extends ListPath>({
               max: description.limits.maxLimit,
             },
           })}
+          // capability:bulk begin
           actionBar={
             bulkActions ? (
               <ListBulkBar
@@ -335,6 +351,7 @@ function ListTable<P extends ListPath>({
               />
             ) : undefined
           }
+          // capability:bulk end
         />
       )}
     </div>

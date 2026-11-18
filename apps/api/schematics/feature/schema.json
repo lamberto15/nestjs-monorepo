@@ -46,7 +46,7 @@
     },
     "addons": {
       "type": "string",
-      "description": "Add-ons, comma-separated, or all: tags, comments, attachments, revisions, favorites, recents, templates, choices, custom-fields, computed-fields, approvals, acknowledgments, bulk, merge, data-transfer, data-quality, shares, documents, ai, automations, sequences, webhooks, notifications, recurrence, retention.",
+      "description": "Add-ons, comma-separated, or all: the modules with a <name>.addon.js (src/modules; an unknown name lists them).",
       "x-prompt": "Add-ons, comma-separated, or all (tags, comments, attachments, revisions, favorites, recents, templates, choices, custom-fields, computed-fields, approvals, acknowledgments, bulk, merge, data-transfer, data-quality, shares, documents, ai, automations, sequences, webhooks, notifications, recurrence, retention; empty for none):"
     },
     "softDelete": {

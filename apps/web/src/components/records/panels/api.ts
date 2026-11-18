@@ -1,11 +1,5 @@
-import {
-  ApiError,
-  etagOf,
-  unwrap,
-  type components,
-} from '@nestjs-monorepo/api-client';
+import { unwrap, type components } from '@nestjs-monorepo/api-client';
 import { api } from '@/lib/api';
-import { postMultipart, putFile, StoreUnreachableError } from '@/lib/upload';
 
 /**
  * The record panels' routes (docs/comments.md, attachments.md, tags.md,
@@ -17,33 +11,10 @@ import { postMultipart, putFile, StoreUnreachableError } from '@/lib/upload';
  *
  * `base` is the record's route, `/v1/<plural>/{id}`.
  */
-type Suffix =
-  | '/comments'
-  | '/comments/{commentId}'
-  | '/attachments'
-  | '/attachments/presign'
-  | '/attachments/complete'
-  | '/tags'
-  | '/pdf'
-  | '/documents'
-  | '/watch'
-  | '/revisions'
-  | '/revisions/{number}/restore'
-  | '/revisions/{a}/diff/{b}'
-  | '/duplicates'
-  | '/merge'
-  | '/merge/preview';
+/** A route under the record's: `/comments`, `/revisions/{number}/restore`. */
+type Suffix = `/${string}`;
 
-type Schemas = components['schemas'];
-export type Comment = Schemas['Comment'];
-export type Attachment = Schemas['Attachment'];
-type PresignedUpload = Schemas['PresignedUpload'];
-export type Revision = Schemas['Revision'];
-export type RevisionDiff = Schemas['RevisionDiff'];
-export type Duplicate = Schemas['Duplicate'];
-export type MergePreview = Schemas['MergePreview'];
-/** What a file may be, as the upload route enforces it (`attachmentLimits` of `GET /v1/lists/{subject}`). */
-export type AttachmentLimits = Schemas['AttachmentLimits'];
+export type Schemas = components['schemas'];
 
 type Init = {
   params: {
@@ -64,13 +35,13 @@ type Call = (
  * lib/list-query.ts's fetchPage and features/bulk do; the answers are typed
  * by the functions below.
  */
-const client = api as unknown as Record<
+export const client = api as unknown as Record<
   'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   Call
 >;
 
 /** `GET`, `POST`… on `<base><suffix>`, answering `T`. */
-const call = <T>(
+export const call = <T>(
   method: keyof typeof client,
   base: string,
   suffix: Suffix,
@@ -82,28 +53,18 @@ const call = <T>(
   }>;
 
 /** Pages of 100, at most 10: far past what a thread or a list can use. */
-const PAGE_SIZE = 100;
+export const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
 
 export const panelKeys = {
   all: (base: string, id: string) => ['panels', base, id] as const,
-  comments: (base: string, id: string) =>
-    ['panels', base, id, 'comments'] as const,
-  attachments: (base: string, id: string) =>
-    ['panels', base, id, 'attachments'] as const,
-  revisions: (base: string, id: string) =>
-    ['panels', base, id, 'revisions'] as const,
   documents: (base: string, id: string) =>
     ['panels', base, id, 'documents'] as const,
-  duplicates: (base: string, id: string) =>
-    ['panels', base, id, 'duplicates'] as const,
   related: (base: string, id: string, path: string, field: string) =>
     ['panels', base, id, 'related', path, field] as const,
-  diff: (base: string, id: string, a: number, b: number) =>
-    ['panels', base, id, 'revisions', 'diff', a, b] as const,
 };
 
-async function allPages<T>(
+export async function allPages<T>(
   page: (
     cursor: string | undefined,
   ) => Promise<{ items: T[]; nextCursor?: string | null }>,
@@ -118,56 +79,6 @@ async function allPages<T>(
   }
   return items;
 }
-
-/** The thread, oldest first (the newest last). */
-export const listComments = (base: string, id: string) =>
-  allPages((cursor) =>
-    unwrap(
-      call<Schemas['CommentPage']>('GET', base, '/comments', {
-        params: {
-          path: { id },
-          query: { limit: PAGE_SIZE, sort: 'createdAt', cursor },
-        },
-      }),
-    ),
-  );
-
-export const addComment = (base: string, id: string, body: string) =>
-  unwrap(
-    call<Comment>('POST', base, '/comments', {
-      params: { path: { id } },
-      body: { body },
-    }),
-  );
-
-export const editComment = (
-  base: string,
-  id: string,
-  commentId: string,
-  body: string,
-) =>
-  unwrap(
-    call<Comment>('PATCH', base, '/comments/{commentId}', {
-      params: { path: { id, commentId } },
-      body: { body },
-    }),
-  );
-
-export const removeComment = (base: string, id: string, commentId: string) =>
-  unwrap(
-    call<unknown>('DELETE', base, '/comments/{commentId}', {
-      params: { path: { id, commentId } },
-    }),
-  );
-
-export const listAttachments = (base: string, id: string) =>
-  allPages((cursor) =>
-    unwrap(
-      call<Schemas['AttachmentPage']>('GET', base, '/attachments', {
-        params: { path: { id }, query: { limit: PAGE_SIZE, cursor } },
-      }),
-    ),
-  );
 
 /** The first records a related panel shows; the rest are on their list. */
 export const RELATED_LIMIT = 10;
@@ -215,145 +126,6 @@ export const searchRecords = (path: string, term: string) => {
   );
 };
 
-/** A record's likely duplicates (docs/merging.md): those the user may read. */
-export const listDuplicates = (base: string, id: string) =>
-  unwrap(
-    call<Schemas['DuplicateList']>('GET', base, '/duplicates', {
-      params: { path: { id } },
-    }),
-  );
-
-/**
- * The records a create or edit would duplicate (`POST <list>/duplicates`),
- * before it is saved: `listPath` is `/v1/<plural>`, `excludeId` the record
- * being edited.
- */
-export const findDuplicates = (
-  listPath: string,
-  body: { values: Record<string, unknown>; excludeId?: string },
-) =>
-  unwrap(
-    client.POST(`${listPath}/duplicates`, {
-      params: { path: {} },
-      body,
-    }) as Promise<{
-      data?: Schemas['DuplicateList'];
-      response: Response;
-    }>,
-  );
-
-/** Whose value each field keeps: the duplicate's where `duplicate`. */
-export type MergeBody = {
-  duplicateId: string;
-  fields: Record<string, 'survivor' | 'duplicate'>;
-};
-
-/** What merging `duplicateId` into the record would do; changes nothing. */
-export const previewMerge = (base: string, id: string, body: MergeBody) =>
-  unwrap(
-    call<MergePreview>('POST', base, '/merge/preview', {
-      params: { path: { id } },
-      body,
-    }),
-  );
-
-/** Merges `duplicateId` into the record: the duplicate goes to the recycle bin. */
-export const mergeRecord = (base: string, id: string, body: MergeBody) =>
-  unwrap(
-    call<Record<string, unknown>>('POST', base, '/merge', {
-      params: { path: { id } },
-      body,
-    }),
-  );
-
-/** `GET /v1/attachments/{id}/download` redirects to a signed link: a plain link follows it. */
-export const downloadUrl = (attachmentId: string) =>
-  `/v1/attachments/${attachmentId}/download`;
-
-/**
- * An image's smaller copy (`thumb` 256 px, `preview` 1600 px, WebP: docs/attachments.md,
- * "Image renditions"). Like the download, it redirects to a signed link, which an
- * `<img>` follows only to an origin the page may load images from (the dev proxy,
- * Caddy's `img-src`: docs/attachments.md). 404 while the image is not `ready`.
- */
-export const renditionUrl = (
-  attachmentId: string,
-  rendition: 'thumb' | 'preview',
-) => `${downloadUrl(attachmentId)}?rendition=${rendition}`;
-
-export const removeAttachment = (attachmentId: string) =>
-  unwrap(
-    api.DELETE('/v1/attachments/{id}', {
-      params: { path: { id: attachmentId } },
-    }),
-  );
-
-/**
- * Uploads one file with progress for the dropzone (docs/attachments.md).
- *
- * `direct` (`GET /v1/features`: `presignedUploads`, `STORAGE_DRIVER=s3`): the
- * file goes straight to the object store, which spares the API its bytes:
- * `…/attachments/presign` for a signed URL, a PUT of the file to it, then
- * `…/attachments/complete`, which attaches it after the server checked what
- * arrived. Otherwise, and whenever a direct upload cannot be tried (the
- * browser cannot name the file's type, which a signed URL is bound to; the
- * server answered 503 `presigned_uploads_unavailable` meanwhile, or 429
- * `attachment_uploads_pending`; the browser cannot reach the store, say a
- * bucket with no CORS rule for this origin),
- * the file goes as multipart through the API, which works with every driver.
- */
-export async function uploadAttachment(
-  base: string,
-  id: string,
-  file: File,
-  onProgress: (percent: number) => void,
-  direct = false,
-): Promise<Attachment> {
-  if (direct && file.type) {
-    try {
-      return await uploadDirect(base, id, file, onProgress);
-    } catch (error) {
-      // The multipart upload leaves no announcement behind, so a user who
-      // has many open (attachment_uploads_pending) can still attach files.
-      const fallback =
-        error instanceof StoreUnreachableError ||
-        (error instanceof ApiError &&
-          (error.code === 'presigned_uploads_unavailable' ||
-            error.code === 'attachment_uploads_pending'));
-      if (!fallback) throw error;
-      onProgress(0);
-    }
-  }
-  const form = new FormData();
-  form.append('file', file);
-  return postMultipart<Attachment>(
-    `${base}/attachments`.replace('{id}', id),
-    form,
-    onProgress,
-  );
-}
-
-async function uploadDirect(
-  base: string,
-  id: string,
-  file: File,
-  onProgress: (percent: number) => void,
-): Promise<Attachment> {
-  const upload = await unwrap(
-    call<PresignedUpload>('POST', base, '/attachments/presign', {
-      params: { path: { id } },
-      body: { name: file.name, size: file.size, contentType: file.type },
-    }),
-  );
-  await putFile(upload.url, upload.headers, file, onProgress);
-  return unwrap(
-    call<Attachment>('POST', base, '/attachments/complete', {
-      params: { path: { id } },
-      body: { uploadId: upload.uploadId },
-    }),
-  );
-}
-
 /** Watch the record: its owner and watchers are told of changes (docs/notifications.md). */
 export const watchRecord = (base: string, id: string) =>
   unwrap(
@@ -365,54 +137,6 @@ export const watchRecord = (base: string, id: string) =>
 /** Stop watching it (404 when it was not watched). */
 export const unwatchRecord = (base: string, id: string) =>
   unwrap(call<unknown>('DELETE', base, '/watch', { params: { path: { id } } }));
-
-export const setTags = (base: string, id: string, tagIds: string[]) =>
-  unwrap(
-    call<unknown>('PUT', base, '/tags', {
-      params: { path: { id } },
-      body: { tagIds },
-    }),
-  );
-
-export const listRevisions = (base: string, id: string) =>
-  allPages((cursor) =>
-    unwrap(
-      call<Schemas['RevisionPage']>('GET', base, '/revisions', {
-        params: { path: { id }, query: { limit: PAGE_SIZE, cursor } },
-      }),
-    ),
-  );
-
-export const diffRevisions = (base: string, id: string, a: number, b: number) =>
-  unwrap(
-    call<RevisionDiff>('GET', base, '/revisions/{a}/diff/{b}', {
-      params: { path: { id, a, b } },
-    }),
-  );
-
-/** With the record's ETag, a record changed meanwhile is a 412. */
-export async function restoreRevision(
-  base: string,
-  id: string,
-  number: number,
-  etag?: string,
-) {
-  const result = await call<unknown>(
-    'POST',
-    base,
-    '/revisions/{number}/restore',
-    {
-      params: {
-        path: { id, number },
-        ...(etag && { header: { 'If-Match': etag } }),
-      },
-    },
-  );
-  return {
-    record: await unwrap(Promise.resolve(result)),
-    etag: etagOf(result),
-  };
-}
 
 /**
  * Asks for the record's PDF in `lang` (`POST <base>/pdf?lang=`, docs/documents.md):

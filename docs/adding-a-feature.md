@@ -82,26 +82,26 @@ imports, with what it reads from the bodies, shows and keeps on the row passed
 to `recordSchemas()` and `recordTable()`. Its README in `src/modules/<name>`
 has its routes.
 
-| Add-on                                                                                                                                                              | What the generator adds besides the import                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| tags                                                                                                                                                                | `TAGS_RESPONSE`                                                                             |
-| custom-fields                                                                                                                                                       | `CUSTOM_FIELDS_BODY`, `CUSTOM_FIELDS_RESPONSE`                                              |
-| sequences                                                                                                                                                           | `numberColumns()`, `NUMBER_BODY`, `NUMBER_RESPONSE`                                         |
-| computed-fields                                                                                                                                                     | `<item>.computed.ts` (the length of the first string field) and its response                |
-| approvals                                                                                                                                                           | `<item>.approvals.ts`: one `@ApprovalEffect()` per action, a no-op to fill                  |
-| choices                                                                                                                                                             | `<item>.choices.ts`: a `@ChoiceSource()` offering the first enum field's values (needs one) |
-| documents                                                                                                                                                           | `templates/<item>.html`, the PDF's page                                                     |
-| data-quality                                                                                                                                                        | `recommended`: the optional text fields                                                     |
-| retention                                                                                                                                                           | a purge rule, 730 days by default (off until a tenant turns it on)                          |
-| merge                                                                                                                                                               | needs the recycle bin and a required string field                                           |
-| comments, attachments, revisions, favorites, recents, templates, acknowledgments, bulk, data-transfer, shares, ai, automations, webhooks, notifications, recurrence | the import only                                                                             |
+The add-ons the generator offers are the modules that have a
+`src/modules/<name>/<name>.addon.js`: it finds them by glob
+(`schematics/feature/addons.js`), so removing a module removes its add-on, and
+no list names them. That file says what the generator writes for it: the
+imports, the `forRecord()` call, what the generated e2e spec boots, the
+pieces on the schemas and the table, the variables it needs, and any file of
+its own (`<item>.approvals.ts`, `<item>.computed.ts`, `<item>.choices.ts`,
+`templates/<item>.html`) or refusal (merge needs the recycle bin, choices an
+enum field). What an add-on adds to a generated feature is tested beside it,
+in `<name>.addon.spec.ts`. An unknown `--addons` name lists the ones there
+are.
 
 ## Change or remove one
 
 Change a field, the recycle bin or the units in `<item>.record.ts`, then run
 `drizzle-kit generate`; take or drop an add-on by its line in the module (and
-its pieces in the schemas or table). Remove a feature: delete its folder and
-its line in `src/app.module.ts`, then generate the migration.
+its pieces in the schemas or table). Remove a feature with
+`pnpm module:remove features/<name>` (a dry run; `--apply` deletes its folder,
+its line in `src/app.module.ts` and its web pages, then writes the migration,
+the client and the route tree: [removing-a-module.md](removing-a-module.md)).
 
 ## Examples
 
@@ -110,10 +110,13 @@ its line in `src/app.module.ts`, then generate the migration.
   own (`marks`). The add-ons' tests run on it.
 - `apps/api/test/fixtures/generated-feature`: a feature generated with every
   add-on on, never edited by hand. `test/fixtures/generated-feature.spec.ts`
-  runs the schematic with the same options and checks it equals the files on
-  disk; its own e2e spec boots it with all its add-ons. After a change to the
-  schematic, regenerate it (from `apps/api`, delete the folder first) and its
-  migration (`--config test/fixtures/drizzle.config.ts --name generated-feature`):
+  runs the schematic with the options in
+  `test/fixtures/generated-feature.options.json` and checks it equals the
+  files on disk; its own e2e spec boots it with all its add-ons.
+  `pnpm module:remove` regenerates it when it removes an add-on. After a
+  change to the schematic, regenerate it with those options (from
+  `apps/api`, delete the folder first) and its migration
+  (`--config test/fixtures/drizzle.config.ts --name generated-feature`):
 
   ```bash
   pnpm feature:add generated-items test/fixtures/generated-feature --flat --skip-import --unit --addons all --fields "title:string,body:text?,status:enum(draft|done),amount:money?,dueOn:date?,code:string!unique"

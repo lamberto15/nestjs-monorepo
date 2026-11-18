@@ -1,14 +1,20 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
+// capability:bulk begin
 import userEvent from '@testing-library/user-event';
+// capability:bulk end
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// capability:bulk begin
 import { useBulkRun } from '@/features/bulk/use-bulk-run';
+// capability:bulk end
 import { RealtimeProvider } from '@/lib/realtime';
 import { createFakeRealtime, type FakeRealtime } from '@/test/fake-realtime';
 import { renderComponent } from '@/test/render-component';
 import { server } from '@/test/server';
 import { TransferStatus } from './transfer-status';
+// capability:bulk begin
 import { TransfersPage } from './transfers-page';
+// capability:bulk end
 
 // Exports, imports and bulk runs follow the realtime events
 // (`data.export-ready`, `data.import-finished`, `data.failed`,
@@ -352,6 +358,7 @@ describe('an export or import on screen', () => {
   });
 });
 
+// capability:bulk begin
 describe('the list of transfers and bulk runs', () => {
   const bulkRun = (status: string) => ({
     id: 'b1',
@@ -470,7 +477,9 @@ describe('the list of transfers and bulk runs', () => {
     ).toBeVisible();
   });
 });
+// capability:bulk end
 
+// capability:bulk begin
 describe('a queued bulk run in its dialog', () => {
   function Harness() {
     // Any feature's bulk route; a test-only path, as the other tests use.
@@ -615,3 +624,4 @@ describe('a queued bulk run in its dialog', () => {
     ).toBeVisible();
   });
 });
+// capability:bulk end

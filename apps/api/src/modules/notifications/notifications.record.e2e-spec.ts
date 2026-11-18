@@ -1,19 +1,24 @@
 import { randomUUID } from 'node:crypto';
+import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
+import { eq } from 'drizzle-orm';
 import { bootModules } from '../../../test/boot.js';
 import { TEST_ITEM } from '../../../test/fixtures/test-items/test-item.record.js';
 import { testItemsModule } from '../../../test/fixtures/test-items/test-items.module.js';
 import {
   createTestItem,
+  mergeTestItems,
   recordsTenant,
   testItemModules,
 } from '../../../test/records.js';
+import type { Database } from '../../core/database/database.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { inAuditRun } from '../../iam/audit/audit-run.js';
 import type { UserPrincipal } from '../../iam/auth/principal.js';
 import { Records } from '../records/records.service.js';
 import { NotificationsModule } from './notifications.module.js';
+import { recordSubscriptions } from './notifications.tables.js';
 
 vi.hoisted(() => {
   Object.assign(process.env, {
@@ -176,5 +181,25 @@ describe('watching a record (e2e)', () => {
       count: total,
       link: `/test-items?bulkRun=${runId}`,
     });
+  });
+
+  // modules/merge calls the hook; its test of every hook is its own.
+  it("makes a merged duplicate's watchers watch the survivor (RecordHooks.merged)", async () => {
+    const survivor = await createTestItem(app, team.admin.headers);
+    // The editor made it: they watch it.
+    const duplicate = await createTestItem(app, team.editor.headers);
+    await mergeTestItems(app, team.tenantId, duplicate.id, survivor.id);
+    const watchers = await app
+      .get(Tenancy)
+      .run(team.tenantId, () =>
+        app
+          .get<Database>(getDrizzleToken())
+          .select({ subscriber: recordSubscriptions.subscriber })
+          .from(recordSubscriptions)
+          .where(eq(recordSubscriptions.recordId, survivor.id)),
+      );
+    expect(watchers.map((w) => w.subscriber).sort()).toEqual(
+      [`user:${team.admin.id}`, `user:${team.editor.id}`].sort(),
+    );
   });
 });

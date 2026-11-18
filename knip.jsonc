@@ -26,14 +26,17 @@
         "src/{main,worker,migrate,cli,openapi-dump}.ts",
         "src/demo/seed-demo.ts",
         "schematics/**/*.js",
+        // An add-on's part of the feature generator: found by glob
+        // (schematics/feature/addons.js), not imported.
+        "src/modules/*/*.addon.js",
         // Started as a worker_threads thread by the module that owns it (a
         // URL, not an import).
         "src/**/*.worker.ts",
       ],
       // openssl: a spec signs a test certificate chain with it.
       "ignoreBinaries": ["openssl"],
-      // Loaded with createRequire by the generator's spec
-      // (test/fixtures/generated-feature.spec.ts): CommonJS only.
+      // Loaded with createRequire by the generator's test helper
+      // (test/schematic.ts): CommonJS only.
       "ignoreDependencies": ["@angular-devkit/schematics"],
     },
     "apps/web": {
@@ -49,7 +52,7 @@
         "scripts/lighthouse-server.mjs",
         "public/push-sw.js",
         "src/components/records/custom-field-values.tsx",
-        "src/components/records/duplicates-warning.tsx",
+        "src/features/merge/duplicates-warning.tsx",
       ],
       // Dice UI's data table: registry output the shadcn CLI writes, kept
       // whole so `shadcn add` updates apply (AGENTS.md: generate, never

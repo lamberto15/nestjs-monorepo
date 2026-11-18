@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw/http';
-import type { NamingSeries } from '@/lib/naming-series';
+import type { NamingSeries } from '@/features/naming-series/series';
 import { problem, server } from '@/test/server';
 import { useSignedIn } from '@/test/signed-in';
 

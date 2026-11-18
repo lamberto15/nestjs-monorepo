@@ -19,10 +19,6 @@
     "due": "due {{date}}",
     "dismiss": "Dismiss"
   },
-  "recents": {
-    "group": "Recent",
-    "clear": "Clear history"
-  },
   "presence": {
     "viewing": "{{name}} is viewing",
     "editing": "{{name}} is editing",

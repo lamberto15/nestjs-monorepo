@@ -2,18 +2,18 @@ import { randomUUID } from 'node:crypto';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../../boot.js';
 import { recordsTenant, testItemModules } from '../../records.js';
-import { QueuesModule } from '../../../src/core/queues/queues.module.js';
 import { MetricsModule } from '../../../src/core/metrics/metrics.module.js';
-import { SharedHttpClientModule } from '../../../src/core/http-client/http-client.module.js';
+import { QueuesModule } from '../../../src/core/queues/queues.module.js';
 import { SharedWorkflowsModule } from '../../../src/core/workflows/workflows.module.js';
+import { SharedHttpClientModule } from '../../../src/core/http-client/http-client.module.js';
 import { HoldsModule } from '../../../src/iam/holds/holds.module.js';
 import { StorageModule } from '../../../src/modules/storage/storage.module.js';
 import { NotificationsModule } from '../../../src/modules/notifications/notifications.module.js';
 import { WebhooksModule } from '../../../src/modules/webhooks/webhooks.module.js';
-import { AutomationsModule } from '../../../src/modules/automations/automations.module.js';
-import { ChoicesModule } from '../../../src/modules/choices/choices.module.js';
 import { RecurrenceModule } from '../../../src/modules/recurrence/recurrence.module.js';
 import { RetentionModule } from '../../../src/modules/retention/retention.module.js';
+import { AutomationsModule } from '../../../src/modules/automations/automations.module.js';
+import { ChoicesModule } from '../../../src/modules/choices/choices.module.js';
 import { McpModule } from '../../../src/modules/mcp/mcp.module.js';
 import { GeneratedItemsModule } from './generated-items.module.js';
 
@@ -40,18 +40,18 @@ describe('generated-items (e2e)', () => {
   beforeAll(async () => {
     app = await bootModules(
       ...testItemModules(),
-      QueuesModule,
       MetricsModule,
-      SharedHttpClientModule,
+      QueuesModule,
       SharedWorkflowsModule,
+      SharedHttpClientModule,
       HoldsModule,
       StorageModule,
       NotificationsModule,
       WebhooksModule,
-      AutomationsModule,
-      ChoicesModule,
       RecurrenceModule,
       RetentionModule,
+      AutomationsModule,
+      ChoicesModule,
       McpModule,
       GeneratedItemsModule,
     );

@@ -37,7 +37,7 @@ import {
   type NamingField,
   type NamingSeries,
   type NumberedSubject,
-} from '@/lib/naming-series';
+} from '@/features/naming-series/series';
 import { z } from '@/lib/zod';
 import { previewQuery, useCreateSeries, useUpdateSeries } from './api';
 

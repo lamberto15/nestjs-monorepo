@@ -15,7 +15,7 @@ import {
   deleteJob,
   queuedRun,
   type BulkAnswer,
-} from '@/test/bulk-api';
+} from '@/features/bulk/test/bulk-api';
 import {
   askDelete,
   bar,

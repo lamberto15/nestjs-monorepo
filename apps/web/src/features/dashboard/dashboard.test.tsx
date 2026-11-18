@@ -7,6 +7,7 @@ import { server } from '@/test/server';
 import { useSignedIn } from '@/test/signed-in';
 import { mergeDashboard } from './registry';
 
+// capability:approvals begin
 const approval = {
   id: '0199a3f2-0000-7000-8000-0000000000b1',
   title: 'Publish the Q4 plan',
@@ -14,6 +15,7 @@ const approval = {
   createdAt: new Date().toISOString(),
   status: 'pending',
 };
+// capability:approvals end
 
 /** Answers the routes of the cards that need no permission, and the audit's. */
 function useData(seen: string[] = []) {
@@ -42,6 +44,7 @@ function useData(seen: string[] = []) {
         ],
       }),
     ),
+    // capability:approvals begin
     http.get('/v1/approvals', ({ request }) => {
       seen.push(`approvals ${new URL(request.url).search}`);
       return HttpResponse.json({
@@ -50,6 +53,7 @@ function useData(seen: string[] = []) {
         total: 3,
       });
     }),
+    // capability:approvals end
     http.get('/v1/notifications/unread-count', () =>
       HttpResponse.json({ unread: 7 }),
     ),
@@ -101,11 +105,13 @@ describe('the dashboard', () => {
     expect(
       await screen.findByRole('heading', { name: 'Dashboard' }),
     ).toBeVisible();
+    // capability:approvals begin
     expect(
       await screen.findByRole('link', { name: 'Publish the Q4 plan' }),
     ).toBeVisible();
     // The approvals' total, from `count=true`.
     expect(await screen.findByText('Assigned to you: 3')).toBeVisible();
+    // capability:approvals end
     expect(await screen.findByText('Welcome aboard')).toBeVisible();
     expect(await screen.findByText('Unread: 7')).toBeVisible();
     expect(await screen.findByText('Noah Kim')).toBeVisible();
@@ -113,14 +119,18 @@ describe('the dashboard', () => {
     expect(await screen.findByTitle('note.created')).toHaveTextContent(
       'Note created',
     );
+    // capability:approvals begin
     expect(seen.some((entry) => entry.includes('assignedToMe=true'))).toBe(
       true,
     );
+    // capability:approvals end
 
     const quick = cardOf('Quick actions') as HTMLElement;
+    // capability:approvals begin
     expect(
       within(quick).getByRole('button', { name: 'Approvals' }),
     ).toBeVisible();
+    // capability:approvals end
     expect(
       within(quick).getByRole('button', { name: 'Audit log' }),
     ).toBeVisible();
@@ -132,7 +142,7 @@ describe('the dashboard', () => {
     useData(seen);
     await renderApp('/');
 
-    await screen.findByRole('heading', { name: 'Waiting for your approval' });
+    await screen.findByRole('heading', { name: 'Quick actions' });
     expect(
       screen.queryByRole('heading', { name: 'Recent activity' }),
     ).toBeNull();
@@ -147,9 +157,11 @@ describe('the dashboard', () => {
   it('says so when nothing waits', async () => {
     useSignedIn([]);
     await renderApp('/');
+    // capability:approvals begin
     expect(
       await screen.findByText('Nothing is waiting for you.'),
     ).toBeVisible();
+    // capability:approvals end
     expect(await screen.findByText('You are all caught up.')).toBeVisible();
   });
 });
@@ -164,7 +176,7 @@ describe('the dashboard registry', () => {
           { id: 'a', label: 'a', order: 20, component },
         ],
         actions: [
-          { to: '/approvals', order: 2, label: 'x', icon: FilePlusIcon },
+          { to: '/settings', order: 2, label: 'x', icon: FilePlusIcon },
         ],
       },
       {
@@ -174,6 +186,6 @@ describe('the dashboard registry', () => {
       {},
     ]);
     expect(cards.map((c) => c.id)).toEqual(['c', 'a', 'b']);
-    expect(actions.map((a) => a.to)).toEqual(['/audit', '/approvals']);
+    expect(actions.map((a) => a.to)).toEqual(['/audit', '/settings']);
   });
 });

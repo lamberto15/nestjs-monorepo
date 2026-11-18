@@ -1,0 +1,15 @@
+{
+  "title": "Comments",
+  "empty": "No comments yet.",
+  "error": "The comments could not be loaded.",
+  "label": "Write a comment",
+  "editLabel": "Edit the comment",
+  "placeholder": "Write a comment. Type @ to mention someone.",
+  "hint": "Type @ to mention a person: they are told about the comment.",
+  "add": "Comment",
+  "edit": "Edit",
+  "edited": "(edited)",
+  "delete": "Delete",
+  "deleteTitle": "Delete this comment?",
+  "deleteDescription": "The comment is removed for good."
+}

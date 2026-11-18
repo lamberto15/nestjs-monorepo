@@ -16,8 +16,10 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+// capability:favorites begin
 import { useCurrentPath } from '@/features/favorites/api';
 import { FavoriteButton } from '@/features/favorites/favorite-button';
+// capability:favorites end
 import type { DataTableFeatures } from '@/lib/data-table-features';
 import type { FilterOperator } from '@/lib/data-table-types';
 import { defaultSorting, type ListDescription } from '@/lib/list-query';
@@ -76,7 +78,9 @@ export function ViewsPicker<TData extends RowData>(props: {
   onSearch: (q: string) => void;
 }) {
   const { t } = useTranslation('views');
+  // capability:favorites begin
   const path = useCurrentPath();
+  // capability:favorites end
   const { table, description } = props;
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<SavedView>();
@@ -162,6 +166,7 @@ export function ViewsPicker<TData extends RowData>(props: {
   const items = views.data?.items ?? [];
   return (
     <>
+      {/* capability:favorites begin */}
       {active && (
         <FavoriteButton
           kind="view"
@@ -170,6 +175,7 @@ export function ViewsPicker<TData extends RowData>(props: {
           label={active.name}
         />
       )}
+      {/* capability:favorites end */}
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger
           render={

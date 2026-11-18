@@ -6,6 +6,7 @@ import { bootModules } from '../../../test/boot.js';
 import {
   createTestItem,
   type Headers,
+  mergeTestItems,
   recordsTenant,
   testItemModules,
 } from '../../../test/records.js';
@@ -213,5 +214,18 @@ describe('favorites: pinned records and pages (e2e)', () => {
     ]);
     await call('DELETE', `/v1/views/${view.id}`, team.editor.headers);
     expect(await list(team.editor.headers)).toEqual([]);
+  });
+
+  // modules/merge calls the hook; its test of every hook is its own.
+  it('points a favorite of a merged duplicate at the survivor (RecordHooks.merged)', async () => {
+    const survivor = await createTestItem(app, team.admin.headers);
+    const duplicate = await createTestItem(app, team.admin.headers);
+    expect((await pinItem(team.admin.headers, duplicate.id)).statusCode).toBe(
+      201,
+    );
+    await mergeTestItems(app, team.tenantId, duplicate.id, survivor.id);
+    expect((await list(team.admin.headers)).map((f) => f.target)).toEqual([
+      survivor.id,
+    ]);
   });
 });

@@ -16,49 +16,6 @@ import { kebabOf, names } from './names.js';
 import * as templates from './templates.js';
 import * as web from '../web-feature/templates.js';
 
-/** The words an approvable action can't be: the record's own routes. */
-const RESERVED_ACTIONS = new Set([
-  'restore',
-  'bulk',
-  'duplicates',
-  'merge',
-  'watch',
-  'pdf',
-  'tags',
-  'comments',
-  'attachments',
-  'revisions',
-  'shares',
-  'documents',
-  'acknowledgments',
-  'acknowledge',
-  'data-quality',
-]);
-
-/** `--approvals publish,markPaid`: the actions that need approval. */
-function parseApprovals(list, t) {
-  const actions = String(list || 'publish')
-    .split(',')
-    .map((a) => a.trim())
-    .filter(Boolean);
-  return actions.map((action) => {
-    if (!/^[a-z][a-zA-Z0-9]*$/.test(action) || RESERVED_ACTIONS.has(action)) {
-      throw new Error(
-        '--approvals: "' +
-          action +
-          '" is not an action: a camelCase word (publish, markPaid) that is not a route of the record.',
-      );
-    }
-    const words = action.replace(/[A-Z]/g, (l) => ' ' + l.toLowerCase());
-    return {
-      action,
-      path: action.replace(/[A-Z]/g, (l) => '-' + l.toLowerCase()),
-      label: words[0].toUpperCase() + words.slice(1) + ' ' + t.aNoun,
-      className: action[0].toUpperCase() + action.slice(1) + t.Singular,
-    };
-  });
-}
-
 const clean = (path) =>
   posix.normalize(String(path)).replace(/^\.\//, '').replace(/\/$/, '');
 
@@ -103,9 +60,7 @@ export function context(options) {
     clientAccess: options.clientAccess === true,
     grants: options.grants ?? 'standard',
     idempotency: options.idempotency || undefined,
-    approvals: addons.includes('approvals')
-      ? parseApprovals(options.approvals, t)
-      : [],
+    approvals: [],
     R: t.SINGULAR,
     T: t.pluralCamel,
     src: posix.relative(dir, sourceRoot),
@@ -117,7 +72,10 @@ export function context(options) {
     enumField: fields.find((f) => f.type === 'enum') ?? null,
     kebab: kebabOf,
   };
-  for (const name of addons) ADDONS[name].check?.(c);
+  for (const name of addons) {
+    Object.assign(c, ADDONS[name].prepare?.(c, options, ADDONS));
+    ADDONS[name].check?.(c);
+  }
   return c;
 }
 
@@ -135,18 +93,15 @@ export function files(c) {
     [at(t.plural + '.service.ts')]: templates.service(c),
     [at(t.plural + '.controller.ts')]: templates.controller(c),
     [at(t.plural + '.module.ts')]: templates.moduleFile(c),
-    ...(c.addons.includes('approvals') && {
-      [at(t.singular + '.approvals.ts')]: templates.approvalsFile(c),
-    }),
-    ...(c.addons.includes('computed-fields') && {
-      [at(t.singular + '.computed.ts')]: templates.computedFile(c),
-    }),
-    ...(c.addons.includes('choices') && {
-      [at(t.singular + '.choices.ts')]: templates.choicesFile(c),
-    }),
-    ...(c.addons.includes('documents') && {
-      [at('templates/' + t.singular + '.html')]: templates.documentTemplate(c),
-    }),
+    // The files of the add-ons' own (an approval's effects, a PDF's page…).
+    ...Object.fromEntries(
+      c.addons.flatMap((name) =>
+        Object.entries(ADDONS[name].files?.(c) ?? {}).map(([file, text]) => [
+          at(file),
+          text,
+        ]),
+      ),
+    ),
     [at('i18n/en.json')]: templates.texts(c),
     [at(t.plural + '.e2e-spec.ts')]: templates.e2e(c),
     [at('README.md')]: templates.readme(c),

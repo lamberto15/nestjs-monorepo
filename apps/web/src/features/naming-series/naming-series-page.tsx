@@ -36,7 +36,7 @@ import {
   allNamingSeriesQuery,
   numberedSubjectsQuery,
   type NamingSeries,
-} from '@/lib/naming-series';
+} from '@/features/naming-series/series';
 import { useDeleteSeries, useUpdateSeries } from './api';
 import { CounterDialog } from './counter-dialog';
 import { SeriesDialog } from './series-dialog';

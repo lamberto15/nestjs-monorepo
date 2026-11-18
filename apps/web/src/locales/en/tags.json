@@ -42,5 +42,17 @@
     "preview": "Preview",
     "cancel": "Cancel",
     "save": "Save"
+  },
+  "panel": {
+    "title": "Tags",
+    "none": "No tags",
+    "edit": "Edit tags",
+    "label": "Tags of this record",
+    "placeholder": "Choose from the tags below",
+    "placeholderNew": "Type a name to add a tag, or create one",
+    "available": "Available tags",
+    "add": "Add tag {{name}}",
+    "unknown": "There is no tag “{{name}}”, and you may not create tags.",
+    "saved": "Tags saved"
   }
 }

@@ -4,21 +4,29 @@ import {
   TabsList,
   TabsTrigger,
 } from '@nestjs-monorepo/ui/components/tabs';
-import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import { useCan, useFeature, type Permission } from '@/lib/features';
 import { useListDescription } from '@/lib/list-query';
-import { useRealtimeEvent } from '@/lib/realtime';
-import type { Tag } from '@/lib/tags';
-import { panelKeys } from './api';
-import { AttachmentsPanel } from './attachments-panel';
-import { CommentsPanel } from './comments-panel';
+// capability:tags begin
+import type { Tag } from '@/features/tags/tags';
+import { TagsPanel } from '@/features/tags/tags-panel';
+// capability:tags end
+// capability:attachments begin
+import { useAttachmentsLive } from '@/features/attachments/api';
+import { AttachmentsPanel } from '@/features/attachments/attachments-panel';
+// capability:attachments end
+// capability:comments begin
+import { useCommentsLive } from '@/features/comments/api';
+import { CommentsPanel } from '@/features/comments/comments-panel';
+// capability:comments end
+// capability:merge begin
+import { DuplicatesPanel } from '@/features/merge/duplicates-panel';
+// capability:merge end
+// capability:revisions begin
+import { RevisionsPanel } from '@/features/revisions/revisions-panel';
+// capability:revisions end
 import { DocumentsPanel } from './documents-panel';
-import { DuplicatesPanel } from './duplicates-panel';
 import { RelatedPanel } from './related-panel';
-import { RevisionsPanel } from './revisions-panel';
-import { TagsPanel } from './tags-panel';
 
 /**
  * The panels of a record's detail page, each shown only when the subject
@@ -49,62 +57,32 @@ import { TagsPanel } from './tags-panel';
  * The documents tab (a PDF of the record: docs/documents.md) needs the
  * subject's `pdf` capability and the `documents` feature.
  *
- * The realtime events of the record (`record.commented`,
- * `record.attachments.changed`: docs/webhooks-and-realtime.md, "Record
- * events") reload its comments or attachments. A file the malware scan
- * rejects is removed by the API and its uploader notified
- * (`attachment.rejected`): a toast says so while the record is open.
+ * Each panel's module reloads its panel on the record's realtime events
+ * (its `use…Live` hook, docs/webhooks-and-realtime.md, "Record events").
  */
 export function RecordPanels(props: {
   subject: string;
   path: `${string}/{id}`;
   id: string;
+  // capability:tags begin
   tags?: readonly Pick<Tag, 'id' | 'name' | 'color'>[];
+  // capability:tags end
   canUpdate?: boolean;
 }) {
   const { t } = useTranslation('records');
-  const { t: tDocuments } = useTranslation('documents');
   const documentsOn = useFeature('documents');
-  const queryClient = useQueryClient();
   const canRead = useCan(`${props.subject}.read` as Permission);
   const mayUpdate = useCan(`${props.subject}.update` as Permission);
   const canUpdate = props.canUpdate ?? mayUpdate;
   const description = useListDescription(props.subject, canRead).data;
   const listPath = props.path.replace(/\/\{id\}$/, '');
 
-  const ours = (event: { subject: string; recordId: string }) =>
-    event.subject === props.subject && event.recordId === props.id;
-  useRealtimeEvent('record.commented', (event) => {
-    if (ours(event)) {
-      void queryClient.invalidateQueries({
-        queryKey: panelKeys.comments(props.path, props.id),
-      });
-    }
-  });
-  useRealtimeEvent('record.attachments.changed', (event) => {
-    if (ours(event)) {
-      void queryClient.invalidateQueries({
-        queryKey: panelKeys.attachments(props.path, props.id),
-      });
-    }
-  });
-  // An upload the malware scan flagged is deleted, not marked (docs/attachments.md):
-  // its uploader is told why here (the API's notification, in their language)
-  // while a record of the subject is open; the bell has it anywhere else.
-  // The notification also reloads the list: the `removed` event above goes to
-  // the record's watchers only, and the uploader may not be one. It names no
-  // record, so the open one is read again (a rare event, one cheap read).
-  useRealtimeEvent('notification', (event) => {
-    if (
-      event.type === 'attachment.rejected' &&
-      event.data.subject === props.subject
-    ) {
-      toast.error(event.title, { description: event.body });
-      void queryClient.invalidateQueries({
-        queryKey: panelKeys.attachments(props.path, props.id),
-      });
-    }
-  });
+  // capability:comments begin
+  useCommentsLive(props.subject, props.path, props.id);
+  // capability:comments end
+  // capability:attachments begin
+  useAttachmentsLive(props.subject, props.path, props.id);
+  // capability:attachments end
 
   // Nothing until the subject says what it takes.
   if (!canRead || !description) {
@@ -114,14 +92,22 @@ export function RecordPanels(props: {
   // Absent from an older API's answer.
   const related = description.related ?? [];
   const tabs = [
+    // capability:comments begin
     capabilities.comments && 'comments',
+    // capability:comments end
+    // capability:attachments begin
     capabilities.attachments && attachmentLimits && 'attachments',
+    // capability:attachments end
+    // capability:revisions begin
     capabilities.revisions && 'revisions',
+    // capability:revisions end
     // PDFs: the subject has them and the deployment has Gotenberg.
     capabilities.pdf && documentsOn && 'documents',
     related.length > 0 && 'related',
     // Absent from an older API's answer.
+    // capability:merge begin
     capabilities.merge && 'duplicates',
+    // capability:merge end
   ].filter(
     (
       tab,
@@ -134,16 +120,20 @@ export function RecordPanels(props: {
       | 'duplicates' => !!tab,
   );
 
-  if (!capabilities.tags && tabs.length === 0) {
-    return null;
-  }
+  // The tags show above the tabs, without one.
+  let shown = tabs.length > 0;
+  // capability:tags begin
+  shown ||= !!capabilities.tags;
+  // capability:tags end
+  if (!shown) return null;
 
   return (
     <div className="flex flex-col gap-6">
+      {/* capability:tags begin */}
       {capabilities.tags && (
         <section aria-labelledby="record-tags" className="flex flex-col gap-2">
           <h2 id="record-tags" className="text-sm font-medium">
-            {t('tags.title')}
+            {t('panel.title', { ns: 'tags' })}
           </h2>
           <TagsPanel
             subject={props.subject}
@@ -155,15 +145,19 @@ export function RecordPanels(props: {
           />
         </section>
       )}
+      {/* capability:tags end */}
       {tabs.length > 0 && (
         <Tabs defaultValue={tabs[0]}>
           <TabsList>
             {tabs.map((tab) => (
               <TabsTrigger key={tab} value={tab}>
-                {tab === 'documents' ? tDocuments('title') : t(`${tab}.title`)}
+                {tab === 'related'
+                  ? t('related.title')
+                  : t('title', { ns: tab === 'duplicates' ? 'merge' : tab })}
               </TabsTrigger>
             ))}
           </TabsList>
+          {/* capability:comments begin */}
           {capabilities.comments && (
             <TabsContent value="comments" className="pt-4">
               <CommentsPanel
@@ -173,6 +167,8 @@ export function RecordPanels(props: {
               />
             </TabsContent>
           )}
+          {/* capability:comments end */}
+          {/* capability:attachments begin */}
           {capabilities.attachments && attachmentLimits && (
             <TabsContent value="attachments" className="pt-4">
               <AttachmentsPanel
@@ -183,6 +179,8 @@ export function RecordPanels(props: {
               />
             </TabsContent>
           )}
+          {/* capability:attachments end */}
+          {/* capability:revisions begin */}
           {capabilities.revisions && (
             <TabsContent value="revisions" className="pt-4">
               <RevisionsPanel
@@ -193,6 +191,7 @@ export function RecordPanels(props: {
               />
             </TabsContent>
           )}
+          {/* capability:revisions end */}
           {capabilities.pdf && documentsOn && (
             <TabsContent value="documents" className="pt-4">
               <DocumentsPanel base={props.path} id={props.id} />
@@ -210,6 +209,7 @@ export function RecordPanels(props: {
               ))}
             </TabsContent>
           )}
+          {/* capability:merge begin */}
           {capabilities.merge && (
             <TabsContent value="duplicates" className="pt-4">
               <DuplicatesPanel
@@ -220,6 +220,7 @@ export function RecordPanels(props: {
               />
             </TabsContent>
           )}
+          {/* capability:merge end */}
         </Tabs>
       )}
     </div>

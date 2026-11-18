@@ -53,8 +53,10 @@ function useTransferApi(
     transfers?: Record<string, Transfer | (() => Transfer)>;
     /** Every transfer of the caller, newest first (`GET /v1/data/transfers`). */
     list?: Transfer[];
+    // capability:bulk begin
     /** The caller's bulk runs, newest first (`GET /v1/bulk`). */
     bulk?: Record<string, unknown>[];
+    // capability:bulk end
     pageSize?: number;
     /** The caller's account exports (`GET /v1/account/exports`). */
     account?: Transfer[];
@@ -70,8 +72,10 @@ function useTransferApi(
     imports: [] as Record<string, string>[],
     /** The query string of each list request. */
     lists: [] as string[],
+    // capability:bulk begin
     /** The query string of each bulk list request. */
     bulks: [] as string[],
+    // capability:bulk end
     /** The query string of each account exports request. */
     accounts: [] as string[],
   };
@@ -129,6 +133,7 @@ function useTransferApi(
         url,
       );
     }),
+    // capability:bulk begin
     http.get('/v1/bulk', ({ request }) => {
       const url = new URL(request.url);
       calls.bulks.push(url.search);
@@ -138,6 +143,7 @@ function useTransferApi(
         url,
       );
     }),
+    // capability:bulk end
     http.get('/v1/account/exports', ({ request }) => {
       const url = new URL(request.url);
       calls.accounts.push(url.search);
@@ -542,6 +548,7 @@ describe('your exports and imports', () => {
     useTransferApi({
       list: [running, exported('done', 'test-items')],
       transfers: { running, done: exported('done', 'test-items') },
+      // capability:bulk begin
       bulk: [
         {
           id: 'b1',
@@ -552,6 +559,7 @@ describe('your exports and imports', () => {
           result: { done: 3, failed: 1, skipped: 1 },
         },
       ],
+      // capability:bulk end
     });
     await renderApp('/transfers');
     const list = await screen.findByRole('list', {
@@ -563,10 +571,12 @@ describe('your exports and imports', () => {
     expect(
       await within(list).findByRole('link', { name: 'Download (csv)' }),
     ).toHaveAttribute('href', 'https://files.test/done.csv');
+    // capability:bulk begin
     const bulk = await screen.findByRole('list', { name: 'Bulk runs' });
     expect(
       within(bulk).getByText('3 done, 1 failed, 1 skipped.'),
     ).toBeVisible();
+    // capability:bulk end
   });
 
   it('pages by cursor and filters by kind on the server', async () => {
@@ -619,6 +629,7 @@ describe('your exports and imports', () => {
     };
     const calls = useTransferApi({
       list: [exported('ok', 'good-export'), failed],
+      // capability:bulk begin
       bulk: [
         {
           id: 'b1',
@@ -629,13 +640,16 @@ describe('your exports and imports', () => {
           result: { done: 5, failed: 0, skipped: 0 },
         },
       ],
+      // capability:bulk end
     });
     await renderApp('/transfers');
     const user = userEvent.setup();
     expect(await screen.findByText('good-export')).toBeVisible();
+    // capability:bulk begin
     expect(
       await screen.findByText('5 done, 0 failed, 0 skipped.'),
     ).toBeVisible();
+    // capability:bulk end
 
     await user.click(screen.getByRole('combobox', { name: 'Status' }));
     await user.click(await screen.findByRole('option', { name: 'Failed' }));
@@ -645,9 +659,11 @@ describe('your exports and imports', () => {
     ).toBeVisible();
     await waitFor(() => expect(screen.queryByText('good-export')).toBeNull());
     expect(calls.lists.at(-1)).toContain('status=failed');
+    // capability:bulk begin
     expect(calls.bulks.at(-1)).toContain('status=failed');
     // The bulk run was not failed: the server left it out.
     expect(screen.queryByText('5 done, 0 failed, 0 skipped.')).toBeNull();
+    // capability:bulk end
   });
 
   it('offers "Show more" when a filtered page is empty but not the last', async () => {

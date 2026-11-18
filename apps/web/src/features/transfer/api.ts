@@ -129,7 +129,9 @@ export const deleteMapping = (name: string, id: string) =>
 
 export type TransferKind = 'export' | 'import';
 export type TransferState = Transfer['status'];
+// capability:bulk begin
 export type BulkRun = GetResponse<'/v1/bulk'>['items'][number];
+// capability:bulk end
 
 const PAGE = 20;
 
@@ -179,6 +181,7 @@ export const transfersListQuery = (
     },
   });
 
+// capability:bulk begin
 /** The caller's bulk runs handed to the workers (`GET /v1/bulk`), same paging. */
 export const bulkListQuery = (
   status?: TransferState,
@@ -207,3 +210,4 @@ export const bulkListQuery = (
       return active.length > 0 ? poll(active) : false;
     },
   });
+// capability:bulk end

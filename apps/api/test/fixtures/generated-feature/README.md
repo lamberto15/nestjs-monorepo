@@ -43,9 +43,9 @@ Each is one import in `generated-items.module.ts`; its README in `src/modules/<n
 
 - `generated-items.service.ts`, where it says "Business logic"; logic of every write in a `@RecordExtension()` provider of this folder.
 - `generated-item.policy.ts`: abilities of its own; `generated-item.permissions.ts`: fields granted one by one, conditions.
-- `generated-item.approvals.ts`: what each approvable action does.
-- `generated-item.computed.ts`: the computed fields.
 - `generated-item.choices.ts`: the choices a writer may pick.
+- `generated-item.computed.ts`: the computed fields.
+- `generated-item.approvals.ts`: what each approvable action does.
 - `templates/generated-item.html`: the PDF.
 
 Tests: `generated-items.e2e-spec.ts`. Remove: delete this folder and its line in `app.module.ts`, then generate the migration that drops its table.
