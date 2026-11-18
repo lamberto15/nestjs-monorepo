@@ -1002,6 +1002,131 @@ describe('attachments on test items (e2e)', () => {
       expect(audit.map((e) => e.action)).toContain('attachment.added');
     });
 
+    /** The bytes the attachment keeps. */
+    const storedBytes = async (attachmentId: string) => {
+      const [stored] = await inTenant(() =>
+        db()
+          .select({ key: attachments.key })
+          .from(attachments)
+          .where(eq(attachments.id, attachmentId)),
+      );
+      const chunks: Buffer[] = [];
+      for await (const part of (await app.get(StorageDisk).get(stored!.key))
+        .body) {
+        chunks.push(Buffer.from(part as Uint8Array));
+      }
+      return Buffer.concat(chunks);
+    };
+
+    it('counts no chunk the store failed to keep: the retry at the same offset assembles the file', async () => {
+      const item = await createTestItem(app, editor.headers);
+      const { uploadId } = (await start(editor.headers, item.id)).json<{
+        uploadId: string;
+      }>();
+      const disk = app.get(StorageDisk);
+      const move = vi
+        .spyOn(disk, 'move')
+        .mockRejectedValueOnce(new Error('the store is away'));
+      try {
+        const failed = await chunk(
+          editor.headers,
+          item.id,
+          uploadId,
+          0,
+          PDF.subarray(0, half),
+        );
+        expect(failed.statusCode).toBe(500);
+      } finally {
+        move.mockRestore();
+      }
+      expect(
+        (await progress(editor.headers, item.id, uploadId)).json(),
+      ).toMatchObject({ received: 0 });
+      for (const [offset, bytes] of [
+        [0, PDF.subarray(0, half)],
+        [half, PDF.subarray(half)],
+      ] as const) {
+        const sent = await chunk(
+          editor.headers,
+          item.id,
+          uploadId,
+          offset,
+          bytes,
+        );
+        expect(sent.statusCode, sent.body).toBe(200);
+      }
+      const done = await complete(editor.headers, item.id, uploadId);
+      expect(done.statusCode, done.body).toBe(201);
+      expect(await storedBytes(done.json<Attachment>().id)).toEqual(PDF);
+    });
+
+    it('stores one of two chunks sent at one offset, and leaves its part in place', async () => {
+      const item = await createTestItem(app, editor.headers);
+      const { uploadId } = (await start(editor.headers, item.id)).json<{
+        uploadId: string;
+      }>();
+      const disk = app.get(StorageDisk);
+      const move = disk.move.bind(disk);
+      // The first chunk's move waits while the second chunk is stored and
+      // reaches the session: it must wait for the first, not replace its part.
+      let moving!: () => void;
+      const reached = new Promise<void>((resolve) => (moving = resolve));
+      let proceed!: () => void;
+      const released = new Promise<void>((resolve) => (proceed = resolve));
+      const spy = vi
+        .spyOn(disk, 'move')
+        .mockImplementationOnce(async (from, to, options) => {
+          moving();
+          await released;
+          return move(from, to, options);
+        });
+      try {
+        const first = chunk(
+          editor.headers,
+          item.id,
+          uploadId,
+          0,
+          PDF.subarray(0, half),
+        );
+        await reached;
+        const second = chunk(
+          editor.headers,
+          item.id,
+          uploadId,
+          0,
+          Buffer.alloc(half + 3, 0x41),
+        );
+        // Until the second chunk is stored and waits (a lock), or is answered (none).
+        let answered = false;
+        void second.finally(() => (answered = true));
+        await vi.waitFor(
+          async () => {
+            const stored = (await parts()).filter((key) =>
+              key.includes('tmp-'),
+            );
+            expect(answered || stored.length === 2).toBe(true);
+          },
+          { timeout: 5000 },
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        proceed();
+        const won = await first;
+        expect(won.statusCode, won.body).toBe(200);
+        const raced = await second;
+        expect(raced.statusCode).toBe(409);
+        expect(raced.json()).toMatchObject({
+          code: 'attachment_upload_offset_mismatch',
+          received: half,
+        });
+      } finally {
+        spy.mockRestore();
+      }
+      await chunk(editor.headers, item.id, uploadId, half, PDF.subarray(half));
+      const done = await complete(editor.headers, item.id, uploadId);
+      expect(done.statusCode, done.body).toBe(201);
+      expect(await storedBytes(done.json<Attachment>().id)).toEqual(PDF);
+    });
+
     it('refuses what an upload refuses on every step, and binds the session to its owner', async () => {
       const item = await createTestItem(app, editor.headers);
       expect(

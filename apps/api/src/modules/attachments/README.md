@@ -94,8 +94,10 @@ is one however many records take files.
 fields })` records the record fields the PDF shows (`fields`, null for a
   file). Whoever may not read every one of them on that record gets 404 on the
   attachment (`GET /v1/attachments/{id}`), its download, versions and
-  restoration. It stays in the record's list, unmasked, so a page and
-  `total` are always right; `fields` is not in any response. Its text is never extracted
+  restoration. It stays in the record's list, so a page and `total` are
+  always right, but its name (made from the record's fields) is shown to
+  them as a neutral one (`attachments.withheldName`: `<noun>.pdf`), and a
+  filter or sort by name leaves it out; `fields` is not in any response. Its text is never extracted
   or searched. A share link includes it only when its own fields cover them.
 - **`presignedUploads`** in `GET /v1/features` (`@Feature`): true with STORAGE_DRIVER=s3.
 - **Not ported yet**: personal-data export and erasure.

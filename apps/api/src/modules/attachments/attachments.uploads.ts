@@ -356,24 +356,40 @@ export class AttachmentUploadsService {
       if (length === 0) {
         throw new BadRequestException('The chunk is empty.');
       }
-      const [advanced] = await this.db
-        .update(attachmentUploads)
-        .set({ received: offset + length })
-        .where(
-          and(
-            eq(attachmentUploads.id, upload.id),
-            eq(attachmentUploads.received, offset),
-            isNull(attachmentUploads.completingAt),
-            isNull(attachmentUploads.completedAt),
-          ),
-        )
-        .returning();
+      // The part is in place before `received` counts it, so the row never
+      // claims bytes the store lacks: a failed move changes nothing and the
+      // chunk is sent again at the same offset. Two requests with one offset
+      // would move to the same part name, so the row is locked for the move:
+      // the second waits, finds the offset taken, and leaves the part alone.
+      const advanced = await this.txHost.withTransaction(async () => {
+        const [open] = await this.db
+          .select({ id: attachmentUploads.id })
+          .from(attachmentUploads)
+          .where(
+            and(
+              eq(attachmentUploads.id, upload.id),
+              eq(attachmentUploads.received, offset),
+              isNull(attachmentUploads.completingAt),
+              isNull(attachmentUploads.completedAt),
+            ),
+          )
+          .for('update');
+        if (!open) {
+          return undefined;
+        }
+        await this.disk.move(temporary, partKey(upload.key, offset));
+        const [row] = await this.db
+          .update(attachmentUploads)
+          .set({ received: offset + length })
+          .where(eq(attachmentUploads.id, upload.id))
+          .returning();
+        return row;
+      });
       if (!advanced) {
         throw offsetMismatch(
           (await this.session(principal, record, uploadId)).received,
         );
       }
-      await this.disk.move(temporary, partKey(upload.key, offset));
       return sessionView(advanced);
     } catch (error) {
       await this.forget(temporary);

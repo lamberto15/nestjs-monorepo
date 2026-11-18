@@ -411,8 +411,18 @@ describe('documents (e2e)', () => {
           headers,
         })
       )
-        .json<{ items: { id: string }[] }>()
+        .json<{ items: { id: string; name: string }[] }>()
         .items.map((file) => file.id);
+    const nameIn = async (headers: Record<string, string>, id: string) =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/v1/test-items/${record.id}/attachments`,
+          headers,
+        })
+      )
+        .json<{ items: { id: string; name: string }[] }>()
+        .items.find((file) => file.id === id)?.name;
     const attachment = (headers: Record<string, string>, path = '') =>
       app.inject({
         method: 'GET',
@@ -421,6 +431,28 @@ describe('documents (e2e)', () => {
       });
     expect(await listed(team.admin.headers)).toContain(attachmentId);
     expect(await listed(reader.headers)).toContain(attachmentId);
+    // Its name is made from the record's fields: a reader who may not read
+    // them all sees a neutral one, whichever field the name came from.
+    expect(await nameIn(team.admin.headers, attachmentId)).toBe('Salaries.pdf');
+    expect(await nameIn(reader.headers, attachmentId)).toBe('test item.pdf');
+    // Nor does a filter or a sort by name match the real one for them.
+    const byName = async (headers: Record<string, string>, search: string) =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/v1/test-items/${record.id}/attachments?${search}`,
+          headers,
+        })
+      )
+        .json<{ items: { id: string }[] }>()
+        .items.map((file) => file.id);
+    expect(await byName(team.admin.headers, 'name.contains=Salar')).toEqual([
+      attachmentId,
+    ]);
+    expect(await byName(reader.headers, 'name.contains=Salar')).toEqual([]);
+    expect(await byName(reader.headers, 'sort=name')).not.toContain(
+      attachmentId,
+    );
     expect((await attachment(team.admin.headers)).statusCode).toBe(200);
     expect((await attachment(reader.headers)).statusCode).toBe(404);
     expect((await attachment(reader.headers, '/download')).statusCode).toBe(
@@ -439,6 +471,11 @@ describe('documents (e2e)', () => {
     const shown = await done(reader.headers, theirs.json().id);
     expect(shown.status).toBe('completed');
     expect(pageOf(theirs.json().id)).not.toContain('confidential text');
+    // Theirs shows only what they may read: its real name.
+    const ownAttachment = (
+      await status(reader.headers, theirs.json().id)
+    ).json<{ attachmentId: string }>().attachmentId;
+    expect(await nameIn(reader.headers, ownAttachment)).toBe('Salaries.pdf');
     expect((await download(reader.headers, theirs.json().id)).statusCode).toBe(
       200,
     );

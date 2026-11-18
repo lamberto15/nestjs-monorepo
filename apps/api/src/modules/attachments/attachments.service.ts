@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { extname } from 'node:path';
 import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
 import {
   ConflictException,
@@ -9,13 +10,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
+import { t } from '@nestjs/i18n';
 import { StorageDisk, type StoredUpload } from '@nestjs/storage';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notInArray } from 'drizzle-orm';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
-import type { ListQuery } from '../../core/http/list-query.js';
+import { type ListQuery, queryMatches } from '../../core/http/list-query.js';
 import {
   afterCursor,
   countPage,
@@ -210,11 +212,19 @@ export class AttachmentsService {
 
   /** A page of the record's attachments, newest first. */
   async list(principal: Principal, record: RecordRef, query: ListQuery) {
-    await this.readableRecord(principal, record);
+    const found = await this.readableRecord(principal, record);
+    // An issued document stays listed (as the old list did), but its name is
+    // made from its record's fields: who may not read them all (as get()
+    // requires) sees a neutral name, and a filter or sort by name never
+    // matches the real one.
+    const withheld = await this.withheldNames(principal, record, found);
     const where = and(
       eq(attachments.subject, record.subject),
       eq(attachments.recordId, record.recordId),
       ATTACHMENT_LIST.where(query),
+      withheld.size && queryMatches(query).includes('name')
+        ? notInArray(attachments.id, [...withheld])
+        : undefined,
     );
     const [rows, total] = await Promise.all([
       this.db
@@ -227,8 +237,48 @@ export class AttachmentsService {
       countPage(this.db, attachments, where, query),
     ]);
     const page = toPage(rows, query, total);
-    // An issued document stays listed (as the old list did): reading it takes every field.
-    return { ...page, items: page.items.map(view) };
+    const noun = this.records.find(record.subject)!.declaration.noun;
+    return {
+      ...page,
+      items: page.items.map((row) =>
+        withheld.has(row.id)
+          ? {
+              ...view(row),
+              name: t('attachments.withheldName', {
+                args: { noun, extension: extname(row.name) },
+              }),
+            }
+          : view(row),
+      ),
+    };
+  }
+
+  /** The record's issued documents whose fields the principal may not all read: their names are withheld. */
+  private async withheldNames(
+    principal: Principal,
+    record: RecordRef,
+    row: Record<string, unknown>,
+  ) {
+    const issued = await this.db
+      .select({ id: attachments.id, fields: attachments.fields })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.subject, record.subject),
+          eq(attachments.recordId, record.recordId),
+          isNotNull(attachments.fields),
+        ),
+      );
+    const withheld = new Set<string>();
+    for (const { id, fields } of issued) {
+      if (
+        fields?.length &&
+        !(await this.showsFields(principal, record.subject, row, fields))
+      ) {
+        withheld.add(id);
+      }
+    }
+    return withheld;
   }
 
   /**
