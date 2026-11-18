@@ -18,6 +18,8 @@ import { SharedOutboxModule } from './outbox.module.js';
 import { OutboxRetentionJob } from './outbox-retention.job.js';
 
 const ITEM_ADDED = defineEvent<{ name: string }>('test-item.added');
+/** Nothing subscribes to this one. */
+const ITEM_IGNORED = defineEvent<{ name: string }>('test-item.ignored');
 const seen: { name: string; tenantId: string | null; names: string[] }[] = [];
 
 @Injectable()
@@ -30,6 +32,8 @@ class ItemsWriter {
   @Transactional()
   async add(name: string, fail = false) {
     await this.items.add(name);
+    // Same key: a message without a handler would hold the next one back.
+    await this.events.publish(ITEM_IGNORED, { name }, { key: name });
     await this.events.publish(ITEM_ADDED, { name }, { key: name });
     if (fail) throw new Error('rolled back');
   }
@@ -103,6 +107,11 @@ describe('outbox and domain events (e2e)', () => {
     // Give the relay a poll to show the rolled back event never comes.
     await new Promise((resolve) => setTimeout(resolve, 2500));
     expect(seen.map((entry) => entry.name)).not.toContain('lost');
+    // The event nobody subscribes to was never written.
+    expect(await app.get(OutboxDeadLetters).list()).toHaveLength(0);
+    expect((await app.get(PostgresOutboxStore).stats(Date.now())).pending).toBe(
+      0,
+    );
   });
 
   it('refuses to publish outside a transaction', async () => {

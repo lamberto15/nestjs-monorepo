@@ -32,6 +32,15 @@ export function defineEvent<P>(type: string): DomainEvent<P> {
   return { type };
 }
 
+/**
+ * The event types something subscribes to (`@OnDomainEvent`), known once
+ * the modules are loaded, the same in the API and the worker. An event
+ * nobody subscribes to is not written: the outbox retries a message without
+ * a handler and holds back the later ones of its key, so one unheard
+ * `note.created` would delay the `note.updated` a webhook waits for.
+ */
+const subscribed = new Set<string>();
+
 /** The tenant an event was published in, in the outbox message's headers. */
 const TENANT_HEADER = 'tenantId';
 
@@ -63,6 +72,9 @@ export class Events {
       throw new Error(
         `Publish ${event.type} inside the transaction of the change (@Transactional()): it must commit or roll back with it.`,
       );
+    }
+    if (!subscribed.has(event.type)) {
+      return;
     }
     const tenantId = currentTenantScope()?.tenantId;
     await this.outbox.add(this.txHost.tx, {
@@ -104,6 +116,7 @@ export function OnDomainEvent<P>(
         handler.call(this, payload, ctx),
       );
     } as M;
+    subscribed.add(event.type);
     OnOutboxMessage(event.type, options)(_target, _key, descriptor);
   };
 }
