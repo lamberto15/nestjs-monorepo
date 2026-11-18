@@ -57,13 +57,23 @@ export class OperatorGuard implements CanActivate {
     if (mode === 'single') {
       return tenant.id === (await this.tenancy.soleTenant()).id;
     }
-    const operatorTenant =
-      this.config.getOrThrow<ConfigType<typeof authConfig>>(
-        'auth',
-      ).operatorTenant;
-    return operatorTenant !== undefined && tenant.slug === operatorTenant;
+    return isOperatorSlug(
+      this.config.getOrThrow<ConfigType<typeof authConfig>>('auth'),
+      tenant.slug,
+    );
   }
 }
+
+/**
+ * Whether `slug` names the operators' tenant (OPERATOR_TENANT) of a
+ * multi-tenant deployment; unset, no slug does. The one statement of that
+ * rule: the guard above, the tenants list and switch, and the tenants
+ * module, which never lets that tenant's slug change nor another take it.
+ */
+export const isOperatorSlug = (
+  auth: Pick<ConfigType<typeof authConfig>, 'operatorTenant'>,
+  slug: string,
+) => auth.operatorTenant !== undefined && slug === auth.operatorTenant;
 
 /** Marks a controller or route as the operators' (OperatorGuard). */
 export const OperatorOnly = () =>

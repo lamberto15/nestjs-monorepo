@@ -15,6 +15,7 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { authConfig } from '../auth/auth.config.js';
 import { memberships } from '../auth/auth.tables.js';
+import { isOperatorSlug } from '../auth/operator-only.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { UsersRepository } from '../auth/users.repository.js';
 
@@ -57,7 +58,7 @@ export class TenantSwitchService {
         name: row.name,
         operator: single
           ? row.id === single
-          : row.slug === this.auth.operatorTenant,
+          : isOperatorSlug(this.auth, row.slug),
         current: row.id === user.tenantId,
       }));
   }

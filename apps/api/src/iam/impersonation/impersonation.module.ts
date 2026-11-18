@@ -12,7 +12,9 @@ import { ImpersonationService } from './impersonation.service.js';
 /**
  * Impersonation (README.md): starting and stopping it. Checking a running
  * one on every request is SessionAuth's (iam/auth), which ends it at its
- * time, with IMPERSONATION=off, or when either membership ends.
+ * time, with IMPERSONATION=off, when either membership ends, or when the
+rule of its start (ImpersonationService, the `@ImpersonationRules()`) no
+longer holds.
  */
 @Module({
   imports: [

@@ -55,6 +55,8 @@ const nameTaken = (error: unknown) => {
  * - Nobody grants what they can't do: a permission goes into a role, and a
  *   role to someone, only from a user who holds that action without
  *   conditions (and the fields it grants); administrators hold everything.
+ *   Taking a permission out of a role (replacing or deleting it) is the
+ *   same rule.
  * - The built-in Administrator role is never edited nor deleted, and only
  *   an administrator gives it.
  * - The last active administrator stays.
@@ -128,6 +130,8 @@ export class RolesService {
     await this.txHost
       .withTransaction(async () => {
         await this.lock(id, check);
+        // Replacing takes the old permissions away: read under the lock.
+        await this.checkTakeAway(actor, id);
         await this.db
           .update(roles)
           .set({ name: input.name, description: input.description ?? '' })
@@ -160,10 +164,9 @@ export class RolesService {
         'The built-in Administrator role can’t be deleted.',
       );
     }
-    // Deleting a role takes its permissions away: the same rule as granting them.
-    await this.checkGrant(actor, await this.permissionsOf([id]));
     await this.txHost.withTransaction(async () => {
       await this.lock(id, check);
+      await this.checkTakeAway(actor, id);
       await this.db.delete(roles).where(eq(roles.id, id));
       await this.audit.record(actor, {
         action: 'role.deleted',
@@ -248,6 +251,23 @@ export class RolesService {
       valid.push(result.value);
     }
     return valid;
+  }
+
+  /**
+   * Taking a role's permissions away (replacing or deleting it): the same
+   * rule as granting them (403), so nobody strips a stronger role of what
+   * they don't hold. One the catalog no longer declares grants nothing:
+   * anyone who may edit the role may drop it. Under the role's lock.
+   */
+  private async checkTakeAway(actor: Principal, roleId: string) {
+    const held = await this.permissionsOf([roleId]);
+    await this.checkGrant(
+      actor,
+      held.filter(
+        (permission) =>
+          isAll(permission) || this.catalog.validate(permission).ok,
+      ),
+    );
   }
 
   /** The roles exist in this tenant (400 otherwise) and the actor may grant each (403). */

@@ -37,6 +37,7 @@ import {
   type TokenSessionEndedEvent,
 } from '../auth/auth.events.js';
 import { memberships, refreshTokens, sessions } from '../auth/auth.tables.js';
+import { isOperatorSlug } from '../auth/operator-only.js';
 import type {
   Principal,
   SystemPrincipal,
@@ -76,7 +77,7 @@ export const slugTaken = (slug: string) =>
     errors: [{ path: 'slug', message: t('tenants.slugTakenField') }],
   });
 
-/** 409 `operator_tenant`: the operators' own tenant is never deactivated nor deleted. */
+/** 409 `operator_tenant`: the operators' own tenant is never deactivated, deleted nor given another slug. */
 const operatorTenant = () =>
   new ConflictException({
     code: 'operator_tenant',
@@ -133,6 +134,16 @@ export class TenantsService {
     return this.auth.operatorTenant
       ? eq(tenants.slug, this.auth.operatorTenant)
       : sql`false`;
+  }
+
+  /**
+   * Whether a slug is what makes a tenant the operators' (OPERATOR_TENANT;
+   * with TENANCY=single the tenant is the operators' whatever its slug).
+   */
+  private makesOperator(slug: string) {
+    return (
+      this.tenancyMode.mode !== 'single' && isOperatorSlug(this.auth, slug)
+    );
   }
 
   private columns() {
@@ -197,8 +208,10 @@ export class TenantsService {
    * stops (every check reads `tenants.active`); here, after the commit,
    * its sessions and token families end and `tenancy.tenant-deactivated`
    * closes its sockets, so reactivating revives no old session. Nothing
-   * else is deleted. The operator tenant is never deactivated (409), nor
-   * reactivated while its deletion is pending (409).
+   * else is deleted. The operator tenant is never deactivated nor given
+   * another slug (409 `operator_tenant`), and no other tenant takes its slug
+   * (409 `tenant_slug_taken`); a tenant is never reactivated while its
+   * deletion is pending (409).
    */
   async update(
     operator: UserPrincipal,
@@ -212,6 +225,16 @@ export class TenantsService {
       check?.(before);
       if (changes.active === false && before.operator) {
         throw operatorTenant();
+      }
+      // The slug is what makes the operators' tenant theirs: it keeps it,
+      // and no other tenant takes it.
+      if (changes.slug !== undefined && changes.slug !== before.slug) {
+        if (this.makesOperator(before.slug)) {
+          throw operatorTenant();
+        }
+        if (this.makesOperator(changes.slug)) {
+          throw slugTaken(changes.slug);
+        }
       }
       if (changes.active === true && before.deletionScheduledFor) {
         throw new ConflictException({
@@ -423,13 +446,19 @@ export class TenantsService {
    * (the built-in Administrator and the declared seed roles) and `work`.
    * Two transactions, because a transaction is bound to its tenant when it
    * begins and the tenant's id comes from its insert: when the second fails,
-   * the tenant's row is deleted again, so nothing half-made remains.
+   * the tenant's row is deleted again, so nothing half-made remains. Never
+   * with the operators' slug (409 `tenant_slug_taken`), even while no
+   * tenant has it: it would make the new tenant's members operators.
    */
   async makeTenant<T>(
     values: { name: string; slug: string },
     work: (tenant: Tenant) => Promise<T>,
     { createdBySignUp = false }: { createdBySignUp?: boolean } = {},
   ): Promise<{ tenant: Tenant; result: T }> {
+    // The operators' slug is theirs, even before their tenant exists.
+    if (this.makesOperator(values.slug)) {
+      throw slugTaken(values.slug);
+    }
     const tenant = await this.tenancy.create(values).catch((error: unknown) => {
       throw databaseErrorKind(error) === 'unique_violation'
         ? slugTaken(values.slug)

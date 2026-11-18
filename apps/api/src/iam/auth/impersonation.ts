@@ -1,8 +1,9 @@
 import { ForbiddenException } from '@nestjs/common';
+import { DiscoveryService } from '@nestjs/core';
 import type { MfaState, SessionRecord } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
 import type { AuthenticationMetadata } from './authentication-method.js';
-import type { Principal } from './principal.js';
+import type { Principal, UserPrincipal } from './principal.js';
 
 /** What is the person's own (credentials, their account) can't be changed by an administrator acting as them. */
 export function notWhileImpersonating(user: Principal) {
@@ -13,8 +14,9 @@ export function notWhileImpersonating(user: Principal) {
 
 /**
  * What an impersonation session records about the administrator behind it.
- * Starting one is the access module's; SessionAuth checks a running one on
- * every request (IMPERSONATION, its end, both memberships).
+ * Starting one is iam/impersonation's; SessionAuth checks a running one on
+ * every request (IMPERSONATION, its end, both memberships, and who may act
+ * as whom: ImpersonationEligibility).
  */
 export interface Impersonation {
   id: string;
@@ -46,3 +48,18 @@ export const sessionTenant = (session: SessionRecord | undefined) => {
 /** The impersonation a session carries, if it is one. */
 export const impersonationOf = (session: SessionRecord | undefined) =>
   session?.metadata?.impersonator as Impersonation | undefined;
+
+/**
+ * Who may act as whom, without auth importing the module that decides it
+ * (iam/impersonation, which imports auth): that module marks one provider
+ * `@ImpersonationRules()`, the rule its start checks. SessionAuth asks it
+ * again on every request of a running impersonation, in its tenant, so a
+ * change of either person's roles ends it. Without one, none runs.
+ */
+export interface ImpersonationEligibility {
+  /** Whether `actor` may act as `target` in the current tenant, now. */
+  mayImpersonate(actor: UserPrincipal, target: UserPrincipal): Promise<boolean>;
+}
+
+/** Marks the provider that implements ImpersonationEligibility (at most one). */
+export const ImpersonationRules = DiscoveryService.createDecorator<void>();

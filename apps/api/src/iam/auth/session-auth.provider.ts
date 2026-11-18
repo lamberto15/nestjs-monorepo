@@ -17,7 +17,12 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { authConfig } from './auth.config.js';
 import { discoverOne } from './discover.js';
 import { HostTenantResolver, type HostTenants, hostOf } from './host-tenant.js';
-import { impersonationOf, sessionTenant } from './impersonation.js';
+import {
+  type ImpersonationEligibility,
+  ImpersonationRules,
+  impersonationOf,
+  sessionTenant,
+} from './impersonation.js';
 import type { RequestPrincipal } from './principal.js';
 import { SessionLifetime } from './session-lifetime.js';
 import { UsersRepository } from './users.repository.js';
@@ -31,6 +36,7 @@ export class SessionAuth
   /** The tenant of the request's host, while its session is validated. */
   private readonly hostTenant = new AsyncLocalStorage<string>();
   private hosts?: HostTenants;
+  private impersonation?: ImpersonationEligibility;
 
   constructor(
     private readonly accounts: UsersRepository,
@@ -53,6 +59,11 @@ export class SessionAuth
       HostTenantResolver,
       'host-to-tenant resolver (@HostTenantResolver())',
     );
+    this.impersonation = discoverOne<ImpersonationEligibility>(
+      this.discovery,
+      ImpersonationRules,
+      'impersonation rules (@ImpersonationRules())',
+    );
   }
 
   // A tenant's custom domain is that tenant's only: on it, a session acts in
@@ -69,8 +80,9 @@ export class SessionAuth
 
   // Every request: a deactivated or deleted account loses access at once, a
   // membership that ended takes the session's tenant away, and an
-  // impersonation ends when its time is up or its administrator loses
-  // access to the account or to the tenant it was started in.
+  // impersonation ends when its time is up, when its administrator loses
+  // access to the account or to the tenant it was started in, or when the
+  // rule its start checked no longer holds (either person's roles changed).
   async validate(session: SessionRecord) {
     const pinned = this.hostTenant.getStore();
     const user = pinned
@@ -109,7 +121,18 @@ export class SessionAuth
       impersonation.id,
       impersonation.tenantId,
     );
-    return impersonator?.tenantId === impersonation.tenantId
+    if (impersonator?.tenantId !== impersonation.tenantId) {
+      return null;
+    }
+    // The rule of its start, asked again in its tenant (the administrator's
+    // abilities come from AccessService's cache); none without the module.
+    const rules = this.impersonation;
+    const eligible =
+      !!rules &&
+      (await this.tenancy.run(impersonation.tenantId, () =>
+        rules.mayImpersonate(impersonator, user),
+      ));
+    return eligible
       ? {
           ...user,
           impersonator: { id: impersonator.id, email: impersonator.email },

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Controller, Get, Module, VERSION_NEUTRAL } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
@@ -7,6 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   accessModules,
   member,
+  roleIds,
   tenantWithAdmin,
 } from '../../../test/access.js';
 import { cookieOf, signIn } from '../../../test/auth.js';
@@ -43,6 +45,8 @@ describe('impersonation (e2e)', () => {
   let app: NestNodeApplication;
   let tenantId: string;
   let admin: Headers;
+  /** The administrator's access token: it outlives their session's replacement. */
+  let adminToken: Headers;
   let adminId: string;
   let editor: { id: string; email: string };
 
@@ -56,6 +60,7 @@ describe('impersonation (e2e)', () => {
     tenantId = tenant.tenantId;
     adminId = tenant.admin.id;
     admin = (await signIn(app, tenant.admin.email)).headers;
+    adminToken = tenant.admin.headers;
     editor = await member(app, tenantId, ['editor']);
   });
   afterAll(() => app.close());
@@ -140,5 +145,78 @@ describe('impersonation (e2e)', () => {
     expect(
       (await post('/v1/auth/impersonation/stop', asEditor)).statusCode,
     ).toBe(409);
+  });
+  describe('once the rule of its start no longer holds', () => {
+    /** A member who may impersonate, and nothing else, acting as a member with no roles. */
+    async function impersonating() {
+      const role = await app.inject({
+        method: 'POST',
+        url: '/v1/access/roles',
+        headers: adminToken,
+        payload: {
+          name: `support-${randomUUID().slice(0, 8)}`,
+          permissions: [
+            { subject: 'Access', action: 'impersonate', conditions: [] },
+          ],
+        },
+      });
+      expect(role.statusCode).toBe(201);
+      const support = await member(app, tenantId, [role.json().id]);
+      const target = await member(app, tenantId, []);
+      const started = await post(
+        `/v1/access/users/${target.id}/impersonate`,
+        (await signIn(app, support.email)).headers,
+      );
+      expect(started.statusCode).toBe(204);
+      const as = { cookie: cookieOf(started.headers['set-cookie']) };
+      expect(await me(as)).toMatchObject({
+        id: target.id,
+        impersonator: { id: support.id },
+      });
+      return { support, target, as };
+    }
+    const setRoles = (userId: string, roleIds: string[]) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/v1/access/users/${userId}`,
+        headers: adminToken,
+        payload: { roleIds },
+      });
+    const probe = (headers: Headers) =>
+      app.inject({ method: 'GET', url: '/probe/me', headers });
+
+    it('ends when the target is given what the actor does not hold', async () => {
+      const { target, as } = await impersonating();
+      const stronger = await app.inject({
+        method: 'POST',
+        url: '/v1/access/roles',
+        headers: adminToken,
+        payload: {
+          name: `users-${randomUUID().slice(0, 8)}`,
+          permissions: [
+            { subject: 'Access', action: 'manageUsers', conditions: [] },
+          ],
+        },
+      });
+      expect((await setRoles(target.id, [stronger.json().id])).statusCode).toBe(
+        204,
+      );
+      expect((await probe(as)).statusCode).toBe(401);
+    });
+
+    it('ends when the target is made an administrator', async () => {
+      const { target, as } = await impersonating();
+      const [administrator] = await roleIds(app, tenantId, 'administrator');
+      expect((await setRoles(target.id, [administrator!])).statusCode).toBe(
+        204,
+      );
+      expect((await probe(as)).statusCode).toBe(401);
+    });
+
+    it('ends when the actor no longer may impersonate', async () => {
+      const { support, as } = await impersonating();
+      expect((await setRoles(support.id, [])).statusCode).toBe(204);
+      expect((await probe(as)).statusCode).toBe(401);
+    });
   });
 });

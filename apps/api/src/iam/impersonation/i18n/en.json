@@ -4,7 +4,8 @@
     "yourself": "You can't impersonate yourself.",
     "notFound": "No such member in this tenant.",
     "administrator": "Administrators can't be impersonated.",
-    "notImpersonating": "You are not impersonating anyone."
+    "notImpersonating": "You are not impersonating anyone.",
+    "notAllowed": "You may not act as members of this tenant."
   },
   "permissions": {
     "access": {

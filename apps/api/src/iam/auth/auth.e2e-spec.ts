@@ -40,6 +40,7 @@ import { AuthenticationOptionsPart } from './authentication-options.js';
 import { ClientOnly } from './client-only.decorator.js';
 import { RequiresSwitch } from './deployment-switch.js';
 import { HostTenantResolver } from './host-tenant.js';
+import { ImpersonationRules } from './impersonation.js';
 import { DuringOnboarding } from './onboarding.js';
 import { OperatorOnly } from './operator-only.js';
 import type { RequestPrincipal } from './principal.js';
@@ -136,6 +137,16 @@ class TestHosts {
   }
 }
 
+/** Stands in for iam/impersonation's rule of who may act as whom. */
+@Injectable()
+@ImpersonationRules()
+class TestImpersonationRules {
+  allowed = true;
+  async mayImpersonate() {
+    return this.allowed;
+  }
+}
+
 /** A provider gone wrong: it hands out the system principal. */
 @Injectable()
 class LeakyProvider extends AuthenticationProvider {
@@ -157,7 +168,13 @@ class CheapPasswords {}
 
 @Module({
   controllers: [ProbeController],
-  providers: [TestPolicy, TestHosts, LeakyProvider, CheapPasswords],
+  providers: [
+    TestPolicy,
+    TestHosts,
+    TestImpersonationRules,
+    LeakyProvider,
+    CheapPasswords,
+  ],
 })
 class ProbeModule {}
 
@@ -653,7 +670,7 @@ describe('sign-in and the principal (e2e)', () => {
       }
     });
 
-    it('ends an impersonation while IMPERSONATION is off, at its end, or across tenants', async () => {
+    it('ends an impersonation while IMPERSONATION is off, at its end, across tenants, or once its rule fails', async () => {
       const admin = await createUser(app);
       const target = await signedInUser(app, { tenantId: admin.tenantId });
       const session = await sessionOf(target.user.id);
@@ -685,6 +702,14 @@ describe('sign-in and the principal (e2e)', () => {
           id: target.user.id,
           impersonator: { id: admin.user.id, email: admin.email },
         });
+        // The rule of who may act as whom, asked on every request.
+        const rules = app.get(TestImpersonationRules);
+        rules.allowed = false;
+        try {
+          expect((await get('/probe/me', target.headers)).statusCode).toBe(401);
+        } finally {
+          rules.allowed = true;
+        }
         await impersonate({
           endsAt: new Date(Date.now() - 1000).toISOString(),
         });

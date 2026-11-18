@@ -35,7 +35,8 @@ period, and a tenant's own domains (`/v1/branding/domains`).
 
 **The operators' tenant** is the one named by `OPERATOR_TENANT`. Its members
 are the operators of the deployment: `@OperatorOnly()` routes need one.
-With `TENANCY=multi` and no `OPERATOR_TENANT`, nobody is an operator.
+With `TENANCY=multi` and no `OPERATOR_TENANT`, nobody is an operator. That
+tenant keeps its slug, and no other tenant is given it.
 
 ## Sign-in methods
 
@@ -93,7 +94,8 @@ an optional address allowlist, managed at `/v1/access/clients`
   redacted, and a list refuses a filter or sort on a field the caller may not
   read.
 - A **role** is a set of permissions administrators edit, granted to
-  memberships and API clients. You may grant only what you hold.
+  memberships and API clients. You may grant only what you hold, and take
+  out of a role (replacing or deleting it) only what you hold.
 - A module declares its permissions next to its code (`definePermissions`)
   and registers them with `AccessModule.forFeature()`; routes use `@Can()`.
   Permission texts come from the module's `i18n` files.
@@ -130,7 +132,8 @@ users are deactivated, never deleted. It lives in
 
 - **Impersonation:** an administrator acts as a member for support
   (`IMPERSONATION=on`, a recent sign-in, never an administrator, never
-  across tenants): [iam/impersonation](../apps/api/src/iam/impersonation/README.md),
+  across tenants), ended as soon as that no longer holds (checked on every
+  request): [iam/impersonation](../apps/api/src/iam/impersonation/README.md),
   `POST /v1/access/users/:id/impersonate`.
 - **Break-glass:** an operator opens a time-limited, read-only grant to a
   tenant that never invited them, with a reason:

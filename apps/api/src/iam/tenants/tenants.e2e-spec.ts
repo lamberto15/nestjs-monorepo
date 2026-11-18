@@ -20,7 +20,9 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { tenants } from '../../core/tenancy/tenancy.tables.js';
 import { roles } from '../access/access.tables.js';
 import { RolesService } from '../access/roles.service.js';
+import { type AuthConfig, authConfig } from '../auth/auth.config.js';
 import { memberships, users } from '../auth/auth.tables.js';
+import { UsersRepository } from '../auth/users.repository.js';
 import { auditLog } from '../audit/audit.tables.js';
 import { DomainChangeGuard } from './domain-change-guard.js';
 import { SignUpSweepJob } from './sign-up-sweep.job.js';
@@ -32,6 +34,7 @@ import {
   type TenantDeactivatedEvent,
 } from './tenants.events.js';
 import { TenantsModule } from './tenants.module.js';
+import { TenantsService } from './tenants.service.js';
 import { tenantLifecycle } from './tenants.tables.js';
 
 const OPS = await vi.hoisted(async () => {
@@ -86,6 +89,7 @@ describe('tenants (e2e)', () => {
   let db: Database;
   let operator: Headers;
   let operatorTenantId: string;
+  let operatorUserId: string;
   let other: { tenantId: string; admin: { headers: Headers } };
 
   beforeAll(async () => {
@@ -111,7 +115,9 @@ describe('tenants (e2e)', () => {
         );
     }
     operatorTenantId = ops.id;
-    operator = (await member(app, ops.id, ['administrator'])).headers;
+    const operatorMember = await member(app, ops.id, ['administrator']);
+    operator = operatorMember.headers;
+    operatorUserId = operatorMember.id;
     other = await tenantWithAdmin(app);
   });
   afterAll(() => app.close());
@@ -247,6 +253,62 @@ describe('tenants (e2e)', () => {
     );
     expect(ops.statusCode).toBe(409);
     expect(ops.json().code).toBe('operator_tenant');
+  });
+
+  it('keeps the operators’ slug to their tenant: never changed, never taken', async () => {
+    const renamed = await call(
+      'PATCH',
+      `/v1/tenants/${operatorTenantId}`,
+      operator,
+      { slug: `${OPS}-moved` },
+    );
+    expect(renamed.statusCode).toBe(409);
+    expect(renamed.json().code).toBe('operator_tenant');
+    const [ops] = await db
+      .select({ slug: tenants.slug })
+      .from(tenants)
+      .where(eq(tenants.id, operatorTenantId));
+    expect(ops?.slug).toBe(OPS);
+    // Its name still changes.
+    expect(
+      (
+        await call('PATCH', `/v1/tenants/${operatorTenantId}`, operator, {
+          name: 'Operators',
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    // OPERATOR_TENANT naming a slug no tenant has yet: none may take it,
+    // made or renamed, or its members would be the operators.
+    const config = app.get<AuthConfig>(authConfig.KEY);
+    const next = `${OPS}-next`;
+    const tenant = (await create()).json();
+    const service = app.get(TenantsService);
+    const actor = (await app
+      .get(UsersRepository)
+      .inTenant(operatorUserId, operatorTenantId))!;
+    config.operatorTenant = next;
+    try {
+      await expect(
+        service.makeTenant({ name: 'Next', slug: next }, async () => null),
+      ).rejects.toMatchObject({
+        response: { code: 'tenant_slug_taken' },
+      });
+      await expect(
+        app
+          .get(Tenancy)
+          .run(operatorTenantId, () =>
+            service.update(actor, tenant.id, { slug: next }),
+          ),
+      ).rejects.toMatchObject({
+        response: { code: 'tenant_slug_taken' },
+      });
+    } finally {
+      config.operatorTenant = OPS;
+    }
+    expect(
+      await db.select().from(tenants).where(eq(tenants.slug, next)),
+    ).toHaveLength(0);
   });
 
   it('erases a tenant once its deletion’s grace period passed, unless cancelled', async () => {

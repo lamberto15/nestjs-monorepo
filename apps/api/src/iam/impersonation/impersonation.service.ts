@@ -15,10 +15,16 @@ import { roles, userRoles } from '../access/access.tables.js';
 import { liveGrant, RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { splitAuthentication } from '../auth/authentication-method.js';
-import { type Impersonation, impersonationOf } from '../auth/impersonation.js';
+import {
+  type Impersonation,
+  type ImpersonationEligibility,
+  ImpersonationRules,
+  impersonationOf,
+} from '../auth/impersonation.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { UsersRepository } from '../auth/users.repository.js';
 import { impersonationConfig } from './impersonation.config.js';
+import { ImpersonationPolicy } from './impersonation.policy.js';
 
 /**
  * Acting as another member, for support: the administrator's session is
@@ -33,15 +39,19 @@ import { impersonationConfig } from './impersonation.config.js';
  * tenant, and pinned to it), never as an administrator, never as oneself,
  * never nested, never more than the administrator could grant. An
  * impersonation is never a recent sign-in: sensitive routes refuse it.
+ * Who may act as whom (`assertEligible()`) is checked at the start and,
+ * as the `@ImpersonationRules()`, by SessionAuth on every request after.
  */
 @Injectable()
-export class ImpersonationService {
+@ImpersonationRules()
+export class ImpersonationService implements ImpersonationEligibility {
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly sessions: SessionService,
     private readonly users: UsersRepository,
     private readonly roles: RolesService,
     private readonly audit: AuditService,
+    private readonly policy: ImpersonationPolicy,
     @Inject(impersonationConfig.KEY)
     private readonly config: ConfigType<typeof impersonationConfig>,
   ) {}
@@ -72,14 +82,7 @@ export class ImpersonationService {
     if (!target || !tenantId || target.tenantId !== tenantId) {
       throw new NotFoundException(t('impersonation.notFound'));
     }
-    if (await this.isAdministrator(targetId)) {
-      throw new ForbiddenException({
-        code: 'administrator_not_impersonated',
-        message: t('impersonation.administrator'),
-      });
-    }
-    // Acting as someone gives no rights you couldn't grant yourself.
-    await this.roles.assertAuthorityOver(actor, targetId, target.email);
+    await this.assertEligible(actor, target);
     const now = new Date();
     const { rest, authentication } = splitAuthentication(session.metadata);
     const impersonator: Impersonation = {
@@ -148,6 +151,38 @@ export class ImpersonationService {
       });
     }
     return { cookie: issued.cookie };
+  }
+
+  /**
+   * Who may act as whom, in the current tenant (403 with the reason): the
+   * actor holds `Access.impersonate` (ImpersonationPolicy, the route's
+   * check), the target is no administrator, and the actor holds without
+   * conditions everything the target holds. The start checks it, and every
+   * request of a running impersonation (mayImpersonate()).
+   */
+  async assertEligible(actor: UserPrincipal, target: UserPrincipal) {
+    if (!(await this.policy.impersonate(actor))) {
+      throw new ForbiddenException(t('impersonation.notAllowed'));
+    }
+    if (await this.isAdministrator(target.id)) {
+      throw new ForbiddenException({
+        code: 'administrator_not_impersonated',
+        message: t('impersonation.administrator'),
+      });
+    }
+    // Acting as someone gives no rights you couldn't grant yourself.
+    await this.roles.assertAuthorityOver(actor, target.id, target.email);
+  }
+
+  /** assertEligible() as an answer: SessionAuth's check of a running impersonation. */
+  async mayImpersonate(actor: UserPrincipal, target: UserPrincipal) {
+    try {
+      await this.assertEligible(actor, target);
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException) return false;
+      throw error;
+    }
   }
 
   /** Holds the tenant's built-in Administrator role (a grant still running). */

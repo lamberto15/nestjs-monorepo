@@ -3,7 +3,7 @@
     "notFound": "No such tenant.",
     "slugTaken": "A tenant named \"{slug}\" exists.",
     "slugTakenField": "Taken.",
-    "operatorTenant": "The operators' tenant can't be deactivated nor deleted: its members run the deployment.",
+    "operatorTenant": "The operators' tenant can't be deactivated, deleted nor given another slug: its members run the deployment.",
     "deletionPending": "The tenant's deletion is pending: cancel it (DELETE /v1/tenants/{id}/deletion) before reactivating it.",
     "confirmSlug": "Type the tenant's slug to confirm its deletion.",
     "notThisSlug": "Not this tenant's slug.",

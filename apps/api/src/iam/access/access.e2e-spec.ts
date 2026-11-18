@@ -233,6 +233,59 @@ describe('access control (e2e)', () => {
       expect(authority.json().code).toBe('authority_required');
     });
 
+    it("refuses to take out of a role what the editor doesn't hold, by replacing it", async () => {
+      const manager = await accessManager();
+      const stronger = {
+        name: `units-${randomUUID().slice(0, 8)}`,
+        permissions: [
+          { subject: 'Access', action: 'manageUsers', conditions: [] },
+          {
+            subject: 'Access',
+            action: 'manageOrganizationalUnits',
+            conditions: [],
+          },
+        ],
+      };
+      const created = await call(
+        'POST',
+        '/v1/access/roles',
+        admin.headers,
+        stronger,
+      );
+      const url = `/v1/access/roles/${created.json().id}`;
+      const stripped = await call('PATCH', url, manager.headers, {
+        ...stronger,
+        permissions: [stronger.permissions[0]],
+      });
+      expect(stripped.statusCode).toBe(403);
+      expect(stripped.json().detail).toContain(
+        'Access.manageOrganizationalUnits',
+      );
+      expect(
+        (await call('GET', url, admin.headers)).json().permissions,
+      ).toHaveLength(2);
+
+      // A role within the editor's authority, they still replace.
+      const own = await call('POST', '/v1/access/roles', manager.headers, {
+        name: `users-${randomUUID().slice(0, 8)}`,
+        permissions: [stronger.permissions[0]],
+      });
+      const ownUrl = `/v1/access/roles/${own.json().id}`;
+      expect(
+        (
+          await call('PATCH', ownUrl, manager.headers, {
+            name: `roles-${randomUUID().slice(0, 8)}`,
+            permissions: [
+              { subject: 'Access', action: 'manageRoles', conditions: [] },
+            ],
+          })
+        ).statusCode,
+      ).toBe(204);
+      expect(
+        (await call('GET', ownUrl, admin.headers)).json().permissions,
+      ).toEqual([{ subject: 'Access', action: 'manageRoles', conditions: [] }]);
+    });
+
     it('refuses permissions and conditions the catalog does not declare: 400', async () => {
       for (const permission of [
         {

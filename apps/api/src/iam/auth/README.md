@@ -47,6 +47,10 @@ owner)` is the 400 `password_too_short` every route that sets a
   twice fails the boot. The OpenAPI document types both answers from the
   parts' schemas (`declaredShape()`, core/http/openapi.ts).
 - `@HostTenantResolver()`: `tenantOfHost(host)` for tenants' own domains.
+- `@ImpersonationRules()` (`impersonation.ts`): `mayImpersonate(actor,
+target)`, who may act as whom (iam/impersonation). SessionAuth asks it, in
+  the impersonation's tenant, on every request of a running one; without
+  one, an impersonation session is refused.
 - `@BreakGlassGrantSource()` (`break-glass-session.ts`): `open(user,
 grantId, request)` checks a request naming a grant (`Break-Glass`
   header, iam/break-glass); PrincipalGuard then enters the grant's tenant
@@ -66,8 +70,8 @@ grantId, request)` checks a request naming a grant (`Break-Glass`
   the tenants list and switch, an invitation's acceptance, signing out
   everywhere); the module that enforces the rule reads it.
 
-At most one provider each for the policy, host resolver, sign-in gate and
-break-glass grants (two fail the boot). None means the environment's limits, no tenant
+At most one provider each for the policy, host resolver, sign-in gate,
+break-glass grants and impersonation rules (two fail the boot). None means the environment's limits, no tenant
 domains, and sign-ins in the last chosen tenant.
 
 ## Routes

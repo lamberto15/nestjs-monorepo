@@ -20,7 +20,9 @@ Who a tenant is and how it lives, on top of core/tenancy (which owns the
   after the commit),
   rename, deactivate and reactivate, delete after TENANT_DELETION_GRACE_DAYS
   (the slug typed again; a recent sign-in) and cancel. Never the operators'
-  tenant. Every change is audited in the operators' tenant and in the tenant.
+  tenant, nor its slug changed (409 `operator_tenant`); no other tenant is
+  made or renamed with OPERATOR_TENANT's slug, even while none has it (409
+  `tenant_slug_taken`). Every change is audited in the operators' tenant and in the tenant.
 - **Deactivation** ends the tenant's sessions and refresh tokens and emits
   `tenancy.tenant-deactivated` (realtime closes its sockets).
 - **Nightly jobs**: TenantDeletionJob (04:30 UTC) claims a due tenant, emits
