@@ -64,9 +64,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # A pull request checks out its merge commit: its first parent is
-          # the base branch, which the migration lint compares with.
-          fetch-depth: 2
+          # The migration lint compares with a commit before this one. A pull
+          # request checks out its merge commit, whose first parent is the
+          # base branch; a push compares with the commit main was at before
+          # it, any number of commits back: the whole history.
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '2' }}
       - uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
         with:
           runtime: node@26
@@ -86,32 +88,58 @@ jobs:
       # env.example must be what the modules' environment schemas generate
       # (it builds the API first; Turborepo replays the build from its cache).
       - run: pnpm env:check
+      # The committed typed client (packages/api-client) is what the routes
+      # generate: on the checkout as it is, before the generated feature below
+      # adds routes of its own.
+      - run: pnpm client:check
       - run: pnpm test:tools
-      # Pull requests: what a new migration does that breaks the release
-      # before it (tools/migration-lint, docs/ci.md, "Migration lint"). The
-      # migrations are the pull request's text: workflow commands are off
-      # while they are read, and the lint writes them to the summary only.
+      # What a new migration does that breaks the release before it
+      # (tools/migration-lint, docs/ci.md, "Migration lint"): on a pull
+      # request, what it adds to its base branch; on a push to main, the usual
+      # way work lands, what the push adds to main as it was (`before`). The
+      # migrations are the pushed text: workflow commands are off while they
+      # are read, and the lint writes them to the summary only.
       - name: Destructive statements in the new migrations
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         env:
-          # `on` fails the job; a reviewed contract step takes the
-          # destructive-migration label (re-run the job after adding it).
+          # `on` fails the job. On a pull request a reviewed contract step
+          # takes the destructive-migration label (re-run the job after adding
+          # it); a push has no label, and its failure keeps the commit's image
+          # from being published (publish.yml waits for CI).
           MIGRATION_LINT_FAIL: 'on'
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          if [ -z "$(git rev-parse --verify --quiet HEAD^2)" ]; then
-            echo '::error::HEAD is not a merge commit: the job expects the one a pull request checks out'
-            exit 1
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            if [ -z "$(git rev-parse --verify --quiet HEAD^2)" ]; then
+              echo '::error::HEAD is not a merge commit: the job expects the one a pull request checks out'
+              exit 1
+            fi
+            set -- --base "$(git rev-parse HEAD^1)" --pr "$PR_NUMBER" --head "$HEAD_SHA"
+          else
+            if ! echo "$BEFORE" | grep -Eq '^[0-9a-f]{40}([0-9a-f]{24})?$'; then
+              echo "::error::The commit before the push ($BEFORE) is not a SHA"
+              exit 1
+            fi
+            # All zeros: the push made the branch, there is no release before it.
+            if ! echo "$BEFORE" | grep -q '[1-9a-f]'; then
+              echo '::notice::The push created the branch: no earlier commit to compare the migrations with'
+              exit 0
+            fi
+            if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "::error::$BEFORE (main before this push) is not in the history, after a force push: lint by hand with node tools/migration-lint/lint.mjs --base <the last commit deployed>"
+              exit 1
+            fi
+            set -- --base "$BEFORE"
           fi
           annotations="$RUNNER_TEMP/migration-lint-annotations.txt"
           token=$(openssl rand -hex 16)
           echo "::stop-commands::$token"
           status=0
-          node tools/migration-lint/lint.mjs --base "$(git rev-parse HEAD^1)" \
-            --summary "$GITHUB_STEP_SUMMARY" --annotations "$annotations" \
-            --pr "$PR_NUMBER" --head "$HEAD_SHA" || status=$?
+          node tools/migration-lint/lint.mjs "$@" \
+            --summary "$GITHUB_STEP_SUMMARY" --annotations "$annotations" || status=$?
           echo "::$token::"
           if [ -f "$annotations" ]; then cat "$annotations"; fi
           exit "$status"
