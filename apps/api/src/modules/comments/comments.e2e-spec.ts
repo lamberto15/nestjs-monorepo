@@ -549,17 +549,23 @@ describe('comments on test items (e2e)', () => {
       }),
     );
     const push = vi.spyOn(app.get(Realtime), 'toPrincipals');
+    // This item's comment events only: pushes of earlier tests' events may
+    // still arrive (the outbox delivers after the commit), more so under load.
+    const commented = () =>
+      push.mock.calls.filter(
+        ([, event, data]) =>
+          event.name === 'record.commented' &&
+          (data as { recordId?: string }).recordId === item.id,
+      );
     const added = await comment(viewer, item.id, 'A thought');
-    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(commented()).toHaveLength(1));
     await call('PATCH', `${base}/${added.id}`, viewer.headers, {
       body: 'A better thought',
     });
-    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(commented()).toHaveLength(2));
     await call('DELETE', `${base}/${added.id}`, viewer.headers);
-    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(3));
-    expect(
-      push.mock.calls.map(([, event, data]) => [event.name, data]),
-    ).toEqual(
+    await vi.waitFor(() => expect(commented()).toHaveLength(3));
+    expect(commented().map(([, event, data]) => [event.name, data])).toEqual(
       ['added', 'edited', 'removed'].map((action) => [
         'record.commented',
         {
@@ -571,9 +577,9 @@ describe('comments on test items (e2e)', () => {
       ]),
     );
     // The owner watches their item, the viewer wrote: both hear it; the outsider never does.
-    const audience = [
-      ...(push.mock.calls[0]![0] as Iterable<{ id: string }>),
-    ].map((p) => p.id);
+    const audience = [...(commented()[0]![0] as Iterable<{ id: string }>)].map(
+      (p) => p.id,
+    );
     expect(audience.sort()).toEqual([owner.id, viewer.id].sort());
     expect(audience).not.toContain(outsider.id);
     push.mockRestore();
