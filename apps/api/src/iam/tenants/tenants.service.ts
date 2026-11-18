@@ -48,6 +48,7 @@ import {
   tokenSessionId,
 } from '../auth/token-session.js';
 import {
+  type PurgeReason,
   TENANT_EVENTS,
   type TenantDeactivatedEvent,
   type TenantErasingEvent,
@@ -487,6 +488,23 @@ export class TenantsService {
   }
 
   /**
+   * Puts back a tenant moved from another server (modules/tenant-move) as
+   * it was there (Tenancy.restore()), in the caller's transaction. Never
+   * with the operators' slug (409 `tenant_slug_taken`): its members would
+   * become this deployment's operators.
+   */
+  async restore(tenant: Tenant): Promise<Tenant> {
+    if (this.makesOperator(tenant.slug)) {
+      throw slugTaken(tenant.slug);
+    }
+    return this.tenancy.restore(tenant).catch((error: unknown) => {
+      throw databaseErrorKind(error) === 'unique_violation'
+        ? slugTaken(tenant.slug)
+        : error;
+    });
+  }
+
+  /**
    * Makes `userId` a member of the current tenant with the Administrator
    * role, in the caller's transaction: a new tenant's first administrator
    * (sign-up). Nothing else grants Administrator without an administrator.
@@ -551,7 +569,7 @@ export class TenantsService {
   async purge(
     system: SystemPrincipal,
     tenantId: string,
-    reason: 'deletion' | 'sign-up-unverified',
+    reason: PurgeReason,
     details: Record<string, unknown> = {},
     check?: () => Promise<boolean>,
   ) {
@@ -586,6 +604,55 @@ export class TenantsService {
         return row;
       }),
     );
+  }
+
+  /**
+   * Freezes a tenant (`frozen: true`) or thaws it: read only for everyone
+   * and every job from its next transaction on (core/tenancy), its sessions
+   * kept, so its people still read. What its move to another server holds
+   * it in while it is exported (modules/tenant-move). Audited in no tenant
+   * and in the tenant's own log, which takes the entry before a freeze and
+   * after a thaw. Never the operators' tenant (409 `operator_tenant`).
+   * Already so: nothing changes (`changed: false`).
+   */
+  async setFrozen(
+    actor: Principal,
+    id: string,
+    frozen: boolean,
+    details: Record<string, unknown> = {},
+  ) {
+    const view = await this.tenancy.run(null, () => this.get(id));
+    if (view.operator) {
+      throw operatorTenant();
+    }
+    const current = await this.tenancy.run(null, () => this.tenancy.find(id));
+    if (Boolean(current?.frozenAt) === frozen) {
+      return { tenant: current!, changed: false };
+    }
+    const entry = {
+      action: frozen ? 'tenant.frozen' : 'tenant.thawed',
+      targetType: 'tenant',
+      targetId: id,
+      details: { slug: view.slug, ...details },
+    };
+    const inTenant = () =>
+      this.tenancy.run(id, () =>
+        this.txHost.withTransaction(() => this.audit.record(actor, entry)),
+      );
+    if (frozen) {
+      await inTenant();
+    }
+    const tenant = await this.tenancy.run(null, () =>
+      this.txHost.withTransaction(async () => {
+        const changed = await this.tenancy.setFrozen(id, frozen);
+        await this.audit.record(actor, entry);
+        return changed!;
+      }),
+    );
+    if (!frozen) {
+      await inTenant();
+    }
+    return { tenant, changed: true };
   }
 
   /** The tenant as shown, its row locked for the transaction; a 404 when there is none. */

@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import type { MigrationConfig } from 'drizzle-orm/migrator';
@@ -14,6 +15,25 @@ import { type DatabaseUrls, ensureRoles } from './roles.js';
 export const MIGRATIONS_FOLDER = fileURLToPath(
   new URL('../../../drizzle', import.meta.url),
 );
+
+/**
+ * The schema this build migrates to: its last migration's name and a digest
+ * of every name in order, so two builds with the same last migration and a
+ * different history differ too. What a tenant's move checks on both servers
+ * (modules/tenant-move): rows only go between the same schema.
+ */
+export function schemaVersion(folder = MIGRATIONS_FOLDER) {
+  const names = existsSync(folder)
+    ? readdirSync(folder, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort()
+    : [];
+  return {
+    latest: names.at(-1) ?? '',
+    digest: createHash('sha256').update(names.join('\n')).digest('hex'),
+  };
+}
 
 /** The advisory lock key of the migrations (any constant other apps don't use). */
 const MIGRATION_LOCK = 7_300_421_019;

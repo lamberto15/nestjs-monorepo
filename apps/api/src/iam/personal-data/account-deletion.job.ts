@@ -9,6 +9,7 @@ import type {
   DatabaseTransactions,
 } from '../../core/database/database.js';
 import { SystemContext } from '../access/system-context.js';
+import type { SystemPrincipal } from '../auth/principal.js';
 import { AuditService } from '../audit/audit.service.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import { LegalHoldsService } from '../holds/holds.service.js';
@@ -99,6 +100,50 @@ export class AccountDeletionJob {
       );
     }
     return deleted;
+  }
+
+  /**
+   * An operator's deletion of an account, carried out now instead of after
+   * the grace period (a moved tenant's accounts that belong to no tenant any
+   * more, modules/tenant-move): a request due now (or the pending one),
+   * audited `account.deletion-requested` with `actor`, then the same
+   * carrying out as the nightly run, legal holds included. Resolves whether
+   * it was deleted (false: held, or deleted already).
+   */
+  async deleteNow(
+    actor: SystemPrincipal,
+    userId: string,
+    details: Record<string, unknown> = {},
+    now = new Date(),
+  ): Promise<boolean> {
+    const request = await this.inNoTenant(() =>
+      this.txHost.withTransaction(async () => {
+        await lockAccount(this.db, userId);
+        const [pending] = await this.db
+          .select()
+          .from(accountDeletions)
+          .where(
+            and(
+              eq(accountDeletions.userId, userId),
+              isNull(accountDeletions.cancelledAt),
+              isNull(accountDeletions.completedAt),
+            ),
+          );
+        if (pending) return pending;
+        const [created] = await this.db
+          .insert(accountDeletions)
+          .values({ userId, scheduledFor: now })
+          .returning();
+        await this.audit.record(actor, {
+          action: 'account.deletion-requested',
+          targetType: 'user',
+          targetId: userId,
+          details: { ...details, scheduledFor: now.toISOString() },
+        });
+        return created!;
+      }),
+    );
+    return this.carryOut(request, now);
   }
 
   private async carryOut(

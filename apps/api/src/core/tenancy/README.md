@@ -73,9 +73,23 @@ schemas. **Database-per-tenant** — `connect` keeps a pool per tenant and
 picks it by scope, `provision` creates and migrates a database, `secure`
 migrates each. `tenant_id` stays on every table in every mode.
 
+## Frozen tenants
+
+A tenant whose `frozen_at` is set is read only: the `begin` of each of its
+transactions also runs `set_config('transaction_read_only', 'on', true)`
+when the tenant's row is frozen, so every write of it fails in PostgreSQL
+(25006, answered 503 `tenant_read_only`), from every instance, request and
+job, and its reads go on. `Tenancy.setFrozen()` sets it; a move uses it
+(modules/tenant-move). `Tenancy.restore()` puts back a tenant moved from
+another server with its id (with `TENANCY=single`, only into a server with no
+tenant yet).
+
 ## Variables
 
-`TENANCY` (`multi` | `single`, `tenancy.config.ts`). The database roles'
+`TENANCY` (`multi` | `single`, `tenancy.config.ts`). `FIRST_START_SEED`
+(`on`): the first start of a server with no tenant makes the default one
+(and the access seed its administrator); the operator CLI sets it `off`, so
+a server about to take a moved tenant stays empty. The database roles'
 URLs are core/database's.
 
 ## Tests

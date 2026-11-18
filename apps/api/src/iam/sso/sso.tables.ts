@@ -22,6 +22,7 @@ import {
 } from '../../core/tenancy/tenant-tables.js';
 import { roles, userRoles } from '../access/access.tables.js';
 import { memberships, users } from '../auth/auth.tables.js';
+import { movesWithAccount } from '../auth/account-rows.js';
 import { organizationalUnits } from '../organization/organization.tables.js';
 import type { Oauth2Mapping, Oauth2Preset } from './oauth2-mapping.js';
 import { secretColumns } from '../../core/database/secret-columns.js';
@@ -410,3 +411,6 @@ secretColumns(ssoConnections, [
 ]);
 
 secretColumns(ssoRequests, [ssoRequests.bindingHash, ssoRequests.codeVerifier]);
+
+/** What goes with the account when a tenant it belongs to moves to its own server (iam/auth/account-rows.ts). */
+movesWithAccount(scimDeprovisionedUsers.userId);

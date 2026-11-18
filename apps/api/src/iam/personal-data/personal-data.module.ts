@@ -65,6 +65,7 @@ import { PersonalDataService } from './personal-data.service.js';
     RolesSection,
     UnitsSection,
   ],
-  exports: [PersonalDataService],
+  // AccountDeletionJob: deleteNow() for the operator CLI's tenant move.
+  exports: [PersonalDataService, AccountDeletionJob],
 })
 export class PersonalDataModule {}

@@ -31,7 +31,12 @@ Who a tenant is and how it lives, on top of core/tenancy (which owns the
   in one transaction, it emits `tenancy.tenant-erasing` (awaited: what lives
   outside its tables; modules/storage releases the tenant's files, deleted
   after the commit), deletes its row (the cascade takes its rows), audited
-  `tenant.purged` in no tenant.
+  `tenant.purged` in no tenant. Its reason is `deletion`, `sign-up-unverified`
+  or `moved` (a tenant moved to its own server, modules/tenant-move).
+- **Freeze and restore** (for a move): `setFrozen()` makes a tenant read only
+  or writable again (never the operators' own), audited `tenant.frozen` /
+  `tenant.thawed` in the tenant and in no tenant; `restore()` puts back a
+  tenant moved from another server with its id, refusing a slug taken.
 - **Domains** (`/v1/branding/domains`, CUSTOM_DOMAINS, `Access.manageDomains`):
   a hostname proved by a TXT record `_app-verification.<hostname>`, checked
   on the queue and every night; a verified one routes its host to the tenant

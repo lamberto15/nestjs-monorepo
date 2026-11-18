@@ -36,7 +36,8 @@ import { SystemContext } from './system-context.js';
  * ADMIN_PASSWORD (generated and logged once when unset). As the system
  * principal (`system:seed`), the actor of its `user.seeded` entry. Later
  * starts change nothing but one thing: an administrator still on the
- * placeholder ADMIN_EMAIL is flagged for onboarding.
+ * placeholder ADMIN_EMAIL is flagged for onboarding. Nothing where
+ * FIRST_START_SEED is off (the operator CLI).
  */
 @Injectable()
 export class AccessSeeder implements OnApplicationBootstrap {
@@ -59,6 +60,11 @@ export class AccessSeeder implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
+    // The operator CLI is no first start (FIRST_START_SEED off): a fresh
+    // database stays empty for `tenant:import`.
+    if (!this.tenancyMode.seed) {
+      return;
+    }
     if (await this.anyUser()) {
       await this.requirePlaceholderOnboarding();
       return;

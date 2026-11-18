@@ -23,7 +23,7 @@ const B = '0199a000-0000-7000-8000-00000000000b';
 describe('the tenant scope', () => {
   it('binds a transaction to its tenant, locally, and to none without one', () => {
     expect(bindingStatement(tenantScope(A))).toBe(
-      `select set_config('app.tenant_id', '${A}', true)`,
+      `select set_config('app.tenant_id', '${A}', true); select set_config('transaction_read_only', 'on', true) from "tenants" where "id" = '${A}' and "frozen_at" is not null`,
     );
     for (const scope of [NO_TENANT, ACROSS_TENANTS, undefined]) {
       expect(bindingStatement(scope)).toBe(

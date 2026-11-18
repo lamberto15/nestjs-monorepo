@@ -90,6 +90,7 @@ export class TenantDeletionJob {
         slug: tenants.slug,
         name: tenants.name,
         active: tenants.active,
+        frozenAt: tenants.frozenAt,
         createdAt: tenants.createdAt,
         updatedAt: tenants.updatedAt,
       })

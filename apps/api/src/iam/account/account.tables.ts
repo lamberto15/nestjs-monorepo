@@ -15,6 +15,7 @@ import {
   encryptedText,
 } from '../../core/encryption/encrypted-columns.js';
 import { users } from '../auth/auth.tables.js';
+import { movesWithAccount } from '../auth/account-rows.js';
 
 // Every table here is global (pgTable): what a person signs in with is
 // theirs, whatever tenants they belong to.
@@ -214,3 +215,11 @@ export const accountDevices = pgTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.device] })],
 );
+
+/** What goes with the account when a tenant it belongs to moves to its own server (iam/auth/account-rows.ts). */
+movesWithAccount(userIdentities.userId);
+movesWithAccount(passkeys.userId);
+movesWithAccount(passwordHistory.userId);
+movesWithAccount(mfaAuthenticators.id);
+movesWithAccount(mfaRecoveryCodes.userId);
+movesWithAccount(accountDevices.userId);

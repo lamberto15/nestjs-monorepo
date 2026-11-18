@@ -160,6 +160,7 @@ export class Accounts {
           slug: tenants.slug,
           name: tenants.name,
           active: tenants.active,
+          frozenAt: tenants.frozenAt,
         })
         .from(tenants)
         .orderBy(asc(tenants.slug));
@@ -168,8 +169,9 @@ export class Accounts {
         .from(memberships)
         .where(eq(memberships.active, true))
         .groupBy(memberships.tenantId);
-      return rows.map((row) => ({
+      return rows.map(({ frozenAt, ...row }) => ({
         ...row,
+        frozen: frozenAt !== null,
         members: members.find((m) => m.tenantId === row.id)?.members ?? 0,
       }));
     });

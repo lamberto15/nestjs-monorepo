@@ -189,6 +189,14 @@ generate and re-encrypt keys. Changing commands show what they will do and
 ask first (`--yes` skips it). Writes are audited with the operator's OS user
 and host. Commands: [src/cli](../apps/api/src/cli/README.md).
 
+## Moving a tenant to its own server
+
+A tenant of a shared server moves to a server of its own (the same image,
+usually `TENANCY=single`) with the CLI: `tenant:export` on the source (it
+freezes the tenant and writes an encrypted archive), `tenant:import` on the
+target before its first start (it verifies everything), then `tenant:moved`
+on the source. The steps: [moving-a-tenant](moving-a-tenant.md).
+
 ## What the host provides
 
 This repository bundles no operations. The host brings:

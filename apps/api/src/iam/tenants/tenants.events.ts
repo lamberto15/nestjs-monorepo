@@ -49,5 +49,8 @@ export const tenantReactivated = defineEvent<{ tenantId: string }>(
 export const tenantPurged = defineEvent<{
   tenantId: string;
   slug: string;
-  reason: 'deletion' | 'sign-up-unverified';
+  reason: PurgeReason;
 }>('tenant.purged');
+
+/** Why a tenant was erased: an operator's deletion, an unverified sign-up's, or its move to a server of its own (modules/tenant-move). */
+export type PurgeReason = 'deletion' | 'sign-up-unverified' | 'moved';

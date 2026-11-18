@@ -1,6 +1,7 @@
 import { index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { at, timestamps, uuidPk } from '../../core/database/columns.js';
 import { users } from '../auth/auth.tables.js';
+import { movesWithAccount } from '../auth/account-rows.js';
 
 // Global (pgTable): an account's deletion and consents are the person's,
 // whatever tenants they belong to.
@@ -61,3 +62,7 @@ export const consents = pgTable(
     ),
   ],
 );
+
+/** What goes with the account when a tenant it belongs to moves to its own server (iam/auth/account-rows.ts). */
+movesWithAccount(accountDeletions.userId);
+movesWithAccount(consents.userId);

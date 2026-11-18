@@ -8,18 +8,22 @@
  * - `pool_exhausted`: no free connection within DATABASE_POOL_TIMEOUT_MS.
  * - `statement_timeout`: PostgreSQL cancelled the statement after
  *   DATABASE_STATEMENT_TIMEOUT_MS (57014).
+ * - `read_only`: a write in a read-only transaction (25006): a frozen
+ *   tenant's, or a break-glass read's (core/tenancy).
  */
 export type DatabaseErrorKind =
   | 'unique_violation'
   | 'foreign_key_violation'
   | 'pool_exhausted'
-  | 'statement_timeout';
+  | 'statement_timeout'
+  | 'read_only';
 
 const BY_SQLSTATE: Record<string, DatabaseErrorKind> = {
   '23505': 'unique_violation',
   '23503': 'foreign_key_violation',
   '23001': 'foreign_key_violation',
   '57014': 'statement_timeout',
+  '25006': 'read_only',
 };
 
 /**

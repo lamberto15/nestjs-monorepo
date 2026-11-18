@@ -43,17 +43,26 @@ export class Tenancy implements OnApplicationBootstrap {
     private readonly config: ConfigType<typeof tenancyConfig>,
   ) {}
 
-  /** `TENANCY=single`: the one tenant exists from the first start. */
+  /**
+   * `TENANCY=single`: the one tenant exists from the first start, made
+   * only when there is none (a tenant moved here, `restore()`, is the one).
+   * Not where FIRST_START_SEED is off (the operator CLI).
+   */
   async onApplicationBootstrap() {
     if (this.config.mode !== 'single') {
       return;
     }
-    // Instances starting together: the slug's unique key keeps it one.
-    await this.db
-      .insert(tenants)
-      .values({ slug: 'default', name: 'Default' })
-      .onConflictDoNothing();
+    if (this.config.seed && (await this.all()).length === 0) {
+      // Instances starting together: the slug's unique key keeps it one.
+      await this.db
+        .insert(tenants)
+        .values({ slug: 'default', name: 'Default' })
+        .onConflictDoNothing();
+    }
     const all = await this.all();
+    if (all.length === 0) {
+      return;
+    }
     if (all.length > 1) {
       this.logger.warn(
         `TENANCY=single with ${all.length} tenants: the oldest, ${all[0]!.slug}, is the one; no more can be made.`,
@@ -180,6 +189,45 @@ export class Tenancy implements OnApplicationBootstrap {
       await isolation.provision(this.db, tenant!.id);
       return tenant!;
     });
+  }
+
+  /**
+   * Puts back a tenant moved from another server (modules/tenant-move): its
+   * row as it was there (id, slug, name, dates), not frozen, and its
+   * storage where the isolation mode needs one, in the caller's
+   * transaction. With TENANCY=single, only while there is none: it is then
+   * the one, and the first start makes no other.
+   */
+  async restore(tenant: Tenant): Promise<Tenant> {
+    return this.txHost.withTransaction(async () => {
+      if (this.config.mode === 'single' && (await this.all()).length > 0) {
+        throw new ConflictException({
+          code: 'single_tenant',
+          message: 'This deployment has one tenant (TENANCY=single).',
+        });
+      }
+      const [restored] = await this.db
+        .insert(tenants)
+        .values({ ...tenant, frozenAt: null })
+        .returning();
+      await isolation.provision(this.db, restored!.id);
+      return restored!;
+    });
+  }
+
+  /**
+   * Freezes a tenant (read only for everyone, from its next transaction on:
+   * row-level-security.ts) or thaws it. Run outside the tenant's scope: a
+   * frozen tenant's own transactions can't write, this one included.
+   * Returns the tenant, or undefined when there is none.
+   */
+  async setFrozen(id: string, frozen: boolean): Promise<Tenant | undefined> {
+    const [tenant] = await this.db
+      .update(tenants)
+      .set({ frozenAt: frozen ? new Date() : null })
+      .where(eq(tenants.id, id))
+      .returning();
+    return tenant;
   }
 
   /** One tenant by id, active or not. */

@@ -15,6 +15,7 @@ import {
 } from '../../core/encryption/encrypted-columns.js';
 import { tenantTable } from '../../core/tenancy/tenant-tables.js';
 import { users } from '../../iam/auth/auth.tables.js';
+import { movesWithAccount } from '../../iam/auth/account-rows.js';
 import type { DigestMode, PreferenceOverrides } from './notifications.types.js';
 import type { QuietHours } from './quiet-hours.js';
 
@@ -153,3 +154,6 @@ export const recordSubscriptions = tenantTable(
     ),
   ],
 );
+
+/** What goes with the account when a tenant it belongs to moves to its own server (iam/auth/account-rows.ts). */
+movesWithAccount(notificationPreferences.recipient, { form: 'key' });

@@ -1,0 +1,1 @@
+ALTER TABLE "tenants" ADD COLUMN "frozen_at" timestamp(3) with time zone;

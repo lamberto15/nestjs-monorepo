@@ -4,7 +4,7 @@ import { getColumns } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { secretColumnsOf } from '../../core/database/secret-columns.js';
 import { tenantTables } from '../../core/tenancy/tenant-tables.js';
-import { pagingKey } from './tenant-export.js';
+import { pagingKey } from '../../core/tenancy/table-paging.js';
 
 const SRC = join(import.meta.dirname, '..', '..');
 

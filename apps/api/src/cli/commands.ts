@@ -11,7 +11,7 @@ import { currentOperator } from './operator.js';
 import type { OneTimePassword, Plan } from './plan.js';
 
 /** Every changing command's options. */
-interface ChangeOptions {
+export interface ChangeOptions {
   yes?: boolean;
   tenant?: string;
   name?: string;
@@ -21,7 +21,7 @@ interface ChangeOptions {
   before?: string;
 }
 
-const YES = {
+export const YES = {
   flags: '-y, --yes',
   description: 'do not ask for confirmation (scripts)',
 } as const;
@@ -31,7 +31,7 @@ const YES = {
  * shell. Output goes straight to stdout, never through the app's logger: a
  * one-time password is on the terminal and nowhere else.
  */
-async function carryOut<T>(
+export async function carryOut<T>(
   confirmer: Confirmer,
   plan: Plan<T>,
   options: ChangeOptions,
@@ -76,6 +76,7 @@ export class TenantListCommand extends CommandRunner {
           tenant.slug.padEnd(24),
           `${tenant.members} members`.padEnd(12),
           tenant.active ? 'active' : 'inactive',
+          ...(tenant.frozen ? ['frozen'] : []),
         ].join('  '),
         `  ${tenant.name}`,
       );

@@ -1,6 +1,7 @@
 import { pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { timestamps } from '../../../core/database/columns.js';
 import { users } from '../../../iam/auth/auth.tables.js';
+import { movesWithAccount } from '../../../iam/auth/account-rows.js';
 
 /**
  * A user's picture: the key of its file on the private disk
@@ -15,3 +16,6 @@ export const userAvatars = pgTable('user_avatars', {
   key: text('key').notNull(),
   ...timestamps(),
 });
+
+/** What goes with the account when a tenant it belongs to moves to its own server (iam/auth/account-rows.ts). */
+movesWithAccount(userAvatars.userId);

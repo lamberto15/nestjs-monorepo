@@ -35,6 +35,11 @@ account's own sections, anonymises the account (`Deleted user`, a
 deletes its memberships (roles and units cascade), then ends its sessions
 and token families.
 
+`deleteNow(actor, userId)` carries out an operator's deletion at once
+(a moved tenant's accounts left in no tenant, modules/tenant-move): a
+request due now, audited, then the same steps. The module exports the job
+for it.
+
 ## Taking part: `@PersonalData()`
 
 A module that holds something about a person marks one provider:

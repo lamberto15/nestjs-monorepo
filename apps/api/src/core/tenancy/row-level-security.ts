@@ -1,4 +1,4 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { getTableName, sql, type SQL } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   getTableConfig,
@@ -15,6 +15,7 @@ import {
   type TenantScope,
 } from './tenant-scope.js';
 import type { TenantIsolation, TenantRows } from './tenant-isolation.js';
+import { tenants } from './tenancy.tables.js';
 
 /** The transaction-local setting the policies read. */
 const SETTING = 'app.tenant_id';
@@ -73,12 +74,32 @@ function tenantPolicies(
  * value without a tenant, so none can inherit another's. A read-only scope
  * first makes the transaction `READ ONLY`: PostgreSQL then refuses every
  * write (25006), and the setting's query that follows means it can't be
- * made read-write again.
+ * made read-write again. A tenant's transaction also turns read only when
+ * its tenant is frozen (`tenants.frozen_at`, a move in progress): decided
+ * by the database in the same round trip, so every request, job and worker
+ * of every instance stops writing the moment the tenant is frozen, with no
+ * cache to go stale. Turning read only after the setting is allowed;
+ * turning back is not.
  */
 export function bindingStatement(scope: TenantScope | undefined) {
   const tenantId = scope?.tenantId ? assertTenantId(scope.tenantId) : '';
-  return `${scope?.readOnly ? 'set transaction read only; ' : ''}select set_config('${SETTING}', '${tenantId}', true)`;
+  const bind = `select set_config('${SETTING}', '${tenantId}', true)`;
+  return `${scope?.readOnly ? 'set transaction read only; ' : ''}${bind}${
+    tenantId && !scope?.readOnly ? `; ${frozenCheck(tenantId)}` : ''
+  }`;
 }
+
+/**
+ * The frozen tenant's transaction made read only. Raw: it rides in the
+ * `begin` of the pool, below the query builder; the names come from the
+ * table's declaration and the id is a checked UUID.
+ */
+const frozenCheck = (tenantId: string) =>
+  `select set_config('transaction_read_only', 'on', true) from ${escapeIdentifier(
+    getTableName(tenants),
+  )} where ${escapeIdentifier(tenants.id.name)} = '${tenantId}' and ${escapeIdentifier(
+    tenants.frozenAt.name,
+  )} is not null`;
 
 const BEGIN = /^\s*(?:begin|start\s+transaction)\b/i;
 const ONE_STATEMENT = /^[^;]*;?\s*$/;

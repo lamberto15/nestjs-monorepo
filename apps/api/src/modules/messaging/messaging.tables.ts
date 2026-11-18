@@ -16,6 +16,7 @@ import {
 } from '../../core/encryption/encrypted-columns.js';
 import { tenantTable } from '../../core/tenancy/tenant-tables.js';
 import { users } from '../../iam/auth/auth.tables.js';
+import { movesWithAccount } from '../../iam/auth/account-rows.js';
 
 /** Where a device receives push messages (browsers' web push is the notifications module's). */
 export const DEVICE_PLATFORMS = ['ios', 'android'] as const;
@@ -108,3 +109,6 @@ export const messagingUsage = tenantTable(
     index('messaging_usage_day_idx').on(t.day),
   ],
 );
+
+/** What goes with the account when a tenant it belongs to moves to its own server (iam/auth/account-rows.ts). */
+movesWithAccount(phoneNumbers.userId);
