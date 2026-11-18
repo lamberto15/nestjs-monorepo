@@ -73,13 +73,16 @@ describe('connections', () => {
     ).toBeVisible();
     expect(calls.created).toEqual([]);
 
-    await user.type(within(dialog).getByLabelText('Name'), 'Okta');
-    await user.type(
-      within(dialog).getByLabelText('Issuer'),
-      'https://acme.okta.com',
-    );
-    await user.type(within(dialog).getByLabelText('Client ID'), 'abc');
-    await user.type(within(dialog).getByLabelText('Client secret'), 's3cret');
+    // Pasted, not typed key by key: the slow part of this test beside other suites.
+    for (const [label, value] of [
+      ['Name', 'Okta'],
+      ['Issuer', 'https://acme.okta.com'],
+      ['Client ID', 'abc'],
+      ['Client secret', 's3cret'],
+    ]) {
+      await user.click(within(dialog).getByLabelText(label!));
+      await user.paste(value);
+    }
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(calls.created).toEqual([
