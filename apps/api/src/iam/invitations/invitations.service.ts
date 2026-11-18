@@ -27,6 +27,7 @@ import { regrant } from '../access/members.service.js';
 import { roles, userRoles } from '../access/access.tables.js';
 import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AuthPolicy } from '../auth/auth-policy.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import {
   actorOf,
@@ -114,6 +115,7 @@ export class InvitationsService {
     private readonly mailQueue: MailQueue,
     private readonly passwordHasher: PasswordHasher,
     private readonly moduleRef: ModuleRef,
+    private readonly authPolicy: AuthPolicy,
     @Inject(invitationsConfig.KEY)
     private readonly config: ConfigType<typeof invitationsConfig>,
     @Inject(httpConfig.KEY)
@@ -306,7 +308,7 @@ export class InvitationsService {
     inviter: Principal,
   ) {
     const tenant = await this.tenancy.find(this.tenancy.tenantId());
-    const base = this.config.webUrl ?? this.http.appUrl;
+    const base = this.http.webUrl;
     await this.mailQueue.send(TenantInvitationMail, {
       to: invitation.email!,
       locale: (inviter.kind === 'user' && inviter.locale) || undefined,
@@ -429,6 +431,10 @@ export class InvitationsService {
           errors: [{ path: 'password', message: t('invitations.required') }],
         });
       }
+      // The tenant's minimum length (iam/auth-policy), before the breach check.
+      await this.authPolicy.assertPasswordLength(input.password, 'password', {
+        tenantIds: [tenantId],
+      });
       await this.moduleRef
         .get(BreachedPasswordsService, { strict: false })
         .assertNotBreached(input.password, 'password');

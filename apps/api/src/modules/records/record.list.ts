@@ -67,5 +67,3 @@ export function recordList(declaration: RecordDeclaration, table: object) {
     },
   );
 }
-
-export type RecordList = ReturnType<typeof recordList>;

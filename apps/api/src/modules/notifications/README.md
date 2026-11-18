@@ -68,6 +68,8 @@ except mandatory types.
 found by the subject's `@AccessRecordFinder`), `GET /subscriptions`,
 `DELETE /subscriptions/{subject}/{recordId}`.
 
+A record is watchable with `NotificationsModule.forRecord(RECORD)` in the feature's imports: `POST|DELETE /<path>/{id}/watch` (whoever may read it; a record they may not read is a 404), `?include=watching`, the creator watching from the start, and the watchers told (`record.changed`, daily mail by default) when someone else updates it; a record's repeated changes collapse into one notification, counted up. Past 20 records changed in one transaction (a bulk edit) the rest sum up into one `record.bulk-changed` per watcher. A purge forgets the watchers.
+
 ## Variables (notifications.config.ts)
 
 NOTIFICATIONS_RETENTION_DAYS, NOTIFICATIONS_MAX_AGE_DAYS,

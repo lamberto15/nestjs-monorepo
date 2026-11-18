@@ -8,7 +8,9 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  type OnModuleInit,
 } from '@nestjs/common';
+import { DiscoveryService } from '@nestjs/core';
 import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
 import type { Queue } from 'bullmq';
@@ -24,8 +26,13 @@ import { REDIS } from '../../core/redis/redis.js';
 import { tenants } from '../../core/tenancy/tenancy.tables.js';
 import { withTenant } from '../../core/tenancy/tenant-job.js';
 import { AuditService } from '../audit/audit.service.js';
+import { discoverOne } from '../auth/discover.js';
 import { HostTenantResolver, type HostTenants } from '../auth/host-tenant.js';
 import type { Principal } from '../auth/principal.js';
+import {
+  DomainChangeGuard,
+  type DomainChangeGuarded,
+} from './domain-change-guard.js';
 import { normalizeHostname } from './hostname.js';
 import { tenantsConfig } from './tenants.config.js';
 import {
@@ -72,7 +79,9 @@ const unknownHostKey = (hostname: string) =>
  */
 @Injectable()
 @HostTenantResolver()
-export class TenantDomainsService implements HostTenants {
+export class TenantDomainsService implements HostTenants, OnModuleInit {
+  private guard?: DomainChangeGuarded;
+
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
@@ -85,7 +94,16 @@ export class TenantDomainsService implements HostTenants {
     @InjectQueue(TENANT_DOMAINS_QUEUE)
     private readonly queue: Queue<DomainCheckJob>,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly discovery: DiscoveryService,
   ) {}
+
+  onModuleInit() {
+    this.guard = discoverOne<DomainChangeGuarded>(
+      this.discovery,
+      DomainChangeGuard,
+      'domain change guard (@DomainChangeGuard())',
+    );
+  }
 
   get enabled() {
     return this.config.customDomains;
@@ -107,6 +125,7 @@ export class TenantDomainsService implements HostTenants {
   /** Adds a hostname to prove: the record to publish, then POST …/verify. */
   async create(actor: Principal, input: string, ip?: string) {
     this.assertEnabled();
+    await this.guard?.assertEditable(actor);
     const checked = normalizeHostname(input, this.appHosts());
     if ('refused' in checked) {
       const message = t(`tenants.hostname.${checked.refused}`);
@@ -181,8 +200,9 @@ export class TenantDomainsService implements HostTenants {
   }
 
   /** Queues the DNS check (202). */
-  async requestVerification(id: string) {
+  async requestVerification(actor: Principal, id: string) {
     this.assertEnabled();
+    await this.guard?.assertEditable(actor);
     await this.find(id);
     await this.queue.add('verify', withTenant({ domainId: id }));
   }

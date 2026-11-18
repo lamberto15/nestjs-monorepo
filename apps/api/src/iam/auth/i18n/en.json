@@ -8,6 +8,9 @@
     "notWhileImpersonating": "Not while acting as another user.",
     "reauthenticationRequired": "Sign in again to do this: your last sign-in is too old.",
     "mfaEnrollmentRequired": "Your organization requires two-factor sign-in: set it up first.",
-    "onboardingRequired": "Replace the placeholder email address and the generated password first."
+    "onboardingRequired": "Replace the placeholder email address and the generated password first.",
+    "passwordTooShort": "Use at least {min} characters: your organization asks for it.",
+    "unsupportedLocale": "This language isn't available here.",
+    "breakGlassInvalid": "Break-glass is for a signed-in operator, with a grant of theirs that is open."
   }
 }

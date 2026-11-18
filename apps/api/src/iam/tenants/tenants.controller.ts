@@ -24,7 +24,6 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiPreconditionFailedResponse,
-  ApiServiceUnavailableResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { z } from 'zod';
@@ -167,10 +166,6 @@ export class TenantsController {
   @ApiConflictResponse({
     description:
       '`tenant_slug_taken` (on `errors[].path` `slug`); `single_tenant`: TENANCY=single has its one tenant.',
-  })
-  @ApiServiceUnavailableResponse({
-    description:
-      '`invitations_unavailable`: nothing in this deployment invites the administrator.',
   })
   create(
     @CurrentUser() user: UserPrincipal,

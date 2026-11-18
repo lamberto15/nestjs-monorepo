@@ -1,5 +1,15 @@
+import { ForbiddenException } from '@nestjs/common';
 import type { MfaState, SessionRecord } from '@nestjs/authentication';
+import { t } from '@nestjs/i18n';
 import type { AuthenticationMetadata } from './authentication-method.js';
+import type { Principal } from './principal.js';
+
+/** What is the person's own (credentials, their account) can't be changed by an administrator acting as them. */
+export function notWhileImpersonating(user: Principal) {
+  if (user.kind === 'user' && user.impersonator) {
+    throw new ForbiddenException(t('auth.notWhileImpersonating'));
+  }
+}
 
 /**
  * What an impersonation session records about the administrator behind it.

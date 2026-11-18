@@ -27,6 +27,7 @@ import {
 } from '../auth/authentication-method.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { SignInContext } from '../auth/sign-in-context.js';
+import { SignInGates } from '../auth/sign-in-gate.js';
 import { UsersRepository } from '../auth/users.repository.js';
 import { AccountFlowContext } from './account-flow.context.js';
 import { accountConfig } from './account.config.js';
@@ -81,6 +82,7 @@ export class NativeSignIn {
     private readonly work: AccountWork,
     private readonly oidcAccounts: OidcAccounts,
     private readonly events: EventEmitter2,
+    private readonly gates: SignInGates,
     @Inject(accountConfig.KEY)
     private readonly config: ConfigType<typeof accountConfig>,
     @Inject(httpConfig.KEY)
@@ -546,8 +548,9 @@ export class NativeSignIn {
     tenantId: string | undefined,
     context: { ip: string },
   ) {
+    // A tenant that lets the method in (`@SignInGate()`: 403 `sso_required`).
     if (tenantId === undefined) {
-      return this.users.defaultTenant(user.id);
+      return this.gates.tenantFor(user, handoff.method, context.ip);
     }
     if (!(await this.users.isMember(user.id, tenantId))) {
       await this.events.emitAsync(AUTH_EVENTS.signInFailed, {
@@ -558,6 +561,7 @@ export class NativeSignIn {
       } satisfies SignInFailedEvent);
       throw new UnauthorizedException(t('auth.invalidCredentials'));
     }
+    await this.gates.assert(user, tenantId, handoff.method, context.ip);
     return tenantId;
   }
 }

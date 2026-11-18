@@ -19,6 +19,7 @@ import type { Database } from '../database/database.js';
 import { MIGRATIONS_FOLDER, migrateAll } from '../database/migrations.js';
 import { EncryptionTenant } from '../encryption/encryption.service.js';
 import { TenancyModule } from './tenancy.module.js';
+import { tenants } from './tenancy.tables.js';
 import { Tenancy, TenantRunsFailed } from './tenancy.service.js';
 import { TenantScopeMissingError } from './tenant-scope.js';
 
@@ -291,6 +292,80 @@ describe('tenancy (e2e)', () => {
         expect(await items.names()).toEqual([]);
       });
       expect(() => tenancy.enter(a)).toThrow(/needs a context/);
+    });
+
+    it('enters a tenant read only: its rows, and the database refuses every write', async () => {
+      await itemInEach();
+      const cls = app.get(ClsService);
+      const txHost = app.get(TransactionHost);
+      const pool = (db as unknown as { $client: Pool }).$client;
+      const refused = async (work: () => Promise<unknown>) =>
+        codeOf(await caught(work()));
+      await cls.run(async () => {
+        tenancy.enter(a, { readOnly: true });
+        // Entered again as a writer (another guard): it stays read only.
+        tenancy.enter(a);
+        expect(tenancy.current()).toMatchObject({
+          tenantId: a,
+          readOnly: true,
+        });
+        expect(() => tenancy.enter(b)).toThrow(/already runs as tenant/);
+        expect(await items.names()).toEqual(['a1']);
+        expect(await txHost.withTransaction(() => items.names())).toEqual([
+          'a1',
+        ]);
+        // 25006: read_only_sql_transaction, outside and inside a transaction.
+        expect(await refused(() => items.add('x'))).toBe('25006');
+        expect(
+          await refused(() => txHost.withTransaction(() => items.add('x'))),
+        ).toBe('25006');
+        expect(
+          await refused(() => db.update(tenantItems).set({ name: 'x' })),
+        ).toBe('25006');
+        // A global table too, and work nested in it, whatever its tenant.
+        expect(
+          await refused(() =>
+            db.insert(tenants).values({ slug: 'ro', name: 'RO' }),
+          ),
+        ).toBe('25006');
+        expect(await refused(() => tenancy.run(b, () => items.add('x')))).toBe(
+          '25006',
+        );
+        expect(
+          await refused(() =>
+            tenancy.run(null, () =>
+              db.insert(tenants).values({ slug: 'ro', name: 'RO' }),
+            ),
+          ),
+        ).toBe('25006');
+        // A transaction can't be made read-write again.
+        expect(
+          await refused(() =>
+            db.transaction(async (tx) => {
+              await tx.execute(sql`set transaction read write`);
+            }),
+          ),
+        ).toBe('25001');
+        // A connection of its own runs nothing outside a transaction.
+        const client = await pool.connect();
+        try {
+          await expect(client.query('select 1')).rejects.toThrow(
+            /read-only scope/,
+          );
+        } finally {
+          client.release();
+        }
+        expect(() =>
+          tenancy.acrossTenants('test', () => items.names()),
+        ).toThrow(/never runs in a request/);
+      });
+      // Nothing was written, and nothing carries over to the next use.
+      expect(await tenancy.run(a, () => items.names())).toEqual(['a1']);
+      expect(await tenancy.run(b, () => items.names())).toEqual(['b1']);
+      await tenancy.run(a, () => items.add('a2'));
+      expect(
+        await db.select().from(tenants).where(eq(tenants.slug, 'ro')),
+      ).toEqual([]);
     });
   });
 

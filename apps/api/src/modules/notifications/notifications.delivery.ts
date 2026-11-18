@@ -14,7 +14,7 @@ import type {
   DatabaseTransactions,
 } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
-import { OnDomainEvent } from '../../core/outbox/events.js';
+import { Events, OnDomainEvent } from '../../core/outbox/events.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
@@ -22,7 +22,10 @@ import { DevicesService } from './notifications.devices.service.js';
 import { NotificationCatalog } from './notifications.catalog.js';
 import { notificationsConfig } from './notifications.config.js';
 import { nextDigestTime } from './digest-time.js';
-import { notificationStored } from './notifications.events.js';
+import {
+  notificationCreatedWebhook,
+  notificationStored,
+} from './notifications.events.js';
 import { NotificationMail } from './notifications.mails.js';
 import { NotificationPreferencesService } from './notifications.preferences.service.js';
 import { PUSH_QUEUE, type PushJob } from './notifications.push.js';
@@ -58,6 +61,7 @@ export class NotificationDelivery {
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly catalog: NotificationCatalog,
     private readonly notifications: NotificationsService,
+    private readonly events: Events,
     private readonly preferences: NotificationPreferencesService,
     private readonly users: UsersRepository,
     private readonly devices: DevicesService,
@@ -183,6 +187,13 @@ export class NotificationDelivery {
             ...digest,
           })
           .where(eq(notifications.id, row.id));
+        // An API client hears it as a webhook, when it subscribed to the type.
+        if (recipient.kind === 'client') {
+          await this.events.publish(notificationCreatedWebhook, {
+            ...this.notifications.view(row, locale),
+            clientId: recipient.id,
+          });
+        }
       }),
     );
     if (result.duplicate) return;

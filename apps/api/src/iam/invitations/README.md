@@ -4,7 +4,7 @@ How people join a tenant. An administrator invites an address (the link is
 mailed now) or prepares a member (no link yet), with the roles and units
 the membership will have; the person accepts with the link. Routes under
 `/v1/access` (`Access.manageUsers`): `POST users` (202), `GET
-invitations`, `PATCH invitations/{id}`, `POST invitations/{id}/send`,
+invitations`, `PATCH invitations/{id}`, `POST invitations/{id}/send` (and its deprecated alias `…/resend`),
 `DELETE invitations/{id}`; and `POST /v1/auth/invitations/accept` for the
 person (no sign-in needed for a new address).
 
@@ -31,10 +31,11 @@ person (no sign-in needed for a new address).
   recent sign-in.
 - **Audit:** `user.invited`, `invitation.prepared`, `.updated`,
   `.sent`, `.resent`, `.revoked`, then `user.joined`.
-- **Other modules:** the module that makes a tenant creates its first
+- **Other modules:** iam/tenants creates an operator's new tenant's first
   administrator's invitation with `InvitationsService.create()` in its
-  transaction and `deliver()` after the commit. A new password goes through
+  transaction and `deliver()` after the commit. A new password meets the tenant's
+  minimum length (`AuthPolicy.assertPasswordLength`), then goes through
   `BreachedPasswordsService` (iam/account), found at run time.
 
-Variables (invitations.config.ts): `INVITATION_TTL_HOURS`, `WEB_URL`,
-`SERVICE_NAME`. Remove: delete this folder and its line in `app.module.ts`.
+Variables (invitations.config.ts): `INVITATION_TTL_HOURS`; it reads
+`WEB_URL` from core/http and `SERVICE_NAME` from core/observability. Remove: delete this folder and its line in `app.module.ts`.

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { listSchema } from '../../core/http/pagination.js';
+import { WEBHOOK_SCOPES } from './webhooks.tables.js';
 
 const eventTypes = z
   .array(z.string().max(200))
@@ -334,3 +335,13 @@ export const incomingEventTypesSchema = z
     ),
   })
   .meta({ id: 'IncomingWebhookEventTypes' });
+
+/** `GET`/`PUT /access/clients/{clientId}/webhook-scope`: which records' events the client's endpoints receive. */
+export const webhookScopeSchema = z.object({
+  scope: z
+    .enum(WEBHOOK_SCOPES)
+    .describe(
+      "own (the default): only the records the client owns. tenant: also its tenant's records owned by users and other clients, each only when the client may read it, without the fields it may not read.",
+    ),
+});
+export type WebhookScopeDto = z.infer<typeof webhookScopeSchema>;

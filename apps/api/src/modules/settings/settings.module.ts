@@ -7,11 +7,13 @@ import { OrganizationModule } from '../../iam/organization/organization.module.j
 import { FlagGuard } from './flag.guard.js';
 import { SettingsCache } from './settings.cache.js';
 import { SettingsCatalog, SettingsRegistration } from './settings.catalog.js';
+import { DASHBOARD_SETTINGS } from './dashboard.setting.js';
 import { SettingsController } from './settings.controller.js';
 import { SETTING_PERMISSIONS } from './settings.permissions.js';
 import { SettingsPolicy } from './settings.policy.js';
 import { SettingsService } from './settings.service.js';
 import type { SettingDeclaration } from './settings.types.js';
+import { SettingsPersonalData } from './settings.personal-data.js';
 
 /**
  * Settings and feature flags (README.md): the registry every module adds to
@@ -32,12 +34,18 @@ import type { SettingDeclaration } from './settings.types.js';
   ],
   controllers: [SettingsController],
   providers: [
+    // Declared here: the web dashboard is not a module of its own.
+    {
+      provide: SettingsRegistration,
+      useValue: new SettingsRegistration(DASHBOARD_SETTINGS),
+    },
     SettingsCache,
     SettingsCatalog,
     SettingsService,
     SettingsPolicy,
     OperatorGuard,
     FlagGuard,
+    SettingsPersonalData,
   ],
   exports: [SettingsService, FlagGuard],
 })

@@ -1,9 +1,13 @@
 import { EventEmitter } from 'node:events';
 import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { SessionService } from '@nestjs/authentication';
 import { Captcha, type CaptchaOptions } from './captcha.decorator.js';
 import { CaptchaGuard } from './captcha.guard.js';
 import type { CaptchaRequest, CaptchaService } from './captcha.service.js';
+
+/** No session on these requests: the routes name their account in the body. */
+const noSessions = {} as SessionService;
 
 /** What the guard told the service: each check's subject, each release's. */
 function fakeCaptcha(mode = 'after-failures') {
@@ -48,28 +52,59 @@ describe('CaptchaGuard', () => {
       { action: 'sign-in', count: 'failures' },
       { email: 'someone@example.com' },
     );
-    const guard = new CaptchaGuard(new Reflector(), captcha.service);
+    const guard = new CaptchaGuard(
+      new Reflector(),
+      captcha.service,
+      noSessions,
+    );
     expect(await guard.canActivate(route.context)).toBe(true);
     expect(captcha.checked).toEqual([
       { ip: '203.0.113.7', email: 'someone@example.com', action: 'sign-in' },
     ]);
   });
 
+  it("names the pending session's account on the code's route, not the body's", async () => {
+    const captcha = fakeCaptcha();
+    const sessions = {
+      tokenFrom: () => 'cookie-token',
+      validate: async (token: string | undefined) =>
+        token === 'cookie-token' ? { userId: 'u-1' } : null,
+    } as unknown as SessionService;
+    const guard = new CaptchaGuard(new Reflector(), captcha.service, sessions);
+    await guard.canActivate(
+      call(
+        { action: 'sign-in', count: 'failures', account: 'session' },
+        { email: 'ignored@example.com' },
+      ).context,
+    );
+    expect(captcha.checked).toEqual([
+      { ip: '203.0.113.7', email: 'user:u-1', action: 'sign-in' },
+    ]);
+  });
+
   it('leaves an unmarked route, and every route while the mode is off, alone', async () => {
     const unmarked = fakeCaptcha();
-    await new CaptchaGuard(new Reflector(), unmarked.service).canActivate(
-      call(undefined, {}).context,
-    );
+    await new CaptchaGuard(
+      new Reflector(),
+      unmarked.service,
+      noSessions,
+    ).canActivate(call(undefined, {}).context);
     const off = fakeCaptcha('off');
-    await new CaptchaGuard(new Reflector(), off.service).canActivate(
-      call({ action: 'sign-in', count: 'failures' }, {}).context,
-    );
+    await new CaptchaGuard(
+      new Reflector(),
+      off.service,
+      noSessions,
+    ).canActivate(call({ action: 'sign-in', count: 'failures' }, {}).context);
     expect([...unmarked.checked, ...off.checked]).toEqual([]);
   });
 
   it('gives the attempt back only when a "failures" route answered no 4xx', async () => {
     const captcha = fakeCaptcha();
-    const guard = new CaptchaGuard(new Reflector(), captcha.service);
+    const guard = new CaptchaGuard(
+      new Reflector(),
+      captcha.service,
+      noSessions,
+    );
     const failed = call({ action: 'sign-in', count: 'failures' }, {});
     await guard.canActivate(failed.context);
     failed.response.statusCode = 401;

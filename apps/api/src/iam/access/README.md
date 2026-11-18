@@ -62,13 +62,31 @@ Work without a user runs through `SystemContext.run(JOB, work, { tenantId })`
 as `system:<key>`, with only the permissions its `defineSystemJob()`
 declares (listed in `systemJobs` of a `forFeature()` declaration).
 
+## Break-glass
+
+A principal with `breakGlass` set (an operator reading another tenant,
+iam/break-glass) holds every read action of the catalog
+(`catalog.readPermissions()`), unconditional, and nothing else, whatever
+its roles; only in the grant's tenant, in its read-only scope.
+
 ## Extending it (no registry)
 
 - `@UnitDirectory()`: the provider that tells access a user's units
   (iam/organization). Without one, nobody is in a unit.
+- `@ScimMembers()`: the provider that tells which members the tenant's IdP
+  provisions (iam/sso): the users routes show `managedByScim`. Without
+  one, nobody is.
 - `@AccessRecordFinder('Note')`: finds a record for the explanation route
   (`?recordId=`), as its asker may read it.
-- Events (`access.events.ts`): `access.member-deactivated`.
+- Events (`access.events.ts`): `access.member-deactivated` (its actor an
+  administrator or SCIM's API client), `access.member-reactivated` (iam/sso
+  reactivates an account its deprovisioning deactivated).
+- `GET /v1/access/roles` and `GET /v1/access/users` also answer whoever
+  holds `Access.manageSso` (`openForSso`: the SSO page's pickers).
+
+## Who holds what
+
+`MembersService` answers for other modules: `active(ids)`, `withRole(role, among?)` (the active members holding a role, by key or id) and `permitted(action, subject, record)` (the active members who may do it to that record). modules/approvals resolves its approvers with them.
 
 ## Tests
 

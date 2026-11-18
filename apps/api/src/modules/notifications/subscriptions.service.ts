@@ -217,6 +217,30 @@ export class SubscriptionsService implements OnModuleInit {
   }
 
   /** Records gone for good (a purge, a delete): nobody watches them any more. */
+  /** A merge: the duplicate's watchers watch the survivor (once). */
+  async merge(subject: string, from: string, to: string) {
+    const moved = await this.db
+      .delete(recordSubscriptions)
+      .where(
+        and(
+          eq(recordSubscriptions.subject, subject),
+          eq(recordSubscriptions.recordId, from),
+        ),
+      )
+      .returning();
+    if (moved.length > 0) {
+      await this.db
+        .insert(recordSubscriptions)
+        .values(
+          moved.map(({ id: _id, ...watcher }) => ({
+            ...watcher,
+            recordId: to,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  }
+
   async forget(subject: string, recordIds: readonly string[]) {
     if (recordIds.length === 0) return;
     await this.db

@@ -3,6 +3,7 @@ import type { Job } from 'bullmq';
 import { ClsServiceManager } from 'nestjs-cls';
 import {
   currentTenantScope,
+  inheritScope,
   NO_TENANT,
   TENANT_SCOPE,
   tenantScope,
@@ -38,7 +39,9 @@ export function inTenantOf<T>(
       new Error('The job carries no tenantId: queue withTenant(data).'),
     );
   }
-  const scope = tenantId === null ? NO_TENANT : tenantScope(tenantId);
+  const scope = inheritScope(
+    tenantId === null ? NO_TENANT : tenantScope(tenantId),
+  );
   const cls = ClsServiceManager.getClsService();
   // Awaited inside: a query runs when awaited, in this context.
   return cls.run({ ifNested: 'inherit' }, async () => {

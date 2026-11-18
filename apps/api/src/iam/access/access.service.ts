@@ -620,8 +620,10 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
       };
     }
     // Per tenant: the same person holds other roles in another tenant, and
-    // the system principal's conditions read the job's tenant's rows.
-    const key = `${currentTenantScope()?.tenantId ?? '-'}:${principalKey(principal)}`;
+    // the system principal's conditions read the job's tenant's rows. A
+    // break-glass request's ability is its grant's, never the person's own
+    // in that tenant (an operator may also be a member there).
+    const key = `${currentTenantScope()?.tenantId ?? '-'}:${principalKey(principal)}${principal.kind === 'user' && principal.breakGlass ? `:break-glass:${principal.breakGlass.grantId}` : ''}`;
     const cached = this.cache.get(key);
     if (
       cached &&
@@ -693,9 +695,22 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
           : [],
       };
     }
-    if (!currentTenantScope()?.tenantId) {
+    const scope = currentTenantScope();
+    if (!scope?.tenantId) {
       // Roles are per tenant: without one, none.
       return { held: [] };
+    }
+    if (principal.kind === 'user' && principal.breakGlass) {
+      // An operator reading a tenant through a break-glass grant: every read
+      // action of the catalog, unconditional, and nothing else, whatever
+      // their roles (the transactions are read only too); only in the
+      // grant's tenant, read only.
+      return {
+        held:
+          scope.readOnly && scope.tenantId === principal.breakGlass.tenantId
+            ? builtIn(this.catalog.readPermissions())
+            : [],
+      };
     }
     const grants = principal.kind === 'user' ? userRoles : apiClientRoles;
     const holder =
@@ -743,6 +758,7 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
   ): Promise<{ context: AccessContext; nextChange?: number }> {
     if (
       principal.kind !== 'user' ||
+      principal.breakGlass ||
       !currentTenantScope()?.tenantId ||
       !this.units
     ) {

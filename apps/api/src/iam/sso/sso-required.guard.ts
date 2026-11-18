@@ -2,27 +2,18 @@ import {
   type CanActivate,
   type ExecutionContext,
   Injectable,
-  SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { t } from '@nestjs/i18n';
 import { WsException } from '@nestjs/websockets';
 import { authenticationOf } from '../auth/authentication-method.js';
 import type { RequestPrincipal } from '../auth/principal.js';
+import { WITHOUT_SSO } from '../auth/sign-in-gate.js';
 import {
   SSO_REQUIRED,
   ssoRequired,
   SsoPolicyService,
 } from './sso-policy.service.js';
-
-const WITHOUT_SSO = Symbol('sso-not-needed');
-
-/**
- * A route a session refused by "SSO required" may still reach: who am I,
- * leaving (signing out, choosing another of one's tenants) and accepting an
- * invitation to another tenant.
- */
-export const WithoutSso = () => SetMetadata(WITHOUT_SSO, true);
 
 /**
  * "SSO required" on every request (README.md, "SSO required"): a user

@@ -1,0 +1,96 @@
+{
+  "approvals": {
+    "errors": {
+      "unknownAction": "No approvable action is called \"{key}\".",
+      "pending": "This record has an approval pending: wait for the decision, or cancel the request.",
+      "closed": "This approval request has ended.",
+      "alreadyDecided": "This stage was already decided.",
+      "decidedOtherwise": "You already decided differently on this stage.",
+      "notAssignee": "You are not an approver of this request's current stage.",
+      "selfApproval": "You can't decide on your own request.",
+      "noApprovers": "Nobody can approve this: stage \"{stage}\" found no approver.",
+      "notRequester": "Only the requester can do this.",
+      "notChangesRequested": "Only a request sent back for changes can be resubmitted.",
+      "delegateToSelf": "You can't delegate to yourself.",
+      "unknownUser": "No active user has this id.",
+      "delegationTooLong": "A delegation lasts {days} days at most.",
+      "notStuck": "Only an approved request whose outcome wasn't applied can be abandoned.",
+      "notOverseer": "Only someone who may abandon approvals can do this.",
+      "impersonating": "You can't do this while acting as someone else.",
+      "policyChanged": "Someone saved this policy at the same time: read it again, then retry."
+    }
+  },
+  "notifications": {
+    "approval": {
+      "requested": {
+        "label": "Approval requested",
+        "title": "Approval requested",
+        "body": "{by} asks you to approve \"{title}\" ({stage})."
+      },
+      "reminder": {
+        "label": "Approval reminder",
+        "title": "Waiting for your approval",
+        "body": "\"{title}\" from {by} still waits for your decision."
+      },
+      "escalated": {
+        "label": "Approval escalated to you",
+        "title": "An approval was escalated to you",
+        "body": "\"{title}\" from {by} is overdue and now waits for your decision."
+      },
+      "approved": {
+        "label": "Your request was approved",
+        "title": "Request approved",
+        "body": "\"{title}\" was approved by {by}."
+      },
+      "rejected": {
+        "label": "Your request was rejected",
+        "title": "Request rejected",
+        "body": "\"{title}\" was rejected by {by}: {comment}"
+      },
+      "changesRequested": {
+        "label": "Changes requested on your request",
+        "title": "Changes requested",
+        "body": "{by} asks for changes to \"{title}\": {comment}"
+      },
+      "expired": {
+        "label": "Your request expired",
+        "title": "Request expired",
+        "body": "Nobody decided on \"{title}\" in time: the request expired."
+      },
+      "failed": {
+        "label": "Your request ended without an outcome",
+        "title": "Request ended",
+        "body": "\"{title}\" couldn't go ahead (no approver was left, or the record changed meanwhile), so the request ended."
+      },
+      "cancelled": {
+        "label": "Approval request withdrawn",
+        "title": "Request withdrawn",
+        "body": "{by} withdrew \"{title}\": no decision is needed any more."
+      }
+    }
+  },
+  "permissions": {
+    "approval": {
+      "label": "Approvals",
+      "actions": {
+        "read": "See every approval request, not only one's own",
+        "cancel": "Cancel anyone's approval request",
+        "abandon": "Abandon an approved request whose outcome would not apply (POST /v1/approvals/{id}/abandon)",
+        "managePolicies": "Change approval policies (stages, approvers, deadlines)"
+      },
+      "conditions": {
+        "ofSubject": {
+          "label": "Of one subject",
+          "description": "Only approval requests about records of this subject (Invoice).",
+          "input": "Subject"
+        }
+      }
+    },
+    "systemJobs": {
+      "approvals": {
+        "label": "Approvals",
+        "description": "Runs the approval requests' workflows: starts stages, reminds, escalates, expires, and applies approved actions."
+      }
+    }
+  }
+}

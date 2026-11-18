@@ -17,8 +17,9 @@ import type {
 /**
  * Test items: the use cases. RecordStore does what the declaration decides
  * (owner, unit, recycle bin) and what every write causes in its
- * transaction (add-ons' hooks, the audit entry, the domain event); the
- * business logic goes around it, here.
+ * transaction (add-ons' hooks, the audit entry, the domain event). What
+ * must hold for every write, whoever makes it (`words`), is the feature's
+ * own hooks (test-item.logic.ts); what only its routes do goes here.
  */
 @Injectable()
 export class TestItemsService {
@@ -26,15 +27,9 @@ export class TestItemsService {
 
   /** `dto` goes along as `input`: the add-ons' hooks read their keys from it. */
   create(owner: Principal, dto: CreateTestItemDto) {
-    return this.records.create(
-      owner,
-      {
-        ...recordValues(TEST_ITEM, dto),
-        // Business logic: a read-only field the service derives.
-        words: wordsOf(dto.body as string | null | undefined),
-      },
-      { input: dto },
-    );
+    return this.records.create(owner, recordValues(TEST_ITEM, dto), {
+      input: dto,
+    });
   }
 
   findOne(id: string, lookup?: RecordLookup) {
@@ -51,23 +46,13 @@ export class TestItemsService {
     dto: UpdateTestItemDto,
     check?: CurrentCheck<TestItem>,
   ) {
-    return this.records.update(
-      by,
-      id,
-      {
-        ...recordValues(TEST_ITEM, dto),
-        ...(dto.body !== undefined && {
-          words: wordsOf(dto.body as string | null),
-        }),
-      },
-      { check, input: dto },
-    );
+    return this.records.update(by, id, recordValues(TEST_ITEM, dto), {
+      check,
+      input: dto,
+    });
   }
 
   delete(by: Principal, id: string, check?: CurrentCheck<TestItem>) {
     return this.records.delete(by, id, { check });
   }
 }
-
-const wordsOf = (text: string | null | undefined) =>
-  text ? text.split(/\s+/).filter(Boolean).length : null;

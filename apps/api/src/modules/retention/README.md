@@ -34,6 +34,10 @@ A declared rule **does nothing** until a tenant turns it on. Rules are found
 at startup (`RetentionRules`); a duplicate name, an anonymising rule without
 `anonymise`, or a default below `minDays` fails the start.
 
+### A record's rule
+
+`RetentionModule.forRecord(RECORD, table, { defaultDays, minDays?, label?, ageColumn?, where? })` declares a purging rule named by the record's path, dated by `createdAt` unless `ageColumn` says otherwise. The records module's purge removes what the record's add-ons keep (their `purged` hook) and empties references; never a held record. Retention takes the declaration only structurally (`{ subject, path }`): records already import this module.
+
 ## Routes (`Access.manageRetention`)
 
 - `GET /v1/retention/rules`: the rules with the tenant's choice and last run.

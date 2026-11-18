@@ -86,7 +86,10 @@ export class TenantDomainsController {
   })
   @ApiCreatedResponse({ standardSchema: domainSchema })
   @ApiBadRequestResponse({ description: '`invalid_hostname` on `hostname`.' })
-  @ApiConflictResponse({ description: '`domain_exists`: listed already.' })
+  @ApiConflictResponse({
+    description:
+      '`domain_exists`: listed already; `branding_locked`: the operators lock the branding.',
+  })
   @ApiNotFoundResponse({ description: '`feature_off`: CUSTOM_DOMAINS=off.' })
   create(
     @CurrentUser() user: UserPrincipal,
@@ -105,9 +108,13 @@ export class TenantDomainsController {
     description: 'Read the domain again for the outcome.',
   })
   @ApiAcceptedResponse()
+  @ApiConflictResponse({ description: '`branding_locked`.' })
   @ApiNotFoundResponse()
-  async verify(@Param('id', ParseUUIDPipe) id: string) {
-    await this.domains.requestVerification(id);
+  async verify(
+    @CurrentUser() user: UserPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.domains.requestVerification(user, id);
   }
 
   @Delete(':id')

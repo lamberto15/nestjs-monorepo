@@ -4,12 +4,13 @@ import { CurrentUser, MfaService } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import {
   accessModules,
   member,
   tenantWithAdmin,
 } from '../../../test/access.js';
+import { signIn, TEST_PASSWORD } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
 import {
   authnRequestId,
@@ -27,6 +28,7 @@ import type { Database } from '../../core/database/database.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../audit/audit.tables.js';
+import { memberships } from '../auth/auth.tables.js';
 import type { RequestPrincipal } from '../auth/principal.js';
 import { SsoModule } from './sso.module.js';
 import { SsoProcessor } from './sso.processor.js';
@@ -586,6 +588,33 @@ describe('enterprise SSO (e2e)', () => {
       );
       expect(failed(landed.headers.location as string)).toBe(false);
       expect((await b.get('/probe/me')).statusCode).toBe(200);
+
+      // A password sign-in asks too: refused where every tenant of the
+      // person requires SSO, else it lands in one that doesn't.
+      const password = await app.inject({
+        method: 'POST',
+        url: '/v1/auth/sign-in',
+        payload: { email: viewer.email, password: TEST_PASSWORD },
+      });
+      expect(password.statusCode).toBe(403);
+      expect(password.json().code).toBe('sso_required');
+      const both = await member(app, beta.tenantId, ['viewer']);
+      await db()
+        .insert(memberships)
+        .values({ tenantId, userId: both.id, selectedAt: new Date(0) });
+      await db()
+        .update(memberships)
+        .set({ selectedAt: new Date() })
+        .where(
+          and(
+            eq(memberships.userId, both.id),
+            eq(memberships.tenantId, beta.tenantId),
+          ),
+        );
+      const landed2 = await signIn(app, both.email);
+      const me = await call('GET', '/probe/me', landed2.headers);
+      expect(me.statusCode).toBe(200);
+      expect(me.json().tenantId).toBe(tenantId);
 
       expect((await setPolicy(false)).statusCode).toBe(200);
       expect((await call('GET', '/probe/me', viewer.headers)).statusCode).toBe(

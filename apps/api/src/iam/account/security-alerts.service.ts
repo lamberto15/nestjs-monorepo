@@ -1,14 +1,16 @@
 import { InjectTransaction } from '@nestjs-cls/transactional';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { and, eq, gt, ne } from 'drizzle-orm';
 import type { Database } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
-import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { Events } from '../../core/outbox/events.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AUTH_EVENTS, type SignedInEvent } from '../auth/auth.events.js';
 import type { Principal } from '../auth/principal.js';
+import { securityAlerted } from './account.events.js';
 import { SecurityAlertMail, type SecurityAlertKind } from './account.mails.js';
+import { AccountWork } from './account-work.js';
 import { AccountUsers } from './account.users.js';
 import { accountDevices } from './account.tables.js';
 import { deviceOf, normalizeIp } from './devices.js';
@@ -53,6 +55,11 @@ export interface PendingAlert {
  * and mails the owner when the device is new: the account signed in
  * before, but not from this device (user agent without versions + IPv4
  * address or IPv6 /64, see `deviceOf`) in the last 30 days.
+ *
+ * Every alert is also published (`account.security-alerted`, in the
+ * change's transaction) for the modules that keep a record of it (the
+ * in-app notice of modules/notifications); the mail is sent here only.
+ * Without the outbox (a test that doesn't boot it), nothing is published.
  */
 @Injectable()
 export class SecurityAlerts {
@@ -63,7 +70,8 @@ export class SecurityAlerts {
     private readonly audit: AuditService,
     private readonly accounts: AccountUsers,
     private readonly mail: MailQueue,
-    private readonly tenancy: Tenancy,
+    private readonly work: AccountWork,
+    @Optional() private readonly events?: Events,
   ) {}
 
   /**
@@ -85,9 +93,24 @@ export class SecurityAlerts {
       ...(change.details && { details: change.details }),
       ip,
     });
-    return used
-      ? { userId, kind: change.alert, args: { ...change.args, ip } }
-      : null;
+    if (!used) {
+      return null;
+    }
+    const alert = { userId, kind: change.alert, args: { ...change.args, ip } };
+    // The tenant the owner acts in, when they made the change themselves.
+    const tenantId =
+      actor?.kind === 'user' && actor.id === userId ? actor.tenantId : null;
+    await this.publish(alert, tenantId);
+    return alert;
+  }
+
+  /** In the change's transaction: the alert as a domain event. */
+  private async publish(alert: PendingAlert, tenantId: string | null) {
+    await this.events?.publish(
+      securityAlerted,
+      { ...alert, tenantId, at: new Date().toISOString() },
+      { key: alert.userId },
+    );
   }
 
   /**
@@ -121,9 +144,13 @@ export class SecurityAlerts {
   async signedIn(event: SignedInEvent) {
     try {
       // The account's own rows, in no tenant (the sign-in may land in one).
-      const alert = await this.tenancy.run(null, () =>
-        this.rememberDevice(event),
-      );
+      const alert = await this.work.run(async () => {
+        const found = await this.rememberDevice(event);
+        if (found) {
+          await this.publish(found, event.tenantId);
+        }
+        return found;
+      });
       await this.tell(alert);
     } catch (error) {
       this.logger.error(

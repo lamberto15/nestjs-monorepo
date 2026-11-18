@@ -4,6 +4,18 @@
       "actions": {
         "manageClients": "Create, change, rotate the keys of and delete API clients"
       }
+    },
+    "api-key": {
+      "label": "API keys",
+      "actions": {
+        "read": "See an API client's keys"
+      },
+      "conditions": {
+        "own": {
+          "label": "Its own",
+          "description": "Only the keys of the API client asking."
+        }
+      }
     }
   }
 }

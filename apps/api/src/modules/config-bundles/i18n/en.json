@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "config-bundle": {
+      "label": "Configuration bundles",
+      "actions": {
+        "export": "Export the tenant's configuration as a bundle",
+        "apply": "Preview and apply a configuration bundle (writes every section)"
+      }
+    }
+  }
+}

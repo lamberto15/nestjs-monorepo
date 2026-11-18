@@ -47,6 +47,7 @@ import { users } from '../auth/auth.tables.js';
 import { methodMetadata, tokenClaims } from '../auth/authentication-method.js';
 import { sessionTenant } from '../auth/impersonation.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import { SignInGates } from '../auth/sign-in-gate.js';
 import { UsersRepository } from '../auth/users.repository.js';
 import { AccountWork } from './account-work.js';
 import { accountConfig } from './account.config.js';
@@ -213,10 +214,11 @@ export class PasskeysService implements OnModuleInit {
     private readonly tokens: TokenService,
     private readonly work: AccountWork,
     private readonly events: EventEmitter2,
+    private readonly gates: SignInGates,
     @Inject(accountConfig.KEY) config: ConfigType<typeof accountConfig>,
     @Inject(httpConfig.KEY) http: ConfigType<typeof httpConfig>,
   ) {
-    this.settings = passkeySettings(config, config.webUrl ?? http.appUrl);
+    this.settings = passkeySettings(config, http.webUrl);
     // The RP ID never changes once a credential exists: a wrong one fails the boot.
     const issues = passkeyIssues(this.settings, config.production);
     if (issues.length > 0) {
@@ -579,9 +581,10 @@ export class PasskeysService implements OnModuleInit {
       context.ip,
     );
     assertVerified(user);
+    const tenantId = await this.gates.tenantFor(user, 'passkey', context.ip);
     let issued: IssuedSession = await this.signInService.signIn(user.id, {
       method: 'passkey',
-      metadata: methodMetadata('passkey'),
+      metadata: { ...methodMetadata('passkey'), ...(tenantId && { tenantId }) },
     });
     let cookie: string | undefined;
     if (issued.session.mfa === 'pending' && userVerified) {
@@ -639,13 +642,16 @@ export class PasskeysService implements OnModuleInit {
     // else the last chosen; none for a user without a tenant.
     const tenant =
       tenantId === undefined
-        ? await this.users.defaultTenant(user.id)
+        ? await this.gates.tenantFor(user, 'passkey', context.ip)
         : (await this.users.isMember(user.id, tenantId))
           ? tenantId
           : null;
     if (tenantId !== undefined && !tenant) {
       await this.signInFailed(user.email, 'tenant', context.ip, user);
       throw new UnauthorizedException(t('account.passkeyInvalid'));
+    }
+    if (tenantId !== undefined && tenant) {
+      await this.gates.assert(user, tenant, 'passkey', context.ip);
     }
     const tokens = await this.tokens.issue(user.id, {
       method: 'passkey',

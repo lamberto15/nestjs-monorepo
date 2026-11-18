@@ -19,6 +19,12 @@ export const AUTH_EVENTS = {
   tokenSessionEnded: 'auth.token-session-ended',
   /** An API client's key was used from outside its allowlist (once per address and hour). */
   clientIpDenied: 'auth.client-ip-denied',
+  /**
+   * A sign-in's password was verified. Carries the plaintext, for the
+   * breach re-check (iam/account): in process only, never stored, and no
+   * listener may log or keep it.
+   */
+  passwordVerified: 'auth.password-verified',
 } as const;
 
 export interface SignedInEvent {
@@ -37,6 +43,14 @@ export interface SignInFailedEvent {
   /** The account the address is, when there is one: its tenant's log gets an entry too. */
   user?: UserPrincipal;
   method: string;
+  ip: string;
+}
+
+export interface PasswordVerifiedEvent {
+  user: UserPrincipal;
+  password: string;
+  /** The account's stored hash, after any rehash. */
+  passwordHash: string;
   ip: string;
 }
 

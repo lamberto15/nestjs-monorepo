@@ -24,6 +24,19 @@ export interface WebhookEvent<P = unknown> {
    * the client may not read are left out.
    */
   subject: string;
+  /**
+   * A record's event (`WebhooksModule.forRecord()`): its payload is
+   * `{ subject, id, by, record }`, `data` describes the `record`, and
+   * the client's right to read it is checked as the record was before it
+   * went to the recycle bin, so a deletion reaches who could read it.
+   */
+  record?: boolean;
+  /**
+   * An event for one API client (a notification addressed to it): the id of
+   * the only client that receives it, from the payload. Its own message
+   * needs no read permission, so `subject` is only a name here.
+   */
+  to?: (payload: never) => string | undefined;
 }
 
 /** The webhook events a provider of `forFeature()` carries: how the catalog finds them. */

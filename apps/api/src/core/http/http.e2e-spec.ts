@@ -73,6 +73,11 @@ class ThingsController {
     return body;
   }
 
+  @Post('form')
+  form(@Body({ schema: z.record(z.string(), z.string()) }) body: object) {
+    return body;
+  }
+
   @Get('big')
   @Etag()
   big() {
@@ -280,6 +285,22 @@ describe('HTTP conventions (e2e)', () => {
       expect(res.headers['content-type']).toBe(PROBLEM);
       expect(res.json().code).toBe('payload_too_large');
       expect(res.body).not.toMatch(/limit|entity|stack/i);
+    });
+
+    it('parses an HTML form post, up to 10 parameters', async () => {
+      const post = (fields: number) =>
+        app.inject({
+          method: 'POST',
+          url: '/v1/things/form',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          payload: new URLSearchParams(
+            Array.from({ length: fields }, (_, i) => [`k${i}`, 'v']),
+          ).toString(),
+        });
+      const ok = await post(10);
+      expect(ok.statusCode).toBe(201);
+      expect(Object.keys(ok.json())).toHaveLength(10);
+      expect((await post(11)).statusCode).toBe(413);
     });
 
     it('answers a JSON body in an unsupported charset with 415', async () => {

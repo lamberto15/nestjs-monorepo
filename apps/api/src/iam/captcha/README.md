@@ -10,7 +10,7 @@ Bot protection for public routes, and app attestation for native apps.
 @Post('sign-in')
 ```
 
-`Captcha` (`captcha.decorator.ts`) is only metadata plus OpenAPI docs and imports nothing of this module. CaptchaModule's global guard reads it; without the module installed a route is simply not checked. List the module after ThrottlingModule and AuthModule. `count`: `failures` (a 4xx answer counts for `after-failures`) or `requests` (a route that always answers 202). The account an attempt names is the body's `email`.
+`Captcha` (`captcha.decorator.ts`) is only metadata plus OpenAPI docs and imports nothing of this module. CaptchaModule's global guard reads it; without the module installed a route is simply not checked. List the module after ThrottlingModule and AuthModule. `count`: `failures` (a 4xx answer counts for `after-failures`) or `requests` (a route that always answers 202). The account an attempt names is the body's `email`, or with `account: 'session'` (`POST /auth/mfa/verify`) the pending session's user.
 
 Refusals: 403 `captcha_required` (names `provider`, `siteKey`, `action`), 403 `captcha_invalid` (`reason`), 503 `captcha_unavailable` (CAPTCHA_ON_ERROR=reject), 429 `rate_limited` (fail-open allowance used). A route that gives an attempt back itself calls `CaptchaService.release({ ip, email })`.
 

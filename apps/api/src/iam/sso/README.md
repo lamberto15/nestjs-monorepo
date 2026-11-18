@@ -16,7 +16,7 @@ break-glass exemptions, and SCIM 2.0 provisioning of its users and groups.
 | `/v1/scim/*` (ServiceProviderConfig, ResourceTypes, Users, Groups)                                                                            | an API client key with `Access.provisionScim` |
 
 A connection starts off; a sign-in lands on the web app (`WEB_URL`, else
-`APP_URL`), with `?error=sso_failed` when refused, the reason in the
+`APP_URL`: core/http's), with `?error=sso_failed` when refused, the reason in the
 tenant's audit log (`auth.sign-in-failed`). A first sign-in provisions the
 person just in time (`jitProvisioning`) or links the account of a
 verified address; roles come from the connection's default roles and its
@@ -30,7 +30,6 @@ document, and a domain's TXT record (`_sso-verification.<domain>`).
 | Variable               | Default |                                                                      |
 | ---------------------- | ------- | -------------------------------------------------------------------- |
 | `SSO_ALLOW_LOOPBACK`   | `off`   | Development and tests only: allows `http://` and loopback providers. |
-| `WEB_URL`              | none    | Where sign-ins land (else `APP_URL`).                                |
 | `DATA_ENCRYPTION_KEYS` | none    | Required: client secrets and SP keys are encrypted columns.          |
 
 ## SSO required
@@ -42,7 +41,9 @@ through one of the tenant's connections or exempted. An exemption
 without two-factor in the app, nobody can be exempted: fail closed). Then
 every session or token of the tenant not signed in through its own
 connection gets 403 `sso_required` on every route save those marked
-`@WithoutSso()` (sign-out, who-am-I); public routes are untouched.
+`@WithoutSso()` (iam/auth: sign-out, the tenants list and switch, an
+invitation's acceptance, signing out everywhere); public routes are
+untouched. A password or passkey sign-in asks first (see "How it plugs in").
 
 ## SCIM
 
@@ -112,21 +113,25 @@ Filters: `eq` joined by `and` (scim2-parse-filter), PATCH by scim-patch.
 …/saml/complete` (same site, the same browser's binding, two minutes,
   once), which does.
 
-## Integration
+## How it plugs in
 
-What the old iam/access and iam/organization did for this module, which
-those modules must now ask through a seam:
+Seams the other iam modules own, which this one implements:
 
-- `AccessPolicy.open()`: `manageSso` belongs with the actions an
-  administrator may always reach (the old `openForSso`).
-- Organizational units made over SCIM (`scim_groups`) are the IdP's:
-  OrganizationService must answer 409 `unit_managed_by_scim` on their
-  update, delete and member changes, and lists show `managedByScim`. A
-  discovery seam there (a provider answering "is this unit managed"),
-  which this module would implement by reading `scim_groups`.
-- Members provisioned over SCIM (`scim_users`) likewise: `managedByScim`
-  in the access API's users.
-- Password sign-in and token issue must ask
-  `SsoPolicyService.assertSignInTenant()` (exported) so an SSO-required
-  tenant refuses a password, save its exempted administrators.
-- The CSRF check must exclude the ACS (`core/http/http-setup.ts`).
+- `SsoPolicyService` is iam/auth's `@SignInGate()`: a password, passkey or
+  native sign-in lands in a tenant that lets the method in, or 403
+  `sso_required`; an exempted member's use is audited
+  (`sso.exemption-used`). Routes marked `@WithoutSso()` (iam/auth) skip
+  the global guard.
+- `ScimUsersService` is access's `@ScimMembers()` (`managedByScim` on the
+  users routes) and listens for `access.member-reactivated`: an
+  administrator turning a membership back on reactivates the account SCIM
+  deprovisioned (audited `user.account-reactivated`).
+- `ScimGroupsService` is organization's `@ScimUnits()`: its units show
+  `managedByScim` and refuse an administrator's change (409
+  `unit_managed_by_scim`).
+- SCIM's deactivations emit `access.member-deactivated` with the IdP's API
+  client as the actor: realtime ends the member's sockets in the tenant.
+- `Access.manageSso` opens the roles and users lists (access's
+  `openForSso`) for the SSO page's pickers.
+- The ACS is excluded from the CSRF check here (`csrfExclusions`, in
+  sso.module.ts).

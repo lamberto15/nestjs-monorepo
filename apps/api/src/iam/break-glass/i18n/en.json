@@ -9,10 +9,11 @@
     "invalid": "No break-glass grant of yours by this id is open: it ended, expired, or you may no longer use it.",
     "expired": "This break-glass grant has expired: it is never extended. Open a new one, with a new reason.",
     "readOnly": "Break-glass access is read only.",
-    "unavailable": "Break-glass reads are not available in this build: the grant is recorded, but reads nothing."
+    "disabled": "This tenant does not let the operators in with break-glass (its sign-in policy)."
   },
   "permissions": {
     "platform": {
+      "label": "Platform",
       "actions": {
         "breakGlass": "Read, in an emergency, a tenant that never invited you: read only, at most an hour, audited and told (operators only)"
       }

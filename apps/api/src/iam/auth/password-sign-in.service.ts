@@ -8,11 +8,13 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
 import {
   AUTH_EVENTS,
+  type PasswordVerifiedEvent,
   type SignedInEvent,
   type SignInFailedEvent,
 } from './auth.events.js';
 import { methodMetadata } from './authentication-method.js';
 import { sessionTenant } from './impersonation.js';
+import { SignInGates } from './sign-in-gate.js';
 import { UsersRepository } from './users.repository.js';
 
 export interface SignInRequest {
@@ -34,6 +36,7 @@ export class PasswordSignIn {
     private readonly passwordHasher: PasswordHasher,
     private readonly signInService: SignInService,
     private readonly events: EventEmitter2,
+    private readonly gates: SignInGates,
   ) {}
 
   /**
@@ -70,27 +73,42 @@ export class PasswordSignIn {
       });
     }
     // The cost settings changed since this hash was stored: upgrade it while we have the plaintext.
-    if (this.passwordHasher.needsRehash(found.passwordHash)) {
+    let passwordHash = found.passwordHash;
+    if (this.passwordHasher.needsRehash(passwordHash)) {
+      const rehashed = await this.passwordHasher.hash(password);
       await this.users.updatePasswordHash(
         found.user.id,
-        found.passwordHash,
-        await this.passwordHasher.hash(password),
+        passwordHash,
+        rehashed,
       );
+      passwordHash = rehashed;
     }
+    // The breach re-check (iam/account) starts here and is not waited for.
+    await this.events.emitAsync(AUTH_EVENTS.passwordVerified, {
+      user: found.user,
+      password,
+      passwordHash,
+      ip,
+    } satisfies PasswordVerifiedEvent);
     return found.user;
   }
 
   /**
    * Signs the browser in: the session cookie on the response, in the
-   * user's last chosen tenant (else the oldest membership). Announced
+   * user's last chosen tenant (else the oldest membership) that lets a
+   * password in (`@SignInGate()`: 403 `sso_required` when none does). Announced
    * (`auth.signed-in`, audited). With two-factor on, the session is
    * pending until its second factor (`mfaRequired`).
    */
   async signIn(email: string, password: string, request: SignInRequest) {
     const user = await this.verify(email, password, request.ip);
+    const tenantId = await this.gates.tenantFor(user, 'password', request.ip);
     const issued = await this.signInService.signIn(user.id, {
       method: 'password',
-      metadata: methodMetadata('password'),
+      metadata: {
+        ...methodMetadata('password'),
+        ...(tenantId && { tenantId }),
+      },
     });
     await this.events.emitAsync(AUTH_EVENTS.signedIn, {
       user,

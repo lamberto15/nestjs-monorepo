@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "systemJobs": {
+      "demo-seed": {
+        "label": "Demo seed",
+        "description": "Makes the demo tenant, its units and its people on a development database (pnpm db:seed:demo)."
+      }
+    }
+  }
+}

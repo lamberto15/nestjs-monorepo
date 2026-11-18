@@ -6,7 +6,7 @@ import {
   type OutboxHandlerContext,
 } from '@nestjs/outbox';
 import { type NewWebhookMessage, Webhooks } from '@nestjs/webhooks';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type {
   Database,
   DatabaseTransactions,
@@ -18,12 +18,15 @@ import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { ClientPrincipal } from '../../iam/auth/principal.js';
 import type { WebhookEvent } from './webhook-events.js';
 import { storeEndpoints } from './webhook-store.view.js';
+import { webhookClientScopes } from './webhooks.tables.js';
 
 /**
  * Turns a module's domain event into webhooks (`WebhooksModule.forFeature()`):
  * in the worker, in the event's tenant, one message per API client of that
  * tenant that has an endpoint and may `read` the event's subject with its
  * public `data` as the record, redacted to the fields the client may read.
+ * A record's event also needs the client to own the record or to have the
+ * `tenant` scope (`PUT /access/clients/{id}/webhook-scope`, default `own`).
  * The package fans each message out to the client's subscribed endpoints
  * after the commit. An event outside any tenant reaches no client.
  */
@@ -45,8 +48,9 @@ export class WebhookPublisher {
     const tenantId = currentTenantScope()?.tenantId;
     if (!tenantId) return;
     const type = definition.event.type;
+    const source = this.encryption.withoutEncrypted(payload);
     const parsed = definition.data.safeParse(
-      this.encryption.withoutEncrypted(payload),
+      definition.record ? (source as { record: unknown }).record : source,
     );
     if (!parsed.success) {
       throw new NonRetryableMessageError(
@@ -55,13 +59,49 @@ export class WebhookPublisher {
     }
     const data = parsed.data as Record<string, unknown>;
     const messages: NewWebhookMessage[] = [];
+    const addressee = (
+      definition.to as ((payload: unknown) => string | undefined) | undefined
+    )?.(source);
+    const wide = definition.record ? await this.tenantScoped() : new Set();
+    // A record's owner is `client:<id>`: its own client always hears it; the
+    // others only with the `tenant` scope (and only what their role reads).
+    const owner = definition.record
+      ? (data as { ownerId?: unknown }).ownerId
+      : undefined;
     for (const client of await this.subscribers()) {
+      if (
+        definition.record &&
+        owner !== `client:${client.id}` &&
+        !wide.has(client.id)
+      ) {
+        continue;
+      }
+      if (definition.to) {
+        // Its own message: no one else hears it, and it needs no permission.
+        if (client.id !== addressee) continue;
+        messages.push({
+          type,
+          tenant: client.id,
+          data,
+          id: `msg_${createHash('sha256').update(`${ctx.message.id}:${client.id}`).digest('hex').slice(0, 32)}`,
+        });
+        continue;
+      }
       const principal: ClientPrincipal = {
         kind: 'client',
         ...client,
         tenantId,
       };
-      if (!(await this.access.can(principal, 'read', definition.subject, data)))
+      // A deleted record is read as it was before: the bin hides it from everyone.
+      const readable = definition.record ? { ...data, deletedAt: null } : data;
+      if (
+        !(await this.access.can(
+          principal,
+          'read',
+          definition.subject,
+          readable,
+        ))
+      )
         continue;
       messages.push({
         type,
@@ -85,6 +125,15 @@ export class WebhookPublisher {
       ),
     );
     this.webhooks.notify();
+  }
+
+  /** The clients of this tenant whose scope is `tenant` (webhooks.tables.ts). */
+  private async tenantScoped() {
+    const rows = await this.db
+      .select({ clientId: webhookClientScopes.clientId })
+      .from(webhookClientScopes)
+      .where(and(eq(webhookClientScopes.scope, 'tenant')));
+    return new Set(rows.map((row) => row.clientId));
   }
 
   /** The tenant's active API clients that have at least one endpoint. */

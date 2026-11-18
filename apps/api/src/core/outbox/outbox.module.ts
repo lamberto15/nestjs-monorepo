@@ -7,6 +7,7 @@ import type { Database } from '../database/database.js';
 import { queuesConfig, runsWorkers } from '../queues/queues.config.js';
 import { Events } from './events.js';
 import { outboxConfig } from './outbox.config.js';
+import { OutboxMetrics } from './outbox.metrics.js';
 import { OutboxRetentionJob } from './outbox-retention.job.js';
 
 /**
@@ -24,6 +25,7 @@ import { OutboxRetentionJob } from './outbox-retention.job.js';
 @Module({
   imports: [
     ConfigModule.forFeature(outboxConfig),
+    ConfigModule.forFeature(queuesConfig),
     OutboxModule.forRootAsync({
       imports: [
         ConfigModule.forFeature(outboxConfig),
@@ -54,6 +56,7 @@ import { OutboxRetentionJob } from './outbox-retention.job.js';
         ),
     },
     Events,
+    OutboxMetrics,
     OutboxRetentionJob,
   ],
   exports: [Events],

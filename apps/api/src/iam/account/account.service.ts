@@ -34,12 +34,14 @@ import {
   isSessionRecord,
   tokenClaims,
 } from '../auth/authentication-method.js';
+import { AuthPolicy } from '../auth/auth-policy.js';
 import { DrizzleAuthenticationStore } from '../auth/drizzle-authentication.store.js';
 import { sessionTenant } from '../auth/impersonation.js';
 import { isPlaceholderEmail } from '../auth/onboarding.js';
 import { PasswordSignIn } from '../auth/password-sign-in.service.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { SignInContext } from '../auth/sign-in-context.js';
+import { SignInGates } from '../auth/sign-in-gate.js';
 import { tokenSessionId } from '../auth/token-session.js';
 import { normalizeEmail, UsersRepository } from '../auth/users.repository.js';
 import { AccountUsers } from './account.users.js';
@@ -91,6 +93,8 @@ export class AccountService {
     private readonly signInContext: SignInContext,
     private readonly reauthentication: ReauthenticationService,
     private readonly events: EventEmitter2,
+    private readonly gates: SignInGates,
+    private readonly policy: AuthPolicy,
   ) {}
 
   // Passwords
@@ -108,6 +112,8 @@ export class AccountService {
   async resetPassword(token: string, password: string, ip: string) {
     const userId = await this.accounts.pendingReset(token);
     if (userId) {
+      // The tenants' minimum length: the account's, for a reset or an invitation's link alike.
+      await this.policy.assertPasswordLength(password, 'password', { userId });
       await this.passwordHistory.assertNotReused(userId, password, 'password');
     }
     await this.breachedPasswords.assertNotBreached(password, 'password');
@@ -169,6 +175,11 @@ export class AccountService {
         throw new ForbiddenException(t('account.wrongPassword'));
       }
     }
+    await this.policy.assertPasswordLength(
+      passwords.newPassword,
+      'newPassword',
+      { userId: user.id },
+    );
     await this.passwordHistory.assertNotReused(
       user.id,
       passwords.newPassword,
@@ -505,7 +516,8 @@ export class AccountService {
    * two-factor is on): the user, or a 401 (PasswordSignIn); the tokens,
    * announced as any sign-in. The tenant asked for, when the user is a
    * member (else the same 401 as a wrong password: nothing about tenants
-   * is told before a sign-in); else the last chosen.
+   * is told before a sign-in); else the last chosen. Either way one that
+   * lets a password in (`@SignInGate()`: 403 `sso_required`).
    */
   async issueTokens(
     email: string,
@@ -517,7 +529,7 @@ export class AccountService {
     const user = await this.passwords.verify(email, password, context.ip);
     const tenant =
       tenantId === undefined
-        ? await this.users.defaultTenant(user.id)
+        ? await this.gates.tenantFor(user, 'password', context.ip)
         : (await this.users.isMember(user.id, tenantId))
           ? tenantId
           : null;
@@ -529,6 +541,9 @@ export class AccountService {
         ip: context.ip,
       } satisfies SignInFailedEvent);
       throw new UnauthorizedException(t('auth.invalidCredentials'));
+    }
+    if (tenantId !== undefined && tenant) {
+      await this.gates.assert(user, tenant, 'password', context.ip);
     }
     const tokens = await this.tokens.issue(user.id, {
       method: 'password',

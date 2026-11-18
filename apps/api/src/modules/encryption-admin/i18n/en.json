@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageEncryption": "See which encrypted rows are still on an old key and start their re-encryption (operators only)"
+      }
+    }
+  }
+}

@@ -72,6 +72,7 @@ export const userList = (
         'roleIds',
         'roles',
         'unitIds',
+        'managedByScim',
       ],
     },
   );

@@ -1,5 +1,7 @@
 # iam/api-clients
 
+Exports `ApiClientsService` and `ActiveRequester`: `of(principal)` checks, in a queued job's tenant, that the user who queued it is still an active member (or the API client still active); null when not (modules/ai and modules/documents use it).
+
 Systems that call the API with a key: the tenant's API clients and their
 keys, managed by administrators under `/v1/access/clients` (user sessions
 only). What lets a key in (the key format, hashing, the address allowlist,
@@ -22,9 +24,13 @@ last-used tracking) is iam/auth's; the tables are auth's (`api_clients`,
 - **Events** (api-clients.events.ts, after the commit; modules/realtime ends
   the sockets): `access.client-revoked { clientId, tenantId }` (deleted or
   deactivated), `access.keys-revoked { keyIds }` (revoked, or rotated with
-  no grace period).
+  no grace period). A rotation also publishes the domain event
+  `security.api-key-rotated { clientId, keyId, previousKeysEnd }` (core/outbox,
+  in its transaction); modules/webhooks sends it to the rotated client's
+  endpoints that subscribe to it, and to no other client: every client holds
+  `ApiKey.read` of its own keys only (`api-clients.permissions.ts`).
 
 Remove: delete this folder and its line in `app.module.ts`.
 
 Not here: a daily request quota and webhook endpoint counts (usage and
-webhooks modules), the security alert to the client on rotation.
+webhooks modules).

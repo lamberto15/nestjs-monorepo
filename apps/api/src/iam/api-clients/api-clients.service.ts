@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
@@ -13,6 +14,7 @@ import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import { Events } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessService } from '../access/access.service.js';
 import { apiClientRoles } from '../access/access.tables.js';
@@ -25,6 +27,7 @@ import { normalizeCidr } from '../auth/client-ip.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import {
   API_CLIENT_EVENTS,
+  apiKeyRotated,
   type ClientRevokedEvent,
   type KeysRevokedEvent,
 } from './api-clients.events.js';
@@ -64,6 +67,8 @@ export class ApiClientsService {
     private readonly access: AccessService,
     private readonly roles: RolesService,
     private readonly events: EventEmitter2,
+    // The outbox, when booted (always in the app): the rotation's domain event.
+    @Optional() private readonly domainEvents?: Events,
   ) {}
 
   async list() {
@@ -252,6 +257,15 @@ export class ApiClientsService {
         },
         ip,
       });
+      await this.domainEvents?.publish(
+        apiKeyRotated,
+        {
+          clientId: id,
+          keyId: apiKeyId(created),
+          previousKeysEnd: until.toISOString(),
+        },
+        { key: id },
+      );
       return { key: created, ended: rows.map((row) => row.keyId) };
     });
     if (options.graceSeconds === 0) await this.announceKeys(ended);
@@ -324,9 +338,10 @@ export class ApiClientsService {
   /**
    * You may act on a client (its roles, keys, activation, deletion) only if
    * you hold, without conditions, every permission it holds: nobody gains
-   * rights through a key. 403 `authority_required`.
+   * rights through a key. 403 `authority_required`. Public: a module that
+   * acts on a client's behalf (usage) asks the same rule.
    */
-  private async assertAuthorityOver(
+  async assertAuthorityOver(
     actor: UserPrincipal,
     clientId: string,
     who: string,

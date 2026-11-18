@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "readAudit": "Read the audit log and the sign-in log"
+      }
+    }
+  }
+}

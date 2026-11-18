@@ -5,13 +5,18 @@ import {
   pgTable,
   text,
   uniqueIndex,
+  uuid,
 } from 'drizzle-orm/pg-core';
 import { at, timestamps, uuidPk } from '../../core/database/columns.js';
 import {
   encrypted,
   encryptedText,
 } from '../../core/encryption/encrypted-columns.js';
-import { tenantTable } from '../../core/tenancy/tenant-tables.js';
+import {
+  tenantReference,
+  tenantTable,
+} from '../../core/tenancy/tenant-tables.js';
+import { apiClients } from '../../iam/auth/auth.tables.js';
 
 /** A signing secret as recorded: when it was made (its identifier) and when it stops signing, in epoch ms. */
 export interface SigningSecret {
@@ -73,3 +78,34 @@ encrypted(incomingWebhookSenders.secret);
 encrypted(incomingWebhookSenders.previousSecret, {
   aad: 'incoming_webhook_senders.secret',
 });
+
+/** `own`: the records the client owns; `tenant`: every record of its tenant it may read. */
+export const WEBHOOK_SCOPES = ['own', 'tenant'] as const;
+export type WebhookScope = (typeof WEBHOOK_SCOPES)[number];
+
+/**
+ * Which records' events an API client's endpoints receive: `own`, the
+ * default (no row), only the records the client owns; `tenant`, also the
+ * records users and other clients of its tenant own, each only when the
+ * client may `read` it, redacted to what it may read (WebhookPublisher).
+ * Per client, not per endpoint: the package fans a message out to every
+ * subscribed endpoint of the client. The client's deletion takes the row
+ * along.
+ */
+export const webhookClientScopes = tenantTable(
+  'webhook_client_scopes',
+  {
+    id: uuidPk(),
+    clientId: uuid('client_id').notNull(),
+    scope: text('scope').$type<WebhookScope>().notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex('webhook_client_scopes_client_idx').on(t.tenantId, t.clientId),
+    tenantReference(
+      'webhook_client_scopes_client_fk',
+      [t.tenantId, t.clientId],
+      [apiClients.tenantId, apiClients.id],
+    ),
+  ],
+);

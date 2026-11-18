@@ -40,6 +40,7 @@ function service(
       timeoutMs: timeout,
       onError: 'allow' as const,
       minCount: 1,
+      recheckDays: 30,
       ...breachCheck,
     },
   };

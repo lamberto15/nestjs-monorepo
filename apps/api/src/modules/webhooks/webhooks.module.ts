@@ -9,12 +9,16 @@ import {
 } from '@nestjs/webhooks';
 import { fromDrizzle, PostgresWebhookStore } from '@nestjs/webhooks/postgres';
 import type { Database } from '../../core/database/database.js';
+import { MetricsModule } from '../../core/metrics/metrics.module.js';
 import { encryptionConfig } from '../../core/encryption/encryption.config.js';
 import { OnDomainEvent } from '../../core/outbox/events.js';
 import { queuesConfig, runsWorkers } from '../../core/queues/queues.config.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
 import { authConfig } from '../../iam/auth/auth.config.js';
+import { aNoun, type RecordDeclaration } from '../records/record.js';
+import { recordEvents } from '../records/record.events.js';
+import { recordSchemas } from '../records/record.schemas.js';
 import { ClientWebhooksController } from './client-webhooks.controller.js';
 import { IncomingEventTypesController } from './incoming-event-types.controller.js';
 import { IncomingEventHandlers } from './incoming-events.js';
@@ -29,6 +33,8 @@ import { TenantWebhookReceiverController } from './tenant-webhook-receiver.contr
 import { WebhookCatalog } from './webhook-catalog.js';
 import { WebhookDeliveriesController } from './webhook-deliveries.controller.js';
 import { WebhookDeliveryRetentionJob } from './webhook-delivery-retention.job.js';
+import { SecurityWebhooks } from './webhooks.security.js';
+import { WebhookMetrics } from './webhook-metrics.js';
 import { WebhookEndpointsController } from './webhook-endpoints.controller.js';
 import { type WebhookEvent, WebhookEvents } from './webhook-events.js';
 import { WebhookEventTypesController } from './webhook-event-types.controller.js';
@@ -53,7 +59,9 @@ import { WebhooksService } from './webhooks.service.js';
     ConfigModule.forFeature(webhooksConfig),
     // The API_CLIENTS switch of the routes managing a client's webhooks.
     ConfigModule.forFeature(authConfig),
+    ConfigModule.forFeature(queuesConfig),
     DiscoveryModule,
+    MetricsModule,
     AccessModule.forFeature(WEBHOOK_PERMISSIONS),
     AuditModule,
     NestWebhooksModule.forRootAsync({
@@ -128,6 +136,8 @@ import { WebhooksService } from './webhooks.service.js';
     IncomingEventHandlers,
     TenantSenderGuard,
     WebhookDeliveryRetentionJob,
+    WebhookMetrics,
+    SecurityWebhooks,
   ],
   exports: [WebhookPublisher],
 })
@@ -177,6 +187,31 @@ export class WebhooksModule {
       imports: [WebhooksModule],
       providers: [WebhookEventRelay],
     };
+  }
+
+  /**
+   * A record's created, updated, deleted and restored events as webhooks
+   * (`testItem.created`…): the feature's own import, no event written. `data`
+   * is the record as the API shows it (no add-on's keys, no `can`); a
+   * client receives it only for a record it may read, redacted as for a read.
+   *
+   * ```ts
+   * imports: [WebhooksModule.forRecord(INVOICE)]
+   * ```
+   */
+  static forRecord(record: RecordDeclaration): DynamicModule {
+    const data = recordSchemas(record).response.omit({ can: true });
+    const events = recordEvents(record);
+    const noun = aNoun(record);
+    return WebhooksModule.forFeature(
+      (['created', 'updated', 'deleted', 'restored'] as const).map((name) => ({
+        event: events[name],
+        subject: record.subject,
+        description: `${noun[0]!.toUpperCase()}${noun.slice(1)} was ${name}.`,
+        data,
+        record: true,
+      })),
+    );
   }
 }
 

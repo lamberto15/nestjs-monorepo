@@ -166,6 +166,33 @@ describe('settings (e2e)', () => {
     });
   });
 
+  it("keeps each person's dashboard layout as their own preference (dashboard.layout)", async () => {
+    const editor = await member(app, tenantId, ['editor']);
+    const url = '/v1/settings/dashboard.layout';
+    expect((await call('GET', url, editor.headers)).json()).toMatchObject({
+      value: { hidden: [], order: [] },
+      scopes: ['user'],
+      canSetMine: true,
+    });
+    const layout = { hidden: ['audit'], order: ['setup', 'approvals'] };
+    expect(
+      (
+        await call('PUT', `${url}/mine`, editor.headers, { value: layout })
+      ).json(),
+    ).toMatchObject({ value: layout, source: 'user' });
+    expect((await call('GET', url, admin.headers)).json().value).toEqual({
+      hidden: [],
+      order: [],
+    });
+    expect(
+      (
+        await call('PUT', `${url}/mine`, editor.headers, {
+          value: { hidden: [], order: [], extra: 1 },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
   it('lets only those who may update set values; what is sent is checked; every change is audited', async () => {
     const editor = await member(app, tenantId, ['editor']);
     const url = `/v1/settings/${DELAY.key}`;

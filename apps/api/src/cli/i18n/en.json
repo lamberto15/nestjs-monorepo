@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "systemJobs": {
+      "ops": {
+        "label": "Operator CLI",
+        "description": "Break-glass commands run on a server (pnpm ops): a one-time password, removing two-factor, creating a tenant or an administrator."
+      }
+    }
+  }
+}

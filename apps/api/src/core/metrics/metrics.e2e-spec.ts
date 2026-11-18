@@ -6,7 +6,10 @@ import {
   VERSION_NEUTRAL,
 } from '@nestjs/common';
 import type { NestNodeApplication } from '@nestjs/platform-node';
+import { getDrizzleToken } from '@nestjs/drizzle';
+import { sql } from 'drizzle-orm';
 import { bootModules } from '../../../test/boot.js';
+import type { Database } from '../database/database.js';
 import { DatabaseModule } from '../database/database.module.js';
 import { Deprecated } from '../http/deprecated.js';
 import { MetricsModule } from './metrics.module.js';
@@ -76,6 +79,42 @@ describe('GET /metrics (e2e)', () => {
     expect(res.body).toMatch(/^db_pool_connections\{state="waiting"\} \d+$/m);
     expect(res.body).toMatch(/^db_pool_max_connections \d+$/m);
     expect(res.body).toMatch(/^nodejs_heap_size_limit_bytes \d+$/m);
+  });
+
+  it('times the database: connection waits, statements by operation, and the failures at 0', async () => {
+    // The probe reads nothing, so ask the database something.
+    await app.get<Database>(getDrizzleToken()).execute(sql`select 1`);
+    const { body } = await scrape();
+    expect(body).toMatch(
+      /^db_connection_acquire_duration_seconds_count\{outcome="success"\} [1-9]\d*$/m,
+    );
+    expect(body).toMatch(
+      /^db_query_duration_seconds_count\{operation="select",outcome="success"\} [1-9]\d*$/m,
+    );
+    expect(body).toMatch(/^db_failures_total\{code="database_busy"\} 0$/m);
+    expect(body).toMatch(/^db_failures_total\{code="database_timeout"\} 0$/m);
+    expect(body).toMatch(
+      /^db_last_failure_timestamp_seconds\{code="database_busy"\} 0$/m,
+    );
+    expect(body).toMatch(/^db_incidents_total\{trigger="slow_query"\} 0$/m);
+  });
+
+  it('counts a cancelled statement: the failure, its timestamp and the incident', async () => {
+    const db = app.get<Database>(getDrizzleToken());
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.execute(sql`set local statement_timeout = 50`);
+        await tx.execute(sql`select pg_sleep(2)`);
+      }),
+    ).rejects.toThrow();
+    const { body } = await scrape();
+    expect(body).toMatch(/^db_failures_total\{code="database_timeout"\} 1$/m);
+    expect(body).toMatch(
+      /^db_incidents_total\{trigger="database_timeout"\} 1$/m,
+    );
+    expect(body).toMatch(
+      /^db_last_failure_timestamp_seconds\{code="database_timeout"\} 1\d{9}/m,
+    );
   });
 
   it('times requests by route pattern, never by URL', async () => {

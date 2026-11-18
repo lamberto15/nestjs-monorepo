@@ -1,0 +1,9 @@
+{
+  "mcp": {
+    "bearerRequired": "The MCP endpoint takes an API key or a user token as a bearer (Authorization: Bearer …), never the session cookie.",
+    "listForbidden": "You may not read this list.",
+    "internalError": "Something went wrong on our side.",
+    "keyReused": "This idempotency key was already used with other arguments: send a new key.",
+    "keyInUse": "A call with this idempotency key is still running: retry in a moment."
+  }
+}

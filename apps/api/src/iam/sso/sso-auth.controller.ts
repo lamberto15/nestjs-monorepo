@@ -44,7 +44,6 @@ import { OidcSso } from './oidc-sso.service.js';
 import { SamlSso } from './saml-sso.service.js';
 import { SsoAccounts } from './sso-accounts.service.js';
 import { SsoRefused } from './sso-refused.js';
-import { ssoConfig } from './sso.config.js';
 import { SSO_HANDOFF_TTL_MS, ssoCookie } from './sso-browser.js';
 import {
   type SsoConnection,
@@ -133,7 +132,6 @@ export class SsoAuthController {
     private readonly oauth2: Oauth2Sso,
     private readonly saml: SamlSso,
     private readonly accounts: SsoAccounts,
-    @Inject(ssoConfig.KEY) private readonly sso: ConfigType<typeof ssoConfig>,
     @Inject(httpConfig.KEY)
     private readonly http: ConfigType<typeof httpConfig>,
     @Inject(authConfig.KEY)
@@ -395,7 +393,7 @@ export class SsoAuthController {
 
   /** `value` on the web app (a stored path checked again), else its root. */
   private webApp(value: unknown) {
-    return webAppUrl(value, this.sso.webUrl ?? this.http.appUrl);
+    return webAppUrl(value, this.http.webUrl);
   }
 
   private backToWebApp(error: string) {

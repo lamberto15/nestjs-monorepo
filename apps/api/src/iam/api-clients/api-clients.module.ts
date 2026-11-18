@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { authConfig } from '../auth/auth.config.js';
+import { ActiveRequester } from './active-requester.js';
 import { ApiClientsController } from './api-clients.controller.js';
 import { API_CLIENT_PERMISSIONS } from './api-clients.permissions.js';
 import { ApiClientPolicy } from './api-clients.policy.js';
@@ -22,7 +23,7 @@ import { ApiClientsService } from './api-clients.service.js';
     ConfigModule.forFeature(authConfig),
   ],
   controllers: [ApiClientsController],
-  providers: [ApiClientsService, ApiClientPolicy],
-  exports: [ApiClientsService],
+  providers: [ApiClientsService, ApiClientPolicy, ActiveRequester],
+  exports: [ApiClientsService, ActiveRequester],
 })
 export class ApiClientsModule {}

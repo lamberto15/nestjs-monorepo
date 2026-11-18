@@ -1,5 +1,6 @@
 import {
   type AnyPgColumn,
+  type AnyPgTable,
   type AnyPgColumnBuilder,
   foreignKey,
   type PgBuildExtraConfigColumns,
@@ -8,6 +9,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { getTableName } from 'drizzle-orm';
 import { tenants } from './tenancy.tables.js';
 import { isolation } from './tenant-isolation.js';
 import { currentTenantScope, requireTenantId } from './tenant-scope.js';
@@ -51,6 +53,35 @@ type TenantColumns<TColumns, TNullRows = undefined> = TColumns & {
     : ReturnType<typeof tenantColumn>;
 };
 
+/** A table that names a tenant: how `tenantTable()` and `globalTable()` made it. */
+export interface TenantTableEntry {
+  readonly name: string;
+  readonly table: AnyPgTable;
+  readonly kind: 'tenant' | 'global';
+}
+
+const declared = new Map<string, TenantTableEntry>();
+
+/** Remembers a table as it is made (by name: a table made twice is one). */
+function registered<T extends AnyPgTable>(
+  kind: TenantTableEntry['kind'],
+  table: T,
+): T {
+  const name = getTableName(table);
+  declared.set(name, { name, table, kind });
+  return table;
+}
+
+/**
+ * Every table declared with `tenantTable()` or `globalTable()` so far, by
+ * name: what a tenant's export walks, with no list to keep. A table is
+ * there once its file has been imported, so the app (which imports every
+ * module's tables) has them all; a test that boots a few has those.
+ */
+export function tenantTables(): readonly TenantTableEntry[] {
+  return [...declared.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * A tenant table: a `pgTable` with a `tenantId` column added and the wall
  * of the isolation mode declared with it, so `pnpm db:generate` emits both.
@@ -91,34 +122,37 @@ export function tenantTable<
     nullRows,
   }: { referenced?: boolean; nullRows?: TNullRows } = {},
 ) {
-  return pgTable(
-    name,
-    {
-      ...columns,
-      tenantId: nullRows ? nullableTenantColumn() : tenantColumn(),
-    } as TenantColumns<TColumns, TNullRows>,
-    (t) => {
-      const self = t as unknown as {
-        tenantId: AnyPgColumn;
-        id?: AnyPgColumn;
-      };
-      if (referenced && !self.id) {
-        throw new Error(
-          `${name}: a referenced tenant table needs an id column.`,
-        );
-      }
-      return [
-        ...isolation.tableWall(
-          name,
-          self.tenantId,
-          nullRows ? 'tenant-or-none' : 'tenant',
-        ),
-        ...(referenced && self.id
-          ? [unique(`${name}_tenant_id_id_key`).on(self.tenantId, self.id)]
-          : []),
-        ...(extraConfig?.(t) ?? []),
-      ];
-    },
+  return registered(
+    'tenant',
+    pgTable(
+      name,
+      {
+        ...columns,
+        tenantId: nullRows ? nullableTenantColumn() : tenantColumn(),
+      } as TenantColumns<TColumns, TNullRows>,
+      (t) => {
+        const self = t as unknown as {
+          tenantId: AnyPgColumn;
+          id?: AnyPgColumn;
+        };
+        if (referenced && !self.id) {
+          throw new Error(
+            `${name}: a referenced tenant table needs an id column.`,
+          );
+        }
+        return [
+          ...isolation.tableWall(
+            name,
+            self.tenantId,
+            nullRows ? 'tenant-or-none' : 'tenant',
+          ),
+          ...(referenced && self.id
+            ? [unique(`${name}_tenant_id_id_key`).on(self.tenantId, self.id)]
+            : []),
+          ...(extraConfig?.(t) ?? []),
+        ];
+      },
+    ),
   );
 }
 
@@ -148,19 +182,22 @@ export function globalTable<
     >,
   ) => PgTableExtraConfigValue[],
 ) {
-  return pgTable(
-    name,
-    { ...columns, tenantId: namedTenantColumn() } as TColumns & {
-      tenantId: ReturnType<typeof namedTenantColumn>;
-    },
-    (t) => [
-      ...isolation.tableWall(
-        name,
-        (t as unknown as { tenantId: AnyPgColumn }).tenantId,
-        'global',
-      ),
-      ...(extraConfig?.(t) ?? []),
-    ],
+  return registered(
+    'global',
+    pgTable(
+      name,
+      { ...columns, tenantId: namedTenantColumn() } as TColumns & {
+        tenantId: ReturnType<typeof namedTenantColumn>;
+      },
+      (t) => [
+        ...isolation.tableWall(
+          name,
+          (t as unknown as { tenantId: AnyPgColumn }).tenantId,
+          'global',
+        ),
+        ...(extraConfig?.(t) ?? []),
+      ],
+    ),
   );
 }
 

@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
@@ -46,6 +47,8 @@ import {
   retriedSchema,
   retryDeliveriesSchema,
   rotatedSecretSchema,
+  webhookScopeSchema,
+  type WebhookScopeDto,
   updateEndpointSchema,
   webhookDeliverySchema,
   webhookDeliveryViewSchema,
@@ -271,5 +274,37 @@ export class ClientWebhooksController {
   ) {
     const owner = await this.webhooks.delegated(user, clientId, ip);
     return this.webhooks.retryFailed(owner, dto);
+  }
+
+  @Get('webhook-scope')
+  @ApiOperation({
+    summary: "Which records' events the client's endpoints receive",
+  })
+  @ApiOkResponse({ standardSchema: webhookScopeSchema })
+  async scope(
+    @CurrentUser() user: UserPrincipal,
+    @Param('clientId', ParseUUIDPipe) clientId: string,
+  ) {
+    return this.webhooks.getScope(
+      await this.webhooks.delegated(user, clientId),
+    );
+  }
+
+  @Put('webhook-scope')
+  @RecentAuthentication()
+  @ApiOperation({
+    summary: "Set which records' events the client's endpoints receive",
+    description:
+      "`tenant` also sends events about the tenant's records owned by users and other clients, each only when the client may read that record, redacted to the fields it may read; `own` (the default) only the client's own. Wants a recent sign-in: it widens what leaves the tenant. Audited.",
+  })
+  @ApiOkResponse({ standardSchema: webhookScopeSchema })
+  async setScope(
+    @CurrentUser() user: UserPrincipal,
+    @Param('clientId', ParseUUIDPipe) clientId: string,
+    @Body({ schema: webhookScopeSchema }) dto: WebhookScopeDto,
+    @Ip() ip: string,
+  ) {
+    const owner = await this.webhooks.delegated(user, clientId, ip);
+    return this.webhooks.setScope(owner, dto.scope);
   }
 }

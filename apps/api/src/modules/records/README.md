@@ -38,6 +38,12 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
    `create(owner, values, { input: dto })`, `findOne`, `findPage`,
    `update(by, id, changes, { check, input: dto })`, `delete(by, id, { check })`.
    `input` is the validated body: the add-ons' hooks read their keys from it.
+   Logic that must hold for every write (a derived read-only column) is not
+   here: bulk, imports, automations, a restored revision and a recurring
+   create write through the store, not the service. Put it in the feature's
+   own `@RecordExtension()` provider (`creating`/`updating` return the
+   columns), listed in the feature module's providers: the fixture's
+   `test-item.logic.ts` counts `words` this way.
 8. **`<item>s.controller.ts`**: HTTP only. POST (`@Can(Policy,'create')`,
    `@RecordIdempotent`, `assertWritableFields`), GET list
    (`presenter.query`/`page`, `IncludePipe`), GET one, PATCH, DELETE
@@ -110,7 +116,10 @@ The contract:
   `created`, `updated`, `deleting` (before a delete: a refusal is a 409),
   `deleted`, `restored` after; `purged({ ids })` before records go for good
   (a delete without bin, the bin's purge, a retention rule: never use
-  `@RecordPurge()` yourself). `input` is the request's validated body.
+  `@RecordPurge()` yourself); `merged({ from, to, by })` in a merge's
+  transaction (modules/merge calls `store.merged()` after the survivor's
+  update): move what the add-on keeps about the duplicate `from` to the
+  survivor `to`. `input` is the request's validated body.
 - **Columns** on the record's table: export `numberColumns = () => ({ number: text('number') })`;
   the feature writes `recordTable(ITEM, { columns: numberColumns() })`.
 - **Body keys**: export `NUMBER_BODY = { namingSeriesId: z.uuid() }`; the feature
@@ -121,6 +130,9 @@ The contract:
   shape for `recordSchemas(ITEM, { response })`.
 - **`include=`**: `include: { name, values(principal, ids) }`, outside the ETag.
 - **List**: `filters(table)` (FilterFields, `?tag=`), merged into the list at startup;
+  `listFields(principal)` (`{ fields, select? }`, the tenant's `custom.<key>`),
+  asked on each list query (`presenter.query`) and list description, merged
+  into the list for that request (`registration.listFor(principal)`);
   `capability` (`capabilities.<name>` in GET /v1/lists/{subject}), `available()`
   (a deployment switch), `describe(principal)` (top-level keys: `attachmentLimits`).
 - **Domain events**: `@OnDomainEvent(recordEvents(record).created, { consumer })`,
@@ -131,15 +143,15 @@ The contract:
 
 Which hook each kind of add-on uses:
 
-| Add-on                                | Hooks                                                                                   |
-| ------------------------------------- | --------------------------------------------------------------------------------------- |
-| sequences, numbering                  | `creating` returns `{ number }` (a column)                                              |
-| computed fields                       | `creating`, `updating` return the computed columns                                      |
-| custom fields                         | `creating`, `updating` validate `input.customFields` and return or store them; `purged` |
-| approvals                             | `updating` (and `deleting`) throw while one is pending                                  |
-| tags, comments, attachments, watchers | routes, `present`, `filters`, `deleting`/`purged`                                       |
-| revisions                             | `created`, `updated`, `restored` write a snapshot; `purged`                             |
-| webhooks, automations, notifications  | `@OnDomainEvent` on `recordEvents()`                                                    |
+| Add-on                                | Hooks                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| sequences, numbering                  | `creating` returns `{ number }` (a column)                                                    |
+| computed fields                       | `present` computes them on each read (not stored), `shows`                                    |
+| custom fields                         | `created`, `updating` validate `input.custom` and store it; `present`, `listFields`, `purged` |
+| approvals                             | `updating` (and `deleting`) throw while one is pending                                        |
+| tags, comments, attachments, watchers | routes, `present`, `filters`, `deleting`/`purged`, `merged` (and favorites)                   |
+| revisions                             | `created`, `updated`, `restored` write a snapshot; `purged`                                   |
+| webhooks, automations, notifications  | `@OnDomainEvent` on `recordEvents()`                                                          |
 
 A complete add-on (the fixture's proof, `test/fixtures/test-items/marks`):
 

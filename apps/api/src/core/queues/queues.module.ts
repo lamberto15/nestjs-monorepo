@@ -6,6 +6,7 @@ import type { ConnectionOptions } from 'bullmq';
 import { redisConfig } from '../redis/redis.config.js';
 import { producerRedisOptions } from '../redis/redis.js';
 import { RedisModule } from '../redis/redis.module.js';
+import { QueueMetrics } from './queue.metrics.js';
 import { QueueWorkers } from './queue-workers.js';
 import { DEFAULT_JOB_OPTIONS, QueueWorker } from './queues.js';
 import { queuesConfig } from './queues.config.js';
@@ -38,6 +39,6 @@ BullModule.workerClass = QueueWorker;
       extraOptions: { manualRegistration: true },
     }),
   ],
-  providers: [QueueWorkers],
+  providers: [QueueWorkers, QueueMetrics],
 })
 export class QueuesModule {}

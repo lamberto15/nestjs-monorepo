@@ -5,6 +5,10 @@ import { DEFAULT_JOB_OPTIONS } from '../../core/queues/queues.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
 import { CalendarsModule } from '../calendars/calendars.module.js';
+import { recordValues, type RecordDeclaration } from '../records/record.js';
+import { recordSchemas } from '../records/record.schemas.js';
+import { RecordsModule } from '../records/records.module.js';
+import { Records } from '../records/records.service.js';
 import { RecurrenceController } from './recurrence.controller.js';
 import { RECURRENCE_PERMISSIONS } from './recurrence.permissions.js';
 import { RecurrenceProcessor } from './recurrence.processor.js';
@@ -18,6 +22,7 @@ import {
   type ScheduleTarget,
   ScheduleTargets,
 } from './recurrence.targets.js';
+import { RecurrencePersonalData } from './recurrence.personal-data.js';
 
 /**
  * Recurring record schedules (README.md): the routes under
@@ -44,6 +49,7 @@ import {
     RecurrenceService,
     RecurrenceProcessor,
     RecurrenceScheduler,
+    RecurrencePersonalData,
   ],
 })
 export class RecurrenceModule {
@@ -63,7 +69,50 @@ export class RecurrenceModule {
       ],
     };
   }
+
+  /**
+   * Makes a record schedulable (README.md): a schedule's `target` is the
+   * record's path (`invoices`) and its template one create body of the
+   * record. Each occurrence creates the record through its store, as the
+   * schedule's owner, so the declaration's rules, the add-ons' hooks, the
+   * audit entry and the domain event all apply as for a request.
+   *
+   * ```ts
+   * imports: [RecurrenceModule.forRecord(INVOICE)]
+   * ```
+   */
+  static forRecord(record: RecordDeclaration): DynamicModule {
+    const schema = recordSchemas(record).create;
+    return {
+      module: RecurringRecordModule,
+      imports: [RecordsModule],
+      providers: [
+        {
+          provide: ScheduleTargetRegistration,
+          inject: [Records],
+          useFactory: (records: Records) =>
+            new ScheduleTargetRegistration({
+              name: record.path,
+              subject: record.subject,
+              schema,
+              create: (owner, row) =>
+                records
+                  .of(record.subject)
+                  .store.create(
+                    owner,
+                    recordValues(record, row as Record<string, unknown>),
+                    { input: row as Record<string, unknown> },
+                  ),
+            }),
+        },
+      ],
+    };
+  }
 }
+
+/** The host of one `RecurrenceModule.forRecord()` registration. */
+@Module({})
+class RecurringRecordModule {}
 
 /** The host of one `RecurrenceModule.forFeature()` declaration. */
 @Module({})

@@ -17,7 +17,9 @@ import {
   ACROSS_TENANTS,
   currentTenantScope,
   describeScope,
+  inheritScope,
   NO_TENANT,
+  readOnlyTenantScope,
   requireTenantId,
   sameScope,
   TENANT_SCOPE,
@@ -88,10 +90,14 @@ export class Tenancy implements OnApplicationBootstrap {
    * Puts the rest of the current context (a request's: a guard calls it
    * before the handler) in `tenantId`'s scope. Refused outside a context,
    * and when the context already has another scope: a request belongs to
-   * one tenant, decided once.
+   * one tenant, decided once. `readOnly` (break-glass): every transaction
+   * of the rest of the request is `READ ONLY`, so PostgreSQL refuses any
+   * write; a context entered read only stays so.
    */
-  enter(tenantId: string) {
-    const scope = tenantScope(tenantId);
+  enter(tenantId: string, { readOnly = false }: { readOnly?: boolean } = {}) {
+    const scope = inheritScope(
+      readOnly ? readOnlyTenantScope(tenantId) : tenantScope(tenantId),
+    );
     if (!this.cls.isActive()) {
       throw new Error(
         'Tenancy.enter() needs a context (a request): use Tenancy.run() elsewhere.',
@@ -115,7 +121,10 @@ export class Tenancy implements OnApplicationBootstrap {
    * (forEachTenant()). Logged with the job's name.
    */
   acrossTenants<T>(job: string, work: () => Promise<T>): Promise<T> {
-    if (this.cls.isActive() && this.cls.get(CLS_REQ)) {
+    if (
+      (this.cls.isActive() && this.cls.get(CLS_REQ)) ||
+      currentTenantScope()?.readOnly
+    ) {
       throw new Error(
         `${job}: work across every tenant never runs in a request.`,
       );
@@ -205,7 +214,8 @@ export class Tenancy implements OnApplicationBootstrap {
       .orderBy(asc(tenants.createdAt), asc(tenants.id));
   }
 
-  private runIn<T>(scope: TenantScope, work: () => Promise<T>): Promise<T> {
+  private runIn<T>(asked: TenantScope, work: () => Promise<T>): Promise<T> {
+    const scope = inheritScope(asked);
     this.assertNoOtherTransaction(scope);
     // Awaited inside: a Drizzle query runs when awaited, in this context.
     return this.cls.run({ ifNested: 'inherit' }, async () => {

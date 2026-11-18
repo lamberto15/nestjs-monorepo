@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
 import { DiscoveryModule } from '@nestjs/core';
 import { MailModule as NestMailModule } from '@nestjs/mail';
+import { MetricsModule } from '../metrics/metrics.module.js';
 import { mailConfig } from './mail.config.js';
 import {
   MAIL_JOB_OPTIONS,
@@ -42,6 +43,7 @@ import { mailTransport } from './mail.transport.js';
     }),
     ConfigModule.forFeature(mailConfig),
     DiscoveryModule,
+    MetricsModule,
     BullModule.registerQueue({
       name: MAIL_QUEUE,
       defaultJobOptions: MAIL_JOB_OPTIONS,

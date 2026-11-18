@@ -14,6 +14,7 @@ import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
@@ -35,6 +36,13 @@ const CLIENTS = defineQuota({
   label: 'API clients',
   kind: 'stock',
   count: (db) => db.$count(apiClients),
+});
+/** What attachments declares: the gauges read this key. */
+const STORAGE = defineQuota({
+  key: 'storageBytes',
+  label: 'bytes of files',
+  kind: 'stock',
+  count: () => Promise.resolve(1234),
 });
 const CALLS = defineQuota({
   key: 'test.callsPerDay',
@@ -61,7 +69,7 @@ class MakeClients {
 }
 
 @Module({
-  imports: [QuotasModule.forFeature(CLIENTS, CALLS)],
+  imports: [QuotasModule.forFeature(CLIENTS, CALLS, STORAGE)],
   providers: [MakeClients],
 })
 class OwnerModule {}
@@ -125,6 +133,25 @@ describe('quotas (e2e)', () => {
     });
     await setLimit(null);
     await asOther(() => maker.make('fourth'));
+  });
+
+  it('reports what each tenant stores and its limit on /metrics, the limit only where there is one', async () => {
+    const slug = (await app.get(Tenancy).find(other.tenantId))!.slug;
+    await call(
+      'PUT',
+      `/v1/tenants/${other.tenantId}/quotas`,
+      operator.headers,
+      {
+        limits: { storageBytes: 5000 },
+      },
+    );
+    const { body } = await app.get(MetricsService).scrape();
+    expect(body).toContain(`tenant_storage_bytes{tenant="${slug}"} 1234`);
+    expect(body).toContain(`tenant_storage_limit_bytes{tenant="${slug}"} 5000`);
+    expect(body).toMatch(/^tenant_storage_bytes\{tenant="operators"\} 1234$/m);
+    expect(body).not.toMatch(
+      /^tenant_storage_limit_bytes\{tenant="operators"\}/m,
+    );
   });
 
   it('limits what a tenant uses per period: 429 with the reset time, nothing taken past it', async () => {

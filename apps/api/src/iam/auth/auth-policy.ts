@@ -1,7 +1,13 @@
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  type OnModuleInit,
+} from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MfaService } from '@nestjs/authentication';
+import { t } from '@nestjs/i18n';
 import {
   authConfig,
   SESSION_IDLE_MINUTES_LIMIT,
@@ -9,6 +15,7 @@ import {
 } from './auth.config.js';
 import { discoverOne } from './discover.js';
 import type { RequestPrincipal, UserPrincipal } from './principal.js';
+import { UsersRepository } from './users.repository.js';
 
 /**
  * Auth policies a tenant's administrators change at runtime, with the
@@ -29,7 +36,49 @@ export interface AuthPolicySource {
   sessionIdleMinutes?(tenantId: string): Promise<number | undefined>;
   /** The tenant's absolute session lifetime, in hours, if it chose one. */
   sessionMaxHours?(tenantId: string): Promise<number | undefined>;
+  /** The tenant's minimum length of a new password, if it chose one. */
+  passwordMinLength?(tenantId: string): Promise<number | undefined>;
+  /** How many of an account's last passwords the tenant forbids reusing, if it chose. */
+  passwordHistory?(tenantId: string): Promise<number | undefined>;
+  /**
+   * Whether the tenant lets the deployment's operators open it with a
+   * break-glass grant; false: it opted out. Absent: allowed.
+   */
+  allowsBreakGlass?(tenantId: string): Promise<boolean>;
 }
+
+/** NIST SP 800-63B: the floor every new password meets, whatever a tenant says. */
+export const PASSWORD_MIN_LENGTH = 12;
+/** The highest minimum a tenant may ask for: a passphrase, still typeable. */
+export const PASSWORD_MIN_LENGTH_LIMIT = 64;
+/** The most passwords a tenant may forbid reusing. */
+export const PASSWORD_HISTORY_LIMIT = 24;
+
+/**
+ * Whose new password is checked: an account (the tenants it belongs to),
+ * or the tenants an account is joining (an invitation, a sign-up into the
+ * one tenant). A password is the account's, in every tenant: the
+ * strictest of them applies.
+ */
+export type PasswordOwner =
+  { userId: string } | { tenantIds: readonly string[] };
+
+/** The strictest of the tenants' choices, between `floor` and `limit`. */
+const strictest = (
+  chosen: readonly (number | undefined)[],
+  floor: number,
+  limit: number,
+) =>
+  Math.min(
+    limit,
+    Math.max(
+      floor,
+      ...chosen.filter(
+        (value): value is number =>
+          typeof value === 'number' && Number.isFinite(value),
+      ),
+    ),
+  );
 
 /** Marks the provider that implements AuthPolicySource (at most one). */
 export const AuthPolicySource = DiscoveryService.createDecorator<void>();
@@ -56,6 +105,7 @@ export class AuthPolicy implements OnModuleInit {
     private readonly config: ConfigType<typeof authConfig>,
     private readonly discovery: DiscoveryService,
     private readonly moduleRef: ModuleRef,
+    private readonly users: UsersRepository,
   ) {}
 
   onModuleInit() {
@@ -115,12 +165,75 @@ export class AuthPolicy implements OnModuleInit {
     ) {
       return false;
     }
-    if (!(await this.source.requireMfa(principal))) {
+    // Through a break-glass grant: the operator's own tenant's rule, not the one they read.
+    const own = principal.breakGlass
+      ? { ...principal, tenantId: principal.breakGlass.operatorTenantId }
+      : principal;
+    if (!(await this.source.requireMfa(own))) {
       return false;
     }
     // Required: enrolled only if two-factor says so. Without its store
     // nobody is, and the requirement holds (fail closed).
     const mfa = this.moduleRef.get(MfaService, { strict: false });
     return !(await mfa.isEnrolled(principal.id));
+  }
+
+  /**
+   * The minimum length of a new password for its owner: the strictest of
+   * its tenants' choices, never under the floor nor over the limit.
+   */
+  async passwordMinLength(owner: PasswordOwner): Promise<number> {
+    const source = this.source?.passwordMinLength?.bind(this.source);
+    const chosen = source
+      ? await Promise.all((await this.tenantIds(owner)).map(source))
+      : [];
+    return strictest(chosen, PASSWORD_MIN_LENGTH, PASSWORD_MIN_LENGTH_LIMIT);
+  }
+
+  /**
+   * How many of the account's last passwords (the current one included) a
+   * new one may not repeat, as its tenants chose: the strictest, 0 when
+   * none did. The deployment's PASSWORD_HISTORY applies on top (iam/account).
+   */
+  async passwordHistory(owner: PasswordOwner): Promise<number> {
+    const source = this.source?.passwordHistory?.bind(this.source);
+    const chosen = source
+      ? await Promise.all((await this.tenantIds(owner)).map(source))
+      : [];
+    return strictest(chosen, 0, PASSWORD_HISTORY_LIMIT);
+  }
+
+  /**
+   * A 400 `password_too_short` (on the field `path`) when the password is
+   * shorter than its owner's tenants ask. The floor and the maximum are
+   * the request schema's.
+   */
+  async assertPasswordLength(
+    password: string,
+    path: string,
+    owner: PasswordOwner,
+  ) {
+    const min = await this.passwordMinLength(owner);
+    // Counted as Zod counts (UTF-16 code units), so both agree.
+    if (password.length < min) {
+      const message = t('auth.passwordTooShort', { args: { min } });
+      throw new BadRequestException({
+        code: 'password_too_short',
+        message,
+        minLength: min,
+        errors: [{ path, message }],
+      });
+    }
+  }
+
+  /** Whether the tenant lets the operators in with a break-glass grant (no source: yes). */
+  async allowsBreakGlass(tenantId: string): Promise<boolean> {
+    return (await this.source?.allowsBreakGlass?.(tenantId)) ?? true;
+  }
+
+  private async tenantIds(owner: PasswordOwner) {
+    return 'tenantIds' in owner
+      ? owner.tenantIds
+      : (await this.users.memberships(owner.userId)).map((tenant) => tenant.id);
   }
 }

@@ -57,6 +57,10 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
   so a single-tenant project becomes multi-tenant by a switch, not a data
   migration.
 - **Features come from a generator**, a Nest schematics collection (`nest g`).
+- **No sample feature ships.** `src/features` starts empty: a new project
+  has nothing to delete first. The generator carries its own templates and
+  is proved by a generated test fixture that may not drift from it; the
+  hand-written reference is `apps/api/test/fixtures/test-items`.
 - **Ported by dependency:** core, then tenancy, sign-in and access, then
   records and their add-ons, then the rest, then the web app and the client.
 - **English only for now.** Texts still go through the translation catalogs

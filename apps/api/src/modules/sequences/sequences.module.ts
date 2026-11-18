@@ -16,7 +16,15 @@ import { SEQUENCE_PERMISSIONS } from './sequences.permissions.js';
 import { NamingSeriesPolicy } from './sequences.policy.js';
 import { SequencesService } from './sequences.service.js';
 import { NUMBERING_SETTINGS } from './sequences.settings.js';
+import type { RecordDeclaration } from '../records/record.js';
+import { RECORD } from '../records/record-extension.js';
+import { RecordsModule } from '../records/records.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
+import {
+  type NumberFormat,
+  NumberingExtension,
+  numberedSubject,
+} from './sequences.record.js';
 
 /**
  * Human-readable numbers (README.md): SequencesService (gapless counters
@@ -75,7 +83,38 @@ export class SequencesModule {
       exports: [SequencesModule],
     };
   }
+
+  /**
+   * Numbers a record's creations (README.md, "A record's number"): the
+   * feature's import, with `numberColumns()` in its `recordTable()`, and
+   * `NUMBER_BODY` and `NUMBER_RESPONSE` in its `recordSchemas()`. `format`
+   * is the number while the tenant has no naming series of the record
+   * (default: the subject's initials, per year, five digits).
+   *
+   * ```ts
+   * imports: [SequencesModule.forRecord(INVOICE, { prefix: 'INV' })]
+   * ```
+   */
+  static forRecord(
+    record: RecordDeclaration,
+    format?: NumberFormat,
+  ): DynamicModule {
+    return {
+      module: NumberedRecordModule,
+      imports: [
+        RecordsModule,
+        SequencesModule.forFeature({
+          subjects: [numberedSubject(record, format)],
+        }),
+      ],
+      providers: [{ provide: RECORD, useValue: record }, NumberingExtension],
+    };
+  }
 }
+
+/** The host of one `SequencesModule.forRecord()` registration. */
+@Module({})
+class NumberedRecordModule {}
 
 /** The host of one `SequencesModule.forFeature()` registration. */
 @Module({})

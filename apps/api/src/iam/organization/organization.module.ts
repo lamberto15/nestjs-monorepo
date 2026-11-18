@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DiscoveryModule } from '@nestjs/core';
 import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { OrganizationController } from './organization.controller.js';
@@ -15,7 +16,11 @@ import { OrganizationUnitDirectory } from './unit-directory.provider.js';
  * never imports it.
  */
 @Module({
-  imports: [AccessModule.forFeature(ORGANIZATION_PERMISSIONS), AuditModule],
+  imports: [
+    AccessModule.forFeature(ORGANIZATION_PERMISSIONS),
+    AuditModule,
+    DiscoveryModule,
+  ],
   controllers: [OrganizationController],
   providers: [
     OrganizationService,

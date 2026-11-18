@@ -1,13 +1,18 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { uuid } from 'drizzle-orm/pg-core';
 import { ClsService, ClsServiceManager } from 'nestjs-cls';
 import { bindingStatement } from './row-level-security.js';
+import { globalTable, tenantTable, tenantTables } from './tenant-tables.js';
 import { inTenantOf, withTenant } from './tenant-job.js';
 import {
   ACROSS_TENANTS,
   assertTenantId,
   currentTenantScope,
+  inheritScope,
   NO_TENANT,
+  readOnlyTenantScope,
   requireTenantId,
+  TENANT_SCOPE,
   TenantScopeMissingError,
   tenantScope,
 } from './tenant-scope.js';
@@ -25,6 +30,27 @@ describe('the tenant scope', () => {
         "select set_config('app.tenant_id', '', true)",
       );
     }
+  });
+
+  it('binds a read-only scope’s transaction read only, before its setting', () => {
+    expect(bindingStatement(readOnlyTenantScope(A))).toBe(
+      `set transaction read only; select set_config('app.tenant_id', '${A}', true)`,
+    );
+  });
+
+  it('keeps work nested in a read-only scope read only', () => {
+    const cls = new ClsService(new AsyncLocalStorage());
+    vi.spyOn(ClsServiceManager, 'getClsService').mockReturnValue(cls);
+    expect(inheritScope(tenantScope(B))).toEqual(tenantScope(B));
+    cls.run(() => {
+      cls.set(TENANT_SCOPE, readOnlyTenantScope(A));
+      expect(inheritScope(tenantScope(B))).toEqual({
+        tenantId: B,
+        acrossTenants: false,
+        readOnly: true,
+      });
+      expect(inheritScope(NO_TENANT).readOnly).toBe(true);
+    });
   });
 
   it('takes nothing but a UUID into the binding', () => {
@@ -59,5 +85,19 @@ describe('the tenant scope', () => {
     expect(
       await inTenantOf({ tenantId: null }, async () => currentTenantScope()),
     ).toEqual(NO_TENANT);
+  });
+});
+
+describe('the registry of tenant tables', () => {
+  it('lists the tables tenantTable() and globalTable() made, by name', () => {
+    tenantTable('registry_probe_items', { id: uuid('id').primaryKey() });
+    globalTable('registry_probe_links', { id: uuid('id').primaryKey() });
+    const probes = tenantTables().filter((entry) =>
+      entry.name.startsWith('registry_probe_'),
+    );
+    expect(probes.map(({ name, kind }) => [name, kind])).toEqual([
+      ['registry_probe_items', 'tenant'],
+      ['registry_probe_links', 'global'],
+    ]);
   });
 });

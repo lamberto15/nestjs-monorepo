@@ -2,7 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { t } from '@nestjs/i18n';
 import { z } from 'zod';
 import { redirectPath } from '../../core/http/redirect-path.js';
-import type { Principal, UserPrincipal } from '../auth/principal.js';
+import type { UserPrincipal } from '../auth/principal.js';
 
 /** Passwords: 12 to 128 characters (NIST 800-63B: length over composition rules). */
 export const newPassword = z.string().min(12).max(128);
@@ -15,6 +15,24 @@ export const email = z
 export const token = z.string().min(1).max(512);
 /** Where to send the browser after a sign-in by link or provider: a path of the web app. */
 export const redirectTo = redirectPath.optional();
+/** An IANA time zone (`Europe/Berlin`), as Intl knows it. */
+export const timezone = z
+  .string()
+  .max(64)
+  .refine(isTimeZone, 'must be an IANA time zone, e.g. Europe/Berlin')
+  .meta({ example: 'Europe/Berlin' });
+/** A BCP 47 language tag; the route checks it against LOCALES. */
+export const locale = z.string().min(2).max(35).meta({ example: 'de' });
+
+function isTimeZone(value: string) {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A code from the authenticator app. */
 export const totpCode = z.string().regex(/^\d{6}$/);
 
@@ -45,9 +63,5 @@ export function verifiedEmailOnly(user: UserPrincipal) {
   }
 }
 
-/** Credentials can't be changed by an administrator acting as the user. */
-export function notWhileImpersonating(user: Principal) {
-  if (user.kind === 'user' && user.impersonator) {
-    throw new ForbiddenException(t('auth.notWhileImpersonating'));
-  }
-}
+/** Credentials can't be changed by an administrator acting as the user (iam/auth's rule). */
+export { notWhileImpersonating } from '../auth/impersonation.js';

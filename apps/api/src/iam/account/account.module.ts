@@ -3,7 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { HttpClientModule } from '@nestjs/http-client';
 import { httpConfig } from '../../core/http/http.config.js';
 import { MailModule } from '../../core/mail/mail.module.js';
+import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
+import { CaptchaModule } from '../captcha/captcha.module.js';
+import { AccountParts } from './account.parts.js';
+import { AccountPersonalData } from './account.personal-data.js';
 import { accountConfig } from './account.config.js';
 import { AccountFlowContext } from './account-flow.context.js';
 import {
@@ -19,6 +23,7 @@ import {
   SecurityAlertMail,
   VerifyEmailMail,
 } from './account.mails.js';
+import { AccountOperations } from './account.operations.js';
 import { AccountOptions } from './account.options.js';
 import { AccountService } from './account.service.js';
 import { AccountStores } from './account.stores.js';
@@ -37,6 +42,8 @@ import { OidcController } from './oidc.controller.js';
 import { ProviderReauthentications } from './oidc-reauthentication.js';
 import { PasskeysController } from './passkeys.controller.js';
 import { PasskeysService } from './passkeys.service.js';
+import { ProfileController } from './profile.controller.js';
+import { ProfileService } from './profile.service.js';
 import { PasswordController } from './password.controller.js';
 import { PasswordHashLimiter } from './password-hashing.js';
 import { PasswordHistoryService } from './password-history.service.js';
@@ -45,6 +52,8 @@ import { ReauthenticationController } from './reauthentication.controller.js';
 import { ReauthenticationService } from './reauthentication.service.js';
 import { SecurityAlerts } from './security-alerts.service.js';
 import { SessionsController } from './sessions.controller.js';
+import { SignInPasswordCheck } from './sign-in-password-check.js';
+import { SignUpMail } from './sign-up-mail.listener.js';
 import { TokensController } from './tokens.controller.js';
 import { VerificationRequests } from './verification-requests.service.js';
 import { WellKnownController } from './well-known.controller.js';
@@ -66,6 +75,9 @@ const accountFeature = ConfigModule.forFeature(accountConfig);
     ConfigModule.forFeature(httpConfig),
     MailModule,
     AuditModule,
+    // Who-am-I's `can` (AccountParts) and the sign-in page's captcha settings.
+    AccessModule,
+    CaptchaModule,
     // One attempt, no retries: the user waits on it, and
     // PASSWORD_BREACH_ON_ERROR decides the rest.
     HttpClientModule.registerAsync({
@@ -90,6 +102,7 @@ const accountFeature = ConfigModule.forFeature(accountConfig);
     OidcController,
     PasskeysController,
     WellKnownController,
+    ProfileController,
   ],
   providers: [
     AccountOptions,
@@ -109,6 +122,7 @@ const accountFeature = ConfigModule.forFeature(accountConfig);
     SecurityAlertMail,
     SecurityAlerts,
     BreachedPasswordsService,
+    SignInPasswordCheck,
     PasswordHashLimiter,
     PasswordHistoryService,
     VerificationRequests,
@@ -118,6 +132,12 @@ const accountFeature = ConfigModule.forFeature(accountConfig);
     ProviderSignIn,
     NativeHandoffs,
     NativeSignIn,
+    SignUpMail,
+    ProfileService,
+    AccountParts,
+    AccountPersonalData,
+    AccountOperations,
   ],
+  exports: [AccountOperations],
 })
 export class AccountModule {}

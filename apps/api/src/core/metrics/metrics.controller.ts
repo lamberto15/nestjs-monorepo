@@ -14,6 +14,7 @@ import type { NodeResponse as Response } from '@nestjs/platform-node';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { Public } from '@nestjs/authentication';
 import { SkipThrottle } from '@nestjs/throttler';
+import { AllowInMaintenance } from '../http/maintenance.js';
 import { metricsConfig } from './metrics.config.js';
 import { MetricsService } from './metrics.service.js';
 
@@ -36,6 +37,7 @@ const sameSecret = (given: string, expected: string) =>
 // Its own bearer token (METRICS_TOKEN), not a user's sign-in.
 @Public()
 @SkipThrottle()
+@AllowInMaintenance()
 @Controller({ path: 'metrics', version: VERSION_NEUTRAL })
 export class MetricsController {
   constructor(

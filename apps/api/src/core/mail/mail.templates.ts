@@ -6,6 +6,7 @@ import {
   MailTemplateError,
   type MailTemplateRenderOptions,
 } from '@nestjs/mail';
+import { currentMailBrand } from './mail-brand.js';
 
 /**
  * Finds every module's templates, wherever the module keeps them: a folder
@@ -86,13 +87,18 @@ export class ModuleTemplateEngine extends MailTemplateEngine {
       engine = new FileTemplateEngine({ dir: folder.dir, cache: this.cache });
       this.engines.set(folder.dir, engine);
     }
-    const { html, text } = (await engine.render(name, context, options)) as {
+    const brand = currentMailBrand();
+    const { html, text } = (await engine.render(
+      name,
+      { brand, ...context },
+      options,
+    )) as {
       html: string;
       text?: string;
     };
     const wrapped = await this.layout.render(
       'layout',
-      { ...context, body: html },
+      { brand, ...context, body: html },
       options,
     );
     return { html: (wrapped as { html: string }).html, text };

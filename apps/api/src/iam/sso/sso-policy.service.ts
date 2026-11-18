@@ -20,18 +20,17 @@ import {
   type CredentialAuthentication,
 } from '../auth/authentication-method.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import {
+  SignInGate,
+  type SignInGateProvider,
+  type SigningIn,
+} from '../auth/sign-in-gate.js';
 import { UsersRepository } from '../auth/users.repository.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import { ssoConnections, ssoExemptions, ssoPolicies } from './sso.tables.js';
 
 /** The refusal's code (the problem's `code`). */
 export const SSO_REQUIRED = 'sso_required';
-
-/** Who signs in, as the sign-in routes know them. */
-interface SigningIn {
-  id: string;
-  email: string;
-}
 
 /** The 403 of a tenant that requires SSO. */
 export const ssoRequired = () =>
@@ -57,10 +56,13 @@ export const ssoRequired = () =>
  *   administrator who is signed in through one or is exempted.
  *
  * Custom: a tenant's rule about how its members authenticate; nothing in
- * @nestjs/authentication decides per tenant.
+ * @nestjs/authentication decides per tenant. iam/auth's password sign-in
+ * and account's token, passkey and native sign-ins ask it as their
+ * `@SignInGate()`.
  */
 @Injectable()
-export class SsoPolicyService {
+@SignInGate()
+export class SsoPolicyService implements SignInGateProvider {
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly txHost: TransactionHost<DatabaseTransactions>,

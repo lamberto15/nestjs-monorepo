@@ -25,10 +25,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { z } from 'zod';
+import { AllowInMaintenance } from '../../core/http/maintenance.js';
 import { listSchema } from '../../core/http/pagination.js';
 import { DuringMfaEnrollment } from '../auth/mfa-enrollment.guard.js';
 import { DuringOnboarding } from '../auth/onboarding.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import { WithoutSso } from '../auth/sign-in-gate.js';
 import { SessionOnly, UserOnly } from '../auth/user-only.decorator.js';
 import { TenantSwitchService } from './tenant-switch.service.js';
 
@@ -62,7 +64,9 @@ export class TenantSwitchController {
   @Can.Anyone()
   @DuringMfaEnrollment()
   @DuringOnboarding()
+  @WithoutSso()
   @Get('tenants')
+  @AllowInMaintenance() // an operator finds the way back to the operators' tenant
   @ApiOperation({
     summary: 'The tenants you belong to',
     description:
@@ -77,7 +81,9 @@ export class TenantSwitchController {
   @Can.Anyone()
   @DuringMfaEnrollment()
   @DuringOnboarding()
+  @WithoutSso()
   @Post('tenant')
+  @AllowInMaintenance() // ...and takes it
   @HttpCode(204)
   @ApiOperation({
     summary: 'Act in another of your tenants',

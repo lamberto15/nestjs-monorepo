@@ -299,6 +299,11 @@ export class MessagingService {
     await this.redis.del(this.codeKey(user.id));
   }
 
+  /** Drops a code still waiting for the user (their account is deleted). */
+  async forgetCode(userId: string) {
+    await this.redis.del(this.codeKey(userId));
+  }
+
   // ---- verification ----
 
   private codeKey(userId: string) {

@@ -1,0 +1,271 @@
+import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { Processor } from '@nestjs/bullmq';
+import { Injectable, Logger } from '@nestjs/common';
+import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
+import { Cron } from '@nestjs/schedule';
+import { StorageDisk, StorageFileNotFoundError } from '@nestjs/storage';
+import { and, asc, eq, inArray, isNull, lt, notExists } from 'drizzle-orm';
+import type { Job } from 'bullmq';
+import { Counter } from 'prom-client';
+import type {
+  Database,
+  DatabaseTransactions,
+} from '../../core/database/database.js';
+import { MetricsService } from '../../core/metrics/metrics.service.js';
+import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { TenantWorkerHost } from '../../core/tenancy/tenant-job.js';
+import { SystemContext } from '../../iam/access/system-context.js';
+import {
+  EXTRACTABLE_TYPES,
+  isExtractable,
+  TextExtractor,
+  TextRejectedError,
+} from './attachments.extractor.js';
+import { ATTACHMENT_TEXT_JOB } from './attachments.permissions.js';
+import {
+  ATTACHMENT_TEXT,
+  type AttachmentJob,
+  AttachmentTextQueue,
+} from './attachments.queues.js';
+import { type Attachment, attachments } from './attachments.tables.js';
+import {
+  type AttachmentTextStatus,
+  attachmentTexts,
+} from './attachments.texts.tables.js';
+
+/**
+ * How long a clean, extractable file may go without its text before
+ * `retryPending()` queues it again; the retry job's period too.
+ */
+export const TEXT_RETRY_MS = 5 * 60 * 1000;
+
+/** Rows per round. */
+const BATCH = 1000;
+
+/**
+ * The text of uploaded files, for the search inside files
+ * (ATTACHMENT_TEXT_SEARCH). A queue job on a worker reads a clean upload of an
+ * extractable type, hands the bytes to the sandboxed TextExtractor and stores
+ * the text with the key of the file it came from (`attachment_texts`). A file
+ * the extractor refuses is stored `failed`, without text, and not tried
+ * again. An issued document (`locked`, `fields` set) is left out: its text is the record's
+ * fields, which the record's own search matches under field-level permissions.
+ */
+@Injectable()
+export class AttachmentTextService {
+  private readonly logger = new Logger('AttachmentText');
+
+  /** `attachment_texts_extracted_total{result}`: ready, failed (refused), or error (a disk or database failure; tried again). */
+  private readonly extracted: Counter<'result'>;
+
+  constructor(
+    @InjectTransaction() private readonly db: Database,
+    private readonly txHost: TransactionHost<DatabaseTransactions>,
+    private readonly disk: StorageDisk,
+    private readonly extractor: TextExtractor,
+    private readonly system: SystemContext,
+    private readonly queue: AttachmentTextQueue,
+    metrics: MetricsService,
+  ) {
+    this.extracted = new Counter({
+      name: 'attachment_texts_extracted_total',
+      help: 'Attachment texts extracted for search, by result (ready, failed, error).',
+      labelNames: ['result'] as const,
+      registers: [metrics.registry],
+    });
+  }
+
+  /**
+   * Extracts one attachment's text (the worker, in the job's tenant). Nothing
+   * to do for one that is gone, not clean yet, issued, of another type, or
+   * whose current file already has its text. Throws when the disk or the
+   * database fails, so the queue tries again.
+   */
+  async process(job: AttachmentJob): Promise<AttachmentTextStatus | 'skipped'> {
+    if (!this.queue.enabled) return 'skipped';
+    return this.system.run(
+      ATTACHMENT_TEXT_JOB,
+      async () => {
+        const [row] = await this.db
+          .select()
+          .from(attachments)
+          .where(eq(attachments.id, job.attachmentId));
+        if (
+          !row ||
+          row.scanStatus !== 'clean' ||
+          row.locked ||
+          row.fields !== null ||
+          !isExtractable(row.contentType)
+        ) {
+          return 'skipped';
+        }
+        const [done] = await this.db
+          .select({ id: attachmentTexts.id })
+          .from(attachmentTexts)
+          .where(
+            and(
+              eq(attachmentTexts.attachmentId, row.id),
+              eq(attachmentTexts.key, row.key),
+            ),
+          );
+        if (done) return 'skipped';
+
+        let status: AttachmentTextStatus = 'ready';
+        let text = '';
+        try {
+          if (row.size > this.extractor.maxBytes) {
+            throw new TextRejectedError(
+              'size',
+              `The file is ${row.size} bytes; at most ${this.extractor.maxBytes} are read.`,
+            );
+          }
+          text = await this.extractor.extract(
+            await this.disk.getBuffer(row.key),
+            row.contentType,
+          );
+        } catch (error) {
+          if (
+            !(error instanceof TextRejectedError) &&
+            !(error instanceof StorageFileNotFoundError)
+          ) {
+            this.extracted.inc({ result: 'error' });
+            throw error;
+          }
+          status = 'failed';
+          this.logger.warn('A file is not searchable: its text was refused', {
+            attachment: row.id,
+            reason:
+              error instanceof TextRejectedError ? error.reason : 'missing',
+            error: error.message,
+          });
+        }
+        if (!(await this.store(row, status, text))) return 'skipped';
+        this.extracted.inc({ result: status });
+        return status;
+      },
+      { transaction: false, tenantId: job.tenantId },
+    );
+  }
+
+  /**
+   * What the best-effort enqueue and the queue's retries don't cover, for the
+   * current tenant: the clean, extractable files changed more than
+   * `TEXT_RETRY_MS` ago that have no text for their current file (a lost job,
+   * a replaced file, the files stored before ATTACHMENT_TEXT_SEARCH was
+   * switched on; `BATCH` a round). Returns how many it queued.
+   */
+  async retryPending(now = new Date()): Promise<number> {
+    if (!this.queue.enabled) return 0;
+    return this.system.run(
+      ATTACHMENT_TEXT_JOB,
+      async () => {
+        const stale = await this.db
+          .select({ id: attachments.id })
+          .from(attachments)
+          .where(
+            and(
+              eq(attachments.scanStatus, 'clean'),
+              eq(attachments.locked, false),
+              isNull(attachments.fields),
+              inArray(attachments.contentType, [...EXTRACTABLE_TYPES]),
+              lt(
+                attachments.updatedAt,
+                new Date(now.getTime() - TEXT_RETRY_MS),
+              ),
+              notExists(
+                this.db
+                  .select({ id: attachmentTexts.id })
+                  .from(attachmentTexts)
+                  .where(
+                    and(
+                      eq(attachmentTexts.attachmentId, attachments.id),
+                      eq(attachmentTexts.key, attachments.key),
+                    ),
+                  ),
+              ),
+            ),
+          )
+          .orderBy(asc(attachments.updatedAt))
+          .limit(BATCH);
+        const period = String(Math.floor(now.getTime() / TEXT_RETRY_MS));
+        for (const { id } of stale) await this.queue.enqueue(id, period);
+        return stale.length;
+      },
+      { transaction: false },
+    );
+  }
+
+  /**
+   * Stores the text of the file at `row.key`, replacing what an earlier file
+   * of the attachment had. Only while the attachment still has that file
+   * (locked against its removal until the commit); else nothing (false).
+   */
+  private store(row: Attachment, status: AttachmentTextStatus, text: string) {
+    return this.txHost.withTransaction(async () => {
+      const [current] = await this.db
+        .select({ id: attachments.id })
+        .from(attachments)
+        .where(and(eq(attachments.id, row.id), eq(attachments.key, row.key)))
+        .for('share');
+      if (!current) return false;
+      await this.db
+        .insert(attachmentTexts)
+        .values({ attachmentId: row.id, key: row.key, status, text })
+        .onConflictDoUpdate({
+          target: [attachmentTexts.tenantId, attachmentTexts.attachmentId],
+          set: { key: row.key, status, text, updatedAt: new Date() },
+        });
+      return true;
+    });
+  }
+}
+
+/**
+ * Extracts the text of the files queued for it, on the workers, in the
+ * upload's tenant. One file at a time: each extraction is a thread with its
+ * own heap limit. A file the extractor refuses ends `failed` without a retry;
+ * a disk or database error is tried again with backoff, and past the last
+ * attempt the retry job queues it again.
+ */
+@Processor(ATTACHMENT_TEXT, { concurrency: 1 })
+export class AttachmentTextProcessor extends TenantWorkerHost<AttachmentJob> {
+  private readonly logger = new Logger('AttachmentText');
+
+  constructor(private readonly texts: AttachmentTextService) {
+    super();
+  }
+
+  async handle(job: Job<AttachmentJob>) {
+    const outcome = await this.texts.process(job.data);
+    this.logger.log('Attachment text extracted', {
+      attachment: job.data.attachmentId,
+      outcome,
+    });
+    return outcome;
+  }
+}
+
+/**
+ * Queues the text extraction of the clean, extractable files that have no
+ * text for their current file, every five minutes on one instance, one tenant
+ * at a time. `run(now)` lets a test choose the moment; it returns how many it
+ * queued.
+ */
+@Injectable()
+export class AttachmentTextRetryJob {
+  constructor(
+    private readonly texts: AttachmentTextService,
+    private readonly tenancy: Tenancy,
+  ) {}
+
+  @Cron('*/5 * * * *', { name: 'attachment-text-retry', timeZone: 'UTC' })
+  @OnOneInstance({ key: 'attachments:text-retry' })
+  @WithoutOverlapping()
+  async run(now = new Date()) {
+    const handled = await this.tenancy.forEachTenant(
+      'attachment-text-retry',
+      () => this.texts.retryPending(now),
+    );
+    return [...handled.values()].reduce((sum, count) => sum + count, 0);
+  }
+}

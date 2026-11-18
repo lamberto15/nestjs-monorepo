@@ -26,3 +26,7 @@ export const MAILS = defineQuota({ key: 'mail.perDay', label: 'mails a day', kin
 An API client's daily request quota is `modules/usage`. No variables.
 
 Remove: delete this folder, its line in `app.module.ts`, and the `forFeature` imports and calls of the modules that use it.
+
+## Metrics
+
+When a module registers a stock quota with the key `storageBytes` (attachments does), `/metrics` has `tenant_storage_bytes{tenant}` (the quota's count, per active tenant slug) and `tenant_storage_limit_bytes{tenant}` (only tenants with a limit), each tenant read in its own scope and cached for 30 seconds.

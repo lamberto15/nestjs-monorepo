@@ -5,7 +5,7 @@ declaration its list route validates with. A generic table builds its filter
 menus, sorts, column pickers and views from it.
 
 - Sources: every record registered with `RecordsModule.forFeature()` (its
-  list with the add-ons' filters), plus the access API's `User` list.
+  list with the add-ons' filters), plus the access API's `User` list and the audit pages' `Audit` and `SignIn` lists (whoever holds `Access.readAudit`).
 - Who: whoever may read the subject on some record (`ListPolicy`); for `User`,
   whoever may open the access API. An unknown subject is a 404 before any
   permission check.

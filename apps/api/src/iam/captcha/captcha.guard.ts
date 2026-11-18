@@ -4,6 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { SessionService } from '@nestjs/authentication';
 import type {
   NodeRequest as Request,
   NodeResponse as Response,
@@ -26,6 +27,7 @@ export class CaptchaGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly captcha: CaptchaService,
+    private readonly sessions: SessionService,
   ) {}
 
   async canActivate(context: ExecutionContext) {
@@ -48,7 +50,10 @@ export class CaptchaGuard implements CanActivate {
     const http = context.switchToHttp();
     const request = http.getRequest<Request>();
     const response = http.getResponse<Response>();
-    const email = (request.body as { email?: unknown } | undefined)?.email;
+    const email =
+      options.account === 'session'
+        ? await this.sessionAccount(request)
+        : (request.body as { email?: unknown } | undefined)?.email;
     const subject = {
       ip: request.ip ?? '',
       email: typeof email === 'string' ? email : undefined,
@@ -70,6 +75,23 @@ export class CaptchaGuard implements CanActivate {
       subject,
       headerValue(request, ATTESTATION_HEADER),
     );
+  }
+
+  /**
+   * The account of the session this browser holds (pending its second
+   * factor, on the code's route), read as the package's own
+   * `SignInService.completeMfa()` reads it (`tokenFrom()`, then
+   * `validate()`): the global guard doesn't resolve a pending session. Its
+   * user id, not its address: reading the address would make this module
+   * import iam/auth, which imports it (`@Captcha()`). So a wrong code
+   * counts on the address and on the account, apart from a wrong
+   * password's key.
+   */
+  private async sessionAccount(request: Request) {
+    const session = await this.sessions.validate(
+      this.sessions.tokenFrom(request),
+    );
+    return session ? `user:${session.userId}` : undefined;
   }
 }
 

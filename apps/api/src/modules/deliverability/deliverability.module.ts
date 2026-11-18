@@ -6,6 +6,8 @@ import { SharedHttpClientModule } from '../../core/http-client/http-client.modul
 import { DEFAULT_JOB_OPTIONS } from '../../core/queues/queues.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
+import { QuotasModule } from '../quotas/quotas.module.js';
+import { SettingsModule } from '../settings/settings.module.js';
 import { OperatorGuard } from '../../iam/auth/operator-only.js';
 import { SuppressionsController } from './deliverability.controller.js';
 import { deliverabilityConfig } from './deliverability.config.js';
@@ -16,18 +18,27 @@ import { ResendIntake } from './intake/resend.intake.js';
 import { SendGridIntake } from './intake/sendgrid.intake.js';
 import { SesIntake } from './intake/ses.intake.js';
 import { HttpSnsGateway, SnsGateway, SNS_HTTP } from './intake/sns-gateway.js';
+import { MailDeliveryRules } from './mail-delivery.policy.js';
+import {
+  MAIL_DELIVERY_SETTINGS,
+  MAILS_PER_DAY,
+} from './mail-delivery.settings.js';
 import { MAIL_EVENTS } from './mail-event.types.js';
 import { MailEventsController } from './mail-events.controller.js';
 import { MailEventsProcessor } from './mail-events.processor.js';
 import { MailEventsRetentionJob } from './mail-events.retention.job.js';
 import { MailEventsService } from './mail-events.service.js';
 import { SuppressionsService } from './suppressions.service.js';
+import { DeliverabilityPersonalData } from './deliverability.personal-data.js';
 
 /**
  * Email deliverability (README.md): the providers' bounce and complaint
  * webhooks, the suppression list, and the operators' routes over it.
  * SuppressionsService is what core/mail's worker asks before every send
- * (`@MailSuppressionList()`, found by discovery). Needs QueuesModule, MetricsModule, DatabaseModule,
+ * (`@MailSuppressionList()`, found by discovery); MailDeliveryRules is what
+ * MailQueue asks before queueing one (`@MailDeliveryPolicy()`: the
+ * `mail.delivery` setting, the `mail.perDay` quota). Needs SettingsModule's and
+ * QuotasModule's own requirements. Needs QueuesModule, MetricsModule, DatabaseModule,
  * TenancyModule and what AccessModule needs.
  */
 @Module({
@@ -35,6 +46,8 @@ import { SuppressionsService } from './suppressions.service.js';
     ConfigModule.forFeature(deliverabilityConfig),
     AccessModule.forFeature(DELIVERABILITY_PERMISSIONS),
     AuditModule,
+    SettingsModule.forFeature(MAIL_DELIVERY_SETTINGS),
+    QuotasModule.forFeature(MAILS_PER_DAY),
     SharedHttpClientModule,
     BullModule.registerQueue({
       name: MAIL_EVENTS,
@@ -61,8 +74,10 @@ import { SuppressionsService } from './suppressions.service.js';
     MailEventsProcessor,
     MailEventsRetentionJob,
     SuppressionsService,
+    MailDeliveryRules,
     MailSuppressionPolicy,
     OperatorGuard,
+    DeliverabilityPersonalData,
   ],
 })
 export class DeliverabilityModule {}

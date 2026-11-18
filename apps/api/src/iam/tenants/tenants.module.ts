@@ -1,9 +1,11 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { DiscoveryModule } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { httpConfig } from '../../core/http/http.config.js';
 import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
+import { InvitationsModule } from '../invitations/invitations.module.js';
 import { SignUpController } from './sign-up.controller.js';
 import { SignUpService } from './sign-up.service.js';
 import { SignUpSweepJob } from './sign-up-sweep.job.js';
@@ -32,14 +34,17 @@ import { TenantsService } from './tenants.service.js';
  * operators' administration (create, change, deactivate, delete after a
  * grace period, the nightly erase), the unverified sign-ups' sweep, and a
  * tenant's own domains (the `@HostTenantResolver()` SessionAuth asks).
- * What other modules react to: tenants.events.ts. Needs AuthModule,
- * AccessModule, AuditModule, SharedOutboxModule, QueuesModule, RedisModule,
+ * What other modules react to: tenants.events.ts. Imports InvitationsModule
+ * (an operator's tenant invites its first administrator). Needs AuthModule,
+ * AccessModule, AuditModule, MailModule's queue, SharedOutboxModule, QueuesModule, RedisModule,
  * EventEmitterModule.forRoot().
  */
 @Module({
   imports: [
     AccessModule.forFeature(TENANT_PERMISSIONS),
     AuditModule,
+    InvitationsModule,
+    DiscoveryModule,
     ConfigModule.forFeature(tenantsConfig),
     ConfigModule.forFeature(httpConfig),
     BullModule.registerQueue({ name: TENANT_DOMAINS_QUEUE }),
@@ -62,5 +67,7 @@ import { TenantsService } from './tenants.service.js';
     TenantDomainsCheckJob,
     { provide: TXT_RESOLVER, useValue: systemTxtResolver },
   ],
+  // The operator CLI makes tenants (src/cli).
+  exports: [TenantsService],
 })
 export class TenantsModule {}

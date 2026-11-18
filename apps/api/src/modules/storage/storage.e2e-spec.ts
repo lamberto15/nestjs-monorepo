@@ -67,6 +67,27 @@ describe('storage', () => {
     );
   });
 
+  it('receives a signed upload from a page on another origin: the URL is the credential, no CSRF check', async () => {
+    const upload = await disk.signedUpload('in/d.pdf', {
+      contentType: 'application/pdf',
+      contentLength: PDF.length,
+    });
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: pathOf(upload.url),
+      headers: {
+        ...upload.headers,
+        origin: 'https://evil.example',
+        'sec-fetch-site': 'cross-site',
+      },
+      payload: PDF,
+    });
+
+    expect(res.statusCode).toBeLessThan(300);
+    expect((await disk.getBuffer('in/d.pdf')).equals(PDF)).toBe(true);
+  });
+
   it('receives a signed upload onto the disk', async () => {
     const upload = await disk.signedUpload('in/c.pdf', {
       contentType: 'application/pdf',

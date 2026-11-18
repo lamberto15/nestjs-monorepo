@@ -27,12 +27,14 @@ import {
 } from '@nestjs/swagger';
 import { minutes } from '@nestjs/throttler';
 import type { z } from 'zod';
+import { Deprecated } from '../../core/http/deprecated.js';
 import { listSchema } from '../../core/http/pagination.js';
 import { AccessPolicy } from '../access/access.policy.js';
 import { DuringMfaEnrollment } from '../auth/mfa-enrollment.guard.js';
 import { DuringOnboarding } from '../auth/onboarding.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { RecentAuthentication } from '../auth/recent-authentication.js';
+import { WithoutSso } from '../auth/sign-in-gate.js';
 import { UserOnly } from '../auth/user-only.decorator.js';
 import { UserThrottle } from '../auth/user-throttle.guard.js';
 import {
@@ -141,6 +143,28 @@ export class InvitationsController {
     return this.invitations.send(user, id, ip);
   }
 
+  // The earlier name of `send`: the same limits (a recent sign-in, thirty a
+  // quarter hour), the same audit entry (`invitation.resent`).
+  @Post('invitations/:id/resend')
+  @Deprecated({
+    since: '2026-10-28',
+    successor: '/v1/access/invitations/{id}/send',
+  })
+  @Can(AccessPolicy, 'manageUsers')
+  @RecentAuthentication()
+  @UserThrottle({ limit: 30, ttl: minutes(15) })
+  @HttpCode(202)
+  @ApiOperation({ summary: 'Send a pending invitation again (use `…/send`)' })
+  @ApiAcceptedResponse({ standardSchema: invitationSchema })
+  @ApiNotFoundResponse({ description: 'No pending invitation of this id.' })
+  resend(
+    @CurrentUser() user: UserPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Ip() ip: string,
+  ) {
+    return this.invitations.send(user, id, ip);
+  }
+
   @Delete('invitations/:id')
   @Can(AccessPolicy, 'manageUsers')
   @HttpCode(204)
@@ -174,6 +198,7 @@ export class AcceptInvitationController {
   // and the one hash a new account costs waits for its slot.
   @DuringMfaEnrollment()
   @DuringOnboarding()
+  @WithoutSso()
   @Post('invitations/accept')
   @HttpCode(200)
   @ApiOperation({

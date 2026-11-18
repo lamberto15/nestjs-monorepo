@@ -2,6 +2,15 @@ import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import type { Database } from '../../core/database/database.js';
+import { and, type SQL } from 'drizzle-orm';
+import {
+  afterCursor,
+  countPage,
+  pageOffset,
+  pageOrder,
+  type PageQuery,
+  toPage,
+} from '../../core/http/pagination.js';
 import { discoverOne } from '../auth/discover.js';
 import { actorOf, type Principal } from '../auth/principal.js';
 import { ActorNameSource, type ActorNames } from './actor-names.js';
@@ -60,6 +69,38 @@ export class AuditService implements OnModuleInit {
       actorLabel: label,
       ...fieldsOf(entry),
     });
+  }
+
+  /**
+   * The account itself acting without a session, through a link it was
+   * mailed (a deletion cancelled): the actor is `user:<id>`, labelled with
+   * its address, as if it had signed in.
+   */
+  async recordAccount(
+    account: { id: string; email: string },
+    entry: AuditEntry,
+    db: Database = this.db,
+  ) {
+    await db.insert(auditLog).values({
+      actor: `user:${account.id}`,
+      actorLabel: account.email,
+      ...fieldsOf(entry),
+    });
+  }
+
+  /** A page of the log, newest first unless the query sorts (the tenant's, by row-level security). */
+  async page(query: PageQuery, where?: SQL) {
+    const [rows, total] = await Promise.all([
+      this.db
+        .select()
+        .from(auditLog)
+        .where(and(where, afterCursor(auditLog.id, query)))
+        .orderBy(...pageOrder(auditLog.id, query))
+        .limit(query.limit + 1)
+        .offset(pageOffset(query)),
+      countPage(this.db, auditLog, where, query),
+    ]);
+    return toPage(rows, query, total);
   }
 
   /**

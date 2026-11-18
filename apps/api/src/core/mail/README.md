@@ -32,6 +32,17 @@ export class PasswordResetMail implements Mailable<{ link: string }> {
 - Texts (subjects, strings in the context) come from the module's `i18n/` catalog, not the template.
 - A new template file needs a restart (the file list is read at boot); edits to one do not.
 - `MAIL_TEMPLATE_ROOTS` adds directories to scan (tests use it for `test/fixtures/mail`).
-- `MAIL_DELIVERY` = `all` | `essential` | `off`: a withheld mail is logged, not queued.
-  Left for the settings and quotas modules: the per-tenant `mail.delivery` setting, the daily
-  budgets (deployment and tenant) with their Redis counters, `mail_withheld_total`, suppression lists.
+- `MAIL_DELIVERY` = `all` | `essential` | `off`: the ceiling. A withheld mail is logged, counted in
+  `mail_withheld_total{reason}` (`policy`, `budget`) and not queued.
+- **Hooks**: core never imports the module that knows; that module marks its provider with a discovery
+  decorator and core finds it (none in the app: the default applies).
+  - `@MailDeliveryPolicy()` (mail-delivery.ts, `MailDelivery`): `mode()` (stricter than `MAIL_DELIVERY`, never looser)
+    and `consume({ essential })` (the tenant's daily budget; false withholds). An unreadable policy leaves the ceiling alone.
+    Provided by modules/deliverability.
+  - `@MailBrand()` (mail-brand.ts, `MailBranding`): `current()` is the tenant's `{ name, color, logoUrl }`, read when the
+    mail is rendered. Templates and the layout see it as `{{ brand.* }}` (default colour, no logo, no name); the sender's
+    name becomes `brand.name` unless the mail sets its own `from`. A failing lookup sends the mail unbranded.
+    Provided by modules/branding.
+  - `@MailSuppressionList()` (mail-suppression.ts): asked by the worker before each send. Provided by modules/deliverability.
+
+- **Metrics:** `mail_sent_total` (the transport accepted it, on the workers) and `mail_suppressed_total{reason}` (recipients the suppression list kept out), next to `mail_withheld_total`.

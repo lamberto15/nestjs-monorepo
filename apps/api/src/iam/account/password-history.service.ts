@@ -9,14 +9,16 @@ import { PasswordHasher } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
 import { desc, eq, inArray } from 'drizzle-orm';
 import type { Database } from '../../core/database/database.js';
+import { AuthPolicy } from '../auth/auth-policy.js';
 import { users } from '../auth/auth.tables.js';
 import { accountConfig } from './account.config.js';
 import { passwordHistory } from './account.tables.js';
 import { PasswordHashLimiter } from './password-hashing.js';
 
 /**
- * PASSWORD_HISTORY: a new password may not repeat one of the account's
- * last N (the current one counts), 0 (the default) off.
+ * PASSWORD_HISTORY (or the account's tenants' `passwordHistory` policy,
+ * the stricter): a new password may not repeat one of the account's last
+ * N (the current one counts), 0 (the default) off.
  *
  * Only hashes are kept, from the account's own hasher, and only while the
  * history is on: with N = 0 a replaced hash is dropped with the rest of
@@ -33,10 +35,15 @@ export class PasswordHistoryService {
     private readonly limiter: PasswordHashLimiter,
     @Inject(accountConfig.KEY)
     private readonly config: ConfigType<typeof accountConfig>,
+    private readonly policy: AuthPolicy,
   ) {}
 
-  private get count() {
-    return this.config.passwordHistory;
+  /** The deployment's PASSWORD_HISTORY or the account's tenants' choice (AuthPolicy), the stricter. */
+  private async count(userId: string) {
+    return Math.max(
+      this.config.passwordHistory,
+      await this.policy.passwordHistory({ userId }),
+    );
   }
 
   /**
@@ -47,7 +54,7 @@ export class PasswordHistoryService {
    * account without a password: no hashing.
    */
   async assertNotReused(userId: string, password: string, path: string) {
-    const count = this.count;
+    const count = await this.count(userId);
     if (count === 0) {
       return;
     }
@@ -94,7 +101,7 @@ export class PasswordHistoryService {
    * keeps nothing and drops what was kept.
    */
   async replaced(userId: string) {
-    const keep = Math.max(0, this.count - 1);
+    const keep = Math.max(0, (await this.count(userId)) - 1);
     if (keep === 0) {
       await this.db
         .delete(passwordHistory)

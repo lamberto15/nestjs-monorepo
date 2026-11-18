@@ -1,5 +1,6 @@
 import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
+import { DiscoveryService } from '@nestjs/core';
 import { and, desc, getColumns } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { DatabaseTransactions } from '../../core/database/database.js';
@@ -17,21 +18,13 @@ import {
   type RecordRegistration,
   Records,
 } from '../records/records.service.js';
+import {
+  SearchSource,
+  type SearchHit,
+  type SearchSourceProvider,
+} from './search.source.js';
 
-/** A hit of the global search: a record, as a result list shows it. */
-export interface SearchHit {
-  subject: string;
-  id: string;
-  title: string;
-  /** Around the matches, the matches in <b>…</b>; null when the caller may not read the text. */
-  snippet: string | null;
-  /** How well it matches: 0 to 1. */
-  score: number;
-  /** Where to go: a path of the web app. */
-  link: string | null;
-  /** How the subject is named: one record and several. */
-  subjectLabel: { singular: string; plural: string };
-}
+export type { SearchHit };
 
 const SNIPPET = '__snippet_';
 
@@ -40,7 +33,8 @@ const SNIPPET = '__snippet_';
  * (modules/records) that declares searchable fields, asked at once, best
  * matches first across them. Field-level permissions: a field the caller
  * may read on no record, or on some only, is not matched (a hit would tell
- * where its text is hidden) and gives no snippet.
+ * where its text is hidden) and gives no snippet. Other modules add their
+ * hits with `@SearchSource(subject)` (search.source.ts).
  */
 @Injectable()
 export class SearchService {
@@ -48,6 +42,7 @@ export class SearchService {
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
+    private readonly discovery: DiscoveryService,
   ) {}
 
   async search(
@@ -62,10 +57,21 @@ export class SearchService {
           searchedFields(record.declaration).length > 0 &&
           (subject === undefined || record.declaration.subject === subject),
       );
-    const hits = (
-      await Promise.all(
-        sources.map((source) => this.searchOne(source, principal, q, limit)),
+    const others = this.discovery
+      .getProviders({ metadataKey: SearchSource.KEY })
+      .filter(
+        (wrapper) =>
+          wrapper.instance &&
+          (subject === undefined ||
+            this.discovery.getMetadataByDecorator(SearchSource, wrapper) ===
+              subject),
       )
+      .map((wrapper) => wrapper.instance as SearchSourceProvider);
+    const hits = (
+      await Promise.all([
+        ...sources.map((source) => this.searchOne(source, principal, q, limit)),
+        ...others.map((source) => source.search(principal, q, { limit })),
+      ])
     ).flat();
     hits.sort((a, b) => b.score - a.score);
     return hits.slice(0, limit);

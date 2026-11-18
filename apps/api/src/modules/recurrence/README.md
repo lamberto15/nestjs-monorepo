@@ -12,6 +12,7 @@ resume, end; at most 20 active per owner).
   `RecurrenceModule.forFeature({ name, subject, schema, create })`. The owner
   must be allowed `create` on `subject`; `create(principal, row)` runs in the
   occurrence's transaction as the owner and throws to fail the attempt.
+- **A record as a target:** `RecurrenceModule.forRecord(RECORD)` in the feature's imports; the target is the record's path, the template one create body, and each occurrence creates the record through its store as the owner (hooks, audit and events as for a request).
 - **The runner:** `RecurrenceScheduler` (every 5 minutes, one instance)
   queues one job per tenant that has a schedule due; `RecurrenceProcessor`
   runs it in the tenant as `system:record-schedules` (`runTenant()`). Each

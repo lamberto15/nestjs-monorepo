@@ -8,6 +8,7 @@ import {
 } from '@nestjs/terminus';
 import { Public } from '@nestjs/authentication';
 import { SkipThrottle } from '@nestjs/throttler';
+import { AllowInMaintenance } from '../http/maintenance.js';
 import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
 
 /**
@@ -20,6 +21,7 @@ import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
 // Probes are never rate limited.
 @Public()
 @SkipThrottle()
+@AllowInMaintenance()
 @ApiExcludeController()
 @Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {

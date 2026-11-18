@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "nestjs-monorepo-feature",
+  "title": "A business feature (a record and its add-ons)",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Plural, kebab-case: invoices, invoice-lines.",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      },
+      "x-prompt": "What is the feature called (plural, kebab-case: invoices)?"
+    },
+    "path": {
+      "type": "string",
+      "description": "The folder the feature goes in (default <sourceRoot>/features).",
+      "$default": {
+        "$source": "argv",
+        "index": 1
+      }
+    },
+    "flat": {
+      "type": "boolean",
+      "default": false,
+      "description": "Write the files into `path` itself, not into `path/<name>`."
+    },
+    "skipImport": {
+      "type": "boolean",
+      "default": false,
+      "description": "Do not add the module to src/app.module.ts."
+    },
+    "singular": {
+      "type": "string",
+      "description": "The singular, when it cannot be derived (people: person)."
+    },
+    "fields": {
+      "type": "string",
+      "description": "name:type, comma-separated; types string, text, int, decimal, money, bool, date, datetime, enum(a|b), json, ref(<feature>); ? optional, !unique unique.",
+      "x-prompt": "Its fields (name:type, comma-separated; e.g. title:string,amount:money?,status:enum(draft|sent)):"
+    },
+    "addons": {
+      "type": "string",
+      "description": "Add-ons, comma-separated, or all: tags, comments, attachments, revisions, favorites, recents, templates, choices, custom-fields, computed-fields, approvals, acknowledgments, bulk, merge, data-transfer, data-quality, shares, documents, ai, automations, sequences, webhooks, notifications, recurrence, retention.",
+      "x-prompt": "Add-ons, comma-separated, or all (tags, comments, attachments, revisions, favorites, recents, templates, choices, custom-fields, computed-fields, approvals, acknowledgments, bulk, merge, data-transfer, data-quality, shares, documents, ai, automations, sequences, webhooks, notifications, recurrence, retention; empty for none):"
+    },
+    "softDelete": {
+      "type": "boolean",
+      "default": true,
+      "description": "A recycle bin: deleted records are restorable until purged.",
+      "x-prompt": "A recycle bin (deleted records restorable)?"
+    },
+    "unit": {
+      "type": "boolean",
+      "default": false,
+      "description": "Records carry their creator's organizational unit (unit leads read their units').",
+      "x-prompt": "Organizational units (unit leads see their units' records)?"
+    },
+    "clientAccess": {
+      "type": "boolean",
+      "default": false,
+      "description": "API clients create, read, change and delete their own records."
+    },
+    "grants": {
+      "type": "string",
+      "enum": ["standard", "none"],
+      "default": "standard",
+      "description": "The seed roles' grants: standard (editors their own, viewers all) or none (administrators only)."
+    },
+    "idempotency": {
+      "type": "string",
+      "enum": ["required", "optional", "off"],
+      "description": "The create route's Idempotency-Key (default: the deployment's IDEMPOTENCY)."
+    },
+    "approvals": {
+      "type": "string",
+      "default": "publish",
+      "description": "With the approvals add-on: the actions that need approval, comma-separated camelCase (publish, markPaid)."
+    },
+    "sourceRoot": {
+      "type": "string",
+      "description": "The project's source root (Nest's CLI passes it)."
+    }
+  },
+  "required": ["name"]
+}

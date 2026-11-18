@@ -274,6 +274,36 @@ describe('invitations (e2e)', () => {
     expect((await accept(second, { password: PASSWORD })).statusCode).toBe(200);
   });
 
+  it('keeps the old resend route as an alias of send, audited as resent', async () => {
+    const { tenantId, admin } = await tenantWithAdmin(app);
+    const email = emailOf();
+    const id = (
+      await call('POST', '/v1/access/users', admin.headers, { email })
+    ).json().id as string;
+    const resent = await call(
+      'POST',
+      `/v1/access/invitations/${id}/resend`,
+      admin.headers,
+    );
+    expect(resent.statusCode).toBe(202);
+    expect(resent.headers.deprecation).toBeDefined();
+    expect(resent.json()).toMatchObject({ id, status: 'sent' });
+    expect(
+      await inTenant(tenantId, () =>
+        db()
+          .select({ id: auditLog.id })
+          .from(auditLog)
+          .where(eq(auditLog.action, 'invitation.resent')),
+      ),
+    ).toHaveLength(1);
+    const unknown = await call(
+      'POST',
+      `/v1/access/invitations/${randomUUID()}/resend`,
+      admin.headers,
+    );
+    expect(unknown.statusCode).toBe(404);
+  });
+
   it('prepares a member without a link, changes it, sends it, and withdraws it', async () => {
     const { tenantId, admin } = await tenantWithAdmin(app);
     const [editor, viewer] = await roleIds(app, tenantId, 'editor', 'viewer');

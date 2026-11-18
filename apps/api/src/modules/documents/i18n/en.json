@@ -1,0 +1,18 @@
+{
+  "documents": {
+    "errors": {
+      "principalGone": "The account that asked for this document is no longer active.",
+      "recordGone": "The record no longer exists, or you may no longer read it.",
+      "rejected": "The PDF service refused this document; ask an administrator (the document id is in the logs).",
+      "unavailable": "The PDF service failed or did not answer in time; ask for the document again later."
+    },
+    "unavailable": "PDF documents are not set up on this server.",
+    "pending": "This document is already being rendered for you: wait for it (GET /v1/documents/{id}).",
+    "notFound": "Document not found.",
+    "notReady": "The document is not issued yet.",
+    "labels": {
+      "document": "{noun}",
+      "issued": "Issued {date}"
+    }
+  }
+}

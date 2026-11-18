@@ -5,7 +5,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  type OnModuleInit,
 } from '@nestjs/common';
+import { DiscoveryService } from '@nestjs/core';
+import { t } from '@nestjs/i18n';
 import {
   and,
   asc,
@@ -28,6 +31,7 @@ import { MembersService } from '../access/members.service.js';
 import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { memberships, users } from '../auth/auth.tables.js';
+import { discoverOne } from '../auth/discover.js';
 import type { SystemPrincipal, UserPrincipal } from '../auth/principal.js';
 import {
   currentMembership,
@@ -42,6 +46,7 @@ import {
   type UnitRole,
   type UnitType,
 } from './organization.tables.js';
+import { ScimUnits } from './scim-units.js';
 import { TreeCycleError, UnitTree } from './tree.js';
 import { OrganizationUnitDirectory } from './unit-directory.provider.js';
 
@@ -57,6 +62,13 @@ const notEmpty = () =>
     code: 'unit_not_empty',
     message:
       'Move or delete the units under it, end its memberships, and move what refers to it (records, saved views) first.',
+  });
+
+/** The 409 of a unit the tenant's IdP manages over SCIM: it changes there. */
+const managedByScim = () =>
+  new ConflictException({
+    code: 'unit_managed_by_scim',
+    message: t('organization.managedByScim'),
   });
 
 const rethrowNameTaken = (name: string) => (error: unknown) => {
@@ -102,8 +114,9 @@ export interface Impact {
  * read them).
  */
 @Injectable()
-export class OrganizationService {
+export class OrganizationService implements OnModuleInit {
   private readonly tree = new UnitTree();
+  private scim?: ScimUnits;
 
   constructor(
     @InjectTransaction() private readonly db: Database,
@@ -114,9 +127,18 @@ export class OrganizationService {
     private readonly roles: RolesService,
     private readonly members: MembersService,
     private readonly directory: OrganizationUnitDirectory,
+    private readonly discovery: DiscoveryService,
   ) {}
 
-  /** Every unit, with its parent, depth and current members, top-level first. */
+  onModuleInit() {
+    this.scim = discoverOne<ScimUnits>(
+      this.discovery,
+      ScimUnits,
+      'SCIM units source (@ScimUnits())',
+    );
+  }
+
+  /** Every unit, with its parent, depth, current members and whether SCIM manages it, top-level first. */
   async list() {
     const now = new Date();
     const [rows, depths, counts] = await Promise.all([
@@ -134,12 +156,14 @@ export class OrganizationService {
         .where(currentMembership(now))
         .groupBy(organizationalUnitMemberships.unitId),
     ]);
+    const scim = await this.scimManaged(rows.map((unit) => unit.id));
     return rows
       .map((unit) => ({
         ...unit,
         // A unit is its own ancestor: the count of its ancestors, minus one.
         depth: (depths.find((row) => row.id === unit.id)?.depth ?? 1) - 1,
         members: counts.find((row) => row.id === unit.id)?.members ?? 0,
+        managedByScim: scim.has(unit.id),
       }))
       .sort((a, b) => a.depth - b.depth);
   }
@@ -184,6 +208,7 @@ export class OrganizationService {
   ) {
     const unit = await this.txHost.withTransaction(async () => {
       const before = await this.find(id);
+      await this.assertNotScimManaged(id);
       const moved =
         changes.parentId !== undefined && changes.parentId !== before.parentId;
       if (moved) {
@@ -274,6 +299,7 @@ export class OrganizationService {
   async remove(actor: UserPrincipal, id: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
       const unit = await this.find(id);
+      await this.assertNotScimManaged(id);
       // One after the other: a transaction is one connection.
       const [children] = await this.db
         .select({ count: count() })
@@ -325,6 +351,38 @@ export class OrganizationService {
     return rows.map((row) => row.id);
   }
 
+  /** A unit of the tenant, or a 404. */
+  get(id: string) {
+    return this.find(id);
+  }
+
+  /**
+   * The units above these, level by level: `[0]` is the units themselves,
+   * `[1]` their parents, and so on up to the highest ancestor.
+   */
+  async ancestry(unitIds: readonly string[]): Promise<string[][]> {
+    if (!unitIds.length) return [];
+    const tree = organizationalUnitClosure;
+    const rows = await this.db
+      .selectDistinct({ id: tree.ancestorId, depth: tree.depth })
+      .from(tree)
+      .where(inArray(tree.descendantId, [...unitIds]));
+    const levels: string[][] = [];
+    for (const { id, depth } of rows) (levels[depth] ??= []).push(id);
+    return levels;
+  }
+
+  /** The accounts that are current members of any of these units. */
+  async currentMembers(unitIds: readonly string[]): Promise<string[]> {
+    if (!unitIds.length) return [];
+    const member = organizationalUnitMemberships;
+    const rows = await this.db
+      .selectDistinct({ id: member.userId })
+      .from(member)
+      .where(and(inArray(member.unitId, [...unitIds]), currentMembership()));
+    return rows.map((row) => row.id);
+  }
+
   /** A unit's memberships, current and past, latest first, with each member's name and email. */
   async membersOf(unitId: string) {
     await this.find(unitId);
@@ -364,6 +422,7 @@ export class OrganizationService {
     await this.assertAuthorityOverUnit(actor, unitId, input.role);
     const row = await this.txHost.withTransaction(async () => {
       await this.find(unitId);
+      await this.assertNotScimManaged(unitId);
       const [member] = await this.db
         .select({ userId: memberships.userId })
         .from(memberships)
@@ -427,6 +486,7 @@ export class OrganizationService {
     await this.assertAuthorityOverUnit(actor, unitId, 'lead');
     const row = await this.txHost.withTransaction(async () => {
       await this.find(unitId);
+      await this.assertNotScimManaged(unitId);
       const open = await this.openMembershipOf(unitId, userId);
       if (!open)
         throw new NotFoundException('The user is not a member of this unit.');
@@ -490,6 +550,7 @@ export class OrganizationService {
     await this.assertAuthorityOverUnit(actor, unitId);
     await this.txHost.withTransaction(async () => {
       await this.find(unitId);
+      await this.assertNotScimManaged(unitId);
       const open = await this.openMembershipOf(unitId, userId);
       if (!open)
         throw new NotFoundException('The user is not a member of this unit.');
@@ -657,6 +718,18 @@ export class OrganizationService {
         .delete(organizationalUnitMemberships)
         .where(eq(organizationalUnitMemberships.id, id));
     }
+  }
+
+  /** Those of these units the tenant's IdP manages over SCIM (`@ScimUnits()`); none without it. */
+  private async scimManaged(ids: string[]) {
+    return ids.length && this.scim
+      ? this.scim.managedUnitIds(ids)
+      : new Set<string>();
+  }
+
+  /** 409 `unit_managed_by_scim`: the IdP's unit changes there, never here. */
+  private async assertNotScimManaged(id: string) {
+    if ((await this.scimManaged([id])).has(id)) throw managedByScim();
   }
 
   private async find(id: string) {

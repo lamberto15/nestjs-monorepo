@@ -8,6 +8,7 @@ with a locked-down Content-Security-Policy); on S3 they point at the bucket.
 
 - `storage.keys.ts`: `tenantFileKey(tenantId, path)`, `accountFileKey(userId, path)`
   and `isTenantFileKey()` build and check object keys. The tenant is an argument.
+- `storage.diagnostic.ts` registers the operators' storage test (`@Diagnostic` of modules/ops).
 - Add disks in `storage.disks.ts`; inject them with `@InjectDisk('name')`.
 
 ## Variables (`storage.config.ts`)

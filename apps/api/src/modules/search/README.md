@@ -11,4 +11,8 @@ across them. `subject=` narrows it to one kind.
 - Each hit: `subject`, `id`, `title` (the first string field), a `snippet` with
   the matches in `<b>…</b>`, `score`, `link` (`/<path>/<id>`) and
   `subjectLabel` (from the declaration's noun).
+- Other modules add hits with a provider marked `@SearchSource('Subject')`
+  (`search.source.ts`) implementing `search(principal, q, { limit })`: merged
+  with the records' hits by score, asked only when `?subject=` is absent or
+  names its subject. Attachments adds `Attachment` hits (files' text).
 - Ranking reads every row it ranks: at most the newest `RANK_CAP` matches are ranked.

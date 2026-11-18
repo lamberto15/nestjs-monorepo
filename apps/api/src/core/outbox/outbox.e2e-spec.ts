@@ -11,6 +11,8 @@ import {
 } from '../../../test/fixtures/tenant-items.js';
 import { DatabaseModule } from '../database/database.module.js';
 import { SharedLocksModule } from '../locks/locks.module.js';
+import { MetricsModule } from '../metrics/metrics.module.js';
+import { MetricsService } from '../metrics/metrics.service.js';
 import { Tenancy } from '../tenancy/tenancy.service.js';
 import { TenancyModule } from '../tenancy/tenancy.module.js';
 import { defineEvent, Events, OnDomainEvent } from './events.js';
@@ -78,6 +80,7 @@ describe('outbox and domain events (e2e)', () => {
       TenancyModule,
       SharedLocksModule,
       SharedOutboxModule,
+      MetricsModule,
       WriterModule,
     );
   });
@@ -112,6 +115,11 @@ describe('outbox and domain events (e2e)', () => {
     expect((await app.get(PostgresOutboxStore).stats(Date.now())).pending).toBe(
       0,
     );
+  });
+
+  it('reports the outbox lag on /metrics: 0 once everything is delivered', async () => {
+    const { body } = await app.get(MetricsService).scrape();
+    expect(body).toMatch(/^outbox_lag_seconds 0$/m);
   });
 
   it('refuses to publish outside a transaction', async () => {

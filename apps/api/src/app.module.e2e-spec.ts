@@ -1,5 +1,6 @@
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../test/boot.js';
+import { PermissionCatalog } from './iam/access/permission-catalog.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
@@ -32,5 +33,12 @@ describe('the whole app (e2e)', () => {
     expect((await app.inject({ url: '/v1/access/roles' })).statusCode).toBe(
       401,
     );
+  });
+
+  // A subject two modules add to has its label in one of them: only the
+  // whole app shows that none of them wrote it (a 500 on GET /v1/access/catalog).
+  it('has a text for every permission and system job of every module', () => {
+    const catalog = app.get(PermissionCatalog, { strict: false });
+    expect(() => [catalog.view(), catalog.systemJobsView()]).not.toThrow();
   });
 });

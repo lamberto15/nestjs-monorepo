@@ -34,6 +34,16 @@ retried by the worker.
   WEBHOOKS_DELIVERY_RETENTION_DAYS (30) go every night at 03:35 UTC.
 - A deleted API client's endpoints are deleted (`access.client-revoked`).
 
+### Which records' events a client receives
+
+A record's events go to the client that owns the record (`ownerId` `client:<id>`).
+`GET|PUT /v1/access/clients/{clientId}/webhook-scope` (`Webhooks.manageEndpoints`, authority
+over the client, a recent sign-in to change it, audited) sets `{ scope }`: `own` (the default)
+only those; `tenant` also the records users and other clients own. Either way a client
+receives a record only if its own role may `read` it, redacted to the fields it may read.
+Stored in `webhook_client_scopes` (gone with the client). Events from `forFeature()` that are
+no record's have no owner: they follow the read permission alone.
+
 ### A module's event as a webhook
 
 A module turns its domain events into webhooks in its own imports. `data` is
@@ -64,6 +74,10 @@ export class NotesModule {}
 
 The service publishes the event as usual (`events.publish(noteCreated, …)`
 in its transaction); the outbox relays it to the subscribed clients.
+
+### A record's events as webhooks
+
+`WebhooksModule.forRecord(RECORD)` in the feature's imports offers `<item>.created|updated|deleted|restored` (`testItem.created`…). `data` is the record as the API shows it (no `can`, no add-on keys). A client receives it only for a record it may `read`, as it was before a deletion, redacted as for a read.
 
 ## Incoming
 
@@ -98,6 +112,20 @@ export class NotePublishReceiver {
 
 `GET /v1/webhook-incoming-event-types` lists the declared types.
 
+That is all a feature writes to receive a signed webhook. What the module does
+before the handler runs: the sender is found in the tenant named in the URL (an
+unknown one is the same 401 as a bad signature); the signature is checked on the
+raw body (`rawBody: true`), in constant time, with a 5 minute timestamp window
+(a replay of an old capture is refused); a repeated `webhook-id` is answered
+without running the handler (the inbox), and the handler's writes commit with
+that record. The route is `@Public()` and needs no CSRF exclusion: a sender is a
+server and sends no `Origin`, so the protection lets it through
+(`csrfExclusions` in core/http is for pages that post across sites, like a SAML
+identity provider). To test a handler, sign a body as Standard Webhooks does
+with the sender's secret (`incoming-senders.e2e-spec.ts`). A secret fixed in
+the environment for one global sender is not offered: each tenant registers its
+senders.
+
 ## Configuration
 
 - `WEBHOOKS_WORKER` (on): this process sends deliveries (also needs a worker
@@ -108,3 +136,7 @@ export class NotePublishReceiver {
 - `DATA_ENCRYPTION_KEYS`: required.
 
 The app must be created with `rawBody: true` for incoming signatures.
+
+## Metrics
+
+`webhook_delivery_lag_seconds` on a worker's `/metrics`: how long the most overdue outgoing delivery has waited (0 when none). Shared state: aggregate with max().

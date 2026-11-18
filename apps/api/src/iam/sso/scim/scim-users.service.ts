@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
 import { and, asc, count, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import {
@@ -20,8 +20,10 @@ import { Tenancy } from '../../../core/tenancy/tenancy.service.js';
 import {
   ACCESS_EVENTS,
   type MemberDeactivatedEvent,
+  type MemberReactivatedEvent,
 } from '../../access/access.events.js';
 import { AccessService } from '../../access/access.service.js';
+import { ScimMembers } from '../../access/scim-members.js';
 import { RolesService } from '../../access/roles.service.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { memberships, users } from '../../auth/auth.tables.js';
@@ -106,7 +108,8 @@ interface Row {
  *   person's, across tenants. What the IdP sends is kept and answered.
  */
 @Injectable()
-export class ScimUsersService {
+@ScimMembers()
+export class ScimUsersService implements ScimMembers {
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
@@ -119,6 +122,15 @@ export class ScimUsersService {
     @Inject(httpConfig.KEY)
     private readonly http: ConfigType<typeof httpConfig>,
   ) {}
+
+  /** Those of these users the tenant's IdP provisioned: access lists them `managedByScim`. */
+  async managedUserIds(userIds: readonly string[]) {
+    const rows = await this.db
+      .select({ id: scimUsers.userId })
+      .from(scimUsers)
+      .where(inArray(scimUsers.userId, [...userIds]));
+    return new Set(rows.map((row) => row.id));
+  }
 
   async list(query: { filter?: string; startIndex?: number; count?: number }) {
     const where = scimFilter(query.filter, {
@@ -427,8 +439,7 @@ export class ScimUsersService {
       await this.events.emitAsync(ACCESS_EVENTS.memberDeactivated, {
         userId,
         tenantId,
-        // The event names a user; SCIM's actor is the IdP's API client.
-        actor: actor as unknown as MemberDeactivatedEvent['actor'],
+        actor,
       } satisfies MemberDeactivatedEvent);
     }
   }
@@ -493,6 +504,36 @@ export class ScimUsersService {
         ip,
       });
     }
+  }
+
+  /**
+   * An administrator turned a membership back on (MembersService.update):
+   * the account this module's deprovisioning deactivated, for want of an
+   * active membership, comes back with it, the same account with its data.
+   * Any other inactive account stays as it is. In the change's transaction
+   * (a failure here rolls the reactivation back), audited
+   * `user.account-reactivated`.
+   */
+  @OnEvent(ACCESS_EVENTS.memberReactivated, { suppressErrors: false })
+  async membershipReactivated({ userId, actor, ip }: MemberReactivatedEvent) {
+    const [marked] = await this.db
+      .delete(scimDeprovisionedUsers)
+      .where(eq(scimDeprovisionedUsers.userId, userId))
+      .returning();
+    if (!marked) {
+      return;
+    }
+    await this.db
+      .update(users)
+      .set({ active: true })
+      .where(eq(users.id, userId));
+    await this.audit.record(actor, {
+      action: 'user.account-reactivated',
+      targetType: 'user',
+      targetId: userId,
+      details: { reason: 'membership' },
+      ip,
+    });
   }
 
   private async isDeprovisioned(userId: string) {

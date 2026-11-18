@@ -4,7 +4,9 @@ import { getDrizzleToken } from '@nestjs/drizzle';
 import { WorkflowsModule, WorkflowStorage } from '@nestjs/workflows';
 import { fromDrizzle, PostgresWorkflowStore } from '@nestjs/workflows/postgres';
 import type { Database } from '../database/database.js';
+import { encryptionConfig } from '../encryption/encryption.config.js';
 import { queuesConfig, runsWorkers } from '../queues/queues.config.js';
+import { workflowPayloadCodec } from './workflow-payload.codec.js';
 import { workflowsConfig } from './workflows.config.js';
 
 /**
@@ -22,12 +24,16 @@ import { workflowsConfig } from './workflows.config.js';
       imports: [
         ConfigModule.forFeature(workflowsConfig),
         ConfigModule.forFeature(queuesConfig),
+        ConfigModule.forFeature(encryptionConfig),
       ],
-      inject: [workflowsConfig.KEY, queuesConfig.KEY],
+      inject: [workflowsConfig.KEY, queuesConfig.KEY, encryptionConfig.KEY],
       useFactory: (
         workflows: ConfigType<typeof workflowsConfig>,
         queues: ConfigType<typeof queuesConfig>,
+        encryption: ConfigType<typeof encryptionConfig>,
       ) => ({
+        // What workflows store is encrypted when DATA_ENCRYPTION_KEYS is set.
+        codec: workflowPayloadCodec(encryption.dataKeys),
         worker: {
           enabled: workflows.worker && runsWorkers(queues.role),
           concurrency: workflows.concurrency,

@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type ExecutionContext,
+} from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import {
@@ -38,6 +43,16 @@ export class ScaledThrottlerGuard extends ThrottlerGuard {
         `RATE_LIMIT_MULTIPLIER=${this.multiplier}: every rate limit is ${this.multiplier} times higher (load tests only).`,
       );
     }
+  }
+
+  /**
+   * Only HTTP requests are counted. Nest runs global guards on other
+   * contexts too (an MCP tool call, a socket message), where there is no
+   * request and so no address: every caller would share one counter. Such a
+   * call arrived in an HTTP request or a connection that was counted.
+   */
+  protected override async shouldSkip(context: ExecutionContext) {
+    return context.getType() !== 'http' || (await super.shouldSkip(context));
   }
 
   /** The limit after RATE_LIMIT_MULTIPLIER. */

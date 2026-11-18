@@ -1,0 +1,77 @@
+import { z } from 'zod';
+import { pageSchema } from '../../core/http/pagination.js';
+
+/** The longest comment, in characters. */
+export const MAX_COMMENT_LENGTH = 10_000;
+
+/** Body of `PATCH …/comments/{commentId}`. */
+export const commentBodySchema = z.object({
+  body: z.string().trim().min(1).max(MAX_COMMENT_LENGTH).meta({
+    example: 'Looks good to me, @ada@example.com: can you check the numbers?',
+  }),
+});
+export type CommentBody = z.infer<typeof commentBodySchema>;
+
+/** Body of `POST …/comments`: the text, and the top-level comment it answers. */
+export const commentCreateSchema = commentBodySchema.extend({
+  parentId: z
+    .uuid()
+    .optional()
+    .describe(
+      'Answer this top-level comment of the same record (a reply to a reply is refused: threads are one level deep).',
+    ),
+});
+export type CommentCreate = z.infer<typeof commentCreateSchema>;
+
+/** A comment, as the API shows it. */
+export const commentSchema = z
+  .object({
+    id: z.string(),
+    subject: z.string().meta({ example: 'Note' }),
+    recordId: z.string(),
+    author: z.string().describe('Who wrote it: `user:<id>` or `client:<id>`.'),
+    authorName: z
+      .string()
+      .nullable()
+      .describe(
+        "The author's name, as every member of the tenant sees it; null for anyone the tenant never had.",
+      )
+      .meta({ example: 'Maya Patel' }),
+    body: z.string(),
+    mentions: z
+      .array(z.string())
+      .describe(
+        'The people mentioned (`@<email>` or `@user:<id>` in the body) who may read the record, as `user:<id>`.',
+      ),
+    mentionNames: z
+      .record(z.string(), z.string().nullable())
+      .describe(
+        'The name of each key in `mentions`: `{ "user:<id>": "Maya Patel" }`. A mention written as an address (`@maya@example.com`) is named under that address too (lower-cased); an address that mentioned nobody has no entry. A person who left the tenant keeps their name; null for anyone the tenant never had.',
+      ),
+    editedAt: z.iso.datetime().nullable(),
+    parentId: z
+      .string()
+      .nullable()
+      .describe(
+        'The top-level comment this one answers; null for a top-level comment.',
+      ),
+    resolvedAt: z.iso
+      .datetime()
+      .nullable()
+      .describe(
+        'When its thread was resolved; null if open (always null on a reply).',
+      ),
+    resolvedBy: z
+      .string()
+      .nullable()
+      .describe('Who resolved the thread: `user:<id>` or `client:<id>`.'),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'Comment' });
+export type CommentView = z.infer<typeof commentSchema>;
+
+/** A page of comments (`GET …/comments`). */
+export const commentPageSchema = pageSchema(commentSchema).meta({
+  id: 'CommentPage',
+});

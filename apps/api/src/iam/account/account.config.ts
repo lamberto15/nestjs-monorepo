@@ -10,15 +10,10 @@ import {
   withDefault,
 } from '../../core/config/env.helpers.js';
 import { readEnv } from '../../core/config/env.js';
+import { observabilityConfig } from '../../core/observability/observability.config.js';
 import { isNativeRedirectUri } from './native-redirect.js';
 
 export const schema = z.object({
-  /**
-   * The web app's base URL: the links in account mails (reset, verify,
-   * magic link) open its pages, and the OIDC callback lands on it. Unset:
-   * APP_URL.
-   */
-  WEB_URL: baseUrl(),
   /** Passwordless sign-in by email link (POST /auth/magic-link). Off: its routes answer 404 `feature_off`. */
   AUTH_MAGIC_LINK: flag('on'),
   /**
@@ -49,6 +44,12 @@ export const schema = z.object({
   ),
   /** Refused when seen in at least this many breaches. */
   PASSWORD_BREACH_MIN_COUNT: integer(1, { min: 1 }),
+  /**
+   * The password of a sign-in is checked against the breaches too (without
+   * delaying it): once per password, then again after this many days (the
+   * corpus grows), until the password changes.
+   */
+  PASSWORD_BREACH_RECHECK_DAYS: integer(30, { min: 1, max: 365 }),
   /**
    * A new password may not repeat the account's last N (the current one
    * counts); 0: off. Only hashes are kept, and only while this is on.
@@ -134,20 +135,19 @@ export const schema = z.object({
   GITHUB_CLIENT_ID: optional(),
   /** GitHub's OAuth app client secret. */
   GITHUB_CLIENT_SECRET: secret(optional()),
-  /** The service's name (shared with observability): the default MFA issuer and passkey RP name. */
-  SERVICE_NAME: withDefault('api'),
   /** Read for the passkey checks: production refuses a localhost RP ID and plain-http origins. */
   NODE_ENV: optional(),
 });
 
 export const accountConfig = registerAs('account', () => {
   const env = readEnv(schema);
+  // SERVICE_NAME is observability's (core): the default MFA issuer and passkey RP name.
+  const { serviceName } = observabilityConfig();
   return {
-    webUrl: env.WEB_URL,
     magicLink: env.AUTH_MAGIC_LINK,
     mfa: env.AUTH_MFA,
-    mfaIssuer: env.MFA_ISSUER ?? env.SERVICE_NAME,
-    serviceName: env.SERVICE_NAME,
+    mfaIssuer: env.MFA_ISSUER ?? serviceName,
+    serviceName,
     production: env.NODE_ENV === 'production',
     breachCheck: {
       enabled: env.PASSWORD_BREACH_CHECK,
@@ -155,6 +155,7 @@ export const accountConfig = registerAs('account', () => {
       timeoutMs: env.PASSWORD_BREACH_TIMEOUT_MS,
       onError: env.PASSWORD_BREACH_ON_ERROR,
       minCount: env.PASSWORD_BREACH_MIN_COUNT,
+      recheckDays: env.PASSWORD_BREACH_RECHECK_DAYS,
     },
     passwordHistory: env.PASSWORD_HISTORY,
     hashing: {

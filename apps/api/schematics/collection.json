@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/@nestjs/schematics/node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "feature": {
+      "factory": "./feature/index.js#feature",
+      "schema": "./feature/schema.json",
+      "description": "A business feature: a record with its routes, permissions, table, tests and the add-ons chosen (docs/adding-a-feature.md).",
+      "aliases": ["f"]
+    }
+  }
+}

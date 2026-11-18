@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
+import { MetricsModule } from '../../core/metrics/metrics.module.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
 import { type Quota, QuotaRegistration } from './quota.js';
@@ -9,6 +10,7 @@ import {
 } from './quotas.controller.js';
 import { QUOTA_PERMISSIONS } from './quotas.permissions.js';
 import { QuotaPolicy } from './quotas.policy.js';
+import { QuotaMetrics } from './quota.metrics.js';
 import { QuotasService } from './quotas.service.js';
 
 /**
@@ -21,9 +23,10 @@ import { QuotasService } from './quotas.service.js';
     AccessModule.forFeature(QUOTA_PERMISSIONS),
     AuditModule,
     DiscoveryModule,
+    MetricsModule,
   ],
   controllers: [QuotasController, OperatorQuotasController],
-  providers: [QuotasService, QuotaPolicy],
+  providers: [QuotasService, QuotaPolicy, QuotaMetrics],
   exports: [QuotasService],
 })
 export class QuotasModule {

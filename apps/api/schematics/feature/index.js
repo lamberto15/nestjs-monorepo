@@ -1,0 +1,218 @@
+// The `feature` schematic: a feature's files in its folder (`path`, default
+// src/features/<name>), and its module in src/app.module.ts's imports, the
+// one central line a feature needs (`--skip-import` leaves it out). Plain
+// ESM: Nest's CLI runs it as it is, no build step. Run it with
+// `nest g -c ./schematics/collection.json feature <name>` from apps/api, which
+// asks for what is not given (schema.json's prompts); docs/adding-a-feature.md.
+
+import { posix } from 'node:path';
+import { ModuleDeclarator } from '@nestjs/schematics';
+import { format, resolveConfig } from 'prettier';
+import { ADDONS, parseAddons } from './addons.js';
+import { parseFields } from './fields.js';
+import { kebabOf, names } from './names.js';
+import * as templates from './templates.js';
+
+/** The words an approvable action can't be: the record's own routes. */
+const RESERVED_ACTIONS = new Set([
+  'restore',
+  'bulk',
+  'duplicates',
+  'merge',
+  'watch',
+  'pdf',
+  'tags',
+  'comments',
+  'attachments',
+  'revisions',
+  'shares',
+  'documents',
+  'acknowledgments',
+  'acknowledge',
+  'data-quality',
+]);
+
+/** `--approvals publish,markPaid`: the actions that need approval. */
+function parseApprovals(list, t) {
+  const actions = String(list || 'publish')
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean);
+  return actions.map((action) => {
+    if (!/^[a-z][a-zA-Z0-9]*$/.test(action) || RESERVED_ACTIONS.has(action)) {
+      throw new Error(
+        '--approvals: "' +
+          action +
+          '" is not an action: a camelCase word (publish, markPaid) that is not a route of the record.',
+      );
+    }
+    const words = action.replace(/[A-Z]/g, (l) => ' ' + l.toLowerCase());
+    return {
+      action,
+      path: action.replace(/[A-Z]/g, (l) => '-' + l.toLowerCase()),
+      label: words[0].toUpperCase() + words.slice(1) + ' ' + t.aNoun,
+      className: action[0].toUpperCase() + action.slice(1) + t.Singular,
+    };
+  });
+}
+
+const clean = (path) =>
+  posix.normalize(String(path)).replace(/^\.\//, '').replace(/\/$/, '');
+
+/** The generation's context, every option checked before anything is written. */
+export function context(options) {
+  const t = names(options.name, options.singular);
+  const fields = parseFields(options.fields);
+  const addons = parseAddons(options.addons);
+  const sourceRoot = clean(options.sourceRoot || 'src');
+  const base = clean(options.path || posix.join(sourceRoot, 'features'));
+  const dir = options.flat ? base : posix.join(base, t.plural);
+  if (dir.startsWith('..') || posix.isAbsolute(dir)) {
+    throw new Error(
+      '--path "' + options.path + '": a folder inside the project.',
+    );
+  }
+  if (!['standard', 'none', undefined].includes(options.grants)) {
+    throw new Error('--grants: standard or none.');
+  }
+  if (
+    !['required', 'optional', 'off', undefined, ''].includes(
+      options.idempotency,
+    )
+  ) {
+    throw new Error('--idempotency: required, optional or off.');
+  }
+  const c = {
+    t,
+    fields,
+    addons,
+    dir,
+    sourceRoot,
+    softDelete: options.softDelete !== false,
+    unit: options.unit === true,
+    clientAccess: options.clientAccess === true,
+    grants: options.grants ?? 'standard',
+    idempotency: options.idempotency || undefined,
+    approvals: addons.includes('approvals')
+      ? parseApprovals(options.approvals, t)
+      : [],
+    R: t.SINGULAR,
+    T: t.pluralCamel,
+    src: posix.relative(dir, sourceRoot),
+    test: posix.relative(dir, 'test'),
+    url: '/v1/' + t.plural,
+    writer:
+      options.grants === 'none' ? 'team.admin.headers' : 'team.editor.headers',
+    enumField: fields.find((f) => f.type === 'enum') ?? null,
+    kebab: kebabOf,
+  };
+  for (const name of addons) ADDONS[name].check?.(c);
+  return c;
+}
+
+/** Every file of the feature, by its path from the project's root, unformatted. */
+export function files(c) {
+  const { t } = c;
+  const at = (name) => posix.join(c.dir, name);
+  return {
+    [at(t.singular + '.record.ts')]: templates.record(c),
+    [at(t.plural + '.tables.ts')]: templates.tables(c),
+    [at(t.singular + '.schemas.ts')]: templates.schemas(c),
+    [at(t.singular + '.list.ts')]: templates.list(c),
+    [at(t.singular + '.permissions.ts')]: templates.permissions(c),
+    [at(t.singular + '.policy.ts')]: templates.policy(c),
+    [at(t.plural + '.service.ts')]: templates.service(c),
+    [at(t.plural + '.controller.ts')]: templates.controller(c),
+    [at(t.plural + '.module.ts')]: templates.moduleFile(c),
+    ...(c.addons.includes('approvals') && {
+      [at(t.singular + '.approvals.ts')]: templates.approvalsFile(c),
+    }),
+    ...(c.addons.includes('computed-fields') && {
+      [at(t.singular + '.computed.ts')]: templates.computedFile(c),
+    }),
+    ...(c.addons.includes('choices') && {
+      [at(t.singular + '.choices.ts')]: templates.choicesFile(c),
+    }),
+    ...(c.addons.includes('documents') && {
+      [at('templates/' + t.singular + '.html')]: templates.documentTemplate(c),
+    }),
+    [at('i18n/en.json')]: templates.texts(c),
+    [at(t.plural + '.e2e-spec.ts')]: templates.e2e(c),
+    [at('README.md')]: templates.readme(c),
+  };
+}
+
+/** Formatted as the repository's Prettier config says, so the files pass `prettier --check` as written. */
+async function pretty(path, text) {
+  const config = (await resolveConfig(posix.join(process.cwd(), path))) ?? {};
+  return format(text, { ...config, filepath: path });
+}
+
+/** `FeatureModule` in the app module's imports, as `nest g module` adds one (@nestjs/schematics). */
+async function addToAppModule(tree, c, logger) {
+  const appModule = posix.join(c.sourceRoot, 'app.module.ts');
+  const symbol = c.t.Plural + 'Module';
+  if (!tree.exists(appModule)) {
+    logger.warn(
+      appModule + ' not found: add ' + symbol + ' to your root module by hand.',
+    );
+    return null;
+  }
+  const content = tree.read(appModule).toString('utf8');
+  const declared = new ModuleDeclarator().declare(content, {
+    metadata: 'imports',
+    name: c.t.plural + '.module',
+    className: symbol,
+    path: '/' + c.dir,
+    module: '/' + appModule,
+    isEsm: true,
+  });
+  tree.overwrite(appModule, await pretty(appModule, declared));
+  return appModule;
+}
+
+/** The schematic's factory (collection.json). */
+export function feature(options) {
+  return async (tree, schematic) => {
+    const c = context(options);
+    const all = files(c);
+    for (const path of Object.keys(all)) {
+      if (tree.exists(path)) throw new Error(path + ' exists already.');
+    }
+    for (const [path, text] of Object.entries(all))
+      tree.create(path, await pretty(path, text));
+    const changed = options.skipImport
+      ? null
+      : await addToAppModule(tree, c, schematic.logger);
+    const fixture = !c.dir.startsWith(c.sourceRoot + '/');
+    schematic.logger.info(
+      [
+        '',
+        'Next:',
+        '  ./node_modules/.bin/drizzle-kit generate --name ' +
+          c.t.plural +
+          (fixture ? ' --config test/fixtures/drizzle.config.ts' : '') +
+          '   # the ' +
+          c.t.table +
+          " table's migration",
+        '  Business logic: ' +
+          c.dir +
+          '/' +
+          c.t.plural +
+          '.service.ts, where it says "Business logic" (README.md there lists the rest).',
+        '  Texts: ' +
+          c.dir +
+          '/i18n/en.json. Test: ./node_modules/.bin/vitest run --config ./vitest.config.e2e.ts ' +
+          c.dir +
+          '/' +
+          c.t.plural +
+          '.e2e-spec.ts',
+        ...(changed
+          ? []
+          : options.skipImport
+            ? ['  Not added to the app module (--skip-import).']
+            : []),
+      ].join('\n'),
+    );
+  };
+}

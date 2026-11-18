@@ -87,6 +87,15 @@ export function setupHttp(app: NestNodeApplication) {
     limit: JSON_BODY_LIMIT,
   });
 
+  // HTML form posts: only SAML's HTTP-POST binding sends them (the assertion
+  // consumer service, iam/sso), a signed assertion of a few KB. Registered
+  // here, the adapter's own (extended, 1000 parameters) is skipped.
+  app.useBodyParser('urlencoded', {
+    extended: false,
+    limit: '512kb',
+    parameterLimit: 10,
+  });
+
   // HSTS, nosniff, a strict CSP (Swagger UI's assets are served from this
   // origin, so it works with the default policy)...
   app.useSecurityHeaders({

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageTags": "Create, rename, recolour and delete tags"
+      }
+    }
+  }
+}

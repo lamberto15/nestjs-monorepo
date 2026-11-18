@@ -7,6 +7,7 @@ import { TestMarksModule } from './marks/marks.js';
 import { MARKS_BODY, MARKS_RESPONSE } from './marks/marks.schemas.js';
 import { TEST_ITEM_LIST } from './test-item.list.js';
 import { TEST_ITEM_PERMISSIONS } from './test-item.permissions.js';
+import { TestItemLogic } from './test-item.logic.js';
 import { TestItemPolicy } from './test-item.policy.js';
 import { TEST_ITEM } from './test-item.record.js';
 import { testItemsController } from './test-items.controller.js';
@@ -56,7 +57,7 @@ export function testItemsModule({
       ...imports,
     ],
     controllers: [testItemsController(schemas)],
-    providers: [TestItemsService, TestItemPolicy],
+    providers: [TestItemsService, TestItemPolicy, TestItemLogic],
   };
 }
 

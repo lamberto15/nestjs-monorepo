@@ -23,6 +23,7 @@ import {
   organizationalUnitMemberships,
   organizationalUnits,
 } from '../../organization/organization.tables.js';
+import { ScimUnits } from '../../organization/scim-units.js';
 import { UnitTree } from '../../organization/tree.js';
 import { scimGroups } from '../sso.tables.js';
 import { SCIM_SCHEMA, ScimException } from './scim-error.filter.js';
@@ -61,7 +62,8 @@ export type ScimGroupInput = z.infer<typeof scimGroupSchema>;
  * (`unit_managed_by_scim`, README.md "Integration").
  */
 @Injectable()
-export class ScimGroupsService {
+@ScimUnits()
+export class ScimGroupsService implements ScimUnits {
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
@@ -73,6 +75,15 @@ export class ScimGroupsService {
   ) {}
 
   private readonly tree = new UnitTree();
+
+  /** Those of these units the tenant's IdP manages (its groups): organization refuses an administrator's change of them. */
+  async managedUnitIds(unitIds: readonly string[]) {
+    const rows = await this.db
+      .select({ id: scimGroups.unitId })
+      .from(scimGroups)
+      .where(inArray(scimGroups.unitId, [...unitIds]));
+    return new Set(rows.map((row) => row.id));
+  }
 
   async list(query: {
     filter?: string;

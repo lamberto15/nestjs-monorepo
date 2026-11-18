@@ -351,6 +351,17 @@ export class RecordStore<Row extends RecordRow = RecordRow> {
     });
   }
 
+  /**
+   * After a merge (modules/merge) moved `from` into `to`, in its
+   * transaction: each extension's `merged` hook moves what it keeps about
+   * the duplicate to the survivor. The merge calls it; nothing else does.
+   */
+  async merged(by: Principal, from: Row, to: Row) {
+    await this.txHost.withTransaction(async () => {
+      for (const hooks of this.hooks) await hooks.merged?.({ from, to, by });
+    });
+  }
+
   /** What goes with records deleted for good: the references emptied, the add-ons told. */
   async forget(by: Principal, ids: readonly string[]) {
     await emptyReferences(this.db, this.declaration.subject, ids);

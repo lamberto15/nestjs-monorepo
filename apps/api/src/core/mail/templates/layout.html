@@ -2,6 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <title>{{#if brand.name}}{{ brand.name }}{{else}}Notification{{/if}}</title>
   </head>
   <body
     style="
@@ -25,9 +26,23 @@
         background: #ffffff;
         border-radius: 8px;
         padding: 32px;
+        border-top: 4px solid {{ brand.color }};
       "
     >
-      {{{ body }}}
+      {{#if brand.logoUrl}}
+      <img
+        src="{{ brand.logoUrl }}"
+        alt="{{ brand.name }}"
+        height="40"
+        style="
+          display: block;
+          max-height: 40px;
+          width: auto;
+          margin-bottom: 24px;
+          border: 0;
+        "
+      />
+      {{/if}} {{{ body }}}
     </div>
   </body>
 </html>

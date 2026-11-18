@@ -13,7 +13,9 @@ await this.audit.record(user, { action: 'note.deleted', targetType: 'note', targ
 ```
 
 `record(principal, entry, db?)` in the current scope (pass the
-transaction to write with the change); `recordAnonymous(label, entry)`.
+transaction to write with the change); `recordAnonymous(label, entry)` for
+an attempt before anyone is signed in; `recordAccount({ id, email }, entry)`
+for the account itself acting through a mailed link (no session).
 
 ## How it is fed
 
@@ -22,6 +24,8 @@ Events from iam/auth (`auth.events.ts`), `@OnEvent` with
 `member.signed-in` in the tenant), `auth.sign-in-failed` (account entry,
 and `member.sign-in-failed` in each of the account's tenants),
 `auth.client-ip-denied` (`client.ip-denied` in the client's tenant).
+
+`AuditService.page(query, where)`: a page of the log; the routes are in iam/audit-log.
 
 Discovery decorator: `@ActorNameSource()` on one provider gives display
 names for actors (`withActorNames`); none means the stored labels.

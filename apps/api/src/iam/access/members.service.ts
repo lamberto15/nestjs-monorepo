@@ -7,8 +7,9 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
+import { z } from 'zod';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { and, eq, inArray, isNotNull, type SQL, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 import type {
   Database,
   DatabaseTransactions,
@@ -25,11 +26,16 @@ import { AuditService } from '../audit/audit.service.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import { discoverOne } from '../auth/discover.js';
 import type { UserPrincipal } from '../auth/principal.js';
-import { ACCESS_EVENTS, type MemberDeactivatedEvent } from './access.events.js';
+import {
+  ACCESS_EVENTS,
+  type MemberDeactivatedEvent,
+  type MemberReactivatedEvent,
+} from './access.events.js';
 import { NO_MEMBERS, userList } from './access.lists.js';
 import { AccessService } from './access.service.js';
-import { userRoles } from './access.tables.js';
+import { rolePermissions, roles, userRoles } from './access.tables.js';
 import { liveGrant, RolesService } from './roles.service.js';
+import { ScimMembers } from './scim-members.js';
 import { UnitDirectory } from './unit-directory.js';
 
 /** What an administrator changes of a membership: never the account (its name, its password). */
@@ -65,6 +71,7 @@ const memberColumns = {
 @Injectable()
 export class MembersService implements OnModuleInit {
   private units?: UnitDirectory;
+  private scim?: ScimMembers;
   private list = userList(NO_MEMBERS);
 
   constructor(
@@ -79,6 +86,11 @@ export class MembersService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    this.scim = discoverOne<ScimMembers>(
+      this.discovery,
+      ScimMembers,
+      'SCIM members source (@ScimMembers())',
+    );
     this.units = discoverOne<UnitDirectory>(
       this.discovery,
       UnitDirectory,
@@ -139,7 +151,7 @@ export class MembersService implements OnModuleInit {
   /**
    * Changes a membership: its activation and its roles in this tenant.
    * A deactivation is announced (`access.member-deactivated`) in the
-   * change's transaction.
+   * change's transaction, a reactivation too (`access.member-reactivated`).
    */
   async update(
     actor: UserPrincipal,
@@ -188,6 +200,14 @@ export class MembersService implements OnModuleInit {
           actor,
         } satisfies MemberDeactivatedEvent);
       }
+      if (changes.active === true && membership && !membership.active) {
+        await this.events.emitAsync(ACCESS_EVENTS.memberReactivated, {
+          userId: id,
+          tenantId,
+          actor,
+          ip,
+        } satisfies MemberReactivatedEvent);
+      }
       await this.audit.record(actor, {
         action: 'user.updated',
         targetType: 'user',
@@ -213,10 +233,10 @@ export class MembersService implements OnModuleInit {
     return eq(memberships.tenantId, this.tenancy.tenantId());
   }
 
-  /** Members with their role grants still running and their current units. */
+  /** Members with their role grants still running, their current units and whether SCIM manages them. */
   private async withGrants<T extends { id: string }>(items: T[]) {
     const ids = items.map((user) => user.id);
-    const [assignments, units] = ids.length
+    const [assignments, units, scim] = ids.length
       ? await Promise.all([
           // An ended grant is gone: never reported, so never echoed back.
           this.db
@@ -224,8 +244,9 @@ export class MembersService implements OnModuleInit {
             .from(userRoles)
             .where(and(inArray(userRoles.userId, ids), liveGrant(userRoles))),
           this.units?.unitIdsOf(ids) ?? new Map<string, string[]>(),
+          this.scim?.managedUserIds(ids) ?? new Set<string>(),
         ])
-      : [[], new Map<string, string[]>()];
+      : [[], new Map<string, string[]>(), new Set<string>()];
     return items.map((user) => {
       const own = assignments.filter((grant) => grant.userId === user.id);
       return {
@@ -234,8 +255,94 @@ export class MembersService implements OnModuleInit {
         roleIds: own.map((grant) => grant.roleId),
         roles: own.map(({ roleId, expiresAt }) => ({ roleId, expiresAt })),
         unitIds: units.get(user.id) ?? [],
+        managedByScim: scim.has(user.id),
       };
     });
+  }
+
+  /** Of these accounts, the ones that are active members of the current tenant. */
+  async active(ids: readonly string[]): Promise<string[]> {
+    if (!ids.length) return [];
+    const rows = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(memberships, eq(memberships.userId, users.id))
+      .where(
+        and(
+          inArray(users.id, [...ids]),
+          eq(users.active, true),
+          eq(memberships.tenantId, this.tenancy.tenantId()),
+          eq(memberships.active, true),
+        ),
+      );
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * The active members holding a role (its key, or its id: roles made in
+   * the API have no key) in a grant still running; with `among`, only
+   * those of them.
+   */
+  async withRole(role: string, among?: readonly string[]): Promise<string[]> {
+    if (among && !among.length) return [];
+    const rows = await this.db
+      .selectDistinct({ id: userRoles.userId })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(
+        and(
+          z.uuid().safeParse(role).success
+            ? or(eq(roles.key, role), eq(roles.id, role))
+            : eq(roles.key, role),
+          liveGrant(userRoles),
+          among ? inArray(userRoles.userId, [...among]) : undefined,
+        ),
+      );
+    return this.active(rows.map((row) => row.id));
+  }
+
+  /**
+   * The active members who may `action` this record of `subject`, by their
+   * permissions with their conditions. Those holding the permission at all
+   * (or everything, as administrators do) are bounded by `limit`, so a
+   * broad permission can't make the check slow.
+   */
+  async permitted(
+    action: string,
+    subject: string,
+    record: Record<string, unknown>,
+    limit = 2000,
+  ): Promise<string[]> {
+    const holders = await this.db
+      .selectDistinct({ id: userRoles.userId })
+      .from(userRoles)
+      .innerJoin(rolePermissions, eq(rolePermissions.roleId, userRoles.roleId))
+      .where(
+        and(
+          or(
+            and(
+              eq(rolePermissions.subject, subject),
+              eq(rolePermissions.action, action),
+            ),
+            and(
+              eq(rolePermissions.subject, 'all'),
+              eq(rolePermissions.action, 'manage'),
+            ),
+          ),
+          liveGrant(userRoles),
+        ),
+      )
+      .orderBy(userRoles.userId)
+      .limit(limit);
+    const allowed: string[] = [];
+    for (const id of await this.active(holders.map((row) => row.id))) {
+      // The ability reads only the principal's kind and id.
+      const principal = { kind: 'user', id } as UserPrincipal;
+      if (await this.access.can(principal, action, subject, record)) {
+        allowed.push(id);
+      }
+    }
+    return allowed;
   }
 
   /** A member's grants still running: role id → end (null: never). */

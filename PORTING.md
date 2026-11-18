@@ -32,7 +32,7 @@ repository.
       `modules/deliverability`)
 - [x] signed webhooks keep their raw body; a module registers the route a
       foreign page may post to (SAML) as a CSRF exclusion
-- [ ] mail delivery modes and budgets from settings and quotas, workflow
+- [x] mail delivery modes and budgets from settings and quotas, workflow
       payload encryption
 
 ## Identity and access (`apps/api/src/iam`)
@@ -43,22 +43,23 @@ repository.
       passkeys, magic links, "Sign in with", devices and sign-in alerts
 - [x] tenants: sign-up, switching, the operators' routes, deletion, domains
 - [x] impersonation
-- [ ] break-glass: grants are made and audited; reading through one waits
-      for a read-only scope in tenancy and access
+- [x] break-glass: grants, and reading a tenant through one (a read-only
+      transaction, read-only abilities, each read audited)
 - [x] access: the permission catalog each module adds to, roles, dated
       grants, conditions, field permissions, the access API, the first-boot
       seed, the system principal
 - [x] API clients and their keys, invitations
 - [x] organization (units, the tree, dated memberships, unit conditions)
 - [x] audit (the log, sign-in entries, retention)
-- [ ] audit: record changes and the audit pages
+- [x] audit: record changes and the audit pages
 - [x] sso (OIDC, OAuth 2.0, SAML, verified domains, "SSO required") and
       SCIM 2.0
-- [ ] the seams between them (SSO required at password sign-in, SCIM-managed
+- [x] the seams between them (SSO required at password sign-in, SCIM-managed
       users and units, bot protection and maintenance on the account routes)
 - [x] captcha (Turnstile, the stub, app attestation)
 - [x] holds (legal holds)
-- [ ] auth-policy, the personal data export
+- [x] auth-policy (tenant, unit and platform scopes), the personal data
+      export, account deletion, consents
 
 ## Modules (`apps/api/src/modules`)
 
@@ -77,25 +78,33 @@ repository.
 - [x] deliverability (bounces, complaints, the suppression list), messaging
       (SMS and mobile push)
 - [x] sequences and naming series, calendars, recurrence, retention
-- [ ] record add-ons: tags, comments, attachments, revisions, favorites,
+- [x] record add-ons: tags, comments, attachments, revisions, favorites,
       recents, templates, choices, custom fields, computed fields, saved
       views, shares, approvals, acknowledgments, bulk, merge, data-transfer,
       reports, data-quality, and the record side of sequences, webhooks,
       notifications, recurrence and retention
-- [ ] automations, ai, documents, branding, people, config-bundles, ops
-      (dead letters, job admin), encryption admin
-- [ ] forms (last)
+- [x] automations, ai, documents, branding, people, config-bundles, ops
+      (dead letters, job admin, diagnostics, backlog), encryption admin
+- [x] forms
+- [x] mcp: tools for AI agents at `POST /v1/mcp` (new: the earlier template
+      had none)
 
 ## Features (`apps/api/src/features`)
 
-- [ ] notes (the example)
+- [x] the generator (`pnpm feature:add`, Nest schematics), proved by a
+      generated fixture that may not drift from it. No sample feature ships
+      (`notes` is not ported: AGENTS.md, "Decisions").
+- [ ] the web pages of a generated feature
 
 ## Around the API
 
 - [ ] the typed client (`packages/api-client`)
 - [ ] the web app (`apps/web`, `packages/ui`)
 - [x] the worker process (`node dist/worker`)
-- [ ] the operator CLI
+- [x] the operator CLI (`pnpm ops`)
+- [x] repository tooling: the raw SQL check, knip, git hooks, commit
+      message rules, migration lint, setup, the demo seed
+- [ ] the docs pages
 - [x] CI (one workflow, the image, Dependabot: `docs/ci.md`)
 
 ## Not ported, on purpose
@@ -107,6 +116,15 @@ repository.
 - `analytics` (nightly aggregates for a reporting role): analytical
   reporting is done outside the app, in a store fed by replication. Scheduled
   exports (`reports`) stay, with data-transfer.
+- `feature:sync`, `feature:remove` and `capability:remove`: a feature is
+  changed by editing its files and running `pnpm db:generate`; a feature or
+  a capability is removed by deleting its folder and its line in a module.
+- Caddy's certificate route (`/internal/domains/allowed`) and `FILES_ORIGIN`.
+- The deployment-wide `mail.dailyLimit` (a tenant's `mail.perDay` quota
+  stays), the mail signature partial, and the metrics
+  `db_incidents_total{trigger=pool_waiting}`, `mail_budget_used_ratio` and
+  `approvals_open`.
+- Release Please and the commit-message workflow: to add with the remote.
 
 ## Changed on the way
 
@@ -131,9 +149,11 @@ repository.
   (the old one ran after the sign-in limit).
 - `GET /v1/auth/captcha` tells a page which widget to render (the old
   template put it in `/auth/methods`).
-- Realtime events are declared where they are pushed; there is no central
-  manifest and no `x-realtime-events` OpenAPI extension. Presence names a
-  record type by its permission subject (`Note`), not a slug.
+- Realtime events are declared where they are pushed
+  (`defineRealtimeEvent`); the OpenAPI document's `x-realtime-events` is
+  collected from them. A record add-on's events appear there only when a
+  feature uses the add-on. Presence names a record type by its permission
+  subject (`Note`), not a slug.
 - Operators are the members of the tenant named by `OPERATOR_TENANT`
   (with `TENANCY=single`, of the one tenant); the tenants table has no
   operator column.
@@ -148,7 +168,7 @@ repository.
   in place of `Access.manageSettings`; usage has `Usage.*`.
 - API clients are under `/v1/access/clients`; `refresh` no longer takes
   a `tenantId` (switching tenants is its own route).
-- Invitations: the `resend` alias is gone (`POST …/:id/send`).
+- Invitations: `resend` is a deprecated alias of `POST …/:id/send`.
 - Web push devices are `PUT /v1/devices`; mobile devices moved to
   `/v1/messaging/devices`. Watching a record is
   `PUT /v1/subscriptions/{subject}/{recordId}`.
@@ -164,3 +184,54 @@ repository.
   modules.
 - Modules of one level may use each other one way, through exports;
   `src/module-graph.spec.ts` checks it.
+- The global rate limit counts HTTP requests only; an MCP tool call or a
+  socket message was counted when it arrived.
+- Usage: `GET /v1/tenant/usage` is `GET /v1/quotas`, and a tenant's for
+  the operators is `GET /v1/tenants/{id}/quotas`.
+- Acknowledgments moved from attachments to the record:
+  `/v1/<path>/{id}/acknowledgments`.
+- The account export's status is `GET /v1/account/exports/{id}`; its rows
+  are `kind`, `tenantId`, `id`, `data`.
+- Data transfer is under `/v1/data`; an export or import is named by the
+  record's path; there is no JSON format (csv, xlsx). The operators'
+  `POST /v1/tenants/{id}/export` needs `Access.exportTenants` and leaves out
+  hashes, secrets and encrypted columns.
+- Bulk: `POST /v1/<path>/bulk`, one transaction per record; a run names its
+  subject.
+- Permissions renamed, none called `manage`: `DataQuality.read|scan|resolve`,
+  `Approval.read|abandon|cancel|managePolicies`, `Automation.configure`,
+  `Branding.update`, `ConfigBundle.export|apply`, `Access.testIntegrations`
+  (ops diagnostics), `Access.managePlatformAuthPolicy`.
+- Webhook scope (`/v1/access/clients/{clientId}/webhook-scope`) asks for
+  `Webhooks.manageEndpoints` and authority over the client (was
+  `Access.manageClients`).
+- Event and notification types are kebab-case: `security.new-sign-in`,
+  `security.password-changed`, `security.password-breached`,
+  `security.passkey-added`, `security.passkey-removed`,
+  `security.break-glass-started`; `security.mfaChanged` is
+  `security.mfa-enabled` and `security.mfa-disabled`; the webhook
+  `security.apiKeyRotated` is `security.api-key-rotated`. A record's webhook
+  types are `<item>.created` and so on.
+- Security alerts are mailed by `iam/account` (an alert may have no tenant)
+  and also stored as notifications in the tenant the person acted in.
+- Automations: one condition expression replaces the filters; the webhook
+  action sends `<item>.automation-matched`.
+- AI: a source is a collection path; the daily budget is the quota
+  `ai.tokensPerDay` (was `AI_TENANT_DAILY_TOKENS`); refused with
+  `ai_quota_exceeded`.
+- Documents: an issued PDF is a locked attachment that records the fields it
+  shows; a reader lacking one of them sees it listed but may not open it.
+- Custom field values are in their own table; the body key stays `custom`.
+  Computed fields are computed when a record is presented, not stored.
+- Ops: diagnostics are `/v1/ops/diagnostics/{name}`; the mail backlog is
+  global only. The database pool is not a readiness check: it is in the
+  `db_pool_*` metrics.
+- Auth policy has unit and platform scopes
+  (`/v1/access/auth-policy/units/{unitId}`, `/platform`).
+- Attachments: a version is addressed by its number
+  (`/v1/attachments/{id}/versions/{version}`); files appear in
+  `GET /v1/search` when `ATTACHMENT_TEXT_SEARCH` is on.
+- Workflow inputs and outputs are encrypted when `DATA_ENCRYPTION_KEYS` is
+  set.
+- A record add-on's routes are in the OpenAPI document only when a feature
+  uses the add-on, so with no feature the typed client has none of them.

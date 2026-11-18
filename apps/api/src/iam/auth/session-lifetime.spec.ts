@@ -9,6 +9,7 @@ import {
 import { AuthPolicy, effectiveSessionLimit } from './auth-policy.js';
 import type { DrizzleAuthenticationStore } from './drizzle-authentication.store.js';
 import { SessionLifetime } from './session-lifetime.js';
+import type { UsersRepository } from './users.repository.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -50,6 +51,7 @@ describe('SessionLifetime', () => {
         getProviders: () => (withSource ? [{ instance: withSource }] : []),
       } as unknown as DiscoveryService,
       {} as ModuleRef,
+      {} as UsersRepository,
     );
     policy.onModuleInit();
     return new SessionLifetime(

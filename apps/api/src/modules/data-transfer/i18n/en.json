@@ -1,0 +1,51 @@
+{
+  "dataTransfer": {
+    "template": {
+      "sheets": {
+        "data": "Data",
+        "columns": "Columns"
+      },
+      "headers": {
+        "column": "Column",
+        "required": "Required",
+        "type": "Type",
+        "format": "Format",
+        "example": "Example",
+        "description": "Description"
+      },
+      "yes": "Yes",
+      "no": "No",
+      "note": "Fill the Data sheet: replace the example row with your rows, one per record. Leave a column empty to set nothing.",
+      "types": {
+        "text": "Text",
+        "number": "Number",
+        "boolean": "Yes or no",
+        "date": "Date",
+        "datetime": "Date and time",
+        "list": "List"
+      },
+      "format": {
+        "options": "One of: {options}",
+        "textRange": "{min} to {max} characters",
+        "textMax": "Up to {max} characters",
+        "textMin": "At least {min} characters",
+        "numberRange": "A number from {min} to {max}",
+        "numberMin": "A number, at least {min}",
+        "numberMax": "A number, at most {max}",
+        "number": "A number",
+        "listOptions": "Comma-separated, among: {options}",
+        "list": "Comma-separated values",
+        "datetime": "YYYY-MM-DD HH:MM:SS, in {zone}",
+        "date": "YYYY-MM-DD",
+        "boolean": "true or false"
+      }
+    }
+  },
+  "permissions": {
+    "access": {
+      "actions": {
+        "exportTenants": "Export every record of a tenant (operators only)"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "auth-policy": {
+    "mfaOff": "Two-factor sign-in is off in this deployment: it can't be required.",
+    "mfaEnrollFirst": "Set up two-factor sign-in for yourself first: requiring it now would lock you out.",
+    "overCeiling": "{name} is {max} in this deployment: a tenant may only shorten it."
+  },
+  "permissions": {
+    "access": {
+      "actions": {
+        "readAuthPolicy": "See the tenant's sign-in policy",
+        "updateAuthPolicy": "Change the tenant's sign-in policy: two-factor (also per unit), passwords, session lifetimes, break-glass",
+        "managePlatformAuthPolicy": "Operators: require two-factor sign-in of every tenant"
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageTemplates": "Share record templates with everyone, and change or delete shared ones"
+      }
+    }
+  }
+}

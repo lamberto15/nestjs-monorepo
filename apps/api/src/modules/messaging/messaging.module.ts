@@ -23,6 +23,7 @@ import { MessagingSender } from './messaging.sender.js';
 import { MessagingService } from './messaging.service.js';
 import { MESSAGING_SETTINGS } from './messaging.settings.js';
 import { SmsInboundController } from './sms-inbound.controller.js';
+import { MessagingPersonalData } from './messaging.personal-data.js';
 
 /**
  * SMS and mobile push (README.md): a person's devices and verified number,
@@ -54,6 +55,7 @@ import { SmsInboundController } from './sms-inbound.controller.js';
     MessagingProcessor,
     MessagingRetentionJob,
     MessagingSender,
+    MessagingPersonalData,
   ],
   exports: [MessagingSender],
 })

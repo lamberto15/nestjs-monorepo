@@ -10,10 +10,14 @@ import { createUser } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
 import type { Database } from '../../core/database/database.js';
 import { MAIL_QUEUE } from '../../core/mail/mail.queue.js';
+import { SharedOutboxModule } from '../../core/outbox/outbox.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { auditLog } from '../audit/audit.tables.js';
 import { users } from '../auth/auth.tables.js';
+import { TenantsModule } from '../tenants/tenants.module.js';
 import { AccountModule } from './account.module.js';
+import { BreachedPasswordsService } from './breached-passwords.service.js';
+import { SignInPasswordCheck } from './sign-in-password-check.js';
 import { mfaAuthenticators } from './account.tables.js';
 
 vi.hoisted(() => {
@@ -27,6 +31,7 @@ vi.hoisted(() => {
     PASSWORD_HISTORY: '3',
     AUTH_MAGIC_LINK: 'on',
     WEB_URL: 'https://web.example.com',
+    AUTH_SIGN_UP: 'on',
   });
 });
 
@@ -43,6 +48,9 @@ describe('account (e2e)', () => {
       QueuesModule,
       AccountModule,
       CheapPasswordsModule,
+      // The sign-up route (iam/tenants), whose event this module answers.
+      SharedOutboxModule,
+      TenantsModule,
     );
     mailbox = app.get(MailTransport) as InMemoryMailTransport;
     db = app.get<Database>(getDrizzleToken());
@@ -192,6 +200,32 @@ describe('account (e2e)', () => {
     });
     expect(verified.statusCode).toBe(200);
     expect(verified.json()).toEqual({ email: user.email, emailVerified: true });
+  });
+
+  it('mails a sign-up its verification link; its password signs in once proved', async () => {
+    const email = `signup-${randomUUID()}@example.com`;
+    const password = newPassword();
+    const signedUp = await browser(app).post('/v1/auth/sign-up', {
+      email,
+      name: 'Ada',
+      password,
+    });
+    expect(signedUp.statusCode, signedUp.body).toBe(201);
+    const early = await browser(app).post('/v1/auth/sign-in', {
+      email,
+      password,
+    });
+    expect(early.json().code).toBe('email_unverified');
+    const token = await tokenMailed(email, '/verify-email');
+    const verified = await browser(app).post('/v1/auth/email/verify', {
+      token,
+      password,
+    });
+    expect(verified.statusCode).toBe(200);
+    expect(
+      (await browser(app).post('/v1/auth/sign-in', { email, password }))
+        .statusCode,
+    ).toBe(200);
   });
 
   it('turns on two-factor: a sign-in then needs a code, stored encrypted', async () => {
@@ -364,5 +398,45 @@ describe('account (e2e)', () => {
       redirectTo: '/inbox',
     });
     expect((await asking.get('/v1/auth/sessions')).statusCode).toBe(200);
+  });
+
+  it("re-checks a sign-in's stored password: a breached one is audited and its owner mailed, once per password", async () => {
+    const breached = app.get(BreachedPasswordsService);
+    vi.spyOn(breached, 'enabled', 'get').mockReturnValue(true);
+    const lookup = vi.spyOn(breached, 'isBreachedIn').mockResolvedValue(true);
+    try {
+      const created = await createUser(app);
+      // Two sign-ins with the same password: checked once.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const signedIn = await browser(app).post('/v1/auth/sign-in', {
+          email: created.email,
+          password: created.password,
+        });
+        expect(signedIn.statusCode, signedIn.body).toBeLessThan(300);
+      }
+      await app.get(SignInPasswordCheck).settled();
+
+      expect(lookup).toHaveBeenCalledOnce();
+      const audited = await db
+        .select({ action: auditLog.action })
+        .from(auditLog)
+        .where(eq(auditLog.targetId, created.user.id));
+      expect(
+        audited.filter((entry) => entry.action === 'auth.password-breached'),
+      ).toHaveLength(1);
+      await vi.waitFor(
+        () =>
+          expect(
+            mailbox.mails.some(
+              (mail) =>
+                mail.to.some((to) => to.address === created.email) &&
+                mail.subject === 'Your password appeared in a data breach',
+            ),
+          ).toBe(true),
+        { timeout: 15_000 },
+      );
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

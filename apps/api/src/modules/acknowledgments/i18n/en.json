@@ -1,0 +1,24 @@
+{
+  "acknowledgments": {
+    "errors": {
+      "dueInPast": "The deadline must be in the future.",
+      "limit": "A version takes at most {max} people.",
+      "answered": "Already acknowledged: the answer stays.",
+      "recipientInvalid": "{key} is not a member who may read this record."
+    }
+  },
+  "notifications": {
+    "acknowledgment": {
+      "requested": {
+        "label": "Record to acknowledge",
+        "title": "Please acknowledge",
+        "body": "{by} asked you to acknowledge \"{title}\" (version {version})."
+      },
+      "reminder": {
+        "label": "Reminder to acknowledge",
+        "title": "Reminder: please acknowledge",
+        "body": "{by} reminded you to acknowledge \"{title}\" (version {version})."
+      }
+    }
+  }
+}

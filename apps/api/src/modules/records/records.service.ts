@@ -1,6 +1,7 @@
 import { Injectable, type OnModuleInit, type Type } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import type { List } from '../../core/http/list-query.js';
+import type { Principal } from '../../iam/auth/principal.js';
 import type { StockQuota } from '../quotas/quota.js';
 import type { RecordDeclaration, RecordTable } from './record.js';
 import {
@@ -10,6 +11,7 @@ import {
 } from './record-extension.js';
 import type { RecordPolicy } from './record.policy.js';
 import type { RecordPresenter } from './record.presenter.js';
+import type { RecordSchemas } from './record.schemas.js';
 import type { RecordStore } from './record.store.js';
 
 /**
@@ -24,6 +26,8 @@ export class RecordFeature {
     readonly table: RecordTable,
     readonly list: List,
     readonly policy: Type<RecordPolicy>,
+    /** Its bodies and response, with what its add-ons add (modules/mcp's tools take them). */
+    readonly schemas: RecordSchemas,
     /** The stock quota of its records, when `forFeature({ quota })` set one. */
     readonly quota?: StockQuota,
   ) {}
@@ -50,6 +54,21 @@ export class RecordRegistration {
     readonly presenter: RecordPresenter,
   ) {
     this.list = feature.list;
+  }
+
+  /**
+   * The list a request's query is parsed with: the record's (with its
+   * extensions' `filters`), plus what their `listFields()` give for this
+   * principal (RecordPresenter.query, GET /v1/lists/{subject}).
+   */
+  async listFor(principal: Principal): Promise<List> {
+    let list = this.list;
+    for (const hooks of this.extensions) {
+      if (!hooks.listFields) continue;
+      const more = await hooks.listFields(principal);
+      list = list.extend(more.fields, more.select ?? []);
+    }
+    return list;
   }
 
   get declaration() {

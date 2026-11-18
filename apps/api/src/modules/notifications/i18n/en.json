@@ -20,11 +20,71 @@
     }
   },
   "notifications": {
+    "security": {
+      "break-glass-started": {
+        "label": "An operator opened your organization (break-glass)",
+        "title": "Break-glass access to your organization",
+        "body": "{operator} opened your organization to read it, until {expiresAt}. Their reason: \"{reason}\"."
+      },
+      "new-sign-in": {
+        "label": "New sign-in to your account",
+        "title": "New sign-in",
+        "body": "Your account was signed in from {device} ({ip})."
+      },
+      "password-changed": {
+        "label": "Your password was changed",
+        "title": "Password changed",
+        "body": "The password of your account was changed (from {ip})."
+      },
+      "password-breached": {
+        "label": "Your password appeared in a data breach",
+        "title": "Password found in a data breach",
+        "body": "The password of your account appears in a known data breach. Change it now, to one you use nowhere else."
+      },
+      "mfa-enabled": {
+        "label": "Two-factor sign-in turned on",
+        "title": "Two-factor sign-in on",
+        "body": "Two-factor sign-in was turned on for your account (from {ip})."
+      },
+      "mfa-disabled": {
+        "label": "Two-factor sign-in turned off",
+        "title": "Two-factor sign-in off",
+        "body": "Two-factor sign-in was turned off for your account (from {ip})."
+      },
+      "passkey-added": {
+        "label": "A passkey was added to your account",
+        "title": "Passkey added",
+        "body": "The passkey \"{name}\" was added to your account (from {ip})."
+      },
+      "passkey-removed": {
+        "label": "A passkey was removed from your account",
+        "title": "Passkey removed",
+        "body": "The passkey \"{name}\" was removed from your account (from {ip})."
+      }
+    },
     "notification": {
       "test": {
         "label": "Test notification",
         "title": "Test notification",
         "body": "This is a test notification, sent at {at}."
+      }
+    },
+    "record": {
+      "changed": {
+        "label": "A record you watch changed",
+        "title": "Watched {noun} changed",
+        "body": {
+          "one": "{by} changed the {noun} \"{title}\".",
+          "other": "{count} changes to the {noun} \"{title}\", the latest by {by}."
+        }
+      },
+      "bulk-changed": {
+        "label": "Many records you watch changed",
+        "title": "Watched records changed",
+        "body": {
+          "one": "The {noun} \"{title}\" was changed by {by}.",
+          "other": "{count} more {noun} records you watch were changed, the latest \"{title}\" by {by}."
+        }
       }
     }
   }

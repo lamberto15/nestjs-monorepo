@@ -49,7 +49,11 @@ import type {
   RetryDeliveriesDto,
   UpdateEndpointDto,
 } from './webhooks.schemas.js';
-import { webhookDeliveryRequests } from './webhooks.tables.js';
+import {
+  webhookClientScopes,
+  webhookDeliveryRequests,
+  type WebhookScope,
+} from './webhooks.tables.js';
 
 /** The delivery's times, which the package keeps in epoch milliseconds. */
 const DELIVERY_TIMES = [
@@ -151,6 +155,36 @@ export class WebhooksService {
       throw error;
     }
     return { clientId: client.id, by: { user, ip } };
+  }
+
+  // Subscriber scope
+
+  /** Which records' events the client's endpoints receive: `own` unless an administrator chose `tenant`. */
+  async getScope(owner: WebhookOwner): Promise<{ scope: WebhookScope }> {
+    const [row] = await this.db
+      .select({ scope: webhookClientScopes.scope })
+      .from(webhookClientScopes)
+      .where(eq(webhookClientScopes.clientId, owner.clientId));
+    return { scope: row?.scope ?? 'own' };
+  }
+
+  /** Sets it (`own` removes the row: the default), audited as the user's. */
+  async setScope(owner: WebhookOwner, scope: WebhookScope) {
+    if (scope === 'own') {
+      await this.db
+        .delete(webhookClientScopes)
+        .where(eq(webhookClientScopes.clientId, owner.clientId));
+    } else {
+      await this.db
+        .insert(webhookClientScopes)
+        .values({ clientId: owner.clientId, scope })
+        .onConflictDoUpdate({
+          target: [webhookClientScopes.tenantId, webhookClientScopes.clientId],
+          set: { scope, updatedAt: new Date() },
+        });
+    }
+    await this.audited(owner, 'webhook-scope.updated', { scope });
+    return { scope };
   }
 
   // Endpoints

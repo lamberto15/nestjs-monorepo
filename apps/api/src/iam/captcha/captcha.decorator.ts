@@ -15,6 +15,13 @@ export interface CaptchaOptions {
    * route that always answers 202 so as to reveal nothing).
    */
   count: 'failures' | 'requests';
+  /**
+   * Where the account the attempt names comes from: `body` (the default:
+   * the body's `email`), or `session` (the second step of a sign-in,
+   * `POST /auth/mfa/verify`: the account of the session this browser
+   * holds, pending its code; none, only the address counts).
+   */
+  account?: 'body' | 'session';
 }
 
 /** The route metadata CaptchaGuard reads. */

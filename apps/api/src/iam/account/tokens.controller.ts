@@ -1,5 +1,17 @@
-import { Body, Controller, Headers, HttpCode, Ip, Post } from '@nestjs/common';
-import { Public, TokenService } from '@nestjs/authentication';
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  Ip,
+  Optional,
+  Post,
+} from '@nestjs/common';
+import {
+  AuthenticationError,
+  Public,
+  TokenService,
+} from '@nestjs/authentication';
 import {
   ApiNoContentResponse,
   ApiOkResponse,
@@ -12,6 +24,7 @@ import { z } from 'zod';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
 import { SessionLifetime } from '../auth/session-lifetime.js';
 import { Captcha } from '../captcha/captcha.decorator.js';
+import { CaptchaService } from '../captcha/captcha.service.js';
 import { email } from './account.schemas.js';
 import { AccountService } from './account.service.js';
 import { NativeSignIn } from './native-sign-in.service.js';
@@ -79,6 +92,8 @@ export class TokensController {
     private readonly account: AccountService,
     private readonly lifetime: SessionLifetime,
     private readonly native: NativeSignIn,
+    // Absent without CaptchaModule: then nothing was counted to give back.
+    @Optional() private readonly captcha?: CaptchaService,
   ) {}
 
   @Throttle({ default: { limit: 5, ttl: minutes(15) } })
@@ -91,18 +106,34 @@ export class TokensController {
     description:
       'Invalid credentials, or a second factor is required or wrong.',
   })
-  issue(
+  async issue(
     @Body({ schema: issueSchema }) body: z.infer<typeof issueSchema>,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string | undefined,
   ) {
-    return this.account.issueTokens(
-      body.email,
-      body.password,
-      { code: body.code, recoveryCode: body.recoveryCode },
-      { ip, userAgent },
-      body.tenantId,
-    );
+    try {
+      return await this.account.issueTokens(
+        body.email,
+        body.password,
+        { code: body.code, recoveryCode: body.recoveryCode },
+        { ip, userAgent },
+        body.tenantId,
+      );
+    } catch (error) {
+      // The right password, no code sent: the browser's sign-in answers
+      // that with a 200 (`mfaRequired`), and it is no failure here either.
+      // The 401 keeps the attempt the guard reserved: give it back. A wrong
+      // code (the same `mfa_required`, with a code) stays counted.
+      if (
+        error instanceof AuthenticationError &&
+        error.code === 'mfa_required' &&
+        !body.code &&
+        !body.recoveryCode
+      ) {
+        await this.captcha?.release({ ip, email: body.email });
+      }
+      throw error;
+    }
   }
 
   // The code is 256 random bits, bound to its verifier and spent by any

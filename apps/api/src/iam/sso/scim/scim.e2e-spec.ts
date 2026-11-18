@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { Controller, Get, Module, VERSION_NEUTRAL } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Injectable,
+  Module,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import { getDrizzleToken } from '@nestjs/drizzle';
@@ -21,6 +28,10 @@ import {
   rolePermissions,
   roles,
 } from '../../access/access.tables.js';
+import {
+  ACCESS_EVENTS,
+  type MemberDeactivatedEvent,
+} from '../../access/access.events.js';
 import { auditLog } from '../../audit/audit.tables.js';
 import { memberships, users } from '../../auth/auth.tables.js';
 import type { RequestPrincipal } from '../../auth/principal.js';
@@ -47,7 +58,18 @@ class ProbeController {
     return user;
   }
 }
-@Module({ controllers: [ProbeController] })
+/** What access announced of deactivations (realtime ends the member's sockets on it). */
+@Injectable()
+class Deactivations {
+  readonly seen: MemberDeactivatedEvent[] = [];
+
+  @OnEvent(ACCESS_EVENTS.memberDeactivated)
+  deactivated(event: MemberDeactivatedEvent) {
+    this.seen.push(event);
+  }
+}
+
+@Module({ controllers: [ProbeController], providers: [Deactivations] })
 class ProbeModule {}
 
 const DOMAIN = 'acme.test';
@@ -405,6 +427,99 @@ describe('SCIM provisioning (e2e)', () => {
     );
     expect((await send('GET', `/Groups/${group.id}`, scim)).statusCode).toBe(
       404,
+    );
+  });
+
+  it('announces a deprovisioned membership, its actor the IdP’s client', async () => {
+    const user = await provision();
+    expect((await send('DELETE', `/Users/${user.id}`, scim)).statusCode).toBe(
+      204,
+    );
+    const event = app
+      .get(Deactivations)
+      .seen.find((seen) => seen.userId === user.id);
+    expect(event).toMatchObject({ tenantId, actor: { kind: 'client' } });
+  });
+
+  it('reactivates a deprovisioned account when an administrator turns its membership on', async () => {
+    const user = await provision();
+    expect((await send('DELETE', `/Users/${user.id}`, scim)).statusCode).toBe(
+      204,
+    );
+    expect((await account(user.id))?.active).toBe(false);
+    const on = await app.inject({
+      method: 'PATCH',
+      url: `/v1/access/users/${user.id}`,
+      headers: admin.headers,
+      payload: { active: true },
+    });
+    expect(on.statusCode, on.body).toBe(204);
+    expect((await membership(user.id))?.active).toBe(true);
+    expect((await account(user.id))?.active).toBe(true);
+    expect(
+      await db()
+        .select()
+        .from(scimDeprovisionedUsers)
+        .where(eq(scimDeprovisionedUsers.userId, user.id)),
+    ).toHaveLength(0);
+    expect(await audited('user.account-reactivated', user.id)).toHaveLength(1);
+  });
+
+  it('shows what SCIM manages, and refuses an administrator’s change of its units', async () => {
+    const provisioned = await provision();
+    const outsider = await member(app, tenantId, ['viewer']);
+    const shown = async (id: string) =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/v1/access/users/${id}`,
+          headers: admin.headers,
+        })
+      ).json().managedByScim;
+    expect(await shown(provisioned.id)).toBe(true);
+    expect(await shown(outsider.id)).toBe(false);
+
+    const group = (
+      await send('POST', '/Groups', scim, {
+        schemas: [GROUP],
+        displayName: `Team ${randomUUID().slice(0, 8)}`,
+        members: [{ value: provisioned.id }],
+      })
+    ).json();
+    const units = (
+      await app.inject({
+        method: 'GET',
+        url: '/v1/access/organizational-units',
+        headers: admin.headers,
+      })
+    ).json().items as { id: string; managedByScim: boolean }[];
+    expect(units.find((unit) => unit.id === group.id)?.managedByScim).toBe(
+      true,
+    );
+    const refused = (
+      method: 'PATCH' | 'DELETE' | 'POST',
+      url: string,
+      payload?: object,
+    ) =>
+      app
+        .inject({
+          method,
+          url: `/v1/access/organizational-units/${group.id}${url}`,
+          headers: admin.headers,
+          ...(payload && { payload }),
+        })
+        .then((response) => [response.statusCode, response.json().code]);
+    const managed = [409, 'unit_managed_by_scim'];
+    expect(await refused('PATCH', '', { name: 'Renamed' })).toEqual(managed);
+    expect(await refused('DELETE', '')).toEqual(managed);
+    expect(await refused('POST', '/members', { userId: outsider.id })).toEqual(
+      managed,
+    );
+    expect(
+      await refused('PATCH', `/members/${provisioned.id}`, { role: 'lead' }),
+    ).toEqual(managed);
+    expect(await refused('DELETE', `/members/${provisioned.id}`)).toEqual(
+      managed,
     );
   });
 

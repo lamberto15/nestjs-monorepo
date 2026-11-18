@@ -79,6 +79,7 @@ export class RecordsModule {
       table,
       parts.list,
       parts.policy,
+      parts.schemas,
       quota,
     );
     return {

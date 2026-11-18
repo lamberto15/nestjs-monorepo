@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageViews": "Share saved views with everyone, and change or delete shared ones"
+      }
+    }
+  }
+}

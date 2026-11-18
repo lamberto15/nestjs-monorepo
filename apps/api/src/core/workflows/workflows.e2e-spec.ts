@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { getDrizzleToken } from '@nestjs/drizzle';
+import { sql } from 'drizzle-orm';
 import {
   Workflow,
   WorkflowClient,
@@ -10,12 +12,18 @@ import {
   TenantItemsModule,
   TenantItemsService,
 } from '../../../test/fixtures/tenant-items.js';
+import type { Database } from '../database/database.js';
 import { DatabaseModule } from '../database/database.module.js';
 import { Tenancy } from '../tenancy/tenancy.service.js';
 import { TenancyModule } from '../tenancy/tenancy.module.js';
 import { withTenant } from '../tenancy/tenant-job.js';
 import { TenantWorkflow } from './tenant-workflow.js';
 import { SharedWorkflowsModule } from './workflows.module.js';
+
+vi.hoisted(() => {
+  process.env.DATA_ENCRYPTION_KEYS =
+    'ZmFrZS10ZXN0LWtleS1mb3Itd29ya2Zsb3dzLWUyZS0wMQ';
+});
 
 @Workflow('e2e-list-items')
 class ListItemsWorkflow extends TenantWorkflow<{ suffix: string }, string[]> {
@@ -68,5 +76,14 @@ describe('workflows (e2e)', () => {
     );
     const result = await client.result<string[]>(id, { timeout: '20s' });
     expect(result).toEqual([a, 'from-workflow-1']);
+
+    // DATA_ENCRYPTION_KEYS is set: what the store keeps is not readable.
+    const stored = await app
+      .get<Database>(getDrizzleToken())
+      .execute<{ input: string; output: string }>(
+        sql`select input::text as input, output::text as output from nest_workflows.instances where id = ${id}`,
+      );
+    expect(stored.rows[0]!.input).not.toContain(a);
+    expect(stored.rows[0]!.output).not.toContain('from-workflow-1');
   });
 });

@@ -22,7 +22,12 @@ import { slugOf } from '../access/access.seeder.js';
 import { roles, userRoles } from '../access/access.tables.js';
 import { PermissionCatalog } from '../access/permission-catalog.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AuthPolicy } from '../auth/auth-policy.js';
 import { memberships, users } from '../auth/auth.tables.js';
+import {
+  SignInMethodsPart,
+  type SignInMethodsProvider,
+} from '../auth/who-am-i.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { normalizeEmail } from '../auth/users.repository.js';
 import { tenantCreated } from './tenants.events.js';
@@ -40,7 +45,11 @@ export interface SignUpInput {
   tenantName?: string;
 }
 
-/** Fired after a sign-up committed: the account module mails the verification link. */
+/**
+ * Fired after a sign-up committed: the account module mails the
+ * verification link (it listens by this name: iam/account's
+ * sign-up-mail.listener.ts).
+ */
 export const SIGN_UP_EVENTS = { signedUp: 'tenancy.user-signed-up' } as const;
 
 export interface UserSignedUpEvent {
@@ -70,7 +79,10 @@ const ATTEMPTS = 3;
  * An account refused (its address taken) leaves no tenant behind.
  */
 @Injectable()
-export class SignUpService implements OnApplicationBootstrap {
+@SignInMethodsPart(['signUp', 'tenantSignUp'])
+export class SignUpService
+  implements OnApplicationBootstrap, SignInMethodsProvider
+{
   private readonly logger = new Logger('Tenancy');
 
   constructor(
@@ -82,6 +94,7 @@ export class SignUpService implements OnApplicationBootstrap {
     private readonly catalog: PermissionCatalog,
     private readonly emitter: EventEmitter2,
     private readonly events: Events,
+    private readonly authPolicy: AuthPolicy,
     @Inject(tenantsConfig.KEY)
     private readonly config: ConfigType<typeof tenantsConfig>,
     @Inject(tenancyConfig.KEY)
@@ -95,6 +108,11 @@ export class SignUpService implements OnApplicationBootstrap {
   /** Whether a sign-up makes its own tenant here. */
   get makesTenants() {
     return this.config.signUp && this.config.tenantSignUp && !this.single;
+  }
+
+  /** What `GET /v1/auth/methods` says of sign-up. */
+  signInMethods() {
+    return { signUp: this.config.signUp, tenantSignUp: this.makesTenants };
   }
 
   /**
@@ -137,6 +155,10 @@ export class SignUpService implements OnApplicationBootstrap {
         message: t('tenants.signUpClosed'),
       });
     }
+    // TENANCY=single: the one tenant's minimum length; elsewhere none yet.
+    await this.authPolicy.assertPasswordLength(input.password, 'password', {
+      tenantIds: this.single ? [(await this.tenancy.soleTenant()).id] : [],
+    });
     const passwordHash = await this.hasher.hash(input.password);
     const values = {
       email: normalizeEmail(input.email),

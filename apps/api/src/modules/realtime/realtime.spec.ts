@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { systemPrincipal } from '../../iam/auth/principal.js';
-import { defineRealtimeEvent, payloadProblem } from './realtime.events.js';
+import {
+  addRealtimeEvents,
+  defineRealtimeEvent,
+  payloadProblem,
+} from './realtime.events.js';
+import { openApiAdditions } from '../../core/http/openapi.js';
 import { principalRoom } from './realtime.rooms.js';
 
 describe('realtime events', () => {
@@ -20,6 +25,34 @@ describe('realtime events', () => {
     expect(payloadProblem(ready, { fileKey: 1 })).toMatch(
       /thumbnail\.ready.*fileKey/s,
     );
+  });
+});
+
+describe('the realtime manifest', () => {
+  defineRealtimeEvent(
+    'manifest.checked',
+    z.object({ id: z.uuid(), count: z.int().optional() }),
+    'Checked by the manifest spec.',
+  );
+
+  it('publishes every defined event, with its payload component, as x-realtime-events', () => {
+    const document: Record<string, any> = { components: { schemas: {} } };
+    addRealtimeEvents(document as never);
+    expect(document['x-realtime-events']['manifest.checked']).toEqual({
+      description: 'Checked by the manifest spec.',
+      payload: { $ref: '#/components/schemas/RealtimeManifestCheckedEvent' },
+    });
+    expect(
+      document.components.schemas.RealtimeManifestCheckedEvent,
+    ).toMatchObject({
+      type: 'object',
+      required: ['id'],
+      properties: { id: { type: 'string' }, count: { type: 'integer' } },
+    });
+  });
+
+  it('is part of the OpenAPI document the app builds', () => {
+    expect(openApiAdditions.document.get('realtime')).toBe(addRealtimeEvents);
   });
 });
 

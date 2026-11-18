@@ -1,0 +1,37 @@
+{
+  "automations": {
+    "invalid": "The request is invalid.",
+    "notFound": "Automation rule {id} not found.",
+    "active": "The rule is active already.",
+    "tooManyActive": "At most {max} active automation rules: disable one first.",
+    "noSubject": "No subject \"{subject}\" takes automation rules (GET /v1/automation-rules/subjects).",
+    "fieldOnUpdated": "A field is watched only on `updated`.",
+    "noField": "{subject} has no field \"{field}\".",
+    "noAction": "{subject} takes no automation action \"{type}\".",
+    "conditionForbidden": "Your permissions hide fields the condition reads: {fields}."
+  },
+  "notifications": {
+    "automation": {
+      "notified": {
+        "label": "Automation rule matched",
+        "title": "{rule}",
+        "body": "\"{title}\" matched the rule \"{rule}\"."
+      }
+    }
+  },
+  "permissions": {
+    "automation-rule": {
+      "label": "Automation rules",
+      "actions": {
+        "read": "See automation rules and their runs",
+        "configure": "Create, simulate, activate, disable and delete automation rules (they run with your permissions)"
+      }
+    },
+    "systemJobs": {
+      "automations": {
+        "label": "Automation rules",
+        "description": "Runs the tenants' automation rules: keeps their run log and disables a failing one. The actions run as each rule's owner."
+      }
+    }
+  }
+}

@@ -3,15 +3,16 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import { Events } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { roles, userRoles } from '../access/access.tables.js';
 import { AccessService } from '../access/access.service.js';
@@ -19,8 +20,15 @@ import { liveGrant } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { SIGN_IN_ACTIONS } from '../audit/sign-in-actions.js';
 import { memberships } from '../auth/auth.tables.js';
+import { AuthPolicy } from '../auth/auth-policy.js';
+import {
+  BreakGlassGrantSource,
+  type BreakGlassGrants,
+  type BreakGlassRequest,
+} from '../auth/break-glass-session.js';
 import { OperatorGuard } from '../auth/operator-only.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import { breakGlassStarted } from './break-glass.events.js';
 import {
   type BreakGlassGrant,
   breakGlassGrants,
@@ -29,24 +37,8 @@ import {
 /** The longest a grant lasts, and its default: an hour. */
 export const BREAK_GLASS_MAX_MINUTES = 60;
 
-/** The request header that names the grant a request reads through. */
-export const BREAK_GLASS_HEADER = 'break-glass';
-
-/** Fired after a grant opened: the notifications module tells the tenant's administrators. */
-export const BREAK_GLASS_EVENTS = {
-  started: 'tenancy.break-glass-started',
-} as const;
-
-export interface BreakGlassStartedEvent {
-  grantId: string;
-  tenantId: string;
-  operator: { id: string; email: string };
-  reason: string;
-  expiresAt: Date;
-  /** The tenant's administrators (its built-in role, live, active members). */
-  administrators: string[];
-  ip?: string;
-}
+/** The methods a request through a grant may use: reading only. */
+const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -59,16 +51,27 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * - Who: an active member of the operators' tenant holding
  *   `Platform.breakGlass`, in their own session (never impersonating),
  *   checked when the grant opens and on every request through it.
- * - What: read only (BreakGlassGuard).
+ * - What: read only. A request naming a grant (`Break-Glass: <id>`) is
+ *   checked here on every request (`open()`, auth's
+ *   `@BreakGlassGrantSource()`); auth's PrincipalGuard then runs it in the
+ *   tenant read only (core/tenancy: PostgreSQL refuses any write) with the
+ *   catalog's read actions alone (iam/access). Each such request is
+ *   audited `tenant.break-glass-read` in the tenant and logged.
+ * - Opt-out: the tenant's `allowBreakGlass` (iam/auth-policy): false
+ *   refuses new grants and stops running ones at their next request.
  * - How long: at most an hour, never extended; another grant needs a new
  *   reason, and only once this one ended.
  * - Told: the reason is kept with the grant and in both tenants' logs
  *   (`tenant.break-glass-started`, `…-ended`); the tenant's sign-in log
  *   shows it (`method: break-glass`); its administrators are named in
- *   `tenancy.break-glass-started` for the notifications module.
+ *   the domain event `tenancy.break-glass-started`, published in the
+ *   tenant, for the notifications module.
  */
+@BreakGlassGrantSource()
 @Injectable()
-export class BreakGlassService {
+export class BreakGlassService implements BreakGlassGrants {
+  private readonly logger = new Logger('BreakGlass');
+
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
@@ -76,7 +79,8 @@ export class BreakGlassService {
     private readonly audit: AuditService,
     private readonly access: AccessService,
     private readonly operators: OperatorGuard,
-    private readonly emitter: EventEmitter2,
+    private readonly authPolicy: AuthPolicy,
+    private readonly events: Events,
   ) {}
 
   /**
@@ -92,7 +96,7 @@ export class BreakGlassService {
     ip?: string,
   ) {
     const operatorTenantId = operator.tenantId;
-    if (!operatorTenantId || operator.impersonator) {
+    if (!operatorTenantId || operator.impersonator || operator.breakGlass) {
       throw refused('break_glass_not_allowed', 'breakGlass.notAllowed');
     }
     const target = await this.tenancy.find(targetId);
@@ -110,6 +114,9 @@ export class BreakGlassService {
         code: 'tenant_inactive',
         message: t('breakGlass.tenantInactive'),
       });
+    }
+    if (!(await this.authPolicy.allowsBreakGlass(target.id))) {
+      throw disabled();
     }
     const now = new Date();
     const [running] = await this.db
@@ -144,8 +151,8 @@ export class BreakGlassService {
       tenant: target.slug,
     };
 
-    // The tenant's side: its log, its sign-in log, its administrators.
-    const administrators = await this.tenancy.run(target.id, () =>
+    // The tenant's side: its log, its sign-in log, its administrators told.
+    await this.tenancy.run(target.id, () =>
       this.txHost.withTransaction(async () => {
         await this.audit.record(operator, {
           action: 'tenant.break-glass-started',
@@ -161,7 +168,18 @@ export class BreakGlassService {
           details: { method: 'break-glass', grantId },
           ip,
         });
-        return this.administrators(target.id);
+        await this.events.publish(
+          breakGlassStarted,
+          {
+            grantId,
+            operator: { id: operator.id, email: operator.email },
+            reason: input.reason,
+            expiresAt: expiresAt.toISOString(),
+            administrators: await this.administrators(target.id),
+            ...(ip && { ip }),
+          },
+          { key: grantId },
+        );
       }),
     );
 
@@ -186,15 +204,6 @@ export class BreakGlassService {
       });
       return row!;
     });
-    await this.emitter.emitAsync(BREAK_GLASS_EVENTS.started, {
-      grantId,
-      tenantId: target.id,
-      operator: { id: operator.id, email: operator.email },
-      reason: input.reason,
-      expiresAt,
-      administrators,
-      ip,
-    } satisfies BreakGlassStartedEvent);
     return view(grant);
   }
 
@@ -263,13 +272,52 @@ export class BreakGlassService {
   }
 
   /**
-   * The tenant a request through `grantId` reads (BreakGlassGuard),
-   * checked again on every request in the operator's own scope: still an
+   * The tenant a request through `grantId` reads (auth's PrincipalGuard
+   * asks, in the operator's own scope), checked on every request: still an
    * operator, still holding `Platform.breakGlass`, their grant neither
-   * ended nor expired, the tenant active. 403 otherwise.
+   * ended nor expired, the tenant active and not opted out, and the request
+   * a read (403 `break_glass_read_only` otherwise). Audited
+   * `tenant.break-glass-read` in the tenant, in a transaction of its own
+   * before the request turns read only, and logged.
    */
-  async resolve(user: UserPrincipal, grantId: string) {
-    if (user.impersonator || !user.tenantId || !UUID.test(grantId)) {
+  async open(user: UserPrincipal, grantId: string, request: BreakGlassRequest) {
+    const { tenantId, expiresAt } = await this.resolve(user, grantId);
+    if (!SAFE.has(request.method.toUpperCase())) {
+      throw refused('break_glass_read_only', 'breakGlass.readOnly');
+    }
+    const through: UserPrincipal = {
+      ...user,
+      breakGlass: {
+        grantId,
+        tenantId,
+        operatorTenantId: user.tenantId!,
+        expiresAt: expiresAt.toISOString(),
+      },
+    };
+    await this.tenancy.run(tenantId, () =>
+      this.txHost.withTransaction(() =>
+        this.audit.record(through, {
+          action: 'tenant.break-glass-read',
+          targetType: 'tenant',
+          targetId: tenantId,
+          details: { grantId, method: request.method, path: request.path },
+          ip: request.ip,
+        }),
+      ),
+    );
+    this.logger.log(
+      `${user.email} reads tenant ${tenantId} (grant ${grantId}): ${request.method} ${request.path}`,
+    );
+    return { tenantId, expiresAt };
+  }
+
+  private async resolve(user: UserPrincipal, grantId: string) {
+    if (
+      user.impersonator ||
+      user.breakGlass ||
+      !user.tenantId ||
+      !UUID.test(grantId)
+    ) {
       throw invalid();
     }
     if (
@@ -296,6 +344,9 @@ export class BreakGlassService {
     const target = await this.tenancy.find(grant.targetTenantId);
     if (!target?.active) {
       throw invalid();
+    }
+    if (!(await this.authPolicy.allowsBreakGlass(target.id))) {
+      throw disabled();
     }
     return { tenantId: target.id, expiresAt: grant.expiresAt };
   }
@@ -328,6 +379,8 @@ const refused = (code: string, key: string) =>
   new ForbiddenException({ code, message: t(key) });
 
 const invalid = () => refused('break_glass_invalid', 'breakGlass.invalid');
+
+const disabled = () => refused('break_glass_disabled', 'breakGlass.disabled');
 
 const endedEntry = (grant: BreakGlassGrant, ip?: string) => ({
   action: 'tenant.break-glass-ended',

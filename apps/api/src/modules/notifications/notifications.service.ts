@@ -8,6 +8,8 @@ import {
   isNotNull,
   isNull,
   lt,
+  notInArray,
+  or,
   sql,
 } from 'drizzle-orm';
 import type {
@@ -23,6 +25,7 @@ import {
   toPage,
 } from '../../core/http/pagination.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
+import { outboxMessages } from '../ops/outbox-store.view.js';
 import { Realtime } from '../realtime/realtime.service.js';
 import { NotificationCatalog } from './notifications.catalog.js';
 import {
@@ -232,6 +235,99 @@ export class NotificationsService {
     return rows > UNREAD_COUNT_CAP
       ? { unread: UNREAD_COUNT_CAP, unreadCapped: true }
       : { unread: rows, unreadCapped: false };
+  }
+
+  /**
+   * A person's notifications whose channels were never served, mandatory
+   * types (security notices) apart: what an operator may settle after a
+   * storm. In the current tenant.
+   */
+  private undelivered(recipient: string, before?: Date) {
+    const mandatory = this.catalog
+      .declarations()
+      .filter((declaration) => declaration.mandatory)
+      .map((declaration) => declaration.type);
+    return and(
+      eq(notifications.recipient, recipient),
+      isNull(notifications.deliveredAt),
+      before ? lt(notifications.createdAt, before) : undefined,
+      mandatory.length > 0
+        ? notInArray(notifications.type, mandatory)
+        : undefined,
+    );
+  }
+
+  /** What `settle()` would touch for a recipient in this tenant: notifications and their pending outbox messages. */
+  async backlog(recipient: string, before?: Date) {
+    const ids = this.db
+      .select({ id: sql<string>`${notifications.id}::text` })
+      .from(notifications)
+      .where(this.undelivered(recipient, before));
+    const [stored] = await this.db
+      .select({ rows: count() })
+      .from(notifications)
+      .where(this.undelivered(recipient, before));
+    const [messages] = await this.db
+      .select({ rows: count() })
+      .from(outboxMessages)
+      .where(
+        and(
+          eq(outboxMessages.topic, notificationStored.type),
+          inArray(
+            sql<string>`${outboxMessages.payload}->>'notificationId'`,
+            ids,
+          ),
+        ),
+      );
+    return { notifications: stored?.rows ?? 0, messages: messages?.rows ?? 0 };
+  }
+
+  /**
+   * Settles up to `limit` of a recipient's undelivered notifications in this
+   * tenant: their pending delivery messages are deleted (none under a live
+   * lease) and they are marked delivered and read, so no push, mail or
+   * webhook goes out for them; they stay in the list. Call again while it
+   * returns something.
+   */
+  async settle(recipient: string, before: Date | undefined, limit: number) {
+    const ids = (
+      await this.db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(this.undelivered(recipient, before))
+        .limit(limit)
+    ).map((row) => row.id);
+    if (ids.length === 0) return { notifications: 0, messages: 0 };
+    const now = new Date();
+    const removed = await this.db
+      .delete(outboxMessages)
+      .where(
+        and(
+          eq(outboxMessages.topic, notificationStored.type),
+          inArray(
+            sql<string>`${outboxMessages.payload}->>'notificationId'`,
+            ids,
+          ),
+          or(
+            isNull(outboxMessages.leaseUntil),
+            lt(outboxMessages.leaseUntil, now.getTime()),
+          ),
+        ),
+      )
+      .returning({ id: outboxMessages.id });
+    const settled = await this.db
+      .update(notifications)
+      .set({
+        deliveredAt: now,
+        readAt: sql`coalesce(${notifications.readAt}, ${now.toISOString()}::timestamptz)`,
+        digest: null,
+        digestDueAt: null,
+      })
+      .where(
+        and(inArray(notifications.id, ids), isNull(notifications.deliveredAt)),
+      )
+      .returning({ id: notifications.id });
+    return { notifications: settled.length, messages: removed.length };
   }
 
   /** Marks one read (again: no change); the caller's connections hear `notification.read`. */

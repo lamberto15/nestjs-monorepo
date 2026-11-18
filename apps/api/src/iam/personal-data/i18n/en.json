@@ -1,0 +1,45 @@
+{
+  "personalData": {
+    "required": "Required.",
+    "passwordRequired": "Your current password is required.",
+    "wrongPassword": "Your current password is wrong.",
+    "noDeletionPending": "No deletion is pending for this account.",
+    "invalidLink": "This link is invalid or has expired.",
+    "consentRefused": "This consent can't be recorded.",
+    "consentUnknownKind": "Not a kind of consent asked for here: {kinds}.",
+    "consentOtherVersion": "The current version is {version}.",
+    "consentNotGiven": "This consent isn't given.",
+    "consentRequired": "This one is needed to use the service: delete your account instead.",
+    "consentKinds": {
+      "terms": {
+        "label": "Terms of service",
+        "description": "The terms you use the service under."
+      },
+      "privacy": {
+        "label": "Privacy policy",
+        "description": "How your personal data is handled."
+      },
+      "marketing": {
+        "label": "Marketing emails",
+        "description": "News and offers by email. Withdraw it at any time."
+      }
+    },
+    "mail": {
+      "accountDeletion": {
+        "subject": "Your account will be deleted",
+        "greeting": "Hello {name},",
+        "body": "You asked for your account to be deleted. It will be deleted on {date}, with what identifies you; records you made for others stay, without your name.",
+        "action": "Keep my account",
+        "note": "Didn't ask for this? Open the link to cancel, then change your password."
+      }
+    }
+  },
+  "permissions": {
+    "systemJobs": {
+      "account-deletion": {
+        "label": "Account deletion",
+        "description": "Erases the accounts whose deletion's grace period ended."
+      }
+    }
+  }
+}

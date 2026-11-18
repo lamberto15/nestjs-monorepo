@@ -35,20 +35,52 @@ auth never imports it.
 Discovery decorators (DiscoveryService, put on one provider of yours):
 
 - `@AuthPolicySource()`: a tenant's `requireMfa`, `sessionIdleMinutes`,
-  `sessionMaxHours` (only shorter than the environment's).
+  `sessionMaxHours` (only shorter than the environment's),
+  `passwordMinLength`, `passwordHistory` and `allowsBreakGlass`
+  (iam/auth-policy). `AuthPolicy.assertPasswordLength(password, path,
+owner)` is the 400 `password_too_short` every route that sets a
+  password calls.
+- `@WhoAmIPart(['avatarUrl'])` (`who-am-i.ts`): keys a provider's
+  `whoAmI({ user, session })` adds to `GET /v1/auth/me`;
+  `@SignInMethodsPart(['signUp'])`: keys its `signInMethods()` adds to
+  `GET /v1/auth/methods`. A key declared twice fails the boot.
 - `@HostTenantResolver()`: `tenantOfHost(host)` for tenants' own domains.
+- `@BreakGlassGrantSource()` (`break-glass-session.ts`): `open(user,
+grantId, request)` checks a request naming a grant (`Break-Glass`
+  header, iam/break-glass); PrincipalGuard then enters the grant's tenant
+  read only and sets `user.breakGlass`. Without one, the header is a 403
+  `break_glass_invalid`.
 - `@ReauthenticationMethods()`: more ways back for a 403
   `reauthentication_required` (passkeys, MFA).
 - `@AuthenticationOptionsPart(ctx => options)`: a slice of
   @nestjs/authentication's options (a duplicate key fails the boot).
 
-At most one provider each for the policy and host resolvers (two fail the
-boot). None means the environment's limits, no tenant domains.
+- `@SignInGate()` (`sign-in-gate.ts`): a tenant's say in a password or
+  passkey sign-in, `signInTenant(user, method)` and
+  `assertSignInTenant(user, tenantId, method)` (iam/sso's "SSO required":
+  403 `sso_required`). Password sign-in here and account's token, passkey
+  and native sign-ins ask it through `SignInGates`. `@WithoutSso()` marks
+  the routes a session refused by "SSO required" still reaches (sign-out,
+  the tenants list and switch, an invitation's acceptance, signing out
+  everywhere); the module that enforces the rule reads it.
+
+At most one provider each for the policy, host resolver, sign-in gate and
+break-glass grants (two fail the boot). None means the environment's limits, no tenant
+domains, and sign-ins in the last chosen tenant.
+
+## Routes
+
+`POST /v1/auth/sign-in`, `POST /v1/auth/sign-out`; `GET /v1/auth/me`
+(the user, the tenant, `mfaEnrollmentRequired`, `onboardingRequired`, the
+session's lifetime, then the parts: iam/account adds `mfaEnabled`,
+`hasPassword`, `authentication`, `can`), reachable during MFA enrollment,
+onboarding, maintenance and "SSO required"; `GET /v1/auth/methods`
+(public: `password`, then the parts).
 
 ## Guard order
 
 Throttling, then `PrincipalGuard` (authenticates, refuses the system
-principal, enters the user's tenant), `MfaEnrollmentGuard`,
+principal, enters the user's tenant, or a break-glass grant's read only), `MfaEnrollmentGuard`,
 `OnboardingGuard`, then authorization: each needs the principal before it.
 
 ## Variables

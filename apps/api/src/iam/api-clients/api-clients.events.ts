@@ -1,3 +1,18 @@
+import { defineEvent } from '../../core/outbox/events.js';
+
+/**
+ * A client's keys were rotated: a domain event (core/outbox), published in
+ * the rotation's transaction, in the client's tenant, for the client itself
+ * (modules/webhooks sends it to that client's endpoints as a webhook).
+ */
+export const apiKeyRotated = defineEvent<{
+  clientId: string;
+  /** The new key's public id (the middle of `sk_<id>_<secret>`). */
+  keyId: string;
+  /** When the client's previous keys stop working (ISO 8601). */
+  previousKeysEnd: string;
+}>('security.api-key-rotated');
+
 /**
  * What API clients tell the rest of the app (@nestjs/event-emitter,
  * `emitAsync()` after the change committed). The names are the contract with

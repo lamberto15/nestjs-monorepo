@@ -231,3 +231,21 @@ describe('PermissionCatalog', () => {
     });
   });
 });
+
+describe('the read permissions (break-glass)', () => {
+  it('are every read action of the catalog, unconditional, and nothing that changes anything', () => {
+    const catalog = PermissionCatalog.of(
+      NOTES,
+      definePermissions({
+        subjects: {
+          Access: { actions: { readAudit: [], manageRoles: [] } },
+          Platform: { actions: { breakGlass: [], ready: [] } },
+        },
+      }),
+    );
+    expect(catalog.readPermissions()).toEqual([
+      { subject: 'Note', action: 'read', conditions: [] },
+      { subject: 'Access', action: 'readAudit', conditions: [] },
+    ]);
+  });
+});

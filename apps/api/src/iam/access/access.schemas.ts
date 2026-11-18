@@ -40,6 +40,11 @@ export const userViewSchema = z.object({
   unitIds: z
     .array(z.uuid())
     .describe('The organizational units they are a current member of.'),
+  managedByScim: z
+    .boolean()
+    .describe(
+      "The tenant's identity provider provisions them over SCIM: their account and membership change there.",
+    ),
 });
 
 /** A role of the tenant, with its permissions and how many users hold it. */

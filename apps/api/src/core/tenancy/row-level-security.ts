@@ -70,11 +70,14 @@ function tenantPolicies(
  * is SET LOCAL, gone at commit or rollback, so it never stays on a pooled
  * connection. A literal, so it rides in `begin`'s round trip; only a checked
  * UUID (TenantScope) ever goes in it. Every transaction gets it, an empty
- * value without a tenant, so none can inherit another's.
+ * value without a tenant, so none can inherit another's. A read-only scope
+ * first makes the transaction `READ ONLY`: PostgreSQL then refuses every
+ * write (25006), and the setting's query that follows means it can't be
+ * made read-write again.
  */
 export function bindingStatement(scope: TenantScope | undefined) {
   const tenantId = scope?.tenantId ? assertTenantId(scope.tenantId) : '';
-  return `select set_config('${SETTING}', '${tenantId}', true)`;
+  return `${scope?.readOnly ? 'set transaction read only; ' : ''}select set_config('${SETTING}', '${tenantId}', true)`;
 }
 
 const BEGIN = /^\s*(?:begin|start\s+transaction)\b/i;
@@ -82,10 +85,21 @@ const ONE_STATEMENT = /^[^;]*;?\s*$/;
 
 type QueryArgs = [config: unknown, values?: unknown, callback?: unknown];
 
+function fail(error: Error, values: unknown, callback: unknown) {
+  const done = [values, callback].find((arg) => typeof arg === 'function');
+  if (done) {
+    queueMicrotask(() => (done as (error: Error) => void)(error));
+    return undefined;
+  }
+  return Promise.reject(error);
+}
+
 /**
  * Wraps a new connection's query(): a `begin` is sent with the binding of
  * the current scope, in the same round trip (a statement without
- * parameters goes by the simple protocol, which takes several).
+ * parameters goes by the simple protocol, which takes several). In a
+ * read-only scope, a statement outside a transaction is refused: only a
+ * transaction can be made read only.
  */
 function bindTransactions(client: pg.PoolClient) {
   const query = client.query.bind(client) as (...args: QueryArgs) => unknown;
@@ -96,21 +110,31 @@ function bindTransactions(client: pg.PoolClient) {
         ? config
         : (config as { text?: unknown } | null)?.text;
     if (typeof text !== 'string' || !BEGIN.test(text)) {
+      if (
+        currentTenantScope()?.readOnly &&
+        client.getTransactionStatus() === 'I'
+      ) {
+        return fail(
+          new Error(
+            'A read-only scope runs every statement in a read-only transaction: begin one first.',
+          ),
+          values,
+          callback,
+        );
+      }
       return query(...args);
     }
     if (
       !ONE_STATEMENT.test(text) ||
       (Array.isArray(values) && values.length > 0)
     ) {
-      const error = new Error(
-        'A transaction must begin with a statement of its own (tenancy binds it to its tenant).',
+      return fail(
+        new Error(
+          'A transaction must begin with a statement of its own (tenancy binds it to its tenant).',
+        ),
+        values,
+        callback,
       );
-      const done = [values, callback].find((arg) => typeof arg === 'function');
-      if (done) {
-        queueMicrotask(() => (done as (error: Error) => void)(error));
-        return undefined;
-      }
-      return Promise.reject(error);
     }
     const bound = `${text.replace(/;\s*$/, '')}; ${bindingStatement(currentTenantScope())}`;
     return query(
@@ -140,6 +164,7 @@ const insideTransaction = (client: pg.PoolClient) => {
  * - **A query outside a transaction, in a tenant's scope, gets one of its
  *   own**: `begin` (bound), the query, `commit`. Without a tenant it goes
  *   straight through, unbound: a tenant table shows no row and takes no write.
+ *   A read-only scope always gets one, so a global table's write is refused too.
  * - **A connection given back inside a transaction is closed**, never
  *   reused: its binding would carry over into the next use.
  * - **Cross-tenant scope goes to the maintenance role's pool** (BYPASSRLS),
@@ -177,7 +202,17 @@ class TenantPool extends pg.Pool {
       return (this.maintenance().query as (...a: unknown[]) => never)(...args);
     }
     if (
-      !scope?.tenantId ||
+      scope?.readOnly &&
+      (typeof values === 'function' || typeof callback === 'function')
+    ) {
+      return fail(
+        new Error('A read-only scope takes no callback query.'),
+        values,
+        callback,
+      ) as never;
+    }
+    if (
+      (!scope?.tenantId && !scope?.readOnly) ||
       typeof values === 'function' ||
       typeof callback === 'function'
     ) {

@@ -1,4 +1,5 @@
 import { BullModule } from '@nestjs/bullmq';
+import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { type DynamicModule, Module } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { DEFAULT_JOB_OPTIONS } from '../../core/queues/queues.js';
@@ -63,7 +64,49 @@ export class RetentionModule {
       ],
     };
   }
+
+  /**
+   * How long a record is kept, from its declaration (README.md, "A record's
+   * rule"): purges the records older than the tenant's days, never a held
+   * one; the record's add-ons forget what they keep about them (the records
+   * module's purge, `RecordHooks.purged`). The rule is named by the
+   * record's path. `record` is a RecordDeclaration (modules/records, which
+   * imports this module, so it is only described here).
+   *
+   * ```ts
+   * imports: [RetentionModule.forRecord(INVOICE, invoices, { defaultDays: 2555, minDays: 365 })]
+   * ```
+   */
+  static forRecord(
+    record: { subject: string; path: string },
+    table: PgTable & { id: AnyPgColumn; createdAt: AnyPgColumn },
+    { label, ageColumn, ...rule }: RecordRetention,
+  ): DynamicModule {
+    return RetentionModule.forFeature({
+      ...rule,
+      name: record.path,
+      label:
+        label ??
+        record.path[0]!.toUpperCase() +
+          record.path.slice(1).replaceAll('-', ' '),
+      subject: record.subject,
+      table,
+      ageColumn: ageColumn ?? table.createdAt,
+      action: 'purge',
+    });
+  }
 }
+
+/** What a record's rule takes besides what the record declares: the rest of a `RetentionRule`, purging. */
+export type RecordRetention = Omit<
+  RetentionRule,
+  'name' | 'subject' | 'table' | 'label' | 'ageColumn' | 'action' | 'anonymise'
+> & {
+  /** Shown to the administrator; default: the record's path (`Test items`). */
+  label?: string;
+  /** What dates a record; default its `createdAt`. */
+  ageColumn?: AnyPgColumn;
+};
 
 /** The host of one `RetentionModule.forFeature()` declaration. */
 @Module({})

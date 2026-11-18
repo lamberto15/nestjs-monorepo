@@ -9,6 +9,12 @@ import { ClsServiceManager } from 'nestjs-cls';
 export interface TenantScope {
   readonly tenantId: string | null;
   readonly acrossTenants: boolean;
+  /**
+   * Every transaction `READ ONLY` (an operator's break-glass request):
+   * PostgreSQL refuses any write, a global table's too. Once set, every
+   * scope entered inside it is read only as well (inheritScope()).
+   */
+  readonly readOnly?: boolean;
 }
 
 /**
@@ -32,6 +38,25 @@ export function assertTenantId(value: unknown): string {
 export const tenantScope = (tenantId: string): TenantScope =>
   Object.freeze({ tenantId: assertTenantId(tenantId), acrossTenants: false });
 
+/** One tenant's scope, read only (break-glass): its rows and nothing written. */
+export const readOnlyTenantScope = (tenantId: string): TenantScope =>
+  Object.freeze({
+    tenantId: assertTenantId(tenantId),
+    acrossTenants: false,
+    readOnly: true,
+  });
+
+/**
+ * The scope work nested in the current context runs in: `scope`, read
+ * only when the current one is, so nothing run inside a read-only request
+ * (Tenancy.run(), a job's inTenantOf()) can write again.
+ */
+export function inheritScope(scope: TenantScope): TenantScope {
+  return currentTenantScope()?.readOnly && !scope.readOnly
+    ? Object.freeze({ ...scope, readOnly: true })
+    : scope;
+}
+
 /** No tenant: global tables only. */
 export const NO_TENANT: TenantScope = Object.freeze({
   tenantId: null,
@@ -46,14 +71,17 @@ export const ACROSS_TENANTS: TenantScope = Object.freeze({
 
 export const sameScope = (a: TenantScope | undefined, b: TenantScope) =>
   (a?.tenantId ?? null) === b.tenantId &&
-  (a?.acrossTenants ?? false) === b.acrossTenants;
+  (a?.acrossTenants ?? false) === b.acrossTenants &&
+  (a?.readOnly ?? false) === (b.readOnly ?? false);
 
 export const describeScope = (scope: TenantScope | undefined) =>
-  scope?.acrossTenants
-    ? 'every tenant'
-    : scope?.tenantId
-      ? `tenant ${scope.tenantId}`
-      : 'no tenant';
+  `${
+    scope?.acrossTenants
+      ? 'every tenant'
+      : scope?.tenantId
+        ? `tenant ${scope.tenantId}`
+        : 'no tenant'
+  }${scope?.readOnly ? ' (read only)' : ''}`;
 
 /**
  * The scope of the current async context, or undefined outside one. Read

@@ -1,0 +1,10 @@
+{
+  "shares": {
+    "notFound": "This link is invalid, expired or revoked",
+    "mail": {
+      "subject": "Your code for a shared link on {app}",
+      "intro": "Use this code to open the link you were sent:",
+      "expires": "It works for {minutes} minutes."
+    }
+  }
+}

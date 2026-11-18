@@ -1,4 +1,7 @@
 {
+  "organization": {
+    "managedByScim": "Your identity provider manages this unit over SCIM: change its name, place and members there."
+  },
   "permissions": {
     "access": {
       "actions": {

@@ -22,6 +22,34 @@ import { TenancyModule } from './core/tenancy/tenancy.module.js';
 import { ThrottlingModule } from './core/throttling/throttling.module.js';
 import { SharedWorkflowsModule } from './core/workflows/workflows.module.js';
 import { AccessModule } from './iam/access/access.module.js';
+import { AuditLogModule } from './iam/audit-log/audit-log.module.js';
+import { AuthPolicyModule } from './iam/auth-policy/auth-policy.module.js';
+import { PersonalDataModule } from './iam/personal-data/personal-data.module.js';
+import { AcknowledgmentsModule } from './modules/acknowledgments/acknowledgments.module.js';
+import { AiModule } from './modules/ai/ai.module.js';
+import { ApprovalsModule } from './modules/approvals/approvals.module.js';
+import { AttachmentsModule } from './modules/attachments/attachments.module.js';
+import { AvatarsModule } from './modules/attachments/avatars/avatars.module.js';
+import { AutomationsModule } from './modules/automations/automations.module.js';
+import { BrandingModule } from './modules/branding/branding.module.js';
+import { BulkRunsModule } from './modules/bulk/bulk.module.js';
+import { ChoicesModule } from './modules/choices/choices.module.js';
+import { ConfigBundlesModule } from './modules/config-bundles/config-bundles.module.js';
+import { CustomFieldsModule } from './modules/custom-fields/custom-fields.module.js';
+import { DataQualityModule } from './modules/data-quality/data-quality.module.js';
+import { AccountExportsModule } from './modules/data-transfer/account-exports.module.js';
+import { DataTransferModule } from './modules/data-transfer/data-transfer.module.js';
+import { DocumentsModule } from './modules/documents/documents.module.js';
+import { EncryptionAdminModule } from './modules/encryption-admin/encryption-admin.module.js';
+import { FavoritesModule } from './modules/favorites/favorites.module.js';
+import { OpsModule } from './modules/ops/ops.module.js';
+import { PeopleModule } from './modules/people/people.module.js';
+import { RecentsModule } from './modules/recents/recents.module.js';
+import { ReportsModule } from './modules/reports/reports.module.js';
+import { SharesModule } from './modules/shares/shares.module.js';
+import { TagsModule } from './modules/tags/tags.module.js';
+import { TemplatesModule } from './modules/templates/templates.module.js';
+import { ViewsModule } from './modules/views/views.module.js';
 import { AccountModule } from './iam/account/account.module.js';
 import { ApiClientsModule } from './iam/api-clients/api-clients.module.js';
 import { AuditModule } from './iam/audit/audit.module.js';
@@ -38,9 +66,11 @@ import { CalendarsModule } from './modules/calendars/calendars.module.js';
 import { ClientErrorsModule } from './modules/client-errors/client-errors.module.js';
 import { DeliverabilityModule } from './modules/deliverability/deliverability.module.js';
 import { FeaturesModule } from './modules/features/features.module.js';
+import { FormsModule } from './modules/forms/forms.module.js';
 import { ImagesModule } from './modules/images/images.module.js';
 import { InboxModule } from './modules/inbox/inbox.module.js';
 import { ListsModule } from './modules/lists/lists.module.js';
+import { McpModule } from './modules/mcp/mcp.module.js';
 import { MessagingModule } from './modules/messaging/messaging.module.js';
 import { ModeModule } from './modules/mode/mode.module.js';
 import { MoneyModule } from './modules/money/money.module.js';
@@ -118,6 +148,9 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
     ImpersonationModule,
     BreakGlassModule,
     HoldsModule,
+    AuditLogModule,
+    AuthPolicyModule,
+    PersonalDataModule,
     // Optional capabilities. One may use what another exports, in one
     // direction only (AGENTS.md, "Rules"); the one used comes first.
     SettingsModule,
@@ -142,6 +175,38 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
     RetentionModule,
     ListsModule,
     SearchModule,
+    PeopleModule,
+    BrandingModule,
+    ConfigBundlesModule,
+    AiModule,
+    AutomationsModule,
+    OpsModule,
+    EncryptionAdminModule,
+    // What a record can also have. A feature takes one with
+    // `XModule.forRecord(DECLARATION)` in its own module; listed here are
+    // the routes these have of their own (the tags, a person's favorites…).
+    TagsModule,
+    FavoritesModule,
+    RecentsModule,
+    ViewsModule,
+    TemplatesModule,
+    ChoicesModule,
+    SharesModule,
+    CustomFieldsModule,
+    AttachmentsModule,
+    AvatarsModule,
+    DocumentsModule,
+    BulkRunsModule,
+    DataTransferModule,
+    AccountExportsModule,
+    ReportsModule,
+    DataQualityModule,
+    ApprovalsModule,
+    AcknowledgmentsModule,
+    // Runtime forms and their submissions.
+    FormsModule,
+    // Tools for AI agents, with the caller's own permissions.
+    McpModule,
   ],
 })
 export class AppModule {}

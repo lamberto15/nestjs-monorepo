@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "generated-item": {
+      "label": "Generated items",
+      "actions": {
+        "read": "See generated items",
+        "create": "Create generated items",
+        "update": "Change generated items",
+        "delete": "Delete generated items",
+        "restore": "Restore generated items from the recycle bin",
+        "share": "Share generated items by a link"
+      }
+    }
+  }
+}

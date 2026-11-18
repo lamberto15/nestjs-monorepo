@@ -1,0 +1,17 @@
+{
+  "ai": {
+    "errors": {
+      "principalGone": "The account that asked is no longer active.",
+      "recordGone": "The record no longer exists, or you may no longer read it.",
+      "invalid": "The model did not answer in the expected shape; ask again later.",
+      "rejected": "The AI provider refused this request.",
+      "unavailable": "The AI provider failed or did not answer in time; ask again later."
+    },
+    "unavailable": "The AI helper is not set up on this server.",
+    "disabled": "The AI helper is off for this tenant (setting ai.enabled).",
+    "unknownSource": "No record takes the AI helper under the name \"{source}\".",
+    "pending": "This is already being done for you: wait for it.",
+    "quotaExceeded": "The tenant's daily AI quota of {limit} tokens is used up; it starts again at {resetsAt}.",
+    "runNotFound": "AI run not found."
+  }
+}

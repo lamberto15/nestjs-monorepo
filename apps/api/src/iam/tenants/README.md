@@ -8,15 +8,16 @@ Who a tenant is and how it lives, on top of core/tenancy (which owns the
   and five requests per address and email in 15 minutes. With TENANCY=single
   it joins the one tenant with SIGN_UP_ROLES; with TENANT_SIGN_UP it makes a
   tenant (its slug drawn, never chosen) and is its administrator; otherwise it
-  joins no tenant. After the commit it emits `tenancy.user-signed-up` (the
-  account module mails the verification link).
+  joins no tenant. After the commit it emits `tenancy.user-signed-up`
+  (iam/account listens and mails the verification link).
 - **A user's tenants** (`GET /v1/auth/tenants`) and the **switch**
   (`POST /v1/auth/tenant`): the session is rotated into the chosen tenant;
-  never while impersonating.
+  never while impersonating. Both answer during maintenance and under "SSO
+  required" (`@AllowInMaintenance()`, `@WithoutSso()`).
 - **Operators** (`/v1/tenants`, `@OperatorOnly()` and
   `Access.manageTenants`): list, read, create (its first administrator
-  invited through `tenancy.tenant-administrator-invited`, answered by the
-  invitations module with `{ expiresAt }`; no answer, 503 and no tenant),
+  invited with `InvitationsService`, in the tenant's transaction; the mail
+  after the commit),
   rename, deactivate and reactivate, delete after TENANT_DELETION_GRACE_DAYS
   (the slug typed again; a recent sign-in) and cancel. Never the operators'
   tenant. Every change is audited in the operators' tenant and in the tenant.
@@ -31,6 +32,9 @@ Who a tenant is and how it lives, on top of core/tenancy (which owns the
   a hostname proved by a TXT record `_app-verification.<hostname>`, checked
   on the queue and every night; a verified one routes its host to the tenant
   (TenantDomainsService is the `@HostTenantResolver()`).
+- **Domain lock:** a provider marked `@DomainChangeGuard()` (`domain-change-guard.ts`; modules/branding) may refuse adding a domain or asking its check (409 `branding_locked`); removing is always allowed.
+- **Sign-in methods:** the service is a `@SignInMethodsPart(['signUp','tenantSignUp'])` of `GET /v1/auth/methods`. A sign-up's password meets the one tenant's minimum length (TENANCY=single).
+- Exports `TenantsService` (the operator CLI makes tenants with it).
 - Domain events (outbox): `tenant.created`, `tenant.deactivated`,
   `tenant.reactivated`, `tenant.purged`.
 

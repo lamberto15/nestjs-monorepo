@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "branding": {
+      "label": "Branding",
+      "actions": {
+        "update": "Change the tenant's colours, sender name and logos"
+      }
+    }
+  },
+  "branding": {
+    "locked": "The branding of this tenant is locked by the operators.",
+    "noLogo": "There is no logo.",
+    "noFile": "Send the image as the \"file\" field.",
+    "badImage": "The file is not an image that can be used as a logo."
+  }
+}

@@ -224,6 +224,19 @@ export class PermissionCatalog implements OnModuleInit {
     }
   }
 
+  /**
+   * Every read action of the catalog (`read`, `readAudit`…), without
+   * conditions: what an operator holds through a break-glass grant.
+   * Nothing that changes anything.
+   */
+  readPermissions(): PermissionInput[] {
+    return Object.entries(this.subjects).flatMap(([subject, declared]) =>
+      Object.keys(declared.actions)
+        .filter((action) => /^read(?:[A-Z]|$)/.test(action))
+        .map((action) => ({ subject, action, conditions: [] })),
+    );
+  }
+
   /** A declared system job, or undefined. */
   systemJob(key: string): SystemJobDefinition | undefined {
     return this.systemJobs.get(key);

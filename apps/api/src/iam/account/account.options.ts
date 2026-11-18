@@ -23,7 +23,7 @@ export class AccountOptions {}
 export function accountOptions(): Partial<AuthenticationModuleOptions> {
   const config = accountConfig();
   const http = httpConfig();
-  const web = (config.webUrl ?? http.appUrl).replace(/\/+$/, '');
+  const web = http.webUrl.replace(/\/+$/, '');
   const providers = oidcProviders(config);
   // Without Secure (tests only), the cookies lose their `__Host-` prefix, as the session's.
   const cookie = { secure: authConfig().sessionCookieSecure };

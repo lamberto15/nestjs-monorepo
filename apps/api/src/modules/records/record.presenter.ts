@@ -122,7 +122,7 @@ export class RecordPresenter {
     user: Principal,
     raw: Record<string, unknown>,
   ): Promise<{ list: List; query: ListQuery }> {
-    const list = this.registration.list;
+    const list = await this.registration.listFor(user);
     // `include` is no filter: the route reads it (IncludePipe).
     const { include: _include, ...filters } = raw;
     const query = list.parse(filters);

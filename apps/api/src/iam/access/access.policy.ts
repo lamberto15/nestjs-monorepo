@@ -59,4 +59,18 @@ export class AccessPolicy {
     }
     return false;
   }
+
+  /**
+   * The two lists the SSO page's pickers need (the roles of the group
+   * mappings, the members of the exemptions): `open`, and also whoever
+   * manages SSO (`Access.manageSso`, iam/sso's action). Narrower than
+   * adding it to `open`, which would open the catalog, units, API clients
+   * and principals to it too.
+   */
+  async openForSso(user: Principal | null) {
+    return (
+      (await this.open(user)) ||
+      (manager(user) && this.access.can(user, 'manageSso', 'Access'))
+    );
+  }
 }

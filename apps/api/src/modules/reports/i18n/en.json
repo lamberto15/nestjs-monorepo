@@ -1,0 +1,26 @@
+{
+  "reports": {
+    "mail": {
+      "greeting": "Hello,",
+      "why": "You receive this email because you are a recipient of this scheduled report in {app}.",
+      "ready": {
+        "subject": "Report ready: {report}",
+        "intro": "The report {report} is ready ({rows} rows).",
+        "action": "Download it",
+        "expires": "The link works until {expiresAt}."
+      },
+      "failed": {
+        "subject": "Report failed: {report}",
+        "intro": "The report {report} could not be made this time. It will be tried again at its next scheduled run; if this keeps happening, check its filters or ask an administrator."
+      }
+    }
+  },
+  "permissions": {
+    "systemJobs": {
+      "report-runner": {
+        "label": "Scheduled reports",
+        "description": "Starts the scheduled reports that are due, each export as the report's owner, and mails the recipients when one ends."
+      }
+    }
+  }
+}

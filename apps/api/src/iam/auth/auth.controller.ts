@@ -17,11 +17,13 @@ import {
 } from '@nestjs/swagger';
 import { minutes } from '@nestjs/throttler';
 import { z } from 'zod';
+import { AllowInMaintenance } from '../../core/http/maintenance.js';
 import { Captcha } from '../captcha/captcha.decorator.js';
 import { AddressThrottle } from './address-throttle.guard.js';
 import { DuringMfaEnrollment } from './mfa-enrollment.guard.js';
 import { DuringOnboarding } from './onboarding.js';
 import { PasswordSignIn } from './password-sign-in.service.js';
+import { WithoutSso } from './sign-in-gate.js';
 
 /** An email address; spaces around it (a paste) are dropped first. */
 const email = z
@@ -63,6 +65,7 @@ export class AuthController {
   })
   @Captcha({ action: 'sign-in', count: 'failures' })
   @Post('sign-in')
+  @AllowInMaintenance()
   @HttpCode(200)
   @ApiOperation({
     summary: 'Sign in with a password: sets the session cookie',
@@ -82,7 +85,9 @@ export class AuthController {
   @Public()
   @DuringMfaEnrollment()
   @DuringOnboarding()
+  @WithoutSso()
   @Post('sign-out')
+  @AllowInMaintenance()
   @HttpCode(204)
   @ApiOperation({ summary: "Sign out: ends this browser's session" })
   @ApiNoContentResponse()

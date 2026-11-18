@@ -9,4 +9,5 @@ import { defineRealtimeEvent } from '../realtime/realtime.events.js';
 export const recordPresence = defineRealtimeEvent(
   'record.presence',
   z.object({ subject: z.string(), recordId: z.string() }),
+  'Someone started or stopped viewing or editing a record you are viewing: ids only, fetch GET /v1/presence/{subject}/{recordId}. Advisory, never a lock.',
 );

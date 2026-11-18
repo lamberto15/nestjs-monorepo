@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { listSchema } from '../../core/http/pagination.js';
 import { SIGN_IN_METHODS } from '../auth/authentication-method.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import { WithoutSso } from '../auth/sign-in-gate.js';
 import { UserOnly } from '../auth/user-only.decorator.js';
 import { DuringMfaEnrollment } from '../auth/mfa-enrollment.guard.js';
 import { DuringOnboarding } from '../auth/onboarding.js';
@@ -124,6 +125,7 @@ export class SessionsController {
 
   @DuringMfaEnrollment()
   @DuringOnboarding()
+  @WithoutSso()
   @Post('sign-out-everywhere')
   @HttpCode(204)
   @ApiOperation({ summary: 'Sign out of every browser and every app' })

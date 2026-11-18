@@ -1,6 +1,4 @@
 import { defineEvent } from '../../core/outbox/events.js';
-import type { Tenant } from '../../core/tenancy/tenancy.tables.js';
-import type { UserPrincipal } from '../auth/principal.js';
 
 /**
  * What a tenant's life tells the rest of the app inside the process
@@ -24,14 +22,6 @@ export const TENANT_EVENTS = {
    * the erase, and the next night tries again. Must be safe to run twice.
    */
   erasing: 'tenancy.tenant-erasing',
-  /**
-   * An operator made a tenant (`POST /v1/tenants`), in the transaction
-   * that makes it, in the new tenant's scope: the invitations module
-   * invites its first administrator and returns
-   * `{ expiresAt: Date }`. Without a listener the create is refused (503
-   * `invitations_unavailable`): a tenant nobody can enter is never made.
-   */
-  administratorInvited: 'tenancy.tenant-administrator-invited',
 } as const;
 
 export interface TenantDeactivatedEvent {
@@ -40,18 +30,6 @@ export interface TenantDeactivatedEvent {
 
 export interface TenantErasingEvent {
   tenantId: string;
-}
-
-export interface TenantAdministratorInvitedEvent {
-  tenant: Tenant;
-  email: string;
-  /** The operator who made the tenant. */
-  actor: UserPrincipal;
-}
-
-/** What a listener of `administratorInvited` returns: when its link stops working. */
-export interface AdministratorInvitation {
-  expiresAt: Date;
 }
 
 /** Domain events (core/outbox), for subscribers in the worker (quotas, usage, webhooks). */

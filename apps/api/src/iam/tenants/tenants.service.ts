@@ -5,7 +5,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -30,6 +29,7 @@ import { type Tenant, tenants } from '../../core/tenancy/tenancy.tables.js';
 import { roles, userRoles } from '../access/access.tables.js';
 import { ADMINISTRATOR_ROLE, RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { InvitationsService } from '../invitations/invitations.service.js';
 import { authConfig } from '../auth/auth.config.js';
 import {
   AUTH_EVENTS,
@@ -47,9 +47,7 @@ import {
   tokenSessionId,
 } from '../auth/token-session.js';
 import {
-  type AdministratorInvitation,
   TENANT_EVENTS,
-  type TenantAdministratorInvitedEvent,
   type TenantDeactivatedEvent,
   tenantCreated,
   tenantDeactivated,
@@ -104,6 +102,7 @@ export class TenantsService {
     private readonly tenancy: Tenancy,
     private readonly roles: RolesService,
     private readonly audit: AuditService,
+    private readonly invitations: InvitationsService,
     private readonly emitter: EventEmitter2,
     private readonly events: Events,
     @Inject(tenantsConfig.KEY)
@@ -363,9 +362,9 @@ export class TenantsService {
 
   /**
    * The operators' way to make a tenant: the tenant, its roles and its
-   * first administrator's invitation (`tenancy.tenant-administrator-invited`:
-   * the invitations module's), audited in the new tenant and the
-   * operators'. Whether the address has an account is never read: the
+   * first administrator's invitation (InvitationsService, in the tenant's
+   * transaction; the mail after the commit), audited in the new tenant and
+   * the operators'. Whether the address has an account is never read: the
    * answer is `status: 'invited'` either way.
    */
   async create(
@@ -383,26 +382,14 @@ export class TenantsService {
     const { tenant, result: invitation } = await this.makeTenant(
       { name: input.name, slug: input.slug },
       async (tenant) => {
-        const answers: unknown[] = await this.emitter.emitAsync(
-          TENANT_EVENTS.administratorInvited,
-          {
-            tenant,
-            email: input.administratorEmail,
-            actor: operator,
-          } satisfies TenantAdministratorInvitedEvent,
+        const [administrator] = await this.db
+          .select({ id: roles.id })
+          .from(roles)
+          .where(eq(roles.key, ADMINISTRATOR_ROLE));
+        const invitation = await this.invitations.create(
+          { email: input.administratorEmail, roleIds: [administrator!.id] },
+          operator,
         );
-        const invitation = answers.find(
-          (answer): answer is AdministratorInvitation =>
-            (answer as AdministratorInvitation | null)?.expiresAt instanceof
-            Date,
-        );
-        if (!invitation) {
-          // A tenant nobody can enter is never made.
-          throw new ServiceUnavailableException({
-            code: 'invitations_unavailable',
-            message: t('tenants.invitationsUnavailable'),
-          });
-        }
         await this.audit.record(operator, entry(tenant));
         await this.events.publish(
           tenantCreated,
@@ -413,12 +400,19 @@ export class TenantsService {
       },
     );
     await this.audit.record(operator, entry(tenant));
+    await this.tenancy.run(tenant.id, () =>
+      this.invitations.deliver(
+        invitation.invitation,
+        invitation.token!,
+        operator,
+      ),
+    );
     return {
       ...(await this.get(tenant.id)),
       administrator: {
         email: input.administratorEmail,
         status: 'invited' as const,
-        expiresAt: invitation.expiresAt,
+        expiresAt: invitation.invitation.expiresAt!,
       },
     };
   }

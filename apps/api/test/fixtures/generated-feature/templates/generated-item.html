@@ -1,0 +1,15 @@
+<!-- A generated item's PDF. Business logic: its layout; the context has
+     title, record (field to text), rows and labels (modules/documents). -->
+<header>
+  <p class="eyebrow">{{ labels.document }}</p>
+  <h1>{{ title }}</h1>
+</header>
+<table class="facts">
+  {{#each rows}}
+  <tr>
+    <th>{{ this.label }}</th>
+    <td>{{ this.value }}</td>
+  </tr>
+  {{/each}}
+</table>
+<footer>{{ labels.issued }}</footer>

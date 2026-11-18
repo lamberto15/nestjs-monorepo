@@ -7,3 +7,5 @@
 - **Locks and cron** (`core/locks`): `@Cron()` with `@OnOneInstance({ key })` runs a job on one instance; locks live in PostgreSQL (`locks` table). SCHEDULER=off turns jobs off.
 
 To remove queues: delete this folder and its line in `app.module.ts`, and the modules that register a queue.
+
+- **Metrics:** `queue_oldest_waiting_seconds{queue}` on a worker's `/metrics`: how long the oldest waiting job of each queue has waited (0 when none), for every queue registered with `BullModule.registerQueue()`. Shared state: aggregate with max().

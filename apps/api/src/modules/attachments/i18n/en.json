@@ -1,0 +1,31 @@
+{
+  "notifications": {
+    "attachment": {
+      "rejected": {
+        "label": "File rejected as malware",
+        "title": "A file was rejected",
+        "body": "\"{name}\" was removed from a {subject}: it was flagged as {signature}."
+      }
+    }
+  },
+  "permissions": {
+    "systemJobs": {
+      "attachment-scan": {
+        "label": "Attachment scan",
+        "description": "Scans uploads for malware, and removes the infected ones."
+      },
+      "attachment-images": {
+        "label": "Attachment images",
+        "description": "Makes thumbnails and previews of uploaded images and strips their metadata."
+      },
+      "attachment-text": {
+        "label": "Attachment text",
+        "description": "Extracts the text of uploaded files for the search inside files."
+      },
+      "attachment-sweep": {
+        "label": "Attachment sweep",
+        "description": "Removes uploads that were announced and never completed."
+      }
+    }
+  }
+}

@@ -9,7 +9,6 @@
     "notThisSlug": "Not this tenant's slug.",
     "noDeletionPending": "No deletion is pending for this tenant.",
     "deletionStarted": "The tenant is being erased: it can't be cancelled now.",
-    "invitationsUnavailable": "Nothing in this deployment invites a tenant's first administrator: the tenant was not made.",
     "notAMember": "You are not a member of this tenant.",
     "signUpClosed": "Sign-up is closed: ask an administrator for an invitation.",
     "emailTaken": "An account with this email address exists.",

@@ -4,13 +4,13 @@ import { getDrizzleToken } from '@nestjs/drizzle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { eq } from 'drizzle-orm';
-import {
-  accessModules,
-  member,
-  roleIds,
-  tenantWithAdmin,
-} from '../../../test/access.js';
+import { member, roleIds, tenantWithAdmin } from '../../../test/access.js';
 import { bootModules } from '../../../test/boot.js';
+import {
+  deliverWebhooks,
+  webhookModules,
+  webhookReceiver,
+} from '../../../test/webhooks.js';
 import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../audit/audit.tables.js';
@@ -22,6 +22,11 @@ import { ApiClientsModule } from './api-clients.module.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
+  process.env.OUTBOX_RELAY = 'off';
+  process.env.WEBHOOKS_WORKER = 'off';
+  process.env.WEBHOOKS_ALLOW_LOOPBACK = 'on';
+  process.env.DATA_ENCRYPTION_KEYS =
+    'ZmFrZS10ZXN0LWtleS1mb3ItYXBpLWNsaWVudHMtZTJl';
   process.env.REDIS_PREFIX = `test-api-clients-${process.pid}-${Date.now()}`;
 });
 
@@ -58,7 +63,7 @@ describe('API clients (e2e)', () => {
   const heard: Record<string, unknown[]> = {};
 
   beforeAll(async () => {
-    app = await bootModules(...accessModules(), ApiClientsModule, {
+    app = await bootModules(...webhookModules(), ApiClientsModule, {
       module: class ProbeModule {},
       controllers: [ProbeController],
     } as never);
@@ -140,6 +145,46 @@ describe('API clients (e2e)', () => {
     }[];
     expect(event!.keyIds).toHaveLength(2);
     expect(event!.keyIds).toContain(key.split('_')[1]);
+  });
+
+  it('tells the rotated client, and only it, by webhook (security.api-key-rotated)', async () => {
+    const receiver = await webhookReceiver();
+    const other = await webhookReceiver();
+    try {
+      const { admin, id } = await made();
+      const second = await call('POST', URL, admin.headers, { name: 'other' });
+      const subscribe = (clientId: string, url: string) =>
+        call('POST', `${URL}/${clientId}/webhook-endpoints`, admin.headers, {
+          url,
+          eventTypes: ['security.api-key-rotated'],
+        });
+      expect((await subscribe(id, receiver.url)).statusCode).toBe(201);
+      expect((await subscribe(second.json().id, other.url)).statusCode).toBe(
+        201,
+      );
+
+      const rotated = await call('POST', `${URL}/${id}/rotate`, admin.headers, {
+        graceSeconds: 600,
+      });
+      expect(rotated.statusCode).toBe(200);
+      await deliverWebhooks(app);
+
+      expect(receiver.received.map((w) => w.body)).toEqual([
+        {
+          type: 'security.api-key-rotated',
+          timestamp: expect.any(String),
+          data: {
+            clientId: id,
+            keyId: (rotated.json().key as string).split('_')[1],
+            previousKeysEnd: expect.any(String),
+          },
+        },
+      ]);
+      expect(other.received).toEqual([]);
+    } finally {
+      await receiver.close();
+      await other.close();
+    }
   });
 
   it('revokes one key', async () => {

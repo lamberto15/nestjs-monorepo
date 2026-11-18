@@ -16,14 +16,29 @@ import {
   type Queue,
   UnrecoverableError,
 } from 'bullmq';
+import { Counter } from 'prom-client';
+import { MetricsService } from '../metrics/metrics.service.js';
 import { abortable } from '../queues/abortable.js';
 import { DEFAULT_JOB_OPTIONS } from '../queues/queues.js';
+import {
+  DEFAULT_MAIL_BRAND,
+  MailBrand,
+  type MailBranding,
+  withMailBrand,
+} from './mail-brand.js';
+import {
+  type MailDelivery,
+  MailDeliveryPolicy,
+  stricterMode,
+} from './mail-delivery.js';
+import { markedProvider } from './mail.discovery.js';
 import { mailConfig } from './mail.config.js';
 import { isEssentialMail } from './mail.essential.js';
 import {
   type MailSuppression,
   MailSuppressionList,
   normalizeAddress,
+  SUPPRESSION_REASONS,
 } from './mail-suppression.js';
 
 /** The queue every mail goes through. */
@@ -55,8 +70,8 @@ export interface QueuedMail {
 }
 
 /**
- * Sends mail through a queue: the request renders it (template, language)
- * and returns at once; a worker sends it, retrying a provider that is down
+ * Sends mail through a queue: the request renders it (template, language,
+ * the tenant's brand) and returns at once; a worker sends it, retrying a provider that is down
  * with backoff. The job id is the mail's idempotency key, so a retry after a
  * crash doesn't send it twice. A refusal that won't change (an unknown
  * address) fails at once.
@@ -74,7 +89,21 @@ export class MailQueue {
     private readonly mailer: Mailer,
     @Inject(mailConfig.KEY)
     private readonly config: Pick<ConfigType<typeof mailConfig>, 'delivery'>,
-  ) {}
+    private readonly discovery: DiscoveryService,
+    metrics: MetricsService,
+  ) {
+    this.withheld = new Counter({
+      name: 'mail_withheld_total',
+      help: 'Mails not queued: the delivery mode or the daily budget kept them, by reason.',
+      labelNames: ['reason'] as const,
+      registers: [metrics.registry],
+    });
+    for (const reason of ['policy', 'budget']) {
+      this.withheld.labels(reason).inc(0);
+    }
+  }
+
+  private readonly withheld: Counter<'reason'>;
 
   async send<M extends Mailable<any>>(
     mail: Type<M>,
@@ -93,17 +122,20 @@ export class MailQueue {
     } = {},
   ) {
     signal?.throwIfAborted();
-    const { delivery } = this.config;
-    if (
-      delivery === 'off' ||
-      (delivery === 'essential' && !essential && !isEssentialMail(mail))
-    ) {
-      this.logger.warn(`Mail withheld by MAIL_DELIVERY=${delivery}`, {
-        mail: mail.name,
-      });
+    const isEssential = essential || isEssentialMail(mail);
+    // The mode and the daily budget, before rendering: a mail storm costs
+    // neither renders nor Redis memory.
+    const reason = await this.withholdReason(mail, isEssential);
+    if (reason) {
+      this.withheld.labels(reason).inc();
+      this.logger.warn(`Mail withheld (${reason})`, { mail: mail.name });
       return;
     }
-    const message = await this.mailer.render(mail, options);
+    // Cosmetic: a brand that can't be read never keeps a mail back.
+    const brand = await this.brand();
+    const message = await withMailBrand(brand, () =>
+      this.mailer.render(mail, options),
+    );
     if (message.attachments.length > 0) {
       throw new Error(
         'Queued mail carries no attachments: store the file and link to it.',
@@ -114,7 +146,10 @@ export class MailQueue {
       this.queue.add(
         mail.name,
         {
-          from: message.from,
+          from:
+            brand.name && !options.from
+              ? { ...message.from, name: brand.name }
+              : message.from,
           replyTo: [...message.replyTo],
           to: [...message.to],
           cc: [...message.cc],
@@ -123,11 +158,58 @@ export class MailQueue {
           html: message.html,
           text: message.text,
           headers: { ...message.headers },
-          essential: essential || isEssentialMail(mail),
+          essential: isEssential,
         },
         { jobId },
       ),
     );
+  }
+
+  /**
+   * Why the mail may not be queued, or null. The environment's MAIL_DELIVERY
+   * is the ceiling; the policy (modules/deliverability) can only be
+   * stricter. A policy that can't be read leaves the ceiling alone: an
+   * outage of the settings must not keep back a sign-in link.
+   */
+  private async withholdReason(mail: Type<unknown>, essential: boolean) {
+    const policy = markedProvider<MailDelivery>(
+      this.discovery,
+      MailDeliveryPolicy,
+    );
+    let mode = this.config.delivery;
+    try {
+      mode = stricterMode(mode, (await policy?.mode()) ?? 'all');
+    } catch (error) {
+      this.unreadable(mail, error);
+    }
+    if (mode === 'off' || (mode === 'essential' && !essential)) {
+      return 'policy';
+    }
+    try {
+      if ((await policy?.consume({ essential })) === false) return 'budget';
+    } catch (error) {
+      this.unreadable(mail, error);
+    }
+    return null;
+  }
+
+  private unreadable(mail: Type<unknown>, error: unknown) {
+    this.logger.warn('Mail delivery policy unreadable: the mail may go', {
+      mail: mail.name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  private async brand() {
+    try {
+      const provider = markedProvider<MailBranding>(this.discovery, MailBrand);
+      return (await provider?.current()) ?? DEFAULT_MAIL_BRAND;
+    } catch (error) {
+      this.logger.warn('Mail sent unbranded: the brand could not be read', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return DEFAULT_MAIL_BRAND;
+    }
   }
 }
 
@@ -135,19 +217,35 @@ export class MailQueue {
 @Processor(MAIL_QUEUE, { concurrency: 5 })
 export class MailProcessor extends WorkerHost {
   private readonly logger = new Logger('MailQueue');
+  private readonly sent: Counter;
+  private readonly suppressed: Counter<'reason'>;
 
   constructor(
     private readonly mailer: Mailer,
     private readonly discovery: DiscoveryService,
+    metrics: MetricsService,
   ) {
     super();
+    this.sent = new Counter({
+      name: 'mail_sent_total',
+      help: 'Mails the transport accepted (the mail queue, on the workers).',
+      registers: [metrics.registry],
+    });
+    this.sent.inc(0);
+    this.suppressed = new Counter({
+      name: 'mail_suppressed_total',
+      help: 'Recipients a mail was not sent to because the suppression list names them, by reason.',
+      labelNames: ['reason'] as const,
+      registers: [metrics.registry],
+    });
+    for (const reason of SUPPRESSION_REASONS) {
+      this.suppressed.labels(reason).inc(0);
+    }
   }
 
   /** The application's suppression list, when a module keeps one. */
   private suppression(): MailSuppression | undefined {
-    return this.discovery
-      .getProviders({ metadataKey: MailSuppressionList.KEY })
-      .at(0)?.instance as MailSuppression | undefined;
+    return markedProvider<MailSuppression>(this.discovery, MailSuppressionList);
   }
 
   async process(job: Job<QueuedMail>) {
@@ -170,6 +268,7 @@ export class MailProcessor extends WorkerHost {
     const to = allowed(mail.to);
     const cc = allowed(mail.cc);
     const bcc = allowed(mail.bcc);
+    for (const { reason } of skipped) this.suppressed.labels(reason).inc();
     if (skipped.length > 0) {
       this.logger.warn('Mail not sent to suppressed addresses', {
         jobId: job.id,
@@ -190,6 +289,7 @@ export class MailProcessor extends WorkerHost {
         // The queue retries, over hours; the mailer makes one attempt per try.
         retry: false,
       });
+      this.sent.inc();
       return { messageId: sent.messageId, skipped };
     } catch (error) {
       if (error instanceof MailError && error.permanent) {

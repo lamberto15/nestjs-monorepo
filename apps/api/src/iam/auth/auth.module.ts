@@ -22,13 +22,17 @@ import { DrizzleAuthenticationStore } from './drizzle-authentication.store.js';
 import { JwtAuth } from './jwt-auth.provider.js';
 import { MfaEnrollmentGuard } from './mfa-enrollment.guard.js';
 import { OnboardingGuard } from './onboarding.guard.js';
+import { OperatorGuard } from './operator-only.js';
 import { PasswordSignIn } from './password-sign-in.service.js';
 import { PrincipalGuard } from './principal.guard.js';
 import { RecentAuthenticationCheck } from './recent-authentication.js';
 import { ACCESS_TOKEN_TTL_MS, SessionLifetime } from './session-lifetime.js';
 import { SessionAuth } from './session-auth.provider.js';
+import { SignInGates } from './sign-in-gate.js';
 import { SignInContext, signInMetadata } from './sign-in-context.js';
 import { UsersRepository } from './users.repository.js';
+import { WhoAmIController } from './who-am-i.controller.js';
+import { WhoAmIParts } from './who-am-i.js';
 import './auth-types.js';
 
 /** Exported as they are imported: the decorators' guards, built in other modules, inject them. */
@@ -119,7 +123,7 @@ const JWT_KEY_SECRET = 'jwt-signing-key';
         ),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, WhoAmIController],
   providers: [
     UsersRepository,
     DrizzleAuthenticationStore,
@@ -130,8 +134,11 @@ const JWT_KEY_SECRET = 'jwt-signing-key';
     ApiKeyAuth,
     JwtAuth,
     PasswordSignIn,
+    SignInGates,
     RecentAuthenticationCheck,
     AddressThrottlerGuard,
+    OperatorGuard,
+    WhoAmIParts,
     { provide: APP_GUARD, useClass: PrincipalGuard },
     { provide: APP_GUARD, useClass: MfaEnrollmentGuard },
     { provide: APP_GUARD, useClass: OnboardingGuard },
@@ -149,6 +156,7 @@ const JWT_KEY_SECRET = 'jwt-signing-key';
     ApiKeyAuth,
     JwtAuth,
     PasswordSignIn,
+    SignInGates,
     RecentAuthenticationCheck,
   ],
 })

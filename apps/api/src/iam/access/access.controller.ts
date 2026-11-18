@@ -141,7 +141,7 @@ export class AccessController {
   }
 
   @Get('roles')
-  @Can(AccessPolicy, 'open')
+  @Can(AccessPolicy, 'openForSso')
   @ApiOperation({
     summary: 'The roles, with their permissions and member counts',
   })
@@ -242,7 +242,7 @@ export class AccessController {
   }
 
   @Get('users')
-  @Can(AccessPolicy, 'open')
+  @Can(AccessPolicy, 'openForSso')
   @ApiOperation({
     summary: 'The users, with their role ids, newest first',
     description:

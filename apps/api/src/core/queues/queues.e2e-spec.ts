@@ -2,6 +2,8 @@ import { BullModule, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Job, Queue } from 'bullmq';
+import { MetricsModule } from '../metrics/metrics.module.js';
+import { MetricsService } from '../metrics/metrics.service.js';
 import { QueuesModule } from './queues.module.js';
 
 const QUEUE = 'e2e-jobs';
@@ -38,7 +40,7 @@ describe('queues', () => {
 
   async function start() {
     const moduleRef = await Test.createTestingModule({
-      imports: [QueuesModule, TestJobsModule],
+      imports: [QueuesModule, MetricsModule, TestJobsModule],
     }).compile();
     await moduleRef.init();
     const queue = moduleRef.get<Queue>(`BullQueue_${QUEUE}`);
@@ -83,9 +85,16 @@ describe('queues', () => {
     const { moduleRef, queue } = await start();
     try {
       await queue.add('work', { id: 'c' });
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 1100));
       expect(handled).toEqual([]);
       expect(await queue.getWaitingCount()).toBe(1);
+      // The job nobody takes shows as the queue's oldest waiting one.
+      const { body } = await moduleRef.get(MetricsService).scrape();
+      const waited = new RegExp(
+        `^queue_oldest_waiting_seconds\\{queue="${QUEUE}"\\} (\\S+)$`,
+        'm',
+      ).exec(body);
+      expect(Number(waited?.[1])).toBeGreaterThanOrEqual(1);
     } finally {
       await queue.obliterate({ force: true });
       await moduleRef.close();

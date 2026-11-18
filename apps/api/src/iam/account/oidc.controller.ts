@@ -322,7 +322,7 @@ export class OidcController {
 
   /** `value` on the web app (WEB_URL, else APP_URL), else its root. */
   private webApp(value: unknown) {
-    return webAppUrl(value, this.config.webUrl ?? this.http.appUrl);
+    return webAppUrl(value, this.http.webUrl);
   }
 
   /** Whether the session's sign-in is within REAUTHENTICATION_MAX_AGE_MINUTES. */

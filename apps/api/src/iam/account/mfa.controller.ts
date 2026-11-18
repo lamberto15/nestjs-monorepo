@@ -29,10 +29,12 @@ import {
 import { Throttle, minutes } from '@nestjs/throttler';
 import { t } from '@nestjs/i18n';
 import { z } from 'zod';
+import { AllowInMaintenance } from '../../core/http/maintenance.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { RequiresSwitch } from '../auth/deployment-switch.js';
 import { RecentAuthentication } from '../auth/recent-authentication.js';
 import { UserOnly } from '../auth/user-only.decorator.js';
+import { Captcha } from '../captcha/captcha.decorator.js';
 import { DuringMfaEnrollment } from '../auth/mfa-enrollment.guard.js';
 import { DuringOnboarding } from '../auth/onboarding.js';
 import {
@@ -170,9 +172,13 @@ export class MfaController {
 
   // The pending session of a sign-in: no user yet (its session is pending,
   // which @Public() reads without letting it act anywhere).
+  // A wrong code is a failed sign-in for bot protection: counted on the
+  // address and on the pending session's account, and challenged the same way.
   @Public()
   @Throttle({ default: { limit: 5, ttl: minutes(15) } })
+  @Captcha({ action: 'sign-in', count: 'failures', account: 'session' })
   @Post('verify')
+  @AllowInMaintenance()
   @HttpCode(200)
   @ApiOperation({
     summary: 'Finish a sign-in with two-factor: a code from the app',

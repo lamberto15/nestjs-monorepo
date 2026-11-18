@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { TransactionHost } from '@nestjs-cls/transactional';
-import { Injectable, Module } from '@nestjs/common';
+import { ConflictException, Injectable, Module } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
+import { InMemoryMailTransport, MailTransport } from '@nestjs/mail';
 import { OnEvent } from '@nestjs/event-emitter';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -17,14 +18,16 @@ import { SharedOutboxModule } from '../../core/outbox/outbox.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { tenants } from '../../core/tenancy/tenancy.tables.js';
+import { roles } from '../access/access.tables.js';
 import { RolesService } from '../access/roles.service.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import { auditLog } from '../audit/audit.tables.js';
+import { DomainChangeGuard } from './domain-change-guard.js';
 import { SignUpSweepJob } from './sign-up-sweep.job.js';
 import { TenantDeletionJob } from './tenant-deletion.job.js';
 import { TenantDomainsService } from './tenant-domains.service.js';
+import { invitations } from '../invitations/invitations.tables.js';
 import {
-  type AdministratorInvitation,
   TENANT_EVENTS,
   type TenantDeactivatedEvent,
 } from './tenants.events.js';
@@ -40,19 +43,15 @@ const OPS = await vi.hoisted(async () => {
     AUTH_SIGN_UP: 'on',
     TENANT_SIGN_UP: 'on',
     CUSTOM_DOMAINS: 'on',
+    MAIL_TRANSPORT: 'memory',
   });
   return slug;
 });
 
-/** Stands in for the invitations module: answers the first administrator's invitation. */
+/** Records the tenants deactivated (realtime's listener, in the app). */
 @Injectable()
-class FakeInvitations {
+class Deactivations {
   readonly deactivated: string[] = [];
-
-  @OnEvent(TENANT_EVENTS.administratorInvited)
-  invite(): AdministratorInvitation {
-    return { expiresAt: new Date(Date.now() + 86_400_000) };
-  }
 
   @OnEvent(TENANT_EVENTS.deactivated)
   onDeactivated(event: TenantDeactivatedEvent) {
@@ -60,8 +59,25 @@ class FakeInvitations {
   }
 }
 
-@Module({ providers: [FakeInvitations] })
-class FakeInvitationsModule {}
+@Module({ providers: [Deactivations] })
+class DeactivationsModule {}
+
+/** Stands in for branding's lock (modules/branding): refuses while `locked`. */
+@DomainChangeGuard()
+@Injectable()
+class BrandingLock {
+  locked = false;
+
+  assertEditable() {
+    if (this.locked) {
+      throw new ConflictException({ code: 'branding_locked' });
+    }
+    return Promise.resolve();
+  }
+}
+
+@Module({ providers: [BrandingLock] })
+class BrandingLockModule {}
 
 type Headers = Record<string, string>;
 
@@ -78,7 +94,8 @@ describe('tenants (e2e)', () => {
       QueuesModule,
       SharedOutboxModule,
       TenantsModule,
-      FakeInvitationsModule,
+      DeactivationsModule,
+      BrandingLockModule,
     );
     db = app.get<Database>(getDrizzleToken());
     // The boot makes the operators' tenant (OPERATOR_TENANT), roles seeded.
@@ -161,6 +178,44 @@ describe('tenants (e2e)', () => {
     expect(taken.json().code).toBe('tenant_slug_taken');
   });
 
+  it('invites the first administrator as Administrator, and mails the link', async () => {
+    const created = (await create()).json();
+    const [invitation, administrator] = await app
+      .get(Tenancy)
+      .run(created.id, () =>
+        Promise.all([
+          db
+            .select()
+            .from(invitations)
+            .then((rows) => rows[0]),
+          db
+            .select({ id: roles.id })
+            .from(roles)
+            .where(eq(roles.key, 'administrator'))
+            .then((rows) => rows[0]),
+        ]),
+      );
+    expect(invitation).toMatchObject({
+      email: 'boss@acme.dev',
+      roleIds: [administrator!.id],
+    });
+    expect(new Date(created.administrator.expiresAt).getTime()).toBe(
+      invitation!.expiresAt!.getTime(),
+    );
+    const mailbox = app.get(MailTransport) as InMemoryMailTransport;
+    await vi.waitFor(
+      () =>
+        expect(
+          mailbox.mails.some(
+            (mail) =>
+              mail.to.some((to) => to.address === 'boss@acme.dev') &&
+              mail.html?.includes('/accept-invitation?token=inv_'),
+          ),
+        ).toBe(true),
+      { timeout: 15_000 },
+    );
+  });
+
   it('ends a deactivated tenant’s sessions, never the operators’ tenant', async () => {
     const { tenantId, email } = await createUser(app, {
       tenantId: (await create()).json().id,
@@ -178,7 +233,7 @@ describe('tenants (e2e)', () => {
     expect((await call('GET', '/v1/auth/tenants', headers)).statusCode).toBe(
       401,
     );
-    expect(app.get(FakeInvitations).deactivated).toContain(tenantId);
+    expect(app.get(Deactivations).deactivated).toContain(tenantId);
     expect(
       await entries('tenant.updated', tenantId, operatorTenantId),
     ).toHaveLength(1);
@@ -315,6 +370,15 @@ describe('tenants (e2e)', () => {
     expect(stranger.statusCode).toBe(404);
   });
 
+  it('says what sign-up offers in the sign-in methods', async () => {
+    const methods = await call('GET', '/v1/auth/methods', {});
+    expect(methods.json()).toMatchObject({
+      password: true,
+      signUp: true,
+      tenantSignUp: true,
+    });
+  });
+
   it('lets a tenant’s administrators add and remove its domains', async () => {
     const headers = other.admin.headers;
     const editor = (await member(app, other.tenantId, ['editor'])).headers;
@@ -344,6 +408,26 @@ describe('tenants (e2e)', () => {
     expect(
       await app.get(TenantDomainsService).tenantOfHost(hostname),
     ).toBeNull();
+
+    // The branding lock refuses adding and checking, never removing.
+    const lock = app.get(BrandingLock);
+    lock.locked = true;
+    try {
+      const refusedAdd = await call('POST', '/v1/branding/domains', headers, {
+        hostname: `other-${hostname}`,
+      });
+      expect(refusedAdd.statusCode).toBe(409);
+      expect(refusedAdd.json().code).toBe('branding_locked');
+      const refusedCheck = await call(
+        'POST',
+        `/v1/branding/domains/${added.json().id}/verify`,
+        headers,
+      );
+      expect(refusedCheck.statusCode).toBe(409);
+      expect(refusedCheck.json().code).toBe('branding_locked');
+    } finally {
+      lock.locked = false;
+    }
 
     const removed = await call(
       'DELETE',

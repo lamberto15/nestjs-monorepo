@@ -6,6 +6,8 @@ import {
 import { fieldsRead, type List } from '../../core/http/list-query.js';
 import { AccessPolicy } from '../../iam/access/access.policy.js';
 import { USER_LIST } from '../../iam/access/access.lists.js';
+import { AUDIT_LIST, SIGN_IN_LIST } from '../../iam/audit-log/audit.lists.js';
+import { AuditPolicy } from '../../iam/audit-log/audit.policy.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { relationsTo, relationTitle } from '../records/record-relations.js';
@@ -45,6 +47,7 @@ export class ListsService implements OnModuleInit {
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly accessPolicy: AccessPolicy,
+    private readonly auditPolicy: AuditPolicy,
   ) {}
 
   /** A record's views must name fields of its list: a mistake fails at startup. */
@@ -74,6 +77,15 @@ export class ListsService implements OnModuleInit {
         readable: (principal) => this.accessPolicy.open(principal),
       };
     }
+    // The audit pages' lists (iam/audit-log): whoever holds Access.readAudit,
+    // the condition AuditPolicy asks.
+    if (subject === 'Audit' || subject === 'SignIn') {
+      return {
+        subject,
+        list: subject === 'Audit' ? AUDIT_LIST : SIGN_IN_LIST,
+        readable: (principal) => this.auditPolicy.readAudit(principal),
+      };
+    }
     throw new NotFoundException(`${subject} has no list.`);
   }
 
@@ -92,7 +104,10 @@ export class ListsService implements OnModuleInit {
    */
   async describe(principal: Principal, subject: string): Promise<ListMetadata> {
     const source = this.source(subject);
-    const { list } = source;
+    // A record's: with what its extensions' listFields() give for this caller.
+    const list = source.record
+      ? await source.record.listFor(principal)
+      : source.list;
     const [denied, conditional, restore] = await Promise.all([
       this.access.deniedFields(principal, 'read', subject),
       this.access.conditionalFields(principal, 'read', subject),

@@ -45,10 +45,19 @@ const unitSchema = z.object({
   parentId: z.uuid().nullable(),
   depth: z.number().int().describe('0 for a top-level unit.'),
   members: z.number().int().describe('Its current members (leads included).'),
+  managedByScim: z
+    .boolean()
+    .describe(
+      "The tenant's identity provider manages it over SCIM: its name, place and members change there (409 `unit_managed_by_scim` here).",
+    ),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
-const unitRowSchema = unitSchema.omit({ depth: true, members: true });
+const unitRowSchema = unitSchema.omit({
+  depth: true,
+  members: true,
+  managedByScim: true,
+});
 const name = z.string().trim().min(1).max(120);
 const createSchema = z.object({
   type: z.enum(UNIT_TYPES),
@@ -173,7 +182,8 @@ export class OrganizationController {
   @ApiOkResponse({ standardSchema: unitRowSchema })
   @ApiNotFoundResponse()
   @ApiConflictResponse({
-    description: '`unit_name_taken`; or a move under itself.',
+    description:
+      '`unit_name_taken`; `unit_managed_by_scim`: the IdP manages it; or a move under itself.',
   })
   update(
     @CurrentUser() user: UserPrincipal,
@@ -213,7 +223,7 @@ export class OrganizationController {
   @ApiNotFoundResponse()
   @ApiConflictResponse({
     description:
-      '`unit_not_empty`: units under it, current members, or records of it.',
+      '`unit_not_empty`: units under it, current members, or records of it; or `unit_managed_by_scim`.',
   })
   async remove(
     @CurrentUser() user: UserPrincipal,
@@ -244,7 +254,7 @@ export class OrganizationController {
     description: 'Yourself, `authority_required` or `unit_authority_required`.',
   })
   @ApiConflictResponse({
-    description: 'Already a member.',
+    description: 'Already a member; or `unit_managed_by_scim`.',
   })
   addMember(
     @CurrentUser() user: UserPrincipal,
@@ -263,6 +273,7 @@ export class OrganizationController {
   })
   @ApiOkResponse({ standardSchema: membershipSchema })
   @ApiNotFoundResponse()
+  @ApiConflictResponse({ description: '`unit_managed_by_scim`.' })
   changeMember(
     @CurrentUser() user: UserPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
@@ -302,6 +313,7 @@ export class OrganizationController {
   })
   @ApiNoContentResponse()
   @ApiNotFoundResponse()
+  @ApiConflictResponse({ description: '`unit_managed_by_scim`.' })
   async removeMember(
     @CurrentUser() user: UserPrincipal,
     @Param('id', ParseUUIDPipe) id: string,

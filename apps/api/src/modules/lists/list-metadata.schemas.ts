@@ -204,4 +204,3 @@ export const listMetadataSchema = z
 
 export type ListField = z.infer<typeof listFieldSchema>;
 export type ListMetadata = z.infer<typeof listMetadataSchema>;
-export type ListCapabilities = z.infer<typeof listCapabilitiesSchema>;

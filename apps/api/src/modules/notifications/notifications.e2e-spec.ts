@@ -172,6 +172,20 @@ describe('notifications (e2e)', () => {
   const send = (input: Parameters<Sender['send']>[0]) =>
     inTenant(tenantId, () => app.get(Sender).send(input));
 
+  it('offers notification.created as a webhook event type, for API clients', async () => {
+    const admin = (await tenantWithAdmin(app)).admin;
+    const res = await call('GET', '/v1/webhook-event-types', admin.headers);
+    expect(res.json().items).toContainEqual({
+      group: 'notification',
+      types: [
+        expect.objectContaining({
+          type: 'notification.created',
+          subject: 'Notification',
+        }),
+      ],
+    });
+  });
+
   it('delivers: stored, listed, mailed, pushed to the registered browser and announced live; nobody else sees it', async () => {
     const alice = await person();
     const bob = await person();
@@ -340,7 +354,12 @@ describe('notifications (e2e)', () => {
     const types = (
       await call('GET', '/v1/notifications/types', alice.headers)
     ).json();
-    expect(types.items).toEqual([
+    // The watched records' types (record.*) are declared by the module too.
+    expect(
+      types.items.filter((item: { type: string }) =>
+        item.type.startsWith('notification.'),
+      ),
+    ).toEqual([
       expect.objectContaining({
         type: 'notification.test',
         label: 'Test notification',
@@ -352,14 +371,14 @@ describe('notifications (e2e)', () => {
       (
         await call('GET', '/v1/notifications/preferences', alice.headers)
       ).json(),
-    ).toEqual({
+    ).toMatchObject({
       types: { 'notification.test': { email: 'immediate', push: true } },
     });
 
     const put = (body: object) =>
       call('PUT', '/v1/notifications/preferences', alice.headers, body);
     const updated = await put({ 'notification.test': { email: 'daily' } });
-    expect(updated.json()).toEqual({
+    expect(updated.json()).toMatchObject({
       types: { 'notification.test': { email: 'daily', push: true } },
     });
     for (const [body, path] of [

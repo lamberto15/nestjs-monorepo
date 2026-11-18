@@ -24,6 +24,19 @@ export interface UserPrincipal {
   onboarding?: { email: boolean; password: boolean };
   /** Set while an administrator acts as this user (SessionAuth checks it on every request). */
   impersonator?: { id: string; email: string };
+  /**
+   * Set while an operator reads another tenant through a break-glass grant
+   * (PrincipalGuard, iam/break-glass): `tenantId` is then the grant's
+   * tenant (here too), the request runs in it read only, and the ability is
+   * the catalog's read actions alone. The operator's own tenant is
+   * `operatorTenantId`.
+   */
+  breakGlass?: {
+    grantId: string;
+    tenantId: string;
+    operatorTenantId: string;
+    expiresAt: string;
+  };
 }
 
 /** A system calling the API with its key (an API client). */
@@ -99,7 +112,9 @@ export const actorOf = (principal: Principal | null) =>
           principal.kind === 'user'
             ? principal.impersonator
               ? `${principal.impersonator.email} as ${principal.email}`
-              : principal.email
+              : principal.breakGlass
+                ? `${principal.email} (break-glass)`
+                : principal.email
             : principal.name,
       }
     : { actor: 'anonymous', actorLabel: 'anonymous' };

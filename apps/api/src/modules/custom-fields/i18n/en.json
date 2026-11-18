@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "access": {
+      "actions": {
+        "manageCustomFields": "Add, change, reorder and deactivate custom fields"
+      }
+    }
+  }
+}

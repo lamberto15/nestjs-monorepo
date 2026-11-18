@@ -1,4 +1,4 @@
-import type { UserPrincipal } from '../auth/principal.js';
+import type { ClientPrincipal, UserPrincipal } from '../auth/principal.js';
 
 /**
  * What access tells the rest of the app (@nestjs/event-emitter, emitted
@@ -14,10 +14,24 @@ export const ACCESS_EVENTS = {
    * membership check refuses them from the next request anyway).
    */
   memberDeactivated: 'access.member-deactivated',
+  /**
+   * An administrator turned a membership back on: iam/sso reactivates the
+   * account its SCIM deprovisioning deactivated (no active membership was
+   * left), in the change's transaction.
+   */
+  memberReactivated: 'access.member-reactivated',
 } as const;
 
 export interface MemberDeactivatedEvent {
   userId: string;
   tenantId: string;
+  /** An administrator, or the IdP's API client (SCIM). */
+  actor: UserPrincipal | ClientPrincipal;
+}
+
+export interface MemberReactivatedEvent {
+  userId: string;
+  tenantId: string;
   actor: UserPrincipal;
+  ip?: string;
 }

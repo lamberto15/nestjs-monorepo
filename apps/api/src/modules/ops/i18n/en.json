@@ -1,0 +1,22 @@
+{
+  "ops": {
+    "queueNotFound": "No queue named \"{name}\".",
+    "jobNotFound": "No such job.",
+    "workflowNotFound": "No such workflow.",
+    "workflowNotRetryable": "Only a failed workflow can be retried.",
+    "diagnosticNotFound": "No diagnostic named \"{name}\".",
+    "notTestable": "\"{name}\" has no safe test with this configuration.",
+    "mailNotTenantScoped": "A mail job names no tenant: use global: true for the mail queue."
+  },
+  "permissions": {
+    "access": {
+      "actions": {
+        "viewOps": "See the background work: queues and their jobs, the outbox, dead letters and workflows (operators only)",
+        "pauseQueues": "Pause and resume a queue (operators only)",
+        "retryJobs": "Run failed jobs, dead letters and workflows again (operators only)",
+        "discardJobs": "Delete dead letters (operators only)",
+        "testIntegrations": "Test the integrations: mail, storage, workers, database, Redis (operators only)"
+      }
+    }
+  }
+}

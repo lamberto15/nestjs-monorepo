@@ -227,11 +227,3 @@ export const setNamingCounterSchema = z.object({
     ),
 });
 export type SetNamingCounterDto = z.infer<typeof setNamingCounterSchema>;
-
-/** `namingSeriesId` in a numbered record's create body. */
-export const namingSeriesIdSchema = z
-  .uuid()
-  .optional()
-  .describe(
-    'The naming series that numbers it (GET /v1/naming-series?subject=…); the default series when left out.',
-  );

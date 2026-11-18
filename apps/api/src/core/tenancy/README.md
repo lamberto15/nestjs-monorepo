@@ -23,8 +23,8 @@ written only in its scope. Modules never know how the wall is built.
   `TenantScopeMissingError` → 403 `tenant_required`), `run(tenantId, work)`,
   `forEachTenant(job, work)`, `acrossTenants(job, work)` (maintenance that
   sweeps every tenant at once: the maintenance role, never in a request),
-  `enter(tenantId)` (what sign-in's guard calls so the rest of the request
-  runs in the tenant), `create()`, `find()`, `soleTenant()` (TENANCY=single).
+  `enter(tenantId, { readOnly? })` (what sign-in's guard calls so the rest
+  of the request runs in the tenant; `readOnly` for a break-glass read), `create()`, `find()`, `soleTenant()` (TENANCY=single).
 - **Jobs:** queue `withTenant(data)`; consume with `TenantWorkerHost`
   (`handle()` runs in the job's tenant) or `inTenantOf(job.data, work)`.
 
@@ -49,6 +49,14 @@ true)`; a query outside a transaction in a tenant's scope gets a
   declaration (an `ALTER POLICY` by hand, a table with `tenant_id` made
   without `tenantTable()`). Cross-tenant work runs as the maintenance role
   (BYPASSRLS), whose pool only exists where DATABASE_MAINTENANCE_URL is set.
+- **Read only** (`readOnly` on the scope: `enter(tenantId, { readOnly: true })`,
+  an operator's break-glass request): every transaction begins with `set
+transaction read only` before its setting, so PostgreSQL refuses any write
+  (25006), a global table's too, and it can't be made read-write again. A
+  query outside a transaction gets a read-only one of its own, even without
+  a tenant; a checked-out connection runs nothing outside a transaction.
+  Work nested in it stays read only (`run()`, `inTenantOf()`, a second
+  `enter()`), and `acrossTenants()` is refused.
 - What it does not stop: SQL injected into a request runs as the app role and
   may set `app.tenant_id` itself. The wall is against bugs in correct
   queries; parameters are against injection.

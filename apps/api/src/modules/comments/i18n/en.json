@@ -1,0 +1,24 @@
+{
+  "notifications": {
+    "comment": {
+      "mentioned": {
+        "label": "Mentioned in a comment",
+        "title": "{by} mentioned you",
+        "body": "{by} mentioned you on \"{title}\": {excerpt}"
+      },
+      "replied": {
+        "label": "Reply to your comment",
+        "title": "{by} replied to your comment",
+        "body": "{by} replied to your comment on \"{title}\": {excerpt}"
+      },
+      "added": {
+        "label": "New comment on a record you watch",
+        "title": "New comment",
+        "body": {
+          "one": "{by} commented on \"{title}\": {excerpt}",
+          "other": "{count} new comments on \"{title}\"; the latest is by {by}."
+        }
+      }
+    }
+  }
+}

@@ -8,12 +8,26 @@ import { observabilityConfig } from '../../core/observability/observability.conf
 import { DEFAULT_JOB_OPTIONS } from '../../core/queues/queues.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
+import type { RecordDeclaration } from '../records/record.js';
+import { RECORD } from '../records/record-extension.js';
+import { RecordsModule } from '../records/records.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
+import { WebhooksModule } from '../webhooks/webhooks.module.js';
 import {
   NotificationCatalog,
   NotificationRegistration,
 } from './notifications.catalog.js';
 import { notificationsConfig } from './notifications.config.js';
+import {
+  BREAK_GLASS_NOTIFICATIONS,
+  BreakGlassNotices,
+} from './notifications.break-glass.js';
+import { notificationCreatedWebhook } from './notifications.events.js';
+import { notificationSchema } from './notifications.schemas.js';
+import {
+  SECURITY_NOTIFICATIONS,
+  SecurityNotices,
+} from './notifications.security.js';
 import { NotificationsController } from './notifications.controller.js';
 import { NotificationDelivery } from './notifications.delivery.js';
 import { DevicesController } from './notifications.devices.controller.js';
@@ -31,10 +45,16 @@ import { NotificationsService } from './notifications.service.js';
 import { UnsubscribeLinks } from './notifications.unsubscribe.js';
 import { UnsubscribeController } from './notifications.unsubscribe.controller.js';
 import { UnsubscribeService } from './notifications.unsubscribe.service.js';
+import {
+  RECORD_NOTIFICATIONS,
+  WatchingExtension,
+  watchRoutes,
+} from './notifications.record.js';
 import { TEST_NOTIFICATIONS } from './notifications.test.js';
 import type { NotificationTypeDeclaration } from './notifications.types.js';
 import { SubscriptionsController } from './subscriptions.controller.js';
 import { SubscriptionsService } from './subscriptions.service.js';
+import { NotificationsPersonalData } from './notifications.personal-data.js';
 
 /**
  * Notifications and watching records (README.md): the routes under
@@ -57,6 +77,16 @@ import { SubscriptionsService } from './subscriptions.service.js';
     DiscoveryModule,
     MailModule,
     RealtimeModule,
+    WebhooksModule.forFeature([
+      {
+        event: notificationCreatedWebhook,
+        subject: 'Notification',
+        description:
+          'A notification was delivered to this API client: the item as GET /v1/notifications shows it.',
+        data: notificationSchema,
+        to: (payload: { clientId: string }) => payload.clientId,
+      },
+    ]),
     BullModule.registerQueue({
       name: PUSH_QUEUE,
       defaultJobOptions: {
@@ -78,9 +108,12 @@ import { SubscriptionsService } from './subscriptions.service.js';
       provide: NotificationRegistration,
       inject: [notificationsConfig.KEY],
       useFactory: (config: ConfigType<typeof notificationsConfig>) =>
-        new NotificationRegistration(
-          config.testRoute ? TEST_NOTIFICATIONS : [],
-        ),
+        new NotificationRegistration([
+          ...RECORD_NOTIFICATIONS,
+          ...BREAK_GLASS_NOTIFICATIONS,
+          ...SECURITY_NOTIFICATIONS,
+          ...(config.testRoute ? TEST_NOTIFICATIONS : []),
+        ]),
     },
     NotificationCatalog,
     NotificationsService,
@@ -97,6 +130,9 @@ import { SubscriptionsService } from './subscriptions.service.js';
     WebPushTransport,
     PushProcessor,
     SubscriptionsService,
+    NotificationsPersonalData,
+    BreakGlassNotices,
+    SecurityNotices,
   ],
   exports: [NotificationsService, SubscriptionsService],
 })
@@ -120,7 +156,30 @@ export class NotificationsModule {
       ],
     };
   }
+
+  /**
+   * Makes a record watchable (README.md, "Watching records"): the feature's
+   * import. `POST|DELETE /<path>/{id}/watch`, `?include=watching`, its
+   * creator watching from the start, and the watchers told when someone
+   * else changes it.
+   *
+   * ```ts
+   * imports: [NotificationsModule.forRecord(INVOICE)]
+   * ```
+   */
+  static forRecord(record: RecordDeclaration): DynamicModule {
+    return {
+      module: WatchedRecordModule,
+      imports: [RecordsModule, NotificationsModule],
+      controllers: [watchRoutes(record)],
+      providers: [{ provide: RECORD, useValue: record }, WatchingExtension],
+    };
+  }
 }
+
+/** The host of one `NotificationsModule.forRecord()` registration. */
+@Module({})
+class WatchedRecordModule {}
 
 /** The host of one `NotificationsModule.forFeature()` declaration. */
 @Module({})

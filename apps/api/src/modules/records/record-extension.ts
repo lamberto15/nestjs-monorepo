@@ -92,6 +92,16 @@ export interface RecordHooks {
    * about them in its own tables.
    */
   purged?(change: { ids: readonly string[]; by: Principal }): Promise<void>;
+  /**
+   * In a merge's transaction (modules/merge), after the duplicate `from`
+   * went to the recycle bin and the survivor `to` took its values: move
+   * or copy what the add-on keeps about `from` to `to`.
+   */
+  merged?(change: {
+    from: RecordRow;
+    to: RecordRow;
+    by: Principal;
+  }): Promise<void>;
 
   /**
    * The keys it adds to every record shown (`tags`): `fields=` may pick
@@ -117,6 +127,15 @@ export interface RecordHooks {
 
   /** List filters and sorts it adds (`?tag=`), on the record's table. */
   filters?(table: RecordTable): Record<string, FilterField>;
+  /**
+   * List fields that depend on the request (the tenant's custom fields),
+   * asked for each list query and list description: merged into the list
+   * the query is parsed with (`fields`, and `select` for `fields=`).
+   */
+  listFields?(principal: Principal): Promise<{
+    fields: Record<string, FilterField>;
+    select?: readonly string[];
+  }>;
 
   /** Its name in the list description's `capabilities` (GET /v1/lists/{subject}). */
   readonly capability?: string;

@@ -16,6 +16,7 @@ import {
   webhookReceiver,
 } from '../../../test/webhooks.js';
 import type { Database } from '../../core/database/database.js';
+import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { defineEvent, Events } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessModule } from '../../iam/access/access.module.js';
@@ -124,6 +125,11 @@ describe('outgoing webhooks (e2e)', () => {
     await app?.close();
   });
 
+  it('reports the delivery lag on /metrics', async () => {
+    const { body } = await app.get(MetricsService).scrape();
+    expect(body).toMatch(/^webhook_delivery_lag_seconds \d+(\.\d+)?$/m);
+  });
+
   it('lists the declared event types by module, for a user and a client, not the test event', async () => {
     const res = await call('GET', '/v1/webhook-event-types', admin);
     expect(res.statusCode).toBe(200);
@@ -145,6 +151,17 @@ describe('outgoing webhooks (e2e)', () => {
             type: 'probe.happened',
             description: 'A probe happened.',
             subject: 'Probe',
+          },
+        ],
+      },
+      {
+        group: 'security',
+        types: [
+          {
+            type: 'security.api-key-rotated',
+            description:
+              "This client's keys were rotated: a new key, and when the previous ones stop working.",
+            subject: 'ApiKey',
           },
         ],
       },

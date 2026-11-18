@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     root: './',
-    include: ['**/*.e2e-spec.ts'],
+    include: ['{src,test}/**/*.e2e-spec.ts'],
     // One template database per run, migrated once (test/global-setup.ts);
     // each file a copy of it as DATABASE_URL (test/setup-env.ts).
     globalSetup: ['./test/global-setup.ts'],
@@ -14,5 +14,13 @@ export default defineConfig({
     // than the defaults (10 s and 5 s) when the machine is busy.
     hookTimeout: 60_000,
     testTimeout: 30_000,
+    // With --coverage (`pnpm test:e2e --coverage`), no thresholds: the unit
+    // run's gate is vitest.config.ts.
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.spec.ts', 'src/**/*.e2e-spec.ts', 'src/**/*.d.ts'],
+      reporter: ['text-summary', 'json-summary'],
+    },
   },
 });
