@@ -4,6 +4,7 @@
       "principalGone": "The account that asked is no longer active.",
       "recordGone": "The record no longer exists, or you may no longer read it.",
       "invalid": "The model did not answer in the expected shape; ask again later.",
+      "disabled": "The AI helper was switched off before this was done.",
       "rejected": "The AI provider refused this request.",
       "unavailable": "The AI provider failed or did not answer in time; ask again later."
     },

@@ -22,10 +22,13 @@ The request names the record by its collection path (`source: 'notes'`).
   minute per user. 403 `ai_disabled`, 404 (unknown source, unreadable
   record), 409 `ai_pending`, 429 `ai_quota_exceeded` (with `quota` and `retryAfter`, as modules/quotas), 503 `ai_unavailable`.
 - `GET /v1/ai/runs/{id}`: the run (`status`, `model`, `promptVersion`,
-  tokens, `cached`, `error`, `errorCode`, `output` for an hour); only its requester.
+  tokens, `cached`, `error`, `errorCode`, `output` for an hour after the run
+  finished, null after that); only its requester.
 
-A worker (queue `ai`) checks the requester again, reads the record as they
-may read it (field-level access applied), asks the model with the task's
+A worker (queue `ai`) checks the requester again and whether the helper is
+still on for them (switched off since, by the tenant or the operators, the run
+fails `disabled` at once, the record unread and nothing sent), reads the
+record as they may read it (field-level access applied), asks the model with the task's
 Zod schema and validates the answer itself. The requester hears `ai.ready`
 or `ai.failed` over realtime. Audited: `ai.requested`, `ai.completed`,
 `ai.failed`. `ai_runs` is a usage record: no prompt, no output.

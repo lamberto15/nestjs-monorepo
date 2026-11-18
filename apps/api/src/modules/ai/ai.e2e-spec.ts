@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { getQueueToken } from '@nestjs/bullmq';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { type FakeAnswer, FakeModel, providerError } from '@nestjs/ai/testing';
+import type { Queue } from 'bullmq';
 import { eq } from 'drizzle-orm';
-import { member } from '../../../test/access.js';
+import { member, seededAdmin } from '../../../test/access.js';
 import { bootWithModels } from '../../../test/fixtures/ai/boot-with-models.js';
 import {
   createTestItem,
@@ -20,6 +22,7 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { tenantQuotas } from '../quotas/quotas.tables.js';
 import { AiModule } from './ai.module.js';
+import { AI, AiService, OUTPUT_KEPT_SECONDS } from './ai.service.js';
 import { aiRuns } from './ai.tables.js';
 
 vi.hoisted(() => {
@@ -28,6 +31,8 @@ vi.hoisted(() => {
     IDEMPOTENCY: 'optional',
     ADMIN_PASSWORD: 'correct horse battery staple',
     ADMIN_ONBOARDING: 'off',
+    // The seeded tenant is the operators': its administrator sets platform values.
+    OPERATOR_TENANT: 'ops',
     REDIS_PREFIX: `test-ai-${process.pid}-${Date.now()}`,
     ANTHROPIC_API_KEY: 'sk-ant-test', // on; the model is a fake
     AI_ATTEMPTS: '2',
@@ -102,11 +107,11 @@ describe('AI helper (e2e)', () => {
     throw new Error('The run did not finish');
   }
 
-  const optIn = (value: boolean) =>
+  const optIn = (value: boolean, headers: Headers = team.admin.headers) =>
     app.inject({
       method: 'PUT',
       url: '/v1/settings/ai.enabled',
-      headers: team.admin.headers,
+      headers,
       payload: { value },
     });
 
@@ -328,6 +333,85 @@ describe('AI helper (e2e)', () => {
       quota: { key: 'ai.tokensPerDay', limit: 1000 },
     });
   });
+
+  it('keeps an answer for an hour after it finished, and shows none after that', async () => {
+    // A tenant of its own: the quota test above spent this file's tenant's tokens.
+    const own = await recordsTenant(app);
+    await optIn(true, own.admin.headers);
+    const record = await item(own.admin.headers, 'Kept for an hour.');
+    const id = (await ask(own.admin.headers, record.id)).json().id;
+    const run = await done(own.admin.headers, id);
+    expect(run.output).not.toBeNull();
+    const job = await app.get<Queue>(getQueueToken(AI)).getJob(id);
+    const asRequester = () =>
+      app
+        .get(Tenancy)
+        .run(own.tenantId, () =>
+          app
+            .get(AiService)
+            .status({ kind: 'user', id: own.admin.id } as never, id),
+        );
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(job!.finishedOn! + OUTPUT_KEPT_SECONDS * 1000 - 1000);
+      expect((await asRequester()).output).not.toBeNull();
+      // The job may still be in the queue (BullMQ removes old ones lazily): its answer is not.
+      vi.setSystemTime(job!.finishedOn! + OUTPUT_KEPT_SECONDS * 1000);
+      expect(await asRequester()).toMatchObject({
+        status: 'completed',
+        output: null,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sends nothing for a run queued before the helper was switched off: by the tenant, or by the operators', async () => {
+    const own = await recordsTenant(app);
+    const operators = await seededAdmin(app);
+    const queue = app.get<Queue>(getQueueToken(AI));
+    const platform = (payload?: object) =>
+      app.inject({
+        method: payload ? 'PUT' : 'DELETE',
+        url: '/v1/settings/ai.enabled/platform',
+        headers: operators.headers,
+        ...(payload && { payload }),
+      });
+    const switches = [
+      {
+        off: () => optIn(false, own.admin.headers),
+        on: () => optIn(true, own.admin.headers),
+      },
+      {
+        off: () => platform({ value: false, enforced: true }),
+        on: () => platform(),
+      },
+    ];
+    for (const { off, on } of switches) {
+      await optIn(true, own.admin.headers);
+      const record = await item(own.admin.headers, 'Not to be sent.');
+      // Held in the queue while the switch is thrown.
+      await queue.pause();
+      try {
+        const asked = await ask(own.admin.headers, record.id);
+        expect(asked.statusCode).toBe(202);
+        expect((await off()).statusCode).toBe(200);
+      } finally {
+        await queue.resume();
+      }
+      const [open] = await app
+        .get(Tenancy)
+        .run(own.tenantId, () =>
+          db.select().from(aiRuns).where(eq(aiRuns.recordId, record.id)),
+        );
+      const run = await done(own.admin.headers, open!.id);
+      expect(run).toMatchObject({ status: 'failed', errorCode: 'disabled' });
+      expect(fake.calls).toHaveLength(0);
+      const job = await queue.getJob(open!.id);
+      expect(job?.attemptsMade).toBe(1); // failed for good, not retried
+      expect([200, 204]).toContain((await on()).statusCode);
+    }
+  }, 30_000);
 
   it('is off again when the tenant turns it off', async () => {
     await optIn(false);

@@ -69,6 +69,7 @@ export const AI_ERRORS = {
   principalGone: 'principalGone',
   recordGone: 'recordGone',
   invalid: 'invalid',
+  disabled: 'disabled',
   rejected: 'rejected',
   unavailable: 'unavailable',
 } as const;
@@ -124,13 +125,14 @@ export class AiService {
    * requester's run of the record and task is open.
    */
   async request(principal: RequestPrincipal, request: AiRequest, ip?: string) {
-    if (!aiEnabled(this.config)) {
+    const off = await this.offFor(principal);
+    if (off === 'unavailable') {
       throw new ServiceUnavailableException({
         code: 'ai_unavailable',
         message: t('ai.unavailable'),
       });
     }
-    if (!(await this.settings.get(AI_ENABLED, principal))) {
+    if (off === 'disabled') {
       throw new ForbiddenException({
         code: 'ai_disabled',
         message: t('ai.disabled'),
@@ -227,6 +229,20 @@ export class AiService {
     return { id: row.id, status: 'queued' as const };
   }
 
+  /**
+   * Why the helper is off for the principal, or null while it is on: no
+   * key on this server (`unavailable`), or the tenant's opt-in off or the
+   * operators' enforced platform value (`disabled`). Asked when a run is
+   * requested and again when a worker starts it.
+   */
+  private async offFor(principal: RequestPrincipal) {
+    if (!aiEnabled(this.config)) return 'unavailable' as const;
+    if (!(await this.settings.get(AI_ENABLED, principal))) {
+      return 'disabled' as const;
+    }
+    return null;
+  }
+
   /** 429 `ai_quota_exceeded` once the tenant's tokens today reach its limit. */
   private async assertQuota() {
     const limit = await this.quotas.limitOf(AI_TOKENS);
@@ -278,7 +294,13 @@ export class AiService {
       if (job && !job.finishedOn) {
         return view({ ...row, status: 'running' }, null);
       }
-      const kept: unknown = job?.returnvalue;
+      // Kept for OUTPUT_KEPT_SECONDS after it finished: BullMQ removes an
+      // old job only when a later one finishes, so the age is checked here.
+      const kept: unknown =
+        job?.finishedOn &&
+        Date.now() < job.finishedOn + OUTPUT_KEPT_SECONDS * 1000
+          ? job.returnvalue
+          : null;
       output =
         kept && typeof kept === 'object'
           ? (kept as Record<string, unknown>)
@@ -308,6 +330,12 @@ export class AiService {
     const task = AI_TASKS[row.task as keyof typeof AI_TASKS] as
       AiTask | undefined;
     if (!task) throw new UnrecoverableError(`No AI task "${row.task}".`);
+    // Switched off since it was asked for (the tenant opted out, the
+    // operators forced it off, the key removed): the record is not read and
+    // nothing is sent. Failed for good, as a refusal is.
+    if (await this.offFor(principal)) {
+      throw new AiFailure(AI_ERRORS.disabled);
+    }
     const content = await this.content(principal, record.subject, row.recordId);
     const cheap = task.tier === 'cheap';
     const model = cheap ? this.config.cheapModel : this.config.model;
