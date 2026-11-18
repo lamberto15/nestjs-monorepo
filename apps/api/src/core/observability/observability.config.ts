@@ -5,7 +5,8 @@ import { optional, secret, withDefault } from '../config/env.helpers.js';
 
 /**
  * Every backend is off until its variable is set. Read by the config below
- * and by `instrument.ts`, which starts the SDKs before Nest builds anything.
+ * and by `main.ts` and `worker.ts` through `observeInstrument()` and
+ * `nestrixInstrument()`, before Nest builds anything.
  */
 export const schema = z.object({
   SERVICE_NAME: withDefault('api').describe(
@@ -24,7 +25,7 @@ export const schema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: optional()
     .pipe(z.url().optional())
     .describe(
-      'OpenTelemetry export (traces and metrics over OTLP/HTTP), for a self-hosted backend: the Nestrix server (http://nestrix-server:4318), or any collector. On when set. The SDK also reads the standard OTEL_* variables itself (OTEL_TRACES_SAMPLER, OTEL_RESOURCE_ATTRIBUTES…). With NestJS Observe on too, Observe exports its traces there and the standalone SDK stays off.',
+      'OpenTelemetry export (traces and metrics over OTLP/HTTP), for a self-hosted backend: the Nestrix server (http://nestrix-server:4318), or any collector. On when set: Nestrix (@nestrix-js/nestjs) traces the app and exports there. With NestJS Observe on too, Observe exports its traces there and Nestrix stays off.',
     ),
   OTEL_EXPORTER_OTLP_HEADERS: secret(optional()).describe(
     "The collector's credential, as `name=value,name=value`.",
@@ -32,6 +33,17 @@ export const schema = z.object({
 });
 
 export type ObservabilityEnv = Partial<z.output<typeof schema>>;
+
+export const observeConfigured = (env: ObservabilityEnv) =>
+  Boolean(env.OBSERVE_APP_KEY && env.OBSERVE_APP_SECRET);
+
+/**
+ * Whether Nestrix traces the app: the endpoint is set and Observe is not.
+ * Both hook Nest's requests and patch pg, so only one of them runs; with
+ * both configured, Observe exports its own spans to the endpoint (observe.ts).
+ */
+export const nestrixEnabled = (env: ObservabilityEnv) =>
+  Boolean(env.OTEL_EXPORTER_OTLP_ENDPOINT) && !observeConfigured(env);
 
 export const observabilityConfig = registerAs('observability', () => {
   const env = readEnv(schema);
@@ -42,5 +54,7 @@ export const observabilityConfig = registerAs('observability', () => {
     observeKey: env.OBSERVE_APP_KEY,
     observeSecret: env.OBSERVE_APP_SECRET,
     otlpEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
+    otlpHeaders: env.OTEL_EXPORTER_OTLP_HEADERS,
+    nestrix: nestrixEnabled(env),
   };
 });

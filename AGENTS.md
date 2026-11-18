@@ -87,7 +87,8 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
   Observe (hosted) or Nestrix (the owner's open-source, self-hosted server).
   Modules use the OpenTelemetry API only, never a backend's SDK. Sentry is not
   ported. Gaps found in Nestrix are filed on its repository
-  (nestrix-js/nestrix#49 tracks them), not worked around here.
+  (nestrix-js/nestrix#49 tracks them) and fixed there with a pull request,
+  not worked around here.
 - **No bundled operations:** no monitoring, backups, load tests, proxies or
   deploy pipelines. The one exception: `publish.yml` publishes the image to
   GHCR (the owner, 2026-11-19).
