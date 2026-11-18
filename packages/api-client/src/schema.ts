@@ -14325,6 +14325,8 @@ export interface operations {
                      * @description When the first key stops working; leave out for never.
                      */
                     keyExpiresAt?: string;
+                    /** @description Requests a day (UTC), set in the same transaction (the usage module; `Usage.setClientQuota`). Leave out for none. */
+                    dailyQuota?: number;
                 };
             };
         };

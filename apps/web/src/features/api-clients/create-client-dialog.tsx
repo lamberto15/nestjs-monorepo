@@ -28,15 +28,13 @@ import { API_CLIENT_LIMITS, type CreateClientBody } from './queries';
 /**
  * Name, an optional daily quota (with usage on: it is the usage module's)
  * and roles (on top of what every client may do, each until a date if
- * wanted); `onCreate` makes the client with its roles, then sets the quota.
+ * wanted); `onCreate` makes the client with its roles and quota, in one
+ * request (one transaction).
  */
 export function CreateClientDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (
-    body: CreateClientBody,
-    dailyQuota: number | null,
-  ) => Promise<unknown>;
+  onCreate: (body: CreateClientBody) => Promise<unknown>;
 }) {
   const { t } = useTranslation('api-clients');
   const hasUsage = useFeature('usage');
@@ -69,14 +67,14 @@ export function CreateClientDialog(props: {
       if (pastEnd) return;
       const { roleIds, roleExpiresAt } = grantsBody(grants);
       try {
-        await props.onCreate(
-          {
-            name: value.name.trim(),
-            ...(roleIds.length > 0 && { roleIds }),
-            ...(Object.keys(roleExpiresAt).length > 0 && { roleExpiresAt }),
-          },
-          value.dailyQuota.trim() ? Number(value.dailyQuota) : null,
-        );
+        await props.onCreate({
+          name: value.name.trim(),
+          ...(roleIds.length > 0 && { roleIds }),
+          ...(Object.keys(roleExpiresAt).length > 0 && { roleExpiresAt }),
+          ...(value.dailyQuota.trim() && {
+            dailyQuota: Number(value.dailyQuota),
+          }),
+        });
         form.reset();
         setGrants({});
         props.onOpenChange(false);

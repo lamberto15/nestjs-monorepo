@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { UsageClientQuota } from './usage.client-quota.js';
 import { ConfigModule } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { switchFeature } from '../../core/http/feature.js';
@@ -33,6 +34,7 @@ import { UsageRollupJob } from './usage-rollup.job.js';
     UsageService,
     UsageRollupJob,
     UsagePolicy,
+    UsageClientQuota,
     { provide: APP_INTERCEPTOR, useClass: UsageInterceptor },
     switchFeature(
       'usage',

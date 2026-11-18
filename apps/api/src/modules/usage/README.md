@@ -9,7 +9,7 @@ are not, nor requests refused before the handler).
   the caller hung up) it `HINCRBY`s the Redis hash
   `tenant:<tenantId>:usage:<clientId>:<yyyy-mm-dd>` (field `<METHOD> <route pattern>`
   and `_total`; 3 days TTL). Redis down or slower than 500 ms: requests go through, uncounted, logged.
-- **Quota**: `PUT /v1/access/clients/{id}/daily-quota { dailyQuota }` (`Usage.setClientQuota`;
+- **Quota**: set with the client (`dailyQuota` on `POST /v1/access/clients`, through `@ClientQuota()`), or `PUT /v1/access/clients/{id}/daily-quota { dailyQuota }` (`Usage.setClientQuota`;
   null removes it; audited as `client.quota-changed`), stored in `api_client_quotas`. A client with one
   gets `X-Quota-Limit` and `X-Quota-Remaining`; past it, 429 `quota_exceeded` with `X-Quota-Reset` and
   `Retry-After` (seconds to midnight UTC). Exact: a request takes its place on entry, atomically, so parallel

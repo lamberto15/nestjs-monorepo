@@ -289,7 +289,7 @@ describe('creating a client: the key is shown once', () => {
     expect(document.body).not.toHaveTextContent(SECRET);
   });
 
-  it('creates with the roles, then sets the quota on the usage route', async () => {
+  it('creates with the roles and the quota in one request', async () => {
     const state = api();
     const user = userEvent.setup();
     await renderApp('/api-clients');
@@ -300,12 +300,12 @@ describe('creating a client: the key is shown once', () => {
     await user.click(await screen.findByRole('checkbox', { name: 'Exporter' }));
     await user.click(screen.getByRole('button', { name: 'Create client' }));
     await screen.findByRole('dialog', { name: 'Copy the key of Mail relay' });
-    expect(state.created).toEqual({ name: 'Mail relay', roleIds: [ROLE] });
-    await waitFor(() =>
-      expect(state.quotaPuts).toEqual([
-        { id: '0199a3f2-0000-7000-8000-00000000c002', dailyQuota: 250 },
-      ]),
-    );
+    expect(state.created).toEqual({
+      name: 'Mail relay',
+      roleIds: [ROLE],
+      dailyQuota: 250,
+    });
+    expect(state.quotaPuts).toEqual([]);
     expect(state.patches).toEqual([]);
   });
 });

@@ -17,6 +17,9 @@ last-used tracking) is iam/auth's; the tables are auth's (`api_clients`,
   `AccessPolicy.open`. You may act on a client only if you hold, without
   conditions, every permission its roles give (403 `authority_required`).
   Roles follow the grant rule of RolesService and may end at a date.
+- **Quota at create:** `dailyQuota` on `POST /clients` is set in the
+  create's transaction by the provider marked `@ClientQuota()`
+  (modules/usage, `Usage.setClientQuota`: 403 without it); without one, 400.
 - **Switch:** `API_CLIENTS` (iam/auth): off, the routes answer 404.
 - **Audit:** `client.created`, `.revoked`, `.activated`,
   `.allowlist-changed`, `.roles-changed`, `.key-rotated`,

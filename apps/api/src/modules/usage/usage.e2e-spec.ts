@@ -1,4 +1,5 @@
 import { Controller, Get, Module } from '@nestjs/common';
+import { ApiClientsModule } from '../../iam/api-clients/api-clients.module.js';
 import { Can } from '@nestjs/authorization';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
@@ -44,7 +45,12 @@ describe('API usage (e2e)', () => {
     app.get(Tenancy).run(admin.tenantId, work);
 
   beforeAll(async () => {
-    app = await bootModules(...accessModules(), UsageModule, PingModule);
+    app = await bootModules(
+      ...accessModules(),
+      ApiClientsModule,
+      UsageModule,
+      PingModule,
+    );
     admin = await seededAdmin(app);
   });
   afterAll(async () => {
@@ -52,7 +58,7 @@ describe('API usage (e2e)', () => {
   });
 
   const call = (
-    method: 'GET' | 'PUT',
+    method: 'GET' | 'POST' | 'PUT',
     url: string,
     headers: Record<string, string>,
     payload?: object,
@@ -100,6 +106,16 @@ describe('API usage (e2e)', () => {
     await vi.waitFor(async () =>
       expect((await usageOf(client.client.id)).json().total).toBe(4),
     );
+  });
+
+  it('sets a new client’s daily quota with its create, in one request', async () => {
+    const created = await call('POST', '/v1/access/clients', admin.headers, {
+      name: `metered-${Date.now()}`,
+      dailyQuota: 7,
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const usage = await usageOf(created.json().id);
+    expect(usage.json()).toMatchObject({ dailyQuota: 7 });
   });
 
   it('keeps usage to those who may read it, and checks the range', async () => {

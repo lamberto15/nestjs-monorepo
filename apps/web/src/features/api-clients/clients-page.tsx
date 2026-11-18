@@ -18,13 +18,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Page, PageHeader } from '@/components/page-header';
 import { formatDateTime } from '@/lib/date-time';
 import { CreateClientDialog } from './create-client-dialog';
-import {
-  activeKeys,
-  clientsQuery,
-  lastUsed,
-  useCreateClient,
-  useSetQuota,
-} from './queries';
+import { activeKeys, clientsQuery, lastUsed, useCreateClient } from './queries';
 import { SecretDialog } from './secret-dialog';
 
 /** The API clients; creating one shows its key, once. */
@@ -33,7 +27,6 @@ export function ClientsPage() {
   const list = useQuery(clientsQuery);
   const [creating, setCreating] = useState(false);
   const create = useCreateClient();
-  const setQuota = useSetQuota();
   return (
     <Page>
       <PageHeader
@@ -93,16 +86,7 @@ export function ClientsPage() {
         <CreateClientDialog
           open
           onOpenChange={setCreating}
-          onCreate={async (input, dailyQuota) => {
-            const created = await create.mutateAsync(input);
-            // The client exists and its key is shown either way: a refused
-            // quota is the mutation's toast, set again on its page.
-            if (dailyQuota !== null) {
-              await setQuota
-                .mutateAsync({ id: created.id, dailyQuota })
-                .catch(() => undefined);
-            }
-          }}
+          onCreate={(body) => create.mutateAsync(body)}
         />
       )}
       <SecretDialog

@@ -114,6 +114,18 @@ describe('API clients (e2e)', () => {
     expect(actions).toContain('client.created');
   });
 
+  it('refuses a daily quota without the usage module', async () => {
+    const { admin } = await tenantWithAdmin(app);
+    const response = await call('POST', URL, admin.headers, {
+      name: 'metered',
+      dailyQuota: 100,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().errors).toEqual([
+      expect.objectContaining({ path: 'dailyQuota' }),
+    ]);
+  });
+
   it('refuses a key that ends in the past', async () => {
     const { tenantId, admin } = await tenantWithAdmin(app);
     void tenantId;

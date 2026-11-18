@@ -130,7 +130,7 @@ repository.
       a dry-run import validates custom values as the import does.
 - [ ] `/.well-known/security.txt` from SECURITY_CONTACT (none when unset);
       no maintenance page (the host's job).
-- [ ] An API client's create takes `dailyQuota`, written in its transaction
+- [x] An API client's create takes `dailyQuota`, written in its transaction
       through a hook the usage module provides.
 - [ ] One Webhooks menu entry for `manageEndpoints` or `manageSenders`; the
       page shows each section by permission.

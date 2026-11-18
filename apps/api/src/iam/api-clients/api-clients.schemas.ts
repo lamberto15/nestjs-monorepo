@@ -29,6 +29,14 @@ export const createClientSchema = z.object({
     .datetime({ offset: true })
     .optional()
     .describe('When the first key stops working; leave out for never.'),
+  dailyQuota: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      'Requests a day (UTC), set in the same transaction (the usage module; `Usage.setClientQuota`). Leave out for none.',
+    ),
 });
 
 export const clientChangesSchema = z.object({

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { DiscoveryModule } from '@nestjs/core';
 import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { switchFeature } from '../../core/http/feature.js';
@@ -20,6 +21,7 @@ import { ApiClientsService } from './api-clients.service.js';
   imports: [
     AccessModule.forFeature(API_CLIENT_PERMISSIONS),
     AuditModule,
+    DiscoveryModule,
     // The API_CLIENTS switch (auth.apiClients) the controller's guard reads.
     ConfigModule.forFeature(authConfig),
   ],

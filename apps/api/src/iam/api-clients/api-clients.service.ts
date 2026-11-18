@@ -5,8 +5,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  type OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { DiscoveryService } from '@nestjs/core';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
@@ -24,7 +26,9 @@ import { AuditService } from '../audit/audit.service.js';
 import { apiKeyId, generateApiKey, hashApiKey } from '../auth/api-keys.js';
 import { apiClients, apiKeys } from '../auth/auth.tables.js';
 import { normalizeCidr } from '../auth/client-ip.js';
+import { discoverOne } from '../auth/discover.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import { ClientQuota } from './client-quota.js';
 import {
   API_CLIENT_EVENTS,
   apiKeyRotated,
@@ -38,6 +42,8 @@ export interface ClientInput {
   roleIds?: string[];
   roleExpiresAt?: Record<string, string>;
   keyExpiresAt?: string;
+  /** Set with the client by the usage module (ClientQuota). */
+  dailyQuota?: number;
 }
 
 export interface ClientChanges {
@@ -58,7 +64,7 @@ export interface ClientChanges {
  * commit (api-clients.events.ts).
  */
 @Injectable()
-export class ApiClientsService {
+export class ApiClientsService implements OnModuleInit {
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
@@ -67,9 +73,21 @@ export class ApiClientsService {
     private readonly access: AccessService,
     private readonly roles: RolesService,
     private readonly events: EventEmitter2,
+    private readonly discovery: DiscoveryService,
     // The outbox, when booted (always in the app): the rotation's domain event.
     @Optional() private readonly domainEvents?: Events,
   ) {}
+
+  /** The usage module's quotas, when booted. */
+  private quota?: ClientQuota;
+
+  onModuleInit() {
+    this.quota = discoverOne<ClientQuota>(
+      this.discovery,
+      ClientQuota,
+      'client quota source (@ClientQuota())',
+    );
+  }
 
   async list() {
     const clients = await this.db
@@ -90,6 +108,21 @@ export class ApiClientsService {
     await this.roles.checkRoleGrant(actor, roleIds);
     const { expiries } = regrant(new Map(), roleIds, input.roleExpiresAt);
     const allowedCidrs = normalizeCidrs(input.allowedCidrs ?? []);
+    const quota = input.dailyQuota;
+    if (quota !== undefined) {
+      if (!this.quota) {
+        throw new BadRequestException({
+          code: 'validation_failed',
+          message: 'The request is invalid.',
+          errors: [
+            { path: 'dailyQuota', message: 'Quotas are not enabled here.' },
+          ],
+        });
+      }
+      if (!(await this.quota.allowed(actor))) {
+        throw new ForbiddenException('You may not set a client’s quota.');
+      }
+    }
     const { id, key } = await this.txHost.withTransaction(async () => {
       const [client] = await this.db
         .insert(apiClients)
@@ -98,6 +131,9 @@ export class ApiClientsService {
         .catch(nameTaken);
       const created = await this.addKey(client!.id, input.keyExpiresAt);
       await this.writeRoles(client!.id, roleIds, expiries);
+      if (quota !== undefined) {
+        await this.quota!.set(actor, client!.id, quota, ip);
+      }
       await this.audit.record(actor, {
         action: 'client.created',
         targetType: 'client',

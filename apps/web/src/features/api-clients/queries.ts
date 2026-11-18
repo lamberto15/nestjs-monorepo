@@ -41,7 +41,7 @@ type JsonBody<T> = T extends {
  */
 export const API_CLIENT_LIMITS = { name: 80 } as const;
 
-/** What a create sends: the name and roles, at once (the quota is usage's: useSetQuota). */
+/** What a create sends: the name, roles and quota, at once (a later quota change: useSetQuota). */
 export type CreateClientBody = JsonBody<paths['/v1/access/clients']['post']>;
 
 /** What a PATCH changes: active, the allowlist, the roles and their ends. */
