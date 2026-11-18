@@ -388,7 +388,7 @@ describe('the privacy page', () => {
     );
     // The request refreshes the list: the new export waits for a worker.
     expect(await screen.findByText('Waiting for a worker…')).toBeVisible();
-    expect(api.exportBodies).toEqual([{ format: 'json' }]);
+    expect(api.exportBodies).toEqual([{ format: 'csv' }]);
     // Polled until the worker is done (every second).
     expect(await screen.findByText('42 rows exported.')).toBeVisible();
     expect(

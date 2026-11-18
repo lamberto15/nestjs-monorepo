@@ -157,7 +157,14 @@ function api(
       }),
     ),
     http.get('/v1/features', () =>
-      HttpResponse.json({ ...allFeatures, ...options.features }),
+      HttpResponse.json({
+        ...allFeatures,
+        realtime: false,
+        ...options.features,
+      }),
+    ),
+    http.get('/v1/notifications/unread-count', () =>
+      HttpResponse.json({ unread: 0 }),
     ),
     http.get('/v1/access/clients', () =>
       HttpResponse.json({ items: [client()] }),

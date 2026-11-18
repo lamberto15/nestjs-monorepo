@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { EmptyState } from '@/components/empty-state';
 import { Page, PageHeader } from '@/components/page-header';
 import { clientsQuery } from '@/features/api-clients/queries';
+import { useCan } from '@/lib/features';
 
 /**
  * Webhooks belong to an API client (it is the webhooks' tenant, and what a
@@ -23,18 +24,22 @@ import { clientsQuery } from '@/features/api-clients/queries';
 export function WebhookClientsPage() {
   const { t } = useTranslation('webhooks');
   const list = useQuery(clientsQuery);
+  // The senders page turns away anyone without the permission: no link to it then.
+  const canManageSenders = useCan('Webhooks.manageSenders');
   return (
     <Page>
       <PageHeader
         title={t('clients.title')}
         description={t('clients.description')}
         actions={
-          <Link
-            to="/webhooks/senders"
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            {t('clients.senders')}
-          </Link>
+          canManageSenders && (
+            <Link
+              to="/webhooks/senders"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              {t('clients.senders')}
+            </Link>
+          )
         }
       />
       {list.isPending ? (

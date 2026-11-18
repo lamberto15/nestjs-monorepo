@@ -120,6 +120,10 @@ describe('documents panel', () => {
     usePanelsApi({ capabilities: { pdf: true } });
     // The record's files as the worker leaves them: the PDF once it is done.
     server.use(
+      // Two languages: with one there is nothing to choose and no field.
+      http.get('/v1/features', () =>
+        HttpResponse.json({ ...allFeatures, locales: ['en', 'ar'] }),
+      ),
       http.get('/v1/test-items/:id/attachments', () =>
         HttpResponse.json({
           items: attachments.map((a) => ({

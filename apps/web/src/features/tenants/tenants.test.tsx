@@ -783,7 +783,7 @@ describe('exporting a tenant', () => {
       await screen.findByRole('button', { name: 'Export tenant data' }),
     );
     await confirmReauth(user);
-    await screen.findByRole('link', { name: 'Download (json)' });
+    await screen.findByRole('link', { name: 'Download (csv)' });
     expect(state.exports).toHaveLength(1);
   });
 });

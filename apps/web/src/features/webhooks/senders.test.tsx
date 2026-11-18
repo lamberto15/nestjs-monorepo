@@ -37,7 +37,11 @@ function api(can = true) {
     http.get('/v1/auth/me', () =>
       HttpResponse.json({
         ...signedInUser,
-        can: { 'Webhooks.manageSenders': can },
+        // The webhooks page (the way in) needs the endpoints' permission too.
+        can: {
+          'Webhooks.manageEndpoints': true,
+          'Webhooks.manageSenders': can,
+        },
       }),
     ),
     http.get('/v1/features', () => HttpResponse.json(allFeatures)),

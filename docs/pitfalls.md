@@ -161,3 +161,15 @@ what to do.
   HTTP server and sockets first, then the modules. `QueueWorkers` closes the
   workers in `beforeApplicationShutdown` so a running job finishes while the
   database and Redis are still open. Keep a new worker registered there.
+
+## Web tests
+
+- **Devtools mounted under Vitest made the web suite take half an hour.**
+  `import.meta.env.DEV` is true in a test run, so the router and query
+  devtools mounted with every rendered app. Each mount injects a stylesheet,
+  and jsdom walks every CSS rule for each `getByRole` (it asks whether an
+  element is hidden): a file's first test took 2 s and its last 35 s. The
+  root route now also checks `import.meta.env.MODE !== 'test'`; the suite
+  runs in about a minute. When tests get slower one after another, take a CPU
+  profile (`vitest run --pool=forks --no-file-parallelism
+--execArgv=--cpu-prof`) before blaming the machine.

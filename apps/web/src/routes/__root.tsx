@@ -23,7 +23,11 @@ function Root() {
       <NuqsAdapter>
         <Outlet />
       </NuqsAdapter>
-      {import.meta.env.DEV && (
+      {/* Development only, and not under Vitest (its mode is 'test', DEV is
+          true there): the devtools inject a stylesheet on every mount, and
+          jsdom walks every rule for each getByRole, so a test file ran
+          slower with each test (2 s for the first, 35 s for the last). */}
+      {import.meta.env.DEV && import.meta.env.MODE !== 'test' && (
         <>
           <TanStackRouterDevtools />
           <ReactQueryDevtools buttonPosition="bottom-left" />

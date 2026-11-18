@@ -99,7 +99,7 @@ repository.
 ## Around the API
 
 - [x] the typed client (`packages/api-client`)
-- [ ] the web app (`apps/web`, `packages/ui`)
+- [x] the web app (`apps/web`, `packages/ui`)
 - [x] the worker process (`node dist/worker`)
 - [x] the operator CLI (`pnpm ops`)
 - [x] repository tooling: the raw SQL check, knip, git hooks, commit
