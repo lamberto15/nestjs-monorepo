@@ -30,7 +30,8 @@
   "check": {
     "missing": "{{field}} is empty",
     "reference": "{{field}} refers to a record in the recycle bin ({{other}})",
-    "duplicate": "{{field}} is the same as another record's ({{other}})"
+    "duplicate_one": "{{field}} is the same as another record's ({{other}})",
+    "duplicate_other": "{{field}} is the same as {{count}} other records' ({{other}})"
   },
   "recheck": "Recheck",
   "recheckLabel": "Recheck: {{problem}}",

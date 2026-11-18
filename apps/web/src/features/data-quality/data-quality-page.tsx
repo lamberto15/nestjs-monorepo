@@ -215,9 +215,15 @@ function FindingRow({ finding }: { finding: DataQualityFinding }) {
   const canManage = useCan('DataQuality.resolve');
   const dismiss = useDismissFinding();
   const recheck = useRecheckFinding();
+  // A duplicate names every other record the reader may read (an array); a
+  // finding written before that names one.
+  const others = [
+    finding.detail?.duplicateOf ?? finding.detail?.referencedId ?? [],
+  ].flat();
   const problem = t(`check.${finding.check}`, {
     field: finding.field,
-    other: finding.detail?.duplicateOf ?? finding.detail?.referencedId ?? '',
+    other: others.join(', '),
+    count: others.length,
   });
 
   async function onRecheck() {

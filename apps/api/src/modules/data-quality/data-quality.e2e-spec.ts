@@ -33,7 +33,7 @@ interface Finding {
   check: string;
   field: string;
   severity: string;
-  detail: Record<string, string> | null;
+  detail: Record<string, string | string[]> | null;
 }
 
 describe('data quality on test items (e2e)', () => {
@@ -155,7 +155,7 @@ describe('data quality on test items (e2e)', () => {
       found.find((f) => f.recordId === complete && f.check === 'duplicate'),
     ).toMatchObject({
       severity: 'suggestion',
-      detail: { duplicateOf: sparse },
+      detail: { duplicateOf: [sparse] },
     });
 
     // By check, and of one record at its own route.
@@ -230,6 +230,101 @@ describe('data quality on test items (e2e)', () => {
     expect(
       (await call('GET', '/v1/data-quality', team.editor.headers)).statusCode,
     ).toBe(403);
+  });
+
+  it('shows a duplicate only to who may read the record it duplicates', async () => {
+    const role = await call('POST', '/v1/access/roles', admin, {
+      name: `own-quality-${randomUUID().slice(0, 8)}`,
+      permissions: [
+        { subject: 'TestItem', action: 'create', conditions: [] },
+        // Their own test items only.
+        {
+          subject: 'TestItem',
+          action: 'read',
+          conditions: [{ key: 'mine' }],
+        },
+        { subject: 'DataQuality', action: 'read', conditions: [] },
+      ],
+    });
+    expect(role.statusCode).toBe(201);
+    const owner = await member(app, team.tenantId, [role.json().id]);
+    const theirs = (
+      await createTestItem(app, owner.headers, {
+        title: 'Twin',
+        body: 'B',
+        code: 'T1',
+      })
+    ).id;
+    const hidden = await item({ title: 'twin', body: 'B', code: 'T2' });
+    await scan();
+    // The admin reads both: each names the other.
+    expect(
+      (await findings(admin, '?check=duplicate')).map((f) => [
+        f.recordId,
+        f.detail,
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        [theirs, { duplicateOf: [hidden] }],
+        [hidden, { duplicateOf: [theirs] }],
+      ]),
+    );
+    // The owner's record duplicates one they may not read: no finding, no id.
+    const own = await findings(owner.headers);
+    expect(own.filter((f) => f.check === 'duplicate')).toEqual([]);
+    expect(JSON.stringify(own)).not.toContain(hidden);
+    const summary = await call('GET', '/v1/data-quality', owner.headers);
+    expect(summary.json().subjects).toEqual([
+      { subject: 'TestItem', errors: 0, suggestions: 0, dismissed: 0 },
+    ]);
+  });
+
+  it('names in a duplicate only the records the reader may read', async () => {
+    const role = await call('POST', '/v1/access/roles', admin, {
+      name: `own-quality-${randomUUID().slice(0, 8)}`,
+      permissions: [
+        { subject: 'TestItem', action: 'create', conditions: [] },
+        {
+          subject: 'TestItem',
+          action: 'read',
+          conditions: [{ key: 'mine' }],
+        },
+        { subject: 'DataQuality', action: 'read', conditions: [] },
+        { subject: 'DataQuality', action: 'resolve', conditions: [] },
+      ],
+    });
+    expect(role.statusCode).toBe(201);
+    const owner = await member(app, team.tenantId, [role.json().id]);
+    const own = (title: string) =>
+      createTestItem(app, owner.headers, { title, body: 'B', code: title });
+    // Made in this order, so the hidden one is the first other by id.
+    const first = (await own('Trio')).id;
+    const hidden = await item({ title: 'TRIO', body: 'B', code: 'T0' });
+    const second = (await own('trio ')).id;
+    await scan();
+
+    const ofFirst = (await findings(admin, '?check=duplicate')).find(
+      (f) => f.recordId === first,
+    );
+    expect(ofFirst!.detail).toEqual({ duplicateOf: [hidden, second] });
+    const seen = await findings(owner.headers, '?check=duplicate');
+    expect(seen.map((f) => [f.recordId, f.detail])).toEqual(
+      expect.arrayContaining([
+        [first, { duplicateOf: [second] }],
+        [second, { duplicateOf: [first] }],
+      ]),
+    );
+    expect(seen).toHaveLength(2);
+    expect(JSON.stringify(seen)).not.toContain(hidden);
+    // A recheck answers it as the list does.
+    const rechecked = await call(
+      'POST',
+      `/v1/data-quality/findings/${seen[0]!.id}/recheck`,
+      owner.headers,
+    );
+    expect(rechecked.statusCode).toBe(200);
+    expect(JSON.stringify(rechecked.json())).not.toContain(hidden);
+    expect(rechecked.json().finding.detail.duplicateOf).toHaveLength(1);
   });
 
   it('keeps a dismissed finding dismissed across scans, and a recheck resolves a fixed one', async () => {

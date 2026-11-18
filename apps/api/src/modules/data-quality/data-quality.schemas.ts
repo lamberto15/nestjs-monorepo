@@ -52,10 +52,10 @@ export const dataQualityFindingSchema = z
     field: z.string().meta({ example: 'body' }),
     severity: z.enum(QUALITY_SEVERITIES),
     detail: z
-      .record(z.string(), z.string())
+      .record(z.string(), z.union([z.string(), z.array(z.string())]))
       .nullable()
       .describe(
-        '`referencedId` (reference), `duplicateOf`: the other record (duplicate), `message` (rule).',
+        '`referencedId` (reference), `duplicateOf`: the other records with the same value that you may read, first by id (duplicate), `message` (rule).',
       ),
     checkedAt: z.iso.datetime(),
     dismissedAt: z.iso.datetime().nullable(),

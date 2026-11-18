@@ -12,6 +12,7 @@ import {
   count,
   desc,
   eq,
+  exists,
   getColumns,
   gt,
   inArray,
@@ -171,7 +172,7 @@ export class DataQualityService {
       .limit(query.limit + 1);
     const items = rows.slice(0, query.limit);
     return {
-      items: items.map(findingView),
+      items: await this.views(principal, registration, items),
       nextCursor: rows.length > query.limit ? items.at(-1)!.id : null,
     };
   }
@@ -342,18 +343,22 @@ export class DataQualityService {
       });
       return updated!;
     });
-    return findingView(row);
+    const [view] = await this.views(principal, this.registration(row.subject), [
+      row,
+    ]);
+    return view!;
   }
 
   /** Checks a finding's record again now: the finding if it still holds. */
   async recheck(principal: Principal, id: string) {
     const finding = await this.findOne(principal, id);
     await this.recheckRecord(finding.subject, finding.recordId);
-    const [still] = await this.db
-      .select()
-      .from(findings)
-      .where(eq(findings.id, id));
-    return { resolved: !still, finding: still ? findingView(still) : null };
+    // As the caller may see it now: it may name another duplicate.
+    const still = await this.seen(principal, id);
+    const [view] = still
+      ? await this.views(principal, this.registration(still.subject), [still])
+      : [];
+    return { resolved: !still, finding: view ?? null };
   }
 
   /** Forgets the findings of records deleted for good (DataQualityExtension). */
@@ -394,26 +399,31 @@ export class DataQualityService {
 
   /** A finding the principal may see, or a 404 (the same for one they may not). */
   private async findOne(principal: Principal, id: string) {
+    const row = await this.seen(principal, id);
+    if (row) return row;
+    throw new NotFoundException({
+      code: 'finding_not_found',
+      message: `No data-quality finding ${id} that you may see.`,
+    });
+  }
+
+  /** A finding, if the principal may see it. */
+  private async seen(principal: Principal, id: string) {
     const [row] = await this.db
       .select()
       .from(findings)
       .where(eq(findings.id, id));
     const registration = row && this.registry.find(row.subject);
-    if (registration) {
-      const t = this.table(registration);
-      const [shown] = await this.db
-        .select({ id: findings.id })
-        .from(findings)
-        .innerJoin(t as unknown as PgTable, eq(t.id, findings.recordId))
-        .where(
-          and(eq(findings.id, id), await this.visible(principal, registration)),
-        );
-      if (shown) return row;
-    }
-    throw new NotFoundException({
-      code: 'finding_not_found',
-      message: `No data-quality finding ${id} that you may see.`,
-    });
+    if (!registration) return undefined;
+    const t = this.table(registration);
+    const [shown] = await this.db
+      .select({ id: findings.id })
+      .from(findings)
+      .innerJoin(t as unknown as PgTable, eq(t.id, findings.recordId))
+      .where(
+        and(eq(findings.id, id), await this.visible(principal, registration)),
+      );
+    return shown ? row : undefined;
   }
 
   /** The findings of a subject the principal may see: on records they may read, on fields shown to them. */
@@ -432,6 +442,8 @@ export class DataQualityService {
         rule.compiled.reads.some((name) => hidden.includes(name)),
       )
       .map((rule) => rule.name);
+    const readable = await this.access.sqlFilter(principal, subject, 'read');
+    const t = this.table(registration);
     return and(
       eq(findings.subject, subject),
       hidden.length
@@ -440,8 +452,69 @@ export class DataQualityService {
       rules.length
         ? or(ne(findings.check, 'rule'), notInArray(findings.field, rules))
         : undefined,
-      await this.access.sqlFilter(principal, subject, 'read'),
+      readable,
+      // A duplicate names the other records and tells their value: shown
+      // only when the reader may read one of them too (views() shows only
+      // those). The subquery's own table shadows the outer one, so the read
+      // filter applies to the other records.
+      registration.duplicates.length && readable
+        ? or(
+            ne(findings.check, 'duplicate'),
+            exists(
+              this.db
+                .select({ id: t.id })
+                .from(t as unknown as PgTable)
+                .where(and(inArray(t.id, duplicateIds), readable)),
+            ),
+          )
+        : undefined,
     );
+  }
+
+  /** Findings as the API shows them to `principal`: a duplicate names only the records they may read. */
+  private async views(
+    principal: Principal,
+    registration: DataQualityRegistration,
+    rows: DataQualityFindingRow[],
+  ): Promise<DataQualityFindingView[]> {
+    const ids = [
+      ...new Set(
+        rows.flatMap((row) =>
+          row.check === 'duplicate' ? duplicatesOf(row) : [],
+        ),
+      ),
+    ];
+    const t = this.table(registration);
+    const readable = new Set(
+      ids.length
+        ? (
+            await this.db
+              .select({ id: t.id })
+              .from(t as unknown as PgTable)
+              .where(
+                and(
+                  inArray(t.id, ids),
+                  await this.access.sqlFilter(
+                    principal,
+                    registration.subject,
+                    'read',
+                  ),
+                ),
+              )
+          ).map((row) => row.id as string)
+        : [],
+    );
+    return rows.map((row) => {
+      const view = findingView(row);
+      if (row.check !== 'duplicate' || !view.detail) return view;
+      return {
+        ...view,
+        detail: {
+          ...view.detail,
+          duplicateOf: duplicatesOf(row).filter((id) => readable.has(id)),
+        },
+      };
+    });
   }
 
   private registration(subject: string) {
@@ -495,6 +568,18 @@ export class DataQualityService {
       });
   }
 }
+
+/** A duplicate finding's other records (one id, as findings written before held it, or several). */
+function duplicatesOf(row: DataQualityFindingRow): string[] {
+  const ids = row.detail?.duplicateOf;
+  return ids === undefined ? [] : [ids].flat();
+}
+
+/**
+ * The same ids in SQL, for one finding of the outer query: `$.duplicateOf[*]`
+ * is lax, so a single id (written before) reads as one. Drizzle has no jsonpath.
+ */
+const duplicateIds = sql`(select (jsonb_path_query(${findings.detail}, '$.duplicateOf[*]') #>> '{}')::uuid)`;
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
 

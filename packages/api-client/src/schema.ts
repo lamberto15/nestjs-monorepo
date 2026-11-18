@@ -5692,7 +5692,7 @@ export interface paths {
         put?: never;
         /**
          * Export every record of a tenant (operators)
-         * @description Answers 202 with the transfer: follow it at GET /v1/data/transfers/{id} (yours, in your tenant), which gives the file’s link when done (valid 30 minutes; ask again for a new one). One row per record: `kind` (its table; `tenant`, `member` for its members’ accounts), `id`, `data` (JSON); hashes, secrets and encrypted columns are left out, stored files are listed by their rows. Wants a recent sign-in (`reauthentication_required`). Audited (`tenant.export-requested`) in your tenant and in that one.
+         * @description Answers 202 with the transfer: follow it at GET /v1/data/transfers/{id} (yours, in your tenant), which gives the file’s link when done (valid 30 minutes at most; ask again for a new one). One row per record: `kind` (its table; `tenant`, `member` for its members’ accounts), `id`, `data` (JSON); hashes, secrets and encrypted columns are left out, stored files are listed by their rows. Wants a recent sign-in (`reauthentication_required`). Audited (`tenant.export-requested`) in your tenant and in that one.
          */
         post: operations["TenantExportController_start_v1"];
         delete?: never;
@@ -5730,7 +5730,7 @@ export interface paths {
         };
         /**
          * The copies of your data you asked for
-         * @description Newest first, by cursor. A completed one has its download link (30 minutes from this answer). Kept 7 days after they end.
+         * @description Newest first, by cursor. A completed one has its download link (30 minutes from this answer at most). Kept 7 days after they end.
          */
         get: operations["AccountExportsController_list_v1"];
         put?: never;
@@ -7617,9 +7617,9 @@ export interface components {
             field: string;
             /** @enum {string} */
             severity: "error" | "suggestion";
-            /** @description `referencedId` (reference), `duplicateOf`: the other record (duplicate), `message` (rule). */
+            /** @description `referencedId` (reference), `duplicateOf`: the other records with the same value that you may read, first by id (duplicate), `message` (rule). */
             detail: {
-                [key: string]: string;
+                [key: string]: string | string[];
             } | null;
             /** Format: date-time */
             checkedAt: string;
@@ -19379,7 +19379,10 @@ export interface operations {
                     /** @example Firefox on the laptop */
                     name: string;
                     subscription: {
-                        /** Format: uri */
+                        /**
+                         * Format: uri
+                         * @description The push service's URL. https only; private, loopback and metadata addresses are refused, also when a host name resolves to one at sending.
+                         */
                         endpoint: string;
                         keys: {
                             p256dh: string;

@@ -34,7 +34,7 @@ Its `ref` fields are always checked: one pointing at a record in the recycle bin
 ## Findings
 
 - `GET /v1/data-quality/subjects/{subject}/findings`: a subject's open findings (`dismissed=true`, `severity`, `check` filter). `GET /v1/<path>/{id}/data-quality`: one record's, the same page.
-- Needs `DataQuality.read`, then the subject's own read permission: only findings on records the caller may read, never on a field their permissions hide or show on some records only (nor a rule that reads one). The summary counts the same way.
+- Needs `DataQuality.read`, then the subject's own read permission: only findings on records the caller may read, never on a field their permissions hide or show on some records only (nor a rule that reads one), and a duplicate only when they may also read one of the records it duplicates. `detail.duplicateOf` lists those they may read (up to 50 others are kept per finding, first by id): it names them and tells their value. The summary counts the same way.
 - `POST …/findings/{id}/dismiss` (`DataQuality.resolve`): right as it is; audited `data-quality.finding-dismissed`.
 - `POST …/findings/{id}/recheck` (`DataQuality.resolve`): checks the record again now; `{ resolved, finding }`.
 - Findings of records deleted for good go with them (a `purged` hook).

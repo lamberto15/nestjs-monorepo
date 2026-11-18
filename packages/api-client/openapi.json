@@ -23041,7 +23041,8 @@
                       "endpoint": {
                         "type": "string",
                         "maxLength": 2000,
-                        "format": "uri"
+                        "format": "uri",
+                        "description": "The push service's URL. https only; private, loopback and metadata addresses are refused, also when a host name resolves to one at sending."
                       },
                       "keys": {
                         "type": "object",
@@ -45672,7 +45673,7 @@
     },
     "/v1/tenants/{id}/export": {
       "post": {
-        "description": "Answers 202 with the transfer: follow it at GET /v1/data/transfers/{id} (yours, in your tenant), which gives the file’s link when done (valid 30 minutes; ask again for a new one). One row per record: `kind` (its table; `tenant`, `member` for its members’ accounts), `id`, `data` (JSON); hashes, secrets and encrypted columns are left out, stored files are listed by their rows. Wants a recent sign-in (`reauthentication_required`). Audited (`tenant.export-requested`) in your tenant and in that one.",
+        "description": "Answers 202 with the transfer: follow it at GET /v1/data/transfers/{id} (yours, in your tenant), which gives the file’s link when done (valid 30 minutes at most; ask again for a new one). One row per record: `kind` (its table; `tenant`, `member` for its members’ accounts), `id`, `data` (JSON); hashes, secrets and encrypted columns are left out, stored files are listed by their rows. Wants a recent sign-in (`reauthentication_required`). Audited (`tenant.export-requested`) in your tenant and in that one.",
         "operationId": "TenantExportController_start_v1",
         "parameters": [
           {
@@ -45829,7 +45830,7 @@
     },
     "/v1/account/exports": {
       "get": {
-        "description": "Newest first, by cursor. A completed one has its download link (30 minutes from this answer). Kept 7 days after they end.",
+        "description": "Newest first, by cursor. A completed one has its download link (30 minutes from this answer at most). Kept 7 days after they end.",
         "operationId": "AccountExportsController_list_v1",
         "parameters": [
           {
@@ -66885,10 +66886,20 @@
           },
           "detail": {
             "nullable": true,
-            "description": "`referencedId` (reference), `duplicateOf`: the other record (duplicate), `message` (rule).",
+            "description": "`referencedId` (reference), `duplicateOf`: the other records with the same value that you may read, first by id (duplicate), `message` (rule).",
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
             }
           },
           "checkedAt": {

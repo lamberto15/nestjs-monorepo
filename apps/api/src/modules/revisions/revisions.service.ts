@@ -1,7 +1,17 @@
 import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuthorizationService } from '@nestjs/authorization';
-import { and, desc, eq, inArray, lt } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
@@ -150,7 +160,11 @@ export class RevisionsService {
     query: ListQuery,
   ) {
     const readable = await this.readable(principal, subject, recordId);
-    const where = and(this.of(subject, recordId), REVISION_LIST.where(query));
+    const where = and(
+      this.of(subject, recordId),
+      readable.shown,
+      REVISION_LIST.where(query),
+    );
     const [rows, total] = await Promise.all([
       this.db
         .select()
@@ -178,7 +192,7 @@ export class RevisionsService {
   ) {
     const readable = await this.readable(principal, subject, recordId);
     const [view] = await this.views(readable, [
-      await this.findOne(subject, recordId, number),
+      await this.findOne(subject, recordId, number, readable.shown),
     ]);
     return view!;
   }
@@ -193,8 +207,8 @@ export class RevisionsService {
   ) {
     const readable = await this.readable(principal, subject, recordId);
     const [from, to] = await Promise.all([
-      this.findOne(subject, recordId, a),
-      this.findOne(subject, recordId, b),
+      this.findOne(subject, recordId, a, readable.shown),
+      this.findOne(subject, recordId, b, readable.shown),
     ]);
     const changes = diff(from.snapshot, to.snapshot);
     return {
@@ -221,8 +235,9 @@ export class RevisionsService {
     unchanged: (current: object) => void,
   ) {
     const { store, feature, presenter, declaration } = this.records.of(subject);
-    const row = await store.findOne(recordId, { visibleTo: principal });
-    const revision = await this.findOne(subject, recordId, number);
+    // Only a revision the principal may see: else it would restore what it hides.
+    const { row, shown } = await this.readable(principal, subject, recordId);
+    const revision = await this.findOne(subject, recordId, number, shown);
     const changed = diff(snapshotOf(declaration, row), revision.snapshot);
     // Only fields the record still has (a revision may predate a removed one).
     const body = Object.fromEntries(
@@ -276,7 +291,10 @@ export class RevisionsService {
 
   /**
    * The record, once the principal may read it (else a 404: its existence
-   * stays hidden), and which of its fields they may see.
+   * stays hidden), as the table holds it, which of its fields they may see, and the revisions they
+   * may see (`shown`): the first, and those that change a field they see.
+   * A revision of hidden fields only would still tell that, when and who
+   * changed one.
    */
   private async readable(
     principal: Principal,
@@ -286,23 +304,42 @@ export class RevisionsService {
     const { store, feature, declaration } = this.records.of(subject);
     const row = await store.findOne(recordId, { visibleTo: principal });
     await this.authorization.authorize(feature.policy, 'read', principal, row);
-    const shown = await this.access.redact(
-      principal,
-      'read',
-      subject,
-      recordView(declaration, row) as Record<string, unknown>,
-    );
-    return { allowed: (field: string) => field in shown };
+    const view = recordView(declaration, row) as Record<string, unknown>;
+    const shown = await this.access.redact(principal, 'read', subject, view);
+    const visible = Object.keys(shown);
+    return {
+      row,
+      allowed: (field: string) => field in shown,
+      // Drizzle has no jsonb `?|` (has any of these keys).
+      shown:
+        visible.length === Object.keys(view).length
+          ? undefined
+          : or(
+              isNull(revisions.changes),
+              sql`${revisions.changes} ?| ${sql.param(visible)}::text[]`,
+            ),
+    };
   }
 
-  private async findOne(subject: string, recordId: string, number: number) {
+  private async findOne(
+    subject: string,
+    recordId: string,
+    number: number,
+    shown?: SQL,
+  ) {
     // An integer column: a number outside it is no revision (not a database error).
     const [row] = !(number >= 1 && number <= 2_147_483_647)
       ? []
       : await this.db
           .select()
           .from(revisions)
-          .where(and(this.of(subject, recordId), eq(revisions.number, number)));
+          .where(
+            and(
+              this.of(subject, recordId),
+              eq(revisions.number, number),
+              shown,
+            ),
+          );
     if (!row) {
       throw new NotFoundException(
         `Revision ${number} of ${subject} ${recordId} not found.`,

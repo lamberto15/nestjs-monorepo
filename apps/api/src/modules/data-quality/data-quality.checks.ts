@@ -9,7 +9,14 @@ import {
 } from '../records/record.js';
 import { relationsFrom } from '../records/record-relations.js';
 import type { DataQualityRegistration } from './data-quality.registry.js';
-import type { QualityCheck, QualitySeverity } from './data-quality.tables.js';
+import type {
+  FindingDetail,
+  QualityCheck,
+  QualitySeverity,
+} from './data-quality.tables.js';
+
+/** The duplicates a finding names, first by id: a value shared by thousands names a few. */
+export const DUPLICATES_KEPT = 50;
 
 /** A problem found on a record now. */
 export interface Found {
@@ -17,7 +24,7 @@ export interface Found {
   check: QualityCheck;
   field: string;
   severity: QualitySeverity;
-  detail: Record<string, string> | null;
+  detail: FindingDetail | null;
 }
 
 /** Null, or text that is blank once trimmed: nothing there. */
@@ -110,14 +117,17 @@ export async function findProblems(
     for (const row of rows) {
       if (isEmpty(row[field])) continue;
       const mine = (row[field] as string).trim().toLowerCase();
-      const other = same.find((s) => s.key === mine && s.id !== row.id);
-      if (other) {
+      const others = same
+        .filter((s) => s.key === mine && s.id !== row.id)
+        .slice(0, DUPLICATES_KEPT)
+        .map((s) => s.id as string);
+      if (others.length) {
         found.push({
           recordId: row.id,
           check: 'duplicate',
           field,
           severity: 'suggestion',
-          detail: { duplicateOf: other.id as string },
+          detail: { duplicateOf: others },
         });
       }
     }

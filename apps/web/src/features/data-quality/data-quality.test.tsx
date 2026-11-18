@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { nav, visibleGroups } from '@/nav';
 import { renderApp } from '@/test/render-app';
 import { findToast } from '@/test/toast';
-import { useDataQualityApi } from './test/data-quality-api';
+import { finding, useDataQualityApi } from './test/data-quality-api';
 
 const READER = ['DataQuality.read'];
 const MANAGER = ['DataQuality.read', 'DataQuality.scan', 'DataQuality.resolve'];
@@ -42,6 +42,33 @@ describe('the dashboard', () => {
     expect(screen.getByText('Error')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Scan now' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Dismiss/ })).toBeNull();
+  });
+
+  it('names one duplicate, or every one it may read', async () => {
+    useDataQualityApi({
+      can: READER,
+      findings: [
+        finding({
+          id: 'f-1',
+          check: 'duplicate',
+          field: 'title',
+          detail: { duplicateOf: ['r-1'] },
+        }),
+        finding({
+          id: 'f-2',
+          check: 'duplicate',
+          field: 'code',
+          detail: { duplicateOf: ['r-2', 'r-3'] },
+        }),
+      ],
+    });
+    await renderApp('/data-quality');
+    expect(
+      await screen.findByText("title is the same as another record's (r-1)"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("code is the same as 2 other records' (r-2, r-3)"),
+    ).toBeVisible();
   });
 
   it('says when there was no scan yet', async () => {

@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { getDrizzleToken } from '@nestjs/drizzle';
 import { InMemoryMailTransport, MailTransport } from '@nestjs/mail';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { StorageDisk } from '@nestjs/storage';
 import { bootModules } from '../../../test/boot.js';
+import { eq } from 'drizzle-orm';
+import type { Database } from '../../core/database/database.js';
 import { MetricsModule } from '../../core/metrics/metrics.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
@@ -21,6 +24,7 @@ import {
   testItemModules,
 } from '../../../test/records.js';
 import { SharesModule } from './shares.module.js';
+import { recordShares } from './shares.tables.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
@@ -233,6 +237,64 @@ describe('record shares (e2e)', () => {
     expect((await open(token, code)).json()).toMatchObject({
       fields: { title: 'Private' },
     });
+  });
+
+  it('compares no more than five codes of a burst sent at once', async () => {
+    const item = await createTestItem(app, team.editor.headers);
+    const { token, id } = (
+      await share(team.editor.headers, item.id, {
+        fields: ['title'],
+        expiresAt: inDays(1),
+        recipientEmail: 'burst@example.com',
+      })
+    ).json<{ token: string; id: string }>();
+    mailbox.clear();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/shared/code',
+      payload: { token },
+    });
+    await vi.waitFor(() => expect(mailbox.mails).toHaveLength(1));
+    const code = /\b(\d{6})\b/.exec(JSON.stringify(mailbox.mails[0]))![1]!;
+    const wrong = String((Number(code) + 1) % 1_000_000).padStart(6, '0');
+    // From addresses of their own: the per-address limit is not what is tested.
+    const from = (i: number, given: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/shared/open',
+        headers: { 'x-forwarded-for': `203.0.113.${i + 1}` },
+        payload: { token, code: given },
+      });
+    const answers = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => from(i, i === 19 ? code : wrong)),
+    );
+    expect(answers.every((a) => [200, 403].includes(a.statusCode))).toBe(true);
+    const [row] = await app
+      .get(Tenancy)
+      .run(team.tenantId, () =>
+        app
+          .get<Database>(getDrizzleToken())
+          .select({ codeAttempts: recordShares.codeAttempts })
+          .from(recordShares)
+          .where(eq(recordShares.id, id)),
+      );
+    // Five wrong codes compared, the others refused uncompared.
+    expect(row!.codeAttempts).toBe(5);
+    expect((await from(20, code)).statusCode).toBe(403);
+  });
+
+  it('makes at most 20 working links per record, even when asked at once', async () => {
+    const item = await createTestItem(app, team.editor.headers);
+    const made = await Promise.all(
+      Array.from({ length: 30 }, () =>
+        share(team.editor.headers, item.id, {
+          fields: ['title'],
+          expiresAt: inDays(1),
+        }),
+      ),
+    );
+    expect(made.filter((r) => r.statusCode === 201)).toHaveLength(20);
+    expect(made.filter((r) => r.statusCode === 400)).toHaveLength(10);
   });
 
   it('lists the files of a link made with files, and hands out a download link for each', async () => {

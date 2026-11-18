@@ -28,6 +28,9 @@ export type QualitySeverity = (typeof QUALITY_SEVERITIES)[number];
  * decided it is right as it is (and stays so while it holds). Nothing here
  * ever changes the record.
  */
+/** `referencedId`, `message`: one value; `duplicateOf`: the other records' ids. */
+export type FindingDetail = Record<string, string | string[]>;
+
 export const dataQualityFindings = tenantTable(
   'data_quality_findings',
   {
@@ -39,8 +42,8 @@ export const dataQualityFindings = tenantTable(
     /** The record's field it is about; a rule's name for `rule`. */
     field: text('field').notNull(),
     severity: text('severity').$type<QualitySeverity>().notNull(),
-    /** What helps to act on it: the record referred to, the other record with the same value, a rule's message. */
-    detail: jsonb('detail').$type<Record<string, string>>(),
+    /** What helps to act on it: the record referred to, the other records with the same value, a rule's message. */
+    detail: jsonb('detail').$type<FindingDetail>(),
     /** When a scan or a recheck last found it. */
     checkedAt: at('checked_at').notNull().defaultNow(),
     dismissedAt: at('dismissed_at'),

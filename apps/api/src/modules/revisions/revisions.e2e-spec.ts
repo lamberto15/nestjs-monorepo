@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { eq, inArray } from 'drizzle-orm';
+import { member } from '../../../test/access.js';
 import { bootModules } from '../../../test/boot.js';
 import {
   createTestItem,
@@ -197,6 +199,84 @@ describe('revisions (e2e)', () => {
         Object.hasOwn(record, 'body'),
       );
     }
+  });
+
+  it('lists no revision that changed only fields the reader may not see', async () => {
+    const role = await call('POST', '/v1/access/roles', admin.headers, {
+      name: `no-fields-${randomUUID().slice(0, 8)}`,
+      // Every test item, none of its granted fields (`body`).
+      permissions: [
+        { subject: 'TestItem', action: 'read', conditions: [], fields: [] },
+      ],
+    });
+    expect(role.statusCode, role.body).toBe(201);
+    const reader = await member(app, tenantId, [role.json().id]);
+    const item = await createTestItem(app, admin.headers, {
+      title: 'Quiet',
+      body: 'before',
+    });
+    expect(
+      (await patch(item.id, admin.headers, { body: 'after' })).statusCode,
+    ).toBe(200);
+    expect(
+      (await revs(item.id, admin.headers))
+        .json()
+        .items.map((r: Rev) => r.number),
+    ).toEqual([2, 1]);
+
+    const list = (await revs(item.id, reader.headers, '?count=true')).json<{
+      items: Rev[];
+      total: number;
+    }>();
+    expect(list.items.map((r) => r.number)).toEqual([1]);
+    expect(list.total).toBe(1);
+    const one = (number: number) =>
+      call(
+        'GET',
+        `/v1/test-items/${item.id}/revisions/${number}`,
+        reader.headers,
+      );
+    expect((await one(1)).statusCode).toBe(200);
+    expect((await one(2)).statusCode).toBe(404);
+    expect(
+      (
+        await call(
+          'GET',
+          `/v1/test-items/${item.id}/revisions/1/diff/2`,
+          reader.headers,
+        )
+      ).statusCode,
+    ).toBe(404);
+  });
+
+  it('restores no revision the reader may not see', async () => {
+    const role = await call('POST', '/v1/access/roles', admin.headers, {
+      name: `restorer-${randomUUID().slice(0, 8)}`,
+      permissions: [
+        { subject: 'TestItem', action: 'read', conditions: [], fields: [] },
+        { subject: 'TestItem', action: 'update', conditions: [] },
+      ],
+    });
+    expect(role.statusCode, role.body).toBe(201);
+    const restorer = await member(app, tenantId, [role.json().id]);
+    const item = await createTestItem(app, admin.headers, {
+      title: 'Kept',
+      body: 'before',
+    });
+    await patch(item.id, admin.headers, { body: 'after' });
+    // Revision 2 changed only `body`: as hidden from them as its GET.
+    const restore = (number: number) =>
+      call(
+        'POST',
+        `/v1/test-items/${item.id}/revisions/${number}/restore`,
+        restorer.headers,
+      );
+    expect((await restore(2)).statusCode).toBe(404);
+    expect(
+      (await revs(item.id, admin.headers))
+        .json()
+        .items.map((r: Rev) => r.number),
+    ).toEqual([2, 1]);
   });
 
   it('restores a revision through the record: audited, a new revision, ETag and permissions as a PATCH', async () => {

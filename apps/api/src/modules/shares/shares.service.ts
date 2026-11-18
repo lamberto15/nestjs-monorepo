@@ -15,6 +15,7 @@ import {
 import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
 import { and, count, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import type {
   Database,
   DatabaseTransactions,
@@ -187,6 +188,13 @@ export class SharesService {
     const tenantId = this.tenancy.tenantId();
     const token = `shr_${tenantId}_${randomBytes(32).toString('base64url')}`;
     const row = await this.txHost.withTransaction(async () => {
+      // The record's row is the lock: two makers can't both make the 21st link.
+      const table = this.records.of(record.subject).feature.table;
+      await this.db
+        .select({ id: table.id })
+        .from(table as unknown as PgTable)
+        .where(eq(table.id, record.recordId))
+        .for('update');
       const [{ open }] = await this.db
         .select({ open: count() })
         .from(recordShares)
@@ -451,7 +459,8 @@ export class SharesService {
   /**
    * A link to a recipient opens with the code last mailed to them, before
    * it ends and within its tries; a wrong code spends one (committed
-   * before the 403).
+   * before the 403). The link's row is locked while its code is compared:
+   * tries sent at once take turns, so no more than the limit are compared.
    */
   private async assertCode(share: RecordShareRow, code: string | undefined) {
     if (!share.recipientEmail) return;
@@ -462,18 +471,34 @@ export class SharesService {
       });
     }
     const given = Buffer.from(codeHashOf(share.id, code));
-    const expected = Buffer.from(share.codeHash ?? '');
-    const valid =
-      share.codeExpiresAt !== null &&
-      share.codeExpiresAt.getTime() > Date.now() &&
-      share.codeAttempts < SHARE_CODE_ATTEMPTS &&
-      given.length === expected.length &&
-      timingSafeEqual(given, expected);
+    const valid = await this.txHost.withTransaction(async () => {
+      const [current] = await this.db
+        .select({
+          codeHash: recordShares.codeHash,
+          codeExpiresAt: recordShares.codeExpiresAt,
+          codeAttempts: recordShares.codeAttempts,
+        })
+        .from(recordShares)
+        .where(eq(recordShares.id, share.id))
+        .for('update');
+      const expected = Buffer.from(current?.codeHash ?? '');
+      const right =
+        !!current &&
+        current.codeExpiresAt !== null &&
+        current.codeExpiresAt.getTime() > Date.now() &&
+        current.codeAttempts < SHARE_CODE_ATTEMPTS &&
+        given.length === expected.length &&
+        timingSafeEqual(given, expected);
+      // A try past the limit is refused uncompared, so it spends nothing.
+      if (!right && current && current.codeAttempts < SHARE_CODE_ATTEMPTS) {
+        await this.db
+          .update(recordShares)
+          .set({ codeAttempts: sql`${recordShares.codeAttempts} + 1` })
+          .where(eq(recordShares.id, share.id));
+      }
+      return right;
+    });
     if (!valid) {
-      await this.db
-        .update(recordShares)
-        .set({ codeAttempts: sql`${recordShares.codeAttempts} + 1` })
-        .where(eq(recordShares.id, share.id));
       throw new ForbiddenException({
         code: 'share_code_invalid',
         message: 'The code is wrong or has expired: ask for a new one.',
