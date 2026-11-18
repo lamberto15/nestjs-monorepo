@@ -1,0 +1,83 @@
+# Publishes the image to GitHub's registry (ghcr.io/<owner>/<repo>): from
+# main once CI has passed on that commit (`main` and `sha-<commit>`), and
+# from a `v*` tag (`1.2.3` and `1.2`). Never `latest`: a deployment names
+# the version it runs. Deploying it is the deployment's own (PORTING.md).
+#
+# Third-party actions are pinned by commit SHA (the comment names the
+# release); Dependabot proposes newer ones.
+name: Publish
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.event.workflow_run.head_sha || github.ref }}
+
+jobs:
+  image:
+    # From main: only a push's CI run that passed (not the nightly one).
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - id: commit
+        name: The commit and its tags
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          sha="${RUN_SHA:-$GITHUB_SHA}"
+          image="ghcr.io/${REPOSITORY,,}"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            version="${REF_NAME#v}"
+            if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::$REF_NAME is not a version tag (v1.2.3)"
+              exit 1
+            fi
+            tags="$image:$version,$image:${version%.*}"
+          else
+            tags="$image:main,$image:sha-$sha"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "Publishing $tags"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cleanup: false
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.commit.outputs.tags }}
+          build-args: GIT_SHA=${{ steps.commit.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+          # CI's image job fills the cache on main: this build reuses it.
+          cache-from: type=gha
+          provenance: mode=max
+          sbom: true

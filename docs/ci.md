@@ -1,13 +1,14 @@
 # CI and the image
 
-One workflow, `.github/workflows/ci.yml`, on pull requests, pushes to `main`,
-manual runs and a nightly schedule (new advisories). It validates only:
-publishing the image and deploying are the adopting project's own workflows.
+`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, manual
+runs and a nightly schedule (new advisories), and validates only.
+`.github/workflows/publish.yml` publishes the image ("Publishing the
+image"); deploying it is the deployment's own.
 
 | Job        | Runs                                                                                                                                                                                                  |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `verify`   | `pnpm build`, `pnpm lint`, the raw-SQL check, knip, `pnpm test` and the unit coverage thresholds, `pnpm env:check`, `pnpm test:tools`, the migrations check, on pull requests the migration lint, then a generated feature's web pages type-checked and tested |
-| `e2e`      | `pnpm test:e2e` on PostgreSQL and Redis service containers                                                                                                                                            |
+| `e2e`      | `pnpm test:e2e` on PostgreSQL and Redis service containers, and Garage (`pnpm storage:up`) for the S3 disk's test                                                                                    |
 | `web-e2e` | `pnpm test:e2e:web`: Playwright on the built API serving the built web app, on `compose.dev.yaml`'s services and the runner's Chrome |
 | `security` | `pnpm audit --prod --audit-level high`; Trivy: secrets, then high or critical misconfigurations                                                                                                       |
 | `image`    | builds the Dockerfile (not pushed); Trivy fails on fixable high or critical vulnerabilities                                                                                                           |
@@ -73,3 +74,18 @@ docker run app node dist/migrate  # the migrations, once per deploy
 `/app/.data` is the only writable path (local files, the mail directory).
 The web app's build is in `/app/web` (`WEB_ROOT`), served by the API from its
 own origin (`apps/api/src/core/web`): one image, one origin.
+
+## Publishing the image
+
+`publish.yml` pushes the image to GitHub's registry,
+`ghcr.io/<owner>/<repo>`:
+
+- from `main`, once CI has passed on a push there: `main` and
+  `sha-<commit>`;
+- from a tag `v1.2.3` (pushed by hand: `git tag v1.2.3 && git push origin
+  v1.2.3`): `1.2.3` and `1.2`.
+
+Never `latest`: a deployment names the version it runs. Each image carries
+its commit (`GIT_SHA`, `org.opencontainers.image.revision`), a provenance
+attestation and an SBOM. The package is private with the repository; a host
+pulls it with a token that may read packages.

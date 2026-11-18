@@ -89,9 +89,10 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
   ported. Gaps found in Nestrix are filed on its repository
   (nestrix-js/nestrix#49 tracks them), not worked around here.
 - **No bundled operations:** no monitoring, backups, load tests, proxies or
-  deploy pipelines.
-- **Git:** local commits on `main`; no push and no pull request until the
-  owner asks.
+  deploy pipelines. The one exception: `publish.yml` publishes the image to
+  GHCR (the owner, 2026-11-19).
+- **Git:** commits on `main`, pushed to the private `origin` (the owner,
+  2026-11-19); no pull request until the owner asks.
 
 ## Commands
 

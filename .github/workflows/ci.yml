@@ -1,6 +1,6 @@
 # The checks every pull request and main must pass. It validates only:
-# publishing images and deploying are the adopting project's own workflows
-# (AGENTS.md, "No bundled operations"). docs/ci.md explains each job.
+# publish.yml publishes the image once this passes on main; deploying is the
+# deployment's own (PORTING.md). docs/ci.md explains each job.
 #
 # Third-party actions are pinned by commit SHA (the comment names the
 # release); Dependabot proposes newer ones.
