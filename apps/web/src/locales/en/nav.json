@@ -1,0 +1,11 @@
+{
+  "groups": {
+    "home": "Home",
+    "workspace": "Workspace",
+    "people": "People & access",
+    "security": "Security & compliance",
+    "developers": "Developers",
+    "configuration": "Configuration",
+    "platform": "Platform"
+  }
+}

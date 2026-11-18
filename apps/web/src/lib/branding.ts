@@ -1,0 +1,136 @@
+import { useQuery, queryOptions } from '@tanstack/react-query';
+import { unwrap, type GetResponse } from '@nestjs-monorepo/api-client';
+import { useTheme } from '@nestjs-monorepo/ui/components/theme-provider';
+import { useEffect, useSyncExternalStore } from 'react';
+import { api } from '@/lib/api';
+
+export type Branding = GetResponse<'/v1/branding'>;
+
+/** The tenant's branding (docs/branding.md): read again after a tenant switch (the session's cache is reset). */
+export const brandingQuery = queryOptions({
+  queryKey: ['branding'],
+  queryFn: () => unwrap(api.GET('/v1/branding')),
+  staleTime: 5 * 60_000,
+});
+
+/**
+ * The brand of the host the app is on, before sign-in: a tenant's verified
+ * custom domain's (docs/branding.md, "Custom domains"); every field null on
+ * the app's own host.
+ */
+export const hostBrandQuery = queryOptions({
+  queryKey: ['branding', 'host'],
+  queryFn: () => unwrap(api.GET('/v1/branding/host')),
+  staleTime: 5 * 60_000,
+});
+
+/** Only what the API checked: `#rrggbb`. Anything else is not put in a style. */
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+/** Black or white, whichever reads better on `hex` (WCAG relative luminance). */
+export function readableOn(hex: string): '#000000' | '#ffffff' {
+  const [r, g, b] = [1, 3, 5].map((at) => {
+    const channel = Number.parseInt(hex.slice(at, at + 2), 16) / 255;
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // The crossover where black and white have the same contrast.
+  return luminance > 0.179 ? '#000000' : '#ffffff';
+}
+
+/** The theme variables a brand colour sets (shadcn's tokens): the primary buttons and the sidebar's accent. */
+const TOKENS = [
+  '--primary',
+  '--primary-foreground',
+  '--sidebar-primary',
+  '--sidebar-primary-foreground',
+  '--ring',
+] as const;
+
+/**
+ * Puts the tenant's colour on the theme, or takes it off (null, or a value
+ * that is not `#rrggbb`): inline custom properties on `<html>` beat the
+ * stylesheet's in both the light and the dark theme. Returns the undo.
+ */
+export function applyBrandColor(
+  color: string | null,
+  root = document.documentElement,
+) {
+  if (!color || !HEX.test(color)) {
+    for (const token of TOKENS) root.style.removeProperty(token);
+    return;
+  }
+  const foreground = readableOn(color);
+  root.style.setProperty('--primary', color);
+  root.style.setProperty('--primary-foreground', foreground);
+  root.style.setProperty('--sidebar-primary', color);
+  root.style.setProperty('--sidebar-primary-foreground', foreground);
+  root.style.setProperty('--ring', color);
+}
+
+/** The tenant's branding, once loaded (a failed read leaves the default theme, with no toast). */
+export function useBranding() {
+  return useQuery({
+    ...brandingQuery,
+    retry: false,
+    meta: { errorToast: false },
+  }).data;
+}
+
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/** Whether the app shows its dark theme: the chosen one, or the system's when it follows it. */
+export function useIsDark() {
+  const { theme } = useTheme();
+  const system = useSyncExternalStore(
+    (notify) => {
+      const media = window.matchMedia(DARK_QUERY);
+      media.addEventListener('change', notify);
+      return () => media.removeEventListener('change', notify);
+    },
+    () => window.matchMedia(DARK_QUERY).matches,
+    () => false,
+  );
+  return theme === 'dark' || (theme === 'system' && system);
+}
+
+/** Themes the app with the tenant's colour (the dark one in the dark theme, when it has one) while mounted; renders nothing. */
+export function BrandTheme() {
+  const branding = useBranding();
+  const dark = useIsDark();
+  const color =
+    (dark ? branding?.darkPrimaryColor : null) ??
+    branding?.primaryColor ??
+    null;
+  useEffect(() => {
+    applyBrandColor(color);
+    return () => applyBrandColor(null);
+  }, [color]);
+  return null;
+}
+
+/**
+ * The pages before signing in, on a tenant's custom domain: its colour on
+ * the theme while mounted, and its logo and name to show (null: the app's
+ * own). A failed read leaves the app's look, with no toast.
+ */
+export function useHostBrand() {
+  const brand = useQuery({
+    ...hostBrandQuery,
+    retry: false,
+    meta: { errorToast: false },
+  }).data;
+  const dark = useIsDark();
+  const color =
+    (dark ? brand?.darkPrimaryColor : null) ?? brand?.primaryColor ?? null;
+  useEffect(() => {
+    applyBrandColor(color);
+    return () => applyBrandColor(null);
+  }, [color]);
+  return {
+    logoUrl: (dark ? brand?.darkLogoUrl : null) ?? brand?.logoUrl ?? null,
+    name: brand?.mailFromName ?? null,
+  };
+}

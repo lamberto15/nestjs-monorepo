@@ -1,0 +1,47 @@
+{
+  "name": "@nestjs-monorepo/api-client",
+  "version": "0.1.0",
+  "description": "The typed client of this API: REST (openapi-fetch, types generated from the OpenAPI document) and realtime (socket.io).",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./openapi.json": "./openapi.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "openapi.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "generate": "node scripts/generate.mjs",
+    "lint": "oxlint --type-aware src/",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage"
+  },
+  "peerDependencies": {
+    "socket.io-client": "^4.8.4"
+  },
+  "peerDependenciesMeta": {
+    "socket.io-client": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "5.1.0",
+    "openapi-typescript": "7.13.0",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
+    "socket.io-client": "4.8.4",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

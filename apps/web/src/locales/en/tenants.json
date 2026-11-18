@@ -1,0 +1,129 @@
+{
+  "nav": "Tenants",
+  "list": {
+    "title": "Tenants",
+    "description": "The customers of this deployment. Each tenant is a hard wall around its data; making one invites its first administrator.",
+    "empty": "No tenants.",
+    "create": "New tenant",
+    "columns": {
+      "name": "Name",
+      "slug": "Slug",
+      "status": "Status",
+      "created": "Created",
+      "actions": "Actions"
+    },
+    "operator": "Operators",
+    "current": "Current",
+    "switch": "Switch to it",
+    "erasedOn": "Erased on {{date}}"
+  },
+  "status": {
+    "active": "Active",
+    "inactive": "Inactive",
+    "deletionPending": "Deletion pending",
+    "erasing": "Being erased"
+  },
+  "create": {
+    "title": "New tenant",
+    "description": "Makes the tenant with its roles. The first administrator gets an invitation if the address has no account yet.",
+    "name": "Name",
+    "namePlaceholder": "Acme Ltd",
+    "nameRequired": "Enter a name.",
+    "nameTooLong": "At most {{max}} characters.",
+    "slug": "Slug",
+    "slugHint": "A short handle: lowercase letters, digits and single dashes.",
+    "slugInvalid": "Use lowercase letters and digits, with single dashes between (at most 48 characters).",
+    "email": "First administrator's email",
+    "emailHint": "An account at this address is made and invited when there is none.",
+    "emailInvalid": "Enter a valid email address.",
+    "cancel": "Cancel",
+    "submit": "Create tenant",
+    "done": "Tenant {{name}} created. {{email}} is its first administrator."
+  },
+  "detail": {
+    "back": "Back to tenants",
+    "created": "Created {{date}}",
+    "notFound": "This tenant does not exist.",
+    "saved": "Tenant {{name}} saved.",
+    "conflict": {
+      "title": "This tenant changed",
+      "description": "Another operator changed it since you opened it. Reload it to see the current values, then make your change again.",
+      "reload": "Reload"
+    },
+    "name": {
+      "title": "Name and slug",
+      "description": "The name is what people see. The slug is the tenant's short handle.",
+      "slugHint": "Lowercase letters, digits and single dashes. Anything that refers to the tenant by its slug must use the new one.",
+      "save": "Save"
+    },
+    "state": {
+      "title": "Access",
+      "activeDescription": "The tenant is active. Deactivating ends its members' sessions and stops its API keys; nothing is deleted.",
+      "inactiveDescription": "The tenant is inactive: nobody can sign in to it and its API keys and jobs are stopped. Its data is kept.",
+      "operatorTenant": "This is the operator tenant. It is never deactivated: the operators would lock themselves out.",
+      "deactivate": "Deactivate",
+      "deactivateTitle": "Deactivate {{name}}?",
+      "deactivateDescription": "Its members are signed out of it, its API keys and invitations stop working, and its jobs are skipped. Nothing is deleted: reactivating gives everything back, but its members must sign in again.",
+      "deactivateConfirm": "Deactivate tenant",
+      "reactivate": "Reactivate",
+      "reactivateTitle": "Reactivate {{name}}?",
+      "reactivateDescription": "Its data, members and API keys are back. Its members sign in again.",
+      "reactivateConfirm": "Reactivate tenant",
+      "deactivated": "Tenant {{name}} deactivated.",
+      "reactivated": "Tenant {{name}} reactivated.",
+      "failed": "The change did not go through. Try again.",
+      "deletionPending": "A deletion is pending: cancel it (under Delete tenant) before reactivating.",
+      "deletionStarted": "The tenant is being erased. It can no longer be reactivated."
+    },
+    "export": {
+      "title": "Export",
+      "description": "Every record of this tenant as one file, made in the background. The download link works for 30 minutes. Asks for a recent sign-in.",
+      "start": "Export tenant data"
+    },
+    "breakGlass": {
+      "title": "Break-glass",
+      "description": "Read this tenant without its invitation, for an emergency. Read only, one hour at most, never extended. The tenant's administrators are told at once. Asks for a recent sign-in.",
+      "open": "Open break-glass access",
+      "none": "You have not opened this tenant.",
+      "activeTitle": "Read-only access is open until {{date}}",
+      "activeHint": "While it lasts, GET requests sent with this header read the tenant and nothing can be written there:",
+      "status": {
+        "active": "Active",
+        "ended": "Ended",
+        "expired": "Expired"
+      },
+      "opened": "Opened {{date}}, until {{until}}",
+      "end": "End access",
+      "endTitle": "End break-glass access?",
+      "endDescription": "Requests through this grant stop at once.",
+      "endConfirm": "End access",
+      "ended": "Break-glass access ended.",
+      "started": "Read-only access to {{name}} is open.",
+      "dialogTitle": "Break glass on {{name}}",
+      "dialogDescription": "You will read this tenant, read only. Your reason is kept in both tenants' audit logs and told to its administrators.",
+      "reason": "Reason",
+      "reasonHint": "An incident or a ticket, 10 to 1000 characters.",
+      "reasonInvalid": "Give a reason of 10 to 1000 characters.",
+      "minutes": "Minutes (1 to {{max}})",
+      "minutesInvalid": "Enter a whole number of minutes, 1 to 60.",
+      "submit": "Open access"
+    },
+    "deletion": {
+      "title": "Delete tenant",
+      "description": "Deactivates the tenant now and erases all of its data after a grace period. Export it first if you need a copy.",
+      "action": "Delete tenant",
+      "confirmTitle": "Delete {{name}}?",
+      "confirmDescription": "The tenant is deactivated now: its members are signed out and its API keys stop. After the grace period every record, file, job and workflow of it is erased for good. Until then you can cancel the deletion.",
+      "confirmSlug": "Type {{slug}} to confirm",
+      "mismatch": "That is not the tenant's slug.",
+      "submit": "Delete the tenant",
+      "requested": "Tenant {{name}} will be erased on {{date}}.",
+      "scheduled": "Erased on {{date}}",
+      "scheduledHint": "The tenant is deactivated. Cancel the deletion to keep it; it then stays deactivated until you reactivate it.",
+      "cancel": "Cancel deletion",
+      "cancelled": "Deletion of {{name}} cancelled. The tenant stays deactivated.",
+      "started": "Being erased",
+      "startedHint": "The erase has started and can no longer be cancelled."
+    }
+  }
+}

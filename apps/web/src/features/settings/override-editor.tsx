@@ -1,0 +1,480 @@
+import { unwrap } from '@nestjs-monorepo/api-client';
+import { Button } from '@nestjs-monorepo/ui/components/button';
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@nestjs-monorepo/ui/components/field';
+import { Input } from '@nestjs-monorepo/ui/components/input';
+import { Slider } from '@nestjs-monorepo/ui/components/slider';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import { ConfirmButton } from '@/components/confirm-button';
+import { PrincipalPicker } from '@/components/principal-picker';
+import { PersonPicker } from '@/components/person-picker';
+import { api } from '@/lib/api';
+import { applyFieldErrors, errorMessage } from '@/lib/errors';
+import { holds, useMe, type Permission } from '@/lib/features';
+import { FormAlert, useAppForm, useDescribedBy } from '@/lib/form';
+import { unitRefsQuery } from '@/lib/list-refs';
+import { catalogQuery } from '@/features/transfer/api';
+import { usePeopleNames, useUnitNames } from '@/lib/people';
+import { PlatformEditor } from './platform-editor';
+import { RulesEditor } from './rules-editor';
+import {
+  fromDraft,
+  overrideBody,
+  overridesQuery,
+  rolesQuery,
+  settingsQuery,
+  toDraft,
+  type Draft,
+  type Override,
+  type Rule,
+  type Scope,
+  type Setting,
+} from './settings';
+import {
+  ValueInput,
+  boundsHint,
+  formatValue,
+  invalidText,
+} from './value-input';
+
+type Mode = 'value' | 'rollout';
+
+/**
+ * Who may search the tenant's principals (`GET /v1/access/principals`, the
+ * API's `AccessPolicy.open`): the access administrators. Whoever manages
+ * settings alone searches the members (`GET /v1/people`) instead, so no
+ * request is made just to be refused.
+ */
+const principalReaders: Permission[] = [
+  'Access.manageRoles',
+  'Access.manageUsers',
+  'Access.manageClients',
+  'Access.manageOrganizationalUnits',
+  'Access.impersonate',
+  'Access.readAudit',
+];
+
+/**
+ * Sets a setting at a scope (`PUT /v1/settings/{key}`), or, for a flag at the
+ * tenant scope, a rollout: a percentage of the tenant's principals. Lists the
+ * stored overrides, each of which can be edited or cleared. A user scope's
+ * value is for a user or an API client, found by searching the principals
+ * (`GET /v1/access/principals`): its `key` is the `scopeId`; stored ones
+ * are named by the people and units lookups.
+ */
+export function OverrideEditor({ setting }: { setting: Setting }) {
+  const { t } = useTranslation('settings');
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string>();
+  const overrides = useQuery(overridesQuery(setting.key));
+  const hasUnit = setting.scopes.includes('unit');
+  // The units, from the route every member may read.
+  const units = useQuery({ ...unitRefsQuery, enabled: hasUnit });
+  const mayReadPrincipals = holds(useMe()?.can, principalReaders);
+  // The roles, for a rule's role condition: the access administrators read them.
+  const roles = useQuery({
+    ...rolesQuery,
+    enabled: setting.flag && mayReadPrincipals,
+  });
+  // Names for the stored values, by key and id (every member may read them).
+  const people = usePeopleNames(
+    (overrides.data ?? [])
+      .filter((o) => o.scope === 'user')
+      .map((o) => o.scopeId),
+  );
+  const unitNames = useUnitNames(
+    (overrides.data ?? [])
+      .filter((o) => o.scope === 'unit')
+      .map((o) => o.scopeId),
+  );
+  const scopeOptions = setting.scopes.map((scope) => ({
+    value: scope,
+    label: t(`scope.${scope}`),
+  }));
+  const unitOptions = (units.data ?? []).map((unit) => ({
+    value: unit.id,
+    label: unit.name,
+  }));
+  const nameOf = (scope: Scope, scopeId: string) => {
+    if (scope === 'unit') {
+      return (
+        unitOptions.find((o) => o.value === scopeId)?.label ??
+        unitNames.get(scopeId)
+      );
+    }
+    return people.get(scopeId);
+  };
+  const hint = boundsHint(setting, t);
+  // The hints describe their inputs (as lib/form.tsx's fields): the scope's
+  // picker and the value's.
+  const scopeInput = useDescribedBy(true, false);
+  const valueInput = useDescribedBy(Boolean(hint), false);
+
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: settingsQuery.queryKey }),
+      queryClient.invalidateQueries({ queryKey: catalogQuery.queryKey }),
+      queryClient.invalidateQueries({
+        queryKey: overridesQuery(setting.key).queryKey,
+      }),
+    ]);
+  const save = useMutation({
+    mutationFn: (body: ReturnType<typeof overrideBody>) =>
+      unwrap(
+        api.PUT('/v1/settings/{key}', {
+          params: { path: { key: setting.key } },
+          body,
+        }),
+      ),
+    meta: { errorToast: false },
+    onSuccess: refresh,
+  });
+  const clear = useMutation({
+    mutationFn: (override: Pick<Override, 'scope' | 'scopeId'>) =>
+      api
+        .DELETE('/v1/settings/{key}', {
+          params: {
+            path: { key: setting.key },
+            query: {
+              scope: override.scope,
+              ...(override.scopeId ? { scopeId: override.scopeId } : {}),
+            },
+          },
+        })
+        .then(({ error: failed }) => {
+          if (failed) {
+            throw failed;
+          }
+        }),
+    onSuccess: refresh,
+  });
+
+  const initial = overrides.data?.find((o) => o.scope === 'tenant');
+  /**
+   * Saves the tenant's targeting rules beside the value or rollout it
+   * already has (the PUT replaces them); with neither and no rules left,
+   * the override goes.
+   */
+  const saveRules = async (rules: Rule[]) => {
+    const own = initial && (initial.rollout != null || initial.value !== null);
+    if (!rules.length && !own) {
+      if (initial) await clear.mutateAsync(initial);
+    } else {
+      await save.mutateAsync(
+        overrideBody({
+          scope: 'tenant',
+          scopeId: '',
+          rules,
+          ...(initial?.rollout != null
+            ? { rollout: initial.rollout }
+            : { value: initial?.value }),
+        }),
+      );
+    }
+    toast.success(t('rules.saved'));
+  };
+  const form = useAppForm({
+    defaultValues: {
+      scope: setting.scopes[0] as Scope,
+      scopeId: '',
+      mode: (initial?.rollout != null ? 'rollout' : 'value') as Mode,
+      draft: toDraft(setting, initial?.value ?? setting.value) as Draft,
+      rollout: String(initial?.rollout ?? 10),
+    },
+    onSubmit: async ({ value }) => {
+      setError(undefined);
+      const rollout = value.mode === 'rollout' && value.scope === 'tenant';
+      const parsed = fromDraft(setting, value.draft);
+      const percent = Number(value.rollout);
+      if (rollout && !(percent >= 0 && percent <= 100)) {
+        setError(t('invalid.rollout'));
+        return;
+      }
+      if (!rollout && !parsed.ok) {
+        setError(invalidText(parsed.invalid, t));
+        return;
+      }
+      if (value.scope !== 'tenant' && !value.scopeId) {
+        setError(t(`invalid.scopeId.${value.scope}`));
+        return;
+      }
+      try {
+        await save.mutateAsync(
+          overrideBody({
+            scope: value.scope,
+            scopeId: value.scopeId,
+            ...(rollout
+              ? { rollout: percent }
+              : { value: parsed.ok ? parsed.value : undefined }),
+          }),
+        );
+        toast.success(t('saved'));
+      } catch (caught) {
+        if (!applyFieldErrors(form, caught)) {
+          setError(errorMessage(caught));
+        }
+      }
+    },
+  });
+
+  /** Loads a stored override (or the setting's value) into the form. */
+  const pick = (scope: Scope, scopeId: string) => {
+    const stored = overrides.data?.find(
+      (o) => o.scope === scope && o.scopeId === scopeId,
+    );
+    form.setFieldValue('scope', scope);
+    form.setFieldValue('scopeId', scopeId);
+    form.setFieldValue('mode', stored?.rollout != null ? 'rollout' : 'value');
+    form.setFieldValue(
+      'draft',
+      toDraft(setting, stored?.value ?? setting.value),
+    );
+    form.setFieldValue('rollout', String(stored?.rollout ?? 10));
+  };
+  const labelOf = (override: Override) => {
+    if (override.scope === 'tenant') {
+      return t('scope.tenant');
+    }
+    const name = nameOf(override.scope, override.scopeId) ?? override.scopeId;
+    return `${t(`scope.${override.scope}`)}: ${name}`;
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PlatformEditor setting={setting} />
+      {setting.flag && overrides.data && (
+        <section aria-label={t('rules.title')} className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">{t('rules.title')}</h3>
+          <p className="text-xs text-muted-foreground">
+            {t('rules.description')}
+          </p>
+          <RulesEditor
+            // Reloaded when the stored rules change (saved, or cleared with the override).
+            key={JSON.stringify(initial?.rules ?? [])}
+            scope="tenant"
+            rules={initial?.rules}
+            roles={roles.data}
+            onSave={saveRules}
+          />
+        </section>
+      )}
+      <section aria-label={t('overrides')} className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">{t('overrides')}</h3>
+        {overrides.data?.length === 0 && (
+          <p className="text-sm text-muted-foreground">{t('noOverrides')}</p>
+        )}
+        <ul className="flex flex-col gap-2">
+          {overrides.data?.map((override) => (
+            <li
+              key={`${override.scope}:${override.scopeId}`}
+              className="flex items-center gap-2 text-sm"
+            >
+              <span className="flex-1">
+                {labelOf(override)}:{' '}
+                <strong>
+                  {override.rollout != null
+                    ? t('rolloutOf', { percent: override.rollout })
+                    : override.value === null && override.rules.length
+                      ? t('rules.only')
+                      : formatValue(override.value, t('on'), t('off'))}
+                </strong>
+                {override.rules.length > 0 &&
+                  ` (${t('rules.count', { count: override.rules.length })})`}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => pick(override.scope, override.scopeId)}
+              >
+                {t('edit')}
+              </Button>
+              <ConfirmButton
+                variant="ghost"
+                size="sm"
+                title={t('clearTitle')}
+                description={t('clearDescription', {
+                  label: labelOf(override),
+                })}
+                confirm={t('clear')}
+                onConfirm={() => clear.mutateAsync(override)}
+              >
+                {t('clear')}
+              </ConfirmButton>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <form
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void form.handleSubmit();
+        }}
+      >
+        <FieldGroup>
+          <FormAlert message={error} />
+          <form.AppField name="scope">
+            {(field) => (
+              <field.SelectField
+                label={t('scopeLabel')}
+                options={scopeOptions}
+              />
+            )}
+          </form.AppField>
+          <form.Subscribe selector={(state) => state.values.scope}>
+            {(scope) => {
+              if (scope === 'tenant') {
+                return null;
+              }
+              // The picker is rebuilt with the scope: a unit's id is not a user's.
+              return scope === 'unit' ? (
+                <form.AppField name="scopeId" key={scope}>
+                  {(field) => (
+                    <field.SelectField
+                      label={t('scopeId.unit')}
+                      options={unitOptions}
+                    />
+                  )}
+                </form.AppField>
+              ) : (
+                <form.Field name="scopeId" key={scope}>
+                  {(field) => (
+                    <Field>
+                      <FieldLabel htmlFor={scopeInput.controlId}>
+                        {t('scopeId.user')}
+                      </FieldLabel>
+                      {mayReadPrincipals ? (
+                        <PrincipalPicker
+                          id={scopeInput.controlId}
+                          label={t('scopeId.user')}
+                          describedBy={scopeInput.describedBy}
+                          value={field.state.value}
+                          initialLabel={
+                            field.state.value
+                              ? nameOf('user', field.state.value)
+                              : undefined
+                          }
+                          onChange={(value) => field.handleChange(value)}
+                        />
+                      ) : (
+                        <PersonPicker
+                          id={scopeInput.controlId}
+                          label={t('scopeId.user')}
+                          describedBy={scopeInput.describedBy}
+                          value={field.state.value}
+                          initialLabel={
+                            field.state.value
+                              ? nameOf('user', field.state.value)
+                              : undefined
+                          }
+                          onChange={(value) => field.handleChange(value)}
+                        />
+                      )}
+                      <FieldDescription id={scopeInput.descriptionId}>
+                        {t('scopeIdHint')}
+                      </FieldDescription>
+                    </Field>
+                  )}
+                </form.Field>
+              );
+            }}
+          </form.Subscribe>
+          <form.Subscribe selector={(state) => state.values}>
+            {(values) => {
+              const canRoll = setting.flag && values.scope === 'tenant';
+              return (
+                <>
+                  {canRoll && (
+                    <form.AppField name="mode">
+                      {(field) => (
+                        <field.SelectField
+                          label={t('mode.label')}
+                          options={[
+                            { value: 'value', label: t('mode.value') },
+                            { value: 'rollout', label: t('mode.rollout') },
+                          ]}
+                        />
+                      )}
+                    </form.AppField>
+                  )}
+                  {canRoll && values.mode === 'rollout' ? (
+                    <form.Field name="rollout">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor="field-rollout">
+                            {t('rollout.label')}
+                          </FieldLabel>
+                          <Slider
+                            aria-label={t('rollout.label')}
+                            min={0}
+                            max={100}
+                            value={[Number(field.state.value) || 0]}
+                            onValueChange={(next) =>
+                              field.handleChange(
+                                String(Array.isArray(next) ? next[0] : next),
+                              )
+                            }
+                          />
+                          <Input
+                            id="field-rollout"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={field.state.value}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
+                          />
+                          <FieldDescription>
+                            {t('rollout.description')}
+                          </FieldDescription>
+                        </Field>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <form.Field name="draft">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={valueInput.controlId}>
+                            {t('valueLabel')}
+                          </FieldLabel>
+                          <ValueInput
+                            id={valueInput.controlId}
+                            label={t('valueLabel')}
+                            spec={setting}
+                            value={field.state.value}
+                            onChange={field.handleChange}
+                            describedBy={valueInput.describedBy}
+                          />
+                          {hint && (
+                            <FieldDescription id={valueInput.descriptionId}>
+                              {hint}
+                            </FieldDescription>
+                          )}
+                        </Field>
+                      )}
+                    </form.Field>
+                  )}
+                </>
+              );
+            }}
+          </form.Subscribe>
+          <form.AppForm>
+            <form.SubmitButton className="self-start">
+              {t('save')}
+            </form.SubmitButton>
+          </form.AppForm>
+        </FieldGroup>
+      </form>
+    </div>
+  );
+}

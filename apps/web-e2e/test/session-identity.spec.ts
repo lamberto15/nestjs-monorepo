@@ -1,0 +1,123 @@
+import { account } from './accounts';
+import { expect, test } from './fixtures';
+
+// Issue #555: the tabs of one browser share the __Host-sid cookie, so when
+// one of them changes the session's identity — a tenant switch, another
+// account, an impersonation, every one a re-issued cookie — the others must
+// forget the previous session's cached data at once (announced over a
+// BroadcastChannel, lib/session-bus.ts), not keep it until their next
+// refetch of `me` (fresh for a minute). An impersonation is the identity
+// change the seeded demo data supports; a tenant switch is the same
+// mechanism (the same reset and announcement, lib/session.ts).
+//
+// A fresh browser, signed in here: the impersonation re-issues the cookie
+// of this test's own session, and the saved states of the other specs are
+// left alone (their sessions are not this one's).
+
+test.use({ storageState: { cookies: [], origins: [] } });
+
+test('a session change in another tab resets this one', async ({ page }) => {
+  const viewer = account('editor');
+  const administrator = account('administrator');
+  const footer = page.locator('[data-slot="sidebar-footer"]');
+  const actingAs = (p: typeof page) => p.getByText('You are acting as');
+
+  // This tab: signs in, and lands on the dashboard of its own session.
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill(administrator.email);
+  await page.getByLabel('Password').fill(administrator.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(footer.getByText(administrator.email)).toBeVisible();
+  await expect(actingAs(page)).toHaveCount(0);
+
+  // Record what other tabs announce on the identity channel (a second
+  // listener on the app's own channel, lib/session-bus.ts), so the test waits
+  // for the cross-tab event itself rather than guessing how long it takes.
+  await page.evaluate(() => {
+    const heard: (string | null)[] = [];
+    (window as unknown as { heard: typeof heard }).heard = heard;
+    new BroadcastChannel('app-session-identity').onmessage = (event) =>
+      heard.push(event.data ?? null);
+  });
+
+  // Another tab of this browser (the same cookie jar) impersonates the
+  // viewer: the cookie is re-issued, that tab's flow resets its cache and
+  // announces the new identity.
+  const other = await page.context().newPage();
+  await other.goto('/access/users');
+  const row = other.getByRole('row').filter({ hasText: viewer.email });
+  // The member sheet (the row's actions menu) holds the button.
+  await row.getByRole('button', { name: /Open actions for row/ }).click();
+  await other.getByRole('menuitem', { name: 'Open', exact: true }).click();
+  await other
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Impersonate' })
+    .click();
+  await other
+    .getByRole('alertdialog')
+    .getByRole('button', { name: 'Impersonate' })
+    .click();
+
+  // A stale sign-in would be asked to confirm it's the administrator again
+  // (403 `reauthentication_required`; lib/api.ts sends it once more).
+  const reauth = other.getByRole('dialog', { name: "Confirm it's you" });
+  await expect(actingAs(other).or(reauth)).toBeVisible();
+  if (await reauth.isVisible()) {
+    await reauth.getByLabel('Password').fill(administrator.password);
+    await reauth.getByRole('button', { name: 'Confirm' }).click();
+  }
+  await expect(actingAs(other)).toBeVisible();
+  await other.close();
+
+  // This tab never reloaded and navigated nowhere: the announced identity
+  // resets its cache, and the `me` refetch under the re-issued cookie shows
+  // the impersonated session — the banner and the user menu, live. The tab is
+  // in the background (the other one was opened after it), where the browser
+  // may delay its work: bring it back, then wait for the announcement.
+  await page.bringToFront();
+  await page.waitForFunction(
+    () => (window as unknown as { heard: unknown[] }).heard.length > 0,
+    undefined,
+    { timeout: 30_000 },
+  );
+  await expect(actingAs(page)).toBeVisible();
+  await expect(actingAs(page)).toContainText(viewer.email);
+  await expect(footer.getByText(viewer.email)).toBeVisible();
+});
+
+test('another account signing in in a second tab updates the open tab', async ({
+  page,
+}) => {
+  const administrator = account('administrator');
+  const editor = account('editor');
+  const footer = page.locator('[data-slot="sidebar-footer"]');
+
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill(administrator.email);
+  await page.getByLabel('Password').fill(administrator.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+  const other = await page.context().newPage();
+  // A page of this origin with no app in it (the API's JSON, through the
+  // proxy): an app booting here would lose its first queries to the sign-out
+  // (401), end its session and announce it, and this tab would follow it out
+  // before the sign-in below. A trace showed that race (issue #683).
+  await other.goto('/v1/auth/methods');
+  const signedOut = await other.evaluate(async () => {
+    const response = await fetch('/v1/auth/sign-out', { method: 'POST' });
+    return response.ok;
+  });
+  expect(signedOut).toBe(true);
+  await other.goto('/sign-in');
+  await other.getByLabel('Email').fill(editor.email);
+  await other.getByLabel('Password').fill(editor.password);
+  await other.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(other.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+  // The first tab stays open at the same URL; the server-verified identity
+  // changes to the account whose sign-in re-issued the shared cookie.
+  await expect(footer.getByText(editor.email)).toBeVisible();
+  await other.close();
+});

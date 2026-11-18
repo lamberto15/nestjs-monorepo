@@ -1,0 +1,124 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { Badge } from '@nestjs-monorepo/ui/components/badge';
+import { buttonVariants } from '@nestjs-monorepo/ui/components/button';
+import { Spinner } from '@nestjs-monorepo/ui/components/spinner';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@nestjs-monorepo/ui/components/table';
+import { PlusIcon, Trash2Icon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import { ConfirmButton } from '@/components/confirm-button';
+import { Page, PageHeader } from '@/components/page-header';
+import {
+  deleteRole,
+  invalidateAccess,
+  rolesQuery,
+  type Role,
+} from '@/features/access/api';
+import { FormAlert } from '@/lib/form';
+import { errorMessage } from '@/lib/errors';
+
+/** The tenant's roles: who has each, what it grants; built-in ones read-only. */
+export function RolesPage() {
+  const { t } = useTranslation('access');
+  const roles = useQuery(rolesQuery);
+  return (
+    <Page>
+      <PageHeader
+        title={t('roles.title')}
+        actions={
+          // A link that looks like a button: it goes to a page.
+          <Link to="/access/roles/new" className={buttonVariants()}>
+            <PlusIcon />
+            {t('roles.new')}
+          </Link>
+        }
+      />
+      {roles.isPending ? (
+        <Spinner />
+      ) : roles.isError ? (
+        <FormAlert message={errorMessage(roles.error)} />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('roles.columns.name')}</TableHead>
+              <TableHead>{t('roles.columns.permissions')}</TableHead>
+              <TableHead>{t('roles.columns.members')}</TableHead>
+              <TableHead>
+                <span className="sr-only">{t('actions')}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {roles.data.map((role) => (
+              <RoleRow key={role.id} role={role} />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </Page>
+  );
+}
+
+function RoleRow({ role }: { role: Role }) {
+  const { t } = useTranslation('access');
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => deleteRole(role.id),
+    onSuccess: async () => {
+      toast.success(t('roles.deleted', { name: role.name }));
+      await invalidateAccess(queryClient);
+    },
+  });
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="flex flex-col">
+          <span className="flex items-center gap-2 font-medium">
+            <Link to="/access/roles/$roleId" params={{ roleId: role.id }}>
+              {role.name}
+            </Link>
+            {role.system && (
+              <Badge variant="secondary">{t('roles.builtInBadge')}</Badge>
+            )}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {role.description}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {role.system
+          ? t('roles.everything')
+          : t('roles.permissionCount', { count: role.permissions.length })}
+      </TableCell>
+      <TableCell>{role.members}</TableCell>
+      <TableCell className="text-end">
+        {!role.system && (
+          <ConfirmButton
+            size="sm"
+            variant="outline"
+            className="pointer-coarse:h-10"
+            title={t('roles.deleteTitle', { name: role.name })}
+            description={t('roles.deleteDescription', {
+              count: role.members,
+            })}
+            confirm={t('roles.delete')}
+            onConfirm={() => remove.mutateAsync()}
+          >
+            <Trash2Icon />
+            {t('roles.delete')}
+          </ConfirmButton>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}

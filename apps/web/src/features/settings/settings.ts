@@ -1,0 +1,272 @@
+import type { GetResponse } from '@nestjs-monorepo/api-client';
+import { unwrap } from '@nestjs-monorepo/api-client';
+import { queryOptions } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+
+export type Setting = GetResponse<'/v1/settings'>['items'][number];
+export type Override =
+  GetResponse<'/v1/settings/{key}/overrides'>['items'][number];
+export type Scope = 'tenant' | 'unit' | 'user';
+
+export const settingsQuery = queryOptions({
+  queryKey: ['settings'],
+  queryFn: async () => (await unwrap(api.GET('/v1/settings'))).items,
+});
+
+export const overridesQuery = (key: string) =>
+  queryOptions({
+    queryKey: ['settings', key, 'overrides'],
+    queryFn: async () =>
+      (
+        await unwrap(
+          api.GET('/v1/settings/{key}/overrides', {
+            params: { path: { key } },
+          }),
+        )
+      ).items,
+  });
+
+/** What the input and the checks need of a setting. */
+export type ValueSpec = Pick<
+  Setting,
+  'type' | 'options' | 'min' | 'max' | 'integer' | 'maxLength'
+>;
+
+/** A draft is what the input holds: a boolean, or the text typed or picked. */
+export type Draft = boolean | string;
+
+export function toDraft(spec: ValueSpec, value: unknown): Draft {
+  switch (spec.type) {
+    case 'boolean':
+      return value === true;
+    case 'number':
+      return typeof value === 'number' ? String(value) : '';
+    case 'string':
+      return typeof value === 'string' ? value : '';
+    case 'enum':
+      return typeof value === 'string' || typeof value === 'number'
+        ? String(value)
+        : '';
+    default:
+      return JSON.stringify(value ?? null, null, 2);
+  }
+}
+
+/** Why a draft is refused: the `invalid.*` text to show, with its values. */
+export type Invalid = {
+  reason:
+    | 'boolean'
+    | 'number'
+    | 'integer'
+    | 'min'
+    | 'max'
+    | 'string'
+    | 'maxLength'
+    | 'enum'
+    | 'json';
+  limit?: number;
+};
+
+export type Parsed =
+  { ok: true; value: unknown } | { ok: false; invalid: Invalid };
+
+const refuse = (reason: Invalid['reason'], limit?: number): Parsed => ({
+  ok: false,
+  invalid: limit === undefined ? { reason } : { reason, limit },
+});
+
+/**
+ * The value of a draft, checked against what the setting declares. The API
+ * checks again on PUT (its JSON Schema says more: patterns, refinements):
+ * this only spares a round trip for what the form can tell.
+ */
+export function fromDraft(spec: ValueSpec, draft: Draft): Parsed {
+  if (spec.type === 'boolean') {
+    return { ok: true, value: draft === true };
+  }
+  const text = String(draft);
+  switch (spec.type) {
+    case 'string':
+      return spec.maxLength !== undefined && text.length > spec.maxLength
+        ? refuse('maxLength', spec.maxLength)
+        : { ok: true, value: text };
+    case 'enum': {
+      // Options may be numbers: the draft is their text, the value theirs.
+      const option = spec.options?.find((o) => String(o) === text);
+      return option === undefined
+        ? refuse('enum')
+        : { ok: true, value: option };
+    }
+    case 'number': {
+      const number = Number(text);
+      if (text.trim() === '' || !Number.isFinite(number)) {
+        return refuse('number');
+      }
+      if (spec.integer && !Number.isInteger(number)) {
+        return refuse('integer');
+      }
+      if (spec.min !== undefined && number < spec.min) {
+        return refuse('min', spec.min);
+      }
+      if (spec.max !== undefined && number > spec.max) {
+        return refuse('max', spec.max);
+      }
+      return { ok: true, value: number };
+    }
+    default:
+      try {
+        return { ok: true, value: JSON.parse(text) as unknown };
+      } catch {
+        return refuse('json');
+      }
+  }
+}
+
+/** `notes.publishDelay` belongs to the group `notes`. */
+export function groupOf(key: string): string {
+  return key.split('.')[0] ?? key;
+}
+
+/** Keys that match a search text (key, label or description). */
+export function matches(setting: Setting, search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  return (
+    !needle ||
+    [setting.key, setting.label, setting.description ?? ''].some((text) =>
+      text.toLowerCase().includes(needle),
+    )
+  );
+}
+
+/** The `PUT /v1/settings/{key}` body for a scope (none for the tenant's id). */
+export function overrideBody(input: {
+  scope: Scope;
+  scopeId: string;
+  value?: unknown;
+  rollout?: number;
+  /** Left out: the stored rules stay (the API keeps them); [] clears them. */
+  rules?: Rule[];
+}) {
+  return {
+    scope: input.scope,
+    ...(input.scope === 'tenant' ? {} : { scopeId: input.scopeId }),
+    ...(input.rollout === undefined
+      ? { value: input.value }
+      : { rollout: input.rollout }),
+    ...(input.rules === undefined ? {} : { rules: input.rules }),
+  };
+}
+
+/** A targeting rule as the API stores it (docs/settings.md, "Targeting rules"). */
+export type Rule = Override['rules'][number];
+export type RuleKey = Rule['conditions'][number]['key'];
+
+/** The conditions a rule may use, by scope: roles are a tenant's own. */
+export const RULE_KEYS: Record<'tenant' | 'platform', RuleKey[]> = {
+  tenant: [
+    'principalKind',
+    'role',
+    'emailDomain',
+    'locale',
+    'tenantSlug',
+    'tenantOperator',
+  ],
+  platform: [
+    'principalKind',
+    'emailDomain',
+    'locale',
+    'tenantSlug',
+    'tenantOperator',
+  ],
+};
+
+/** What the editor holds for a condition: its key and the values typed or picked (a flag: 'true'/'false'). */
+export interface ConditionDraft {
+  key: RuleKey;
+  values: string[];
+}
+export interface RuleDraft {
+  conditions: ConditionDraft[];
+  outcome: 'on' | 'off' | 'rollout';
+  percent: string;
+}
+
+const PARAM: Record<RuleKey, string> = {
+  principalKind: 'kinds',
+  role: 'roleIds',
+  emailDomain: 'domains',
+  locale: 'locales',
+  tenantSlug: 'slugs',
+  tenantOperator: 'operator',
+};
+
+export function toRuleDrafts(rules: readonly Rule[] | undefined): RuleDraft[] {
+  return (rules ?? []).map((rule) => ({
+    conditions: rule.conditions.map(({ key, params }) => {
+      const param = params[PARAM[key]];
+      return {
+        key,
+        values: Array.isArray(param)
+          ? param.map(String)
+          : param === undefined
+            ? []
+            : [String(param as boolean | string)],
+      };
+    }),
+    outcome:
+      'rollout' in rule.outcome ? 'rollout' : rule.outcome.value ? 'on' : 'off',
+    percent: String('rollout' in rule.outcome ? rule.outcome.rollout : 50),
+  }));
+}
+
+/** The rules of the drafts, or the first thing wrong with them (the API checks again). */
+export function fromRuleDrafts(
+  drafts: readonly RuleDraft[],
+): { ok: true; rules: Rule[] } | { ok: false; reason: 'values' | 'rollout' } {
+  const rules: Rule[] = [];
+  for (const draft of drafts) {
+    const percent = Number(draft.percent);
+    if (
+      draft.outcome === 'rollout' &&
+      !(draft.percent.trim() !== '' && percent >= 0 && percent <= 100)
+    ) {
+      return { ok: false, reason: 'rollout' };
+    }
+    const conditions: Rule['conditions'] = [];
+    for (const { key, values } of draft.conditions) {
+      if (values.length === 0) {
+        return { ok: false, reason: 'values' };
+      }
+      conditions.push({
+        key,
+        params: {
+          [PARAM[key]]:
+            key === 'tenantOperator' ? values[0] === 'true' : values,
+        },
+      });
+    }
+    if (conditions.length === 0) {
+      return { ok: false, reason: 'values' };
+    }
+    rules.push({
+      conditions,
+      outcome:
+        draft.outcome === 'rollout'
+          ? { rollout: percent }
+          : { value: draft.outcome === 'on' },
+    });
+  }
+  return { ok: true, rules };
+}
+
+export interface RoleRef {
+  id: string;
+  name: string;
+}
+
+/** The tenant's roles, for the `role` condition (whoever may read them; others get none). */
+export const rolesQuery = queryOptions({
+  queryKey: ['settings', 'roles'],
+  queryFn: async (): Promise<RoleRef[]> =>
+    (await unwrap(api.GET('/v1/access/roles'))).items,
+});

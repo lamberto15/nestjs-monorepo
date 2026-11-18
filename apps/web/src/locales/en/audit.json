@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "title": "Audit log"
+  },
+  "title": "Audit log",
+  "columns": {
+    "at": "When",
+    "actor": "Actor",
+    "action": "Action",
+    "targetType": "Subject",
+    "targetId": "Target",
+    "ip": "IP address",
+    "details": "Details"
+  },
+  "details": {
+    "open": "Show details",
+    "actor": "Actor",
+    "actorId": "Actor id",
+    "none": "No details."
+  },
+  "dashboard": {
+    "title": "Recent activity",
+    "empty": "No activity yet."
+  },
+  "actions": {
+    "member": {
+      "signed-in": "Member signed in"
+    },
+    "user": {
+      "impersonation-started": "Impersonation started",
+      "impersonation-stopped": "Impersonation ended"
+    },
+    "note": {
+      "created": "Note created",
+      "updated": "Note updated",
+      "deleted": "Note deleted",
+      "restored": "Note restored"
+    },
+    "auth": {
+      "signed-in": "Signed in",
+      "password-changed": "Password changed",
+      "sign-in-failed": "Sign-in failed"
+    }
+  }
+}

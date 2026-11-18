@@ -1,0 +1,165 @@
+{
+  "nav": "Operations",
+  "title": "Operations",
+  "description": "What runs in the background, for every tenant together: the job queues, the outbox and its dead letters, and a live log of the engines.",
+  "tabs": {
+    "queues": "Queues",
+    "outbox": "Outbox",
+    "backlog": "Backlog",
+    "events": "Live events",
+    "diagnostics": "Diagnostics"
+  },
+  "queues": {
+    "empty": "No queues.",
+    "name": "Queue",
+    "actions": "Actions",
+    "paused": "Paused",
+    "states": {
+      "waiting": "Waiting",
+      "active": "Active",
+      "delayed": "Delayed",
+      "failed": "Failed",
+      "completed": "Completed"
+    },
+    "retry": "Retry failed",
+    "retryTitle": "Retry the failed jobs of {{name}}?",
+    "retryDescription": "{{count}} failed jobs go back to the queue and run again.",
+    "retried_one": "{{count}} job put back in the queue.",
+    "retried_other": "{{count}} jobs put back in the queue.",
+    "failures": "Latest failures of {{name}}",
+    "job": "Job",
+    "attempts": "Attempts",
+    "reason": "Reason",
+    "failedAt": "Failed",
+    "pause": "Pause",
+    "resume": "Resume",
+    "pauseLabel": "Pause {{name}}",
+    "resumeLabel": "Resume {{name}}",
+    "pauseTitle": "Pause the queue {{name}}?",
+    "resumeTitle": "Resume the queue {{name}}?",
+    "pauseDescription": "No worker takes its jobs until it is resumed. Nothing is lost; running jobs finish. The outbox keeps adding jobs: see Backlog.",
+    "resumeDescription": "The workers take its jobs again."
+  },
+  "outbox": {
+    "stats": {
+      "pending": "Pending",
+      "ready": "Ready",
+      "leased": "Leased",
+      "inFlight": "Publishing now",
+      "deadLetters": "Dead letters",
+      "lag": "Lag",
+      "undelivered": "Undelivered notifications"
+    },
+    "deadLetters": "Dead letters",
+    "empty": "No dead letters.",
+    "latest": "The latest {{shown}} are listed; the actions for all reach every dead letter.",
+    "topic": "Topic",
+    "reason": "Reason",
+    "reasons": {
+      "exhausted": "Retries used up",
+      "rejected": "Rejected"
+    },
+    "attempts": "Attempts",
+    "lastError": "Last error",
+    "failedAt": "Failed",
+    "actions": "Actions",
+    "requeue": "Requeue",
+    "requeueAll": "Requeue all",
+    "requeueOneTitle": "Requeue this dead letter?",
+    "requeueOneDescription": "The message for {{topic}} goes back to the outbox and is tried again.",
+    "requeueAllTitle": "Requeue all dead letters?",
+    "requeueAllDescription": "All dead letters (currently {{count}}) go back to the outbox and are tried again.",
+    "requeued_one": "{{count}} dead letter requeued.",
+    "requeued_other": "{{count}} dead letters requeued.",
+    "purge": "Purge",
+    "purgeAll": "Purge all",
+    "purgeOneTitle": "Delete this dead letter?",
+    "purgeOneDescription": "The message for {{topic}} is deleted for good. It can't be requeued afterwards.",
+    "purgeAllTitle": "Delete all dead letters?",
+    "purgeAllDescription": "All dead letters (currently {{count}}) are deleted for good. They can't be requeued afterwards.",
+    "purged_one": "{{count}} dead letter deleted.",
+    "purged_other": "{{count}} dead letters deleted."
+  },
+  "events": {
+    "log": "Live events",
+    "description": "{{count}} events in the log, newest first. The log keeps the latest 200.",
+    "empty": "Nothing yet. Events appear here as the engines work.",
+    "pause": "Pause",
+    "resume": "Resume",
+    "clear": "Clear",
+    "status": {
+      "connecting": "Connecting",
+      "open": "Live",
+      "closed": "Disconnected"
+    },
+    "reconnect": "Reconnect"
+  },
+  "diagnostics": {
+    "check": "Integration",
+    "state": "State",
+    "driver": "Driver",
+    "details": "Details",
+    "actions": "Actions",
+    "test": "Test",
+    "passed": "{{check}}: test passed ({{ms}} ms).",
+    "failed": "{{check}}: test failed.",
+    "checks": {
+      "database": "Database",
+      "redis": "Redis",
+      "workers": "Workers",
+      "mail": "Mail",
+      "storage": "File storage",
+      "realtime": "Realtime"
+    },
+    "states": {
+      "ok": "OK",
+      "configured": "Configured",
+      "disabled": "Disabled",
+      "unconfigured": "Not configured",
+      "unavailable": "Unavailable"
+    }
+  },
+  "backlog": {
+    "intro": "Count and recover the outbox and mail backlog of one tenant, or of every tenant when you say so. A mandatory notification, essential mail and running work are never discarded. Every change is audited.",
+    "tenant": "Tenant ID",
+    "type": "Notification type",
+    "template": "Mail class",
+    "count": "Count",
+    "scopeHint": "Count first: the actions apply to the scope counted. Leave a filter empty to include everything.",
+    "outbox": "Outbox: {{pending}} pending, {{dead}} dead letters, {{leased}} being delivered",
+    "mail": "Mail queue",
+    "kind": "Kind",
+    "number": "Count",
+    "state": "State",
+    "essential": "Essential (kept)",
+    "kept": "Kept",
+    "capped": "More jobs than counted: the numbers are a floor.",
+    "kinds": {
+      "pending": "Pending",
+      "deadLetters": "Dead letter"
+    },
+    "discard": {
+      "outbox": "Discard outbox backlog",
+      "mail": "Discard queued mail"
+    },
+    "discardTitle": {
+      "outbox": "Discard the outbox backlog counted?",
+      "mail": "Discard the mail counted?"
+    },
+    "discardDescription": "Deleted for good. Discarded notifications stay in each person's list, marked delivered, with no push, mail or webhook.",
+    "retry": {
+      "outbox": "Retry dead letters",
+      "mail": "Retry failed mail"
+    },
+    "retryTitle": {
+      "outbox": "Retry the dead letters counted?",
+      "mail": "Retry the failed mail counted?"
+    },
+    "retryDescription": "They run again. The mail mode and the daily budgets still apply.",
+    "done": {
+      "discard": "Discarded: {{total}}.",
+      "retry": "Retried: {{total}}."
+    },
+    "global": "Every tenant"
+  }
+}

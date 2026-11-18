@@ -1,0 +1,137 @@
+import { Button } from '@nestjs-monorepo/ui/components/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@nestjs-monorepo/ui/components/dialog';
+import { Field, FieldLabel } from '@nestjs-monorepo/ui/components/field';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@nestjs-monorepo/ui/components/select';
+import { Spinner } from '@nestjs-monorepo/ui/components/spinner';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { DownloadIcon } from 'lucide-react';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useWritesPaused } from '@/lib/mode';
+import { catalogQuery, startExport, type TransferFormat } from './api';
+import { TransferStatus } from './transfer-status';
+
+/**
+ * Export from a list page: the format, the list's current filter, search and
+ * sort (`filters` and `sort`, from `listExport()`), then the job's progress and
+ * the download. Shown only when the caller may export `exporter` (`GET /v1/data`).
+ */
+export function ExportButton(props: {
+  exporter: string;
+  filters: Record<string, string>;
+  sort?: string;
+}) {
+  const { t } = useTranslation('transfer');
+  // An export is a POST that makes a job: refused while the API is read-only.
+  const paused = useWritesPaused();
+  const catalog = useQuery({ ...catalogQuery, meta: { errorToast: false } });
+  const [open, setOpen] = useState(false);
+  const [format, setFormat] = useState<TransferFormat>('csv');
+  const [jobId, setJobId] = useState<string>();
+  const start = useMutation({
+    mutationFn: () =>
+      startExport({
+        name: props.exporter,
+        format,
+        filters: props.filters,
+        ...(props.sort && { sort: props.sort }),
+      }),
+    onSuccess: (started) => {
+      setJobId(started.id);
+    },
+  });
+
+  const exporter = catalog.data?.exports.find((e) => e.name === props.exporter);
+  if (!exporter) return null;
+  const filtered = Object.keys(props.filters).length > 0;
+
+  return (
+    <>
+      <Button variant="outline" disabled={paused} onClick={() => setOpen(true)}>
+        <DownloadIcon />
+        {t('export.action')}
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) {
+            setJobId(undefined);
+            start.reset();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('export.title')}</DialogTitle>
+            <DialogDescription>
+              {filtered ? t('export.filtered') : t('export.unfiltered')}
+            </DialogDescription>
+          </DialogHeader>
+          {jobId ? (
+            <>
+              <TransferStatus id={jobId} />
+              <p className="text-xs text-muted-foreground">
+                <Link to="/transfers" className="underline">
+                  {t('export.mine')}
+                </Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <Field>
+                <FieldLabel htmlFor="export-format">
+                  {t('export.format')}
+                </FieldLabel>
+                <Select
+                  items={exporter.formats.map((f) => ({
+                    value: f,
+                    label: t(`formats.${f}`),
+                  }))}
+                  value={format}
+                  onValueChange={(value) =>
+                    setFormat((value ?? 'csv') as TransferFormat)
+                  }
+                >
+                  <SelectTrigger id="export-format" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {exporter.formats.map((f) => (
+                      <SelectItem key={f} value={f}>
+                        {t(`formats.${f}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <DialogFooter>
+                <Button
+                  disabled={start.isPending}
+                  onClick={() => start.mutate()}
+                >
+                  {start.isPending && <Spinner />}
+                  {t('export.start')}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

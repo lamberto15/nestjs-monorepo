@@ -1,0 +1,521 @@
+{
+  "app": {
+    "name": "App",
+    "staleDraft": "The session changed while you were writing (in another tab or window). Nothing was sent — check what you wrote and submit again under the new session.",
+    "unsavedChanges": "You have unsaved changes. Leave this page and lose them?"
+  },
+  "nav": {
+    "platform": "Platform",
+    "dashboard": "Dashboard",
+    "skipToContent": "Skip to content",
+    "sidebar": "Sidebar",
+    "menu": "Main menu",
+    "breadcrumb": "Breadcrumb",
+    "bottom": "Quick navigation",
+    "search": "Search",
+    "more": "Menu"
+  },
+  "auth": {
+    "signIn": {
+      "title": "Sign in",
+      "description": "Welcome back",
+      "submit": "Sign in",
+      "forgot": "Forgot your password?",
+      "noAccount": "Don't have an account?",
+      "signUp": "Sign up",
+      "orContinueWith": "Or continue with",
+      "withProvider": "Continue with {{provider}}",
+      "withPasskey": "Sign in with a passkey",
+      "withMagicLink": "Email me a sign-in link",
+      "withPassword": "Sign in with a password",
+      "terms": "By continuing, you agree to the terms of service and the privacy policy.",
+      "errors": {
+        "generic": "That sign-in didn't work. Try again.",
+        "reauthentication_required": "For this, confirm it's you: sign in again.",
+        "reauthentication_failed": "That confirmation didn't work. Try again.",
+        "access_denied": "The sign-in was cancelled.",
+        "email_unverified": "Prove your address first: open the link we emailed you.",
+        "sso_failed": "That SSO sign-in didn’t work. Ask your administrator, or try again.",
+        "sso_unavailable": "This SSO connection isn’t ready yet. Try again in a minute."
+      }
+    },
+    "signOut": "Sign out",
+    "signUp": {
+      "title": "Create an account",
+      "description": "Enter your details to get started",
+      "submit": "Create account",
+      "haveAccount": "Already have an account?",
+      "done": "Check your mailbox: open the link we sent to verify your address, then sign in."
+    },
+    "fields": {
+      "email": "Email",
+      "emailInvalid": "Enter a valid email address.",
+      "password": "Password",
+      "passwordRequired": "Enter your password.",
+      "passwordHint": "At least 12 characters. Passwords found in data breaches are refused.",
+      "passwordTooShort": "At least {{min}} characters.",
+      "tooLong": "At most {{max}} characters.",
+      "passwordMismatch": "The passwords don't match.",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm the password",
+      "name": "Name",
+      "nameRequired": "Enter a name.",
+      "tenantName": "Organization name",
+      "tenantNameHint": "Your new organization. You will be its administrator. Leave it empty to use your name.",
+      "tenantNameTooLong": "At most {{max}} characters."
+    },
+    "mfa": {
+      "hint": "Enter the 6-digit code from your authenticator app.",
+      "recoveryHint": "Enter one of your recovery codes. Each works once.",
+      "code": "Authentication code",
+      "codeInvalid": "Enter the 6 digits.",
+      "recoveryCode": "Recovery code",
+      "recoveryRequired": "Enter a recovery code.",
+      "verify": "Verify",
+      "useRecovery": "Use a recovery code",
+      "useCode": "Use an authentication code",
+      "restart": "Start over"
+    },
+    "magicLink": {
+      "title": "Sign in by email link",
+      "hint": "We'll email you a link that signs you in.",
+      "send": "Send the link",
+      "sent": "If the address has an account, a sign-in link is on its way. It works once, for a short time.",
+      "landing": "Continue to sign in with this link.",
+      "continue": "Sign in"
+    },
+    "forgot": {
+      "title": "Forgot your password?",
+      "description": "We'll email you a link to choose a new one",
+      "submit": "Send the link",
+      "done": "If the address has an account, a reset link is on its way."
+    },
+    "reset": {
+      "title": "Choose a new password",
+      "description": "The link works once, for a short time",
+      "submit": "Change the password",
+      "done": "Your password was changed. Sign in with it."
+    },
+    "verify": {
+      "title": "Verify your address",
+      "description": "Enter the password you signed up with",
+      "submit": "Verify",
+      "done": "{{email}} is verified. You can sign in now.",
+      "banner": "Your address {{email}} is not verified yet. Open the link we emailed you.",
+      "resend": {
+        "button": "Resend the verification email",
+        "done": "Verification email sent. Check your mailbox.",
+        "limited": "Too many requests. Try again in about 15 minutes.",
+        "hint": "Lost the link, or it expired?",
+        "again": "Send the link again",
+        "sent": "If this address has an account waiting for confirmation, we sent a new link."
+      }
+    },
+    "invitation": {
+      "title": "Accept the invitation",
+      "description": "You were invited to join",
+      "signedInAs": "Join as {{email}}.",
+      "accept": "Accept and join",
+      "notYou": "Not you? Sign out",
+      "create": "Create the account and join",
+      "haveAccount": "Already have an account?",
+      "created": "Your account is ready. Sign in to start.",
+      "signInFirst": "This address already has an account: sign in, then open the invitation again."
+    },
+    "cancelDeletion": {
+      "title": "Keep your account",
+      "description": "Cancel the deletion you asked for",
+      "submit": "Cancel the deletion",
+      "done": "The deletion is cancelled: your account stays."
+    },
+    "unsubscribe": {
+      "title": "Unsubscribe from email",
+      "description": "Confirm that you no longer want this email",
+      "hint": "You will stop getting this kind of email. Emails we must send about your account and its security still reach you, and you choose what you receive in your notification settings.",
+      "hintType": "You will stop getting “{{label}}” emails. Emails we must send about your account and its security still reach you, and you choose what you receive in your notification settings.",
+      "hintDigest": "You will stop getting the emails you receive as a digest ({{modes, list}}). Emails we must send about your account and its security still reach you, and you choose what you receive in your notification settings.",
+      "modes": {
+        "hourly": "hourly",
+        "daily": "daily"
+      },
+      "submit": "Unsubscribe",
+      "done": "You are unsubscribed: we won't send you this kind of email again.",
+      "invalid": "This link is invalid or has expired. Open it again from the email, or choose what you receive in your notification settings."
+    },
+    "links": {
+      "missingToken": "This link is incomplete. Open it again from the email.",
+      "backToSignIn": "Back to sign in"
+    },
+    "reauth": {
+      "title": "Confirm it's you",
+      "description": "This needs a recent sign-in.",
+      "confirm": "Confirm",
+      "code": "Authentication or recovery code",
+      "codeHint": "From your authenticator app, or one of your recovery codes.",
+      "codeRequired": "Enter a code.",
+      "or": "Or",
+      "withPasskey": "Use a passkey",
+      "withMagicLink": "Email me a sign-in link"
+    },
+    "tenants": {
+      "title": "Organizations",
+      "switch": "Switch organization"
+    },
+    "impersonation": {
+      "banner": "You are acting as {{user}} (signed in as {{administrator}}).",
+      "stop": "Stop"
+    },
+    "errors": {
+      "network": "The server can't be reached. Check your connection and try again."
+    },
+    "sso": {
+      "button": "Sign in with SSO",
+      "description": "Enter your work email. We’ll take you to your organization’s sign-in.",
+      "continue": "Continue",
+      "cancel": "Cancel",
+      "none": "Single sign-on isn’t available for that address. Sign in another way, or ask your administrator.",
+      "failed": "We couldn’t check that address. Try again in a moment."
+    },
+    "idle": {
+      "title": "Your session is about to end",
+      "description": "You have been inactive. You will be signed out in {{time}}.",
+      "stay": "Stay signed in"
+    }
+  },
+  "account": {
+    "title": "Account",
+    "tabs": "Account pages",
+    "save": "Save",
+    "cancel": "Cancel",
+    "impersonating": "While acting as someone, their account settings stay theirs.",
+    "profile": {
+      "title": "Profile",
+      "description": "Your name, language and time zone.",
+      "emailHint": "Your sign-in address.",
+      "timezone": "Time zone",
+      "saved": "Profile saved."
+    },
+    "avatar": {
+      "title": "Picture",
+      "choose": "Choose a picture",
+      "change": "Change picture",
+      "remove": "Remove",
+      "hint": "PNG, JPEG, WebP or GIF. Shown to the members of your organizations.",
+      "saved": "Picture saved.",
+      "removed": "Picture removed.",
+      "rejected": "{{name}} was not used: {{reason}}"
+    },
+    "security": {
+      "title": "Security"
+    },
+    "password": {
+      "title": "Password",
+      "description": "Changing it signs out your other sessions.",
+      "current": "Current password",
+      "currentHint": "Leave empty if your account has no password yet.",
+      "submit": "Change the password",
+      "changed": "Password changed. Your other sessions were signed out."
+    },
+    "mfa": {
+      "title": "Two-factor authentication",
+      "description": "A code from an authenticator app at each sign-in.",
+      "on": "On",
+      "off": "Off",
+      "enable": "Set up two-factor",
+      "unavailable": "Two-factor can't be set up on this deployment.",
+      "scan": "Scan the code with your authenticator app, or enter the key by hand, then enter the 6-digit code it shows.",
+      "secret": "Key:",
+      "qr": "QR code for your authenticator app",
+      "confirm": "Turn on",
+      "remaining_one": "{{count}} recovery code left.",
+      "remaining_other": "{{count}} recovery codes left.",
+      "newCodes": "New recovery codes",
+      "disable": "Turn off",
+      "disableTitle": "Turn two-factor off?",
+      "disableDescription": "Signing in will take your password alone.",
+      "disabled": "Two-factor is off.",
+      "codesTitle": "Your recovery codes",
+      "codesHint": "Keep them somewhere safe: each signs you in once if you lose your authenticator. They are shown only now.",
+      "copy": "Copy",
+      "copied": "Copied.",
+      "saved": "I've saved them",
+      "requiredTitle": "Two-factor is required",
+      "required": "Your organization asks for two-factor authentication: set it up to continue.",
+      "redirected": "You need to set up two-factor authentication before you can continue."
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "description": "Sign in with your fingerprint, face or device PIN.",
+      "none": "No passkeys yet.",
+      "add": "Add a passkey",
+      "added": "Passkey added.",
+      "defaultName": "My passkey",
+      "name": "Name",
+      "rename": "Rename",
+      "remove": "Remove",
+      "removeTitle": "Remove this passkey?",
+      "removeDescription": "{{name}} will no longer sign you in.",
+      "synced": "Synced",
+      "lastUsed": "Last used {{date}}",
+      "neverUsed": "Never used",
+      "unsupported": "This browser doesn't support passkeys."
+    },
+    "identities": {
+      "title": "Connected accounts",
+      "description": "Providers you can sign in with.",
+      "none": "No accounts connected yet.",
+      "connectedOn": "connected {{date}}",
+      "connect": "Connect {{provider}}",
+      "disconnect": "Disconnect",
+      "disconnectTitle": "Disconnect {{provider}}?",
+      "disconnectDescription": "You will no longer be able to sign in with {{provider}}.",
+      "unverified": "Verify your email address to connect an account.",
+      "failed": "Connecting the account didn't work. Try again.",
+      "loadFailed": "The connected accounts could not be loaded.",
+      "retry": "Try again",
+      "disconnectLabel": "Disconnect {{provider}}"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "description": "Where your account is signed in.",
+      "current": "This device",
+      "revoke": "Sign out",
+      "unknownDevice": "Unknown device",
+      "lastActive": "active {{date}}",
+      "everywhere": "Sign out everywhere",
+      "everywhereTitle": "Sign out everywhere?",
+      "everywhereDescription": "Every session ends, this one too.",
+      "methods": {
+        "password": "Password",
+        "magic-link": "Email link",
+        "oidc": "{{provider}}",
+        "sso": "Single sign-on",
+        "passkey": "Passkey",
+        "impersonation": "Support access"
+      }
+    }
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page you are looking for does not exist.",
+    "back": "Back to the dashboard"
+  },
+  "errors": {
+    "unexpected": "Something went wrong.",
+    "reportId": "Report ID: {{id}}",
+    "requestId": "Request ID: {{id}}"
+  },
+  "routeError": {
+    "title": "Something went wrong",
+    "description": "This page failed to load. The rest of the app still works.",
+    "reportId": "Report ID: {{id}}",
+    "build": "Build: {{sha}}",
+    "retry": "Try again"
+  },
+  "preferences": {
+    "open": "Preferences",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "language": "Language"
+  },
+  "languages": {
+    "en": "English",
+    "de": "Deutsch",
+    "ar": "العربية",
+    "zh": "中文",
+    "ms": "Bahasa Melayu"
+  },
+  "list": {
+    "loading": "Loading",
+    "search": "Search",
+    "tools": "Filter & sort",
+    "loadMore": "Load more",
+    "empty": {
+      "title": "Nothing here yet",
+      "description": "Records will appear here once they exist."
+    },
+    "error": {
+      "title": "The list could not be loaded",
+      "generic": "Something went wrong. Try again.",
+      "retry": "Try again"
+    },
+    "fields": {
+      "tag": "Tag",
+      "ownerId": "Owner",
+      "unitId": "Unit",
+      "actor": "Actor",
+      "user": "User"
+    },
+    "refs": {
+      "searching": "Searching…",
+      "failed": "The search failed."
+    },
+    "yes": "Yes",
+    "no": "No",
+    "table": {
+      "noResults": "No results.",
+      "rowsSelected_one": "{{count}} row selected.",
+      "rowsSelected_other": "{{count}} rows selected.",
+      "notShown_one": "{{count}} not shown",
+      "notShown_other": "{{count}} not shown",
+      "rowsPerPage": "Rows per page",
+      "pageOf": "Page {{page}} of {{count}}",
+      "firstPage": "Go to first page",
+      "previousPage": "Go to previous page",
+      "nextPage": "Go to next page",
+      "lastPage": "Go to last page",
+      "view": "View",
+      "viewColumns": "View columns",
+      "columns": "Columns",
+      "searchColumns": "Search columns...",
+      "noColumns": "No columns found.",
+      "asc": "Asc",
+      "desc": "Desc",
+      "hide": "Hide",
+      "sort": "Sort",
+      "sortBy": "Sort by",
+      "noSorting": "No sorting applied",
+      "modifySorting": "Modify sorting to organize your rows.",
+      "addSortingHint": "Add sorting to organize your rows.",
+      "addSort": "Add sort",
+      "resetSorting": "Reset sorting",
+      "searchFields": "Search fields...",
+      "noFields": "No fields found.",
+      "sortDirection": "{{label}} sort direction",
+      "removeSort": "Remove {{label}} sort",
+      "reorderSort": "Reorder {{label}} sort",
+      "filter": "Filter",
+      "filters": "Filters",
+      "noFilters": "No filters applied",
+      "modifyFilters": "Modify filters to refine your rows.",
+      "addFiltersHint": "Add filters to refine your rows.",
+      "addFilter": "Add filter",
+      "resetFilters": "Reset filters",
+      "removeFilter": "Remove {{label}} filter",
+      "reorderFilter": "Reorder {{label}} filter",
+      "where": "Where",
+      "join": {
+        "and": "and",
+        "or": "or"
+      },
+      "selectJoin": "Select join operator",
+      "selectField": "Select field",
+      "operatorAria": "{{label}} filter operator",
+      "filterIsEmpty": "{{label}} filter is empty",
+      "filterIsNotEmpty": "{{label}} filter is not empty",
+      "valueAria": "{{label}} filter value",
+      "enterValue": "Enter a value...",
+      "booleanAria": "{{label}} boolean filter",
+      "selectValue": "Select value",
+      "true": "True",
+      "false": "False",
+      "selectOption": "Select option...",
+      "selectOptions": "Select options...",
+      "searchOptionsAria": "Search {{label}} options",
+      "searchOptions": "Search options...",
+      "noOptions": "No options found.",
+      "dateAria": "{{label}} date filter",
+      "pickDate": "Pick a date",
+      "selectDateRange": "Select {{label}} date range",
+      "selectDate": "Select {{label}} date",
+      "operators": {
+        "iLike": "Contains",
+        "notILike": "Does not contain",
+        "startsWith": "Starts with",
+        "endsWith": "Ends with",
+        "eq": "Is",
+        "ne": "Is not",
+        "inArray": "Has any of",
+        "notInArray": "Has none of",
+        "isEmpty": "Is empty",
+        "isNotEmpty": "Is not empty",
+        "lt": "Is less than",
+        "lte": "Is less than or equal to",
+        "gt": "Is greater than",
+        "gte": "Is greater than or equal to",
+        "isBetween": "Is between",
+        "isRelativeToToday": "Is relative to today"
+      },
+      "dateOperators": {
+        "lt": "Is before",
+        "lte": "Is on or before",
+        "gt": "Is after",
+        "gte": "Is on or after"
+      },
+      "selectAll": "Select all",
+      "selectRow": "Select row"
+    },
+    "bulk": {
+      "label": "Selection actions",
+      "selected_one": "{{count}} selected",
+      "selected_other": "{{count}} selected",
+      "selectAll_one": "Select all {{count}} matching",
+      "selectAll_other": "Select all {{count}} matching",
+      "onlyChosen": "Only the chosen rows",
+      "tooMany": "At most {{max}} chosen rows at once: filter the list and select all matching instead.",
+      "clear": "Clear the selection"
+    }
+  },
+  "principals": {
+    "placeholder": "Search by name or address",
+    "searching": "Searching…",
+    "none": "Nobody matches.",
+    "failed": "The search failed.",
+    "forbidden": "You may not search people and clients.",
+    "client": "(API client)"
+  },
+  "people": {
+    "placeholder": "Search by name",
+    "searching": "Searching…",
+    "none": "Nobody matches.",
+    "failed": "The search failed."
+  },
+  "onboarding": {
+    "title": "Finish setting up your account",
+    "description": "This administrator account still has the placeholder email or the generated password. Replace them to continue.",
+    "emailTitle": "A real email address",
+    "emailDescription": "Reset links and security alerts go here. We send a link to confirm it.",
+    "email": "New email address",
+    "currentPassword": "Current password",
+    "emailSubmit": "Send the confirmation link",
+    "emailSent": "We sent a link to {{email}}. Open it, then come back here.",
+    "emailWaiting": "Waiting for {{email}} to be confirmed.",
+    "check": "I confirmed it",
+    "resend": "Send the link again",
+    "optionalTitle": "Optional: more protection",
+    "optionalDescription": "Set up two-factor or a passkey now, or later under Account, Security.",
+    "done": "Continue to the app",
+    "doneHint": "All required steps are done.",
+    "redirected": "Finish setting up the administrator account before you continue."
+  },
+  "build": {
+    "title": "Build information",
+    "tab": "This tab",
+    "web": "Deployed web",
+    "api": "API",
+    "notChecked": "Not checked",
+    "current": "Up to date with deployed web",
+    "stale": "Update available",
+    "unknownStatus": "Version unknown",
+    "unknown": "Unknown",
+    "check": "Check version",
+    "checking": "Checking…",
+    "reload": "Reload",
+    "copy": "Copy details"
+  },
+  "sortable": {
+    "picked": "Picked up {{item}}, position {{position}} of {{count}}. Move it with the arrow keys; press Space to drop it.",
+    "moved": "{{item}} moved to position {{position}} of {{count}}.",
+    "outside": "{{item}} is no longer over the list. Press Escape to cancel.",
+    "dropped": "{{item}} dropped at position {{position}} of {{count}}.",
+    "unchanged": "{{item}} dropped. Nothing changed.",
+    "cancelled": "Moving cancelled. {{item}} is back at position {{position}} of {{count}}.",
+    "instructions": "To pick up an item, press Space or Enter. Move it with the up and down arrow keys. Press Space or Enter again to drop it, or Escape to cancel."
+  },
+  "banners": {
+    "more": "+{{count}} more",
+    "fewer": "Show less"
+  }
+}
