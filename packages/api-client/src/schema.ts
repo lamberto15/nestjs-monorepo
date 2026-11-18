@@ -6653,6 +6653,11 @@ export interface components {
         [key: string]: unknown;
       } | null;
       ip: string | null;
+      /**
+       * Format: uuid
+       * @description The bulk run the entry is part of (its `bulk.started` entry has none and targets the run: `targetType` `bulk`, `targetId` the run id). List a run with `runId=<id>`; leave runs out with `runId.isNull=true`.
+       */
+      runId: string | null;
     };
     SignInPage: {
       items: components['schemas']['SignInEntry'][];
@@ -16516,6 +16521,10 @@ export interface operations {
         'targetType.isNull'?: 'true' | 'false';
         /** @description Filter: targetId = */
         targetId?: string;
+        /** @description Filter: runId = */
+        runId?: string;
+        /** @description Filter: runId isNull */
+        'runId.isNull'?: 'true' | 'false';
         /** @description Filter: at gt */
         'at.gt'?: string;
         /** @description Filter: at gte */
@@ -16526,11 +16535,11 @@ export interface operations {
         'at.lte'?: string;
         /** @description Filter: at between */
         'at.between'?: string;
-        /** @description Conditions in and/or groups, JSON: a condition { field, op, value } or a group { "and": [...] } / { "or": [...] }, 3 groups deep and 30 conditions at most. Example: {"or":[{"field":"action","op":"eq","value":…},{…}]}. Fields and operators: action (eq, in, notIn, startsWith); actor (eq, in); actorLabel (eq, contains, startsWith); targetType (eq, in, isNull); targetId (eq); at (gt, gte, lt, lte, between). */
+        /** @description Conditions in and/or groups, JSON: a condition { field, op, value } or a group { "and": [...] } / { "or": [...] }, 3 groups deep and 30 conditions at most. Example: {"or":[{"field":"action","op":"eq","value":…},{…}]}. Fields and operators: action (eq, in, notIn, startsWith); actor (eq, in); actorLabel (eq, contains, startsWith); targetType (eq, in, isNull); targetId (eq); runId (eq, isNull); at (gt, gte, lt, lte, between). */
         filter?: string;
         /** @description The order: fields comma-separated, - for descending; the newest first on ties. Example: -action. Sortable: action, at. */
         sort?: string;
-        /** @description Only these fields in each item, comma-separated; id always comes. Example: tenantId,at. Fields: id, tenantId, at, actor, actorLabel, actorName, action, targetType, targetId, details, ip. */
+        /** @description Only these fields in each item, comma-separated; id always comes. Example: tenantId,at. Fields: id, tenantId, at, actor, actorLabel, actorName, action, targetType, targetId, details, ip, runId. */
         fields?: string;
       };
       header?: never;

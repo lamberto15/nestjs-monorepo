@@ -80,6 +80,8 @@ export const AUDIT_LIST = listQuery(
       ops: ['eq', 'in', 'isNull'],
     },
     targetId: { column: auditLog.targetId, type: 'string', ops: ['eq'] },
+    // A bulk run's entries (`runId=<id>`), or none of any run (`runId.isNull=true`).
+    runId: { column: auditLog.runId, type: 'uuid', ops: ['eq', 'isNull'] },
     at: {
       column: auditLog.at,
       type: 'datetime',
@@ -100,6 +102,7 @@ export const AUDIT_LIST = listQuery(
       'targetId',
       'details',
       'ip',
+      'runId',
     ],
   },
 );

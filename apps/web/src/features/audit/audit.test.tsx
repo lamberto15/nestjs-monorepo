@@ -223,6 +223,49 @@ describe('the audit log page', () => {
     expect(within(dialog).getByText('IP address')).toBeVisible();
   });
 
+  it('shows a bulk run as one line, its entries in its dialog', async () => {
+    signedInWith({ 'Access.readAudit': true });
+    const urls = auditApi([
+      entry('run', {
+        action: 'bulk.started',
+        targetType: 'bulk',
+        targetId: 'run-1',
+        details: { subject: 'Note', action: 'update', ids: 2 },
+      }),
+    ]);
+    server.use(
+      http.get('/v1/access/audit', ({ request }) => {
+        const url = new URL(request.url);
+        if (url.searchParams.get('runId') !== 'run-1') return undefined;
+        return HttpResponse.json({
+          items: [
+            entry('a', { action: 'note.updated', targetId: 'note-a' }),
+            entry('b', { action: 'note.updated', targetId: 'note-b' }),
+          ],
+          nextCursor: null,
+        });
+      }),
+    );
+    await renderApp('/audit');
+    expect(await screen.findByText('Bulk run')).toBeInTheDocument();
+    // The list leaves the run's own entries out: one line per run.
+    expect(urls.at(-1)!.searchParams.get('runId.isNull')).toBe('true');
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: /open actions/i }),
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Show the run' }),
+    );
+    const run = await within(await screen.findByRole('dialog')).findByRole(
+      'region',
+      { name: 'What the run did' },
+    );
+    expect(await within(run).findByText('note-a')).toBeVisible();
+    expect(within(run).getByText('note-b')).toBeVisible();
+  });
+
   it('is gated: no nav entry and a redirect without the permission', async () => {
     const groups = (can: Record<string, boolean>) =>
       visibleGroups(nav, allFeatures, can).flatMap((g) =>

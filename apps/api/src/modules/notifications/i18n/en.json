@@ -79,11 +79,11 @@
         }
       },
       "bulk-changed": {
-        "label": "Many records you watch changed",
-        "title": "Watched records changed",
+        "label": "Records you watch changed in a bulk edit",
+        "title": "Watched records changed in a bulk edit",
         "body": {
-          "one": "The {noun} \"{title}\" was changed by {by}.",
-          "other": "{count} more {noun} records you watch were changed, the latest \"{title}\" by {by}."
+          "one": "{by} changed the {noun} \"{title}\" in a bulk edit.",
+          "other": "{by} changed {count} {noun} records you watch in a bulk edit, the latest \"{title}\"."
         }
       }
     }

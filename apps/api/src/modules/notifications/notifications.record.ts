@@ -1,4 +1,3 @@
-import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   Delete,
   HttpCode,
@@ -18,8 +17,8 @@ import {
   ApiOperation,
 } from '@nestjs/swagger';
 import { z } from 'zod';
-import type { DatabaseTransactions } from '../../core/database/database.js';
 import { publishSchemas } from '../../core/http/openapi.js';
+import { currentAuditRun } from '../../iam/audit/audit-run.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import type { RecordDeclaration, RecordRow } from '../records/record.js';
 import {
@@ -33,12 +32,6 @@ import { Records } from '../records/records.service.js';
 import { notWhileImpersonating } from './notifications.principals.js';
 import { defineNotifications } from './notifications.types.js';
 import { SubscriptionsService } from './subscriptions.service.js';
-
-/**
- * Past this many watched records changed in one transaction (a bulk edit),
- * the rest sum up: one notification per watcher, counted up, not one per record.
- */
-export const BULK_THRESHOLD = 20;
 
 /** The notifications a watched record sends: one type for every record (texts: i18n/en.json). */
 export const RECORD_NOTIFICATIONS = defineNotifications([
@@ -55,11 +48,13 @@ export const RECORD_NOTIFICATIONS = defineNotifications([
     }),
   },
   {
-    // The same, past BULK_THRESHOLD records in one change: one summary per watcher.
+    // Watched records changed by a bulk run: one per run and watcher,
+    // counted up, opening the list of what the run changed.
     type: 'record.bulk-changed',
     email: 'daily',
     data: z.object({
       subject: z.string(),
+      runId: z.uuid(),
       noun: z.string(),
       title: z.string(),
       by: z.string(),
@@ -77,8 +72,8 @@ publishSchemas('watching', watchingSchema);
 /**
  * What watching adds to a record: its creator watches it from the start,
  * `?include=watching` says whether the reader does, whoever watches hears of
- * a change by someone else (past BULK_THRESHOLD records in one transaction,
- * a summary), and a record gone for good has no watchers.
+ * a change by someone else (by a bulk run, one per run, opening the list of
+ * the records it changed), and a record gone for good has no watchers.
  */
 @RecordExtension()
 @Injectable()
@@ -95,13 +90,9 @@ export class WatchingExtension implements RecordHooks {
       return new Map(ids.map((id) => [id, watching.has(id)]));
     },
   };
-  /** Records notified so far in a transaction, to tell a bulk change from an edit. */
-  private readonly changed = new WeakMap<object, number>();
-
   constructor(
     @InjectRecord() readonly record: RecordDeclaration,
     private readonly subscriptions: SubscriptionsService,
-    private readonly txHost: TransactionHost<DatabaseTransactions>,
   ) {}
 
   async created({ row }: RecordChange) {
@@ -117,26 +108,32 @@ export class WatchingExtension implements RecordHooks {
 
   async updated({ after, by }: { after: RecordRow; by: Principal }) {
     const { subject } = this.record;
-    const count = (this.changed.get(this.txHost.tx) ?? 0) + 1;
-    this.changed.set(this.txHost.tx, count);
     const data = {
       subject,
       noun: this.record.noun,
       title: this.titleOf(after),
       by: by.name,
     };
-    const bulk = count > BULK_THRESHOLD;
+    const runId = currentAuditRun();
+    // Repeated changes collapse into one notification, counted up: a
+    // record's, or a run's (its link lists the records the run changed).
     await this.subscriptions.notifyWatchers({
       subject,
       recordId: after.id,
-      type: bulk ? 'record.bulk-changed' : 'record.changed',
-      data: bulk ? data : { ...data, recordId: after.id },
-      // Repeated changes of a record collapse into one notification, counted up.
-      key: bulk
-        ? `record.bulk-changed:${subject}`
-        : `record.changed:${after.id}`,
-      link: `/${this.record.path}/${after.id}`,
       except: by,
+      ...(runId
+        ? {
+            type: 'record.bulk-changed',
+            data: { ...data, runId },
+            key: `record.bulk-changed:${runId}`,
+            link: `/${this.record.path}?bulkRun=${runId}`,
+          }
+        : {
+            type: 'record.changed',
+            data: { ...data, recordId: after.id },
+            key: `record.changed:${after.id}`,
+            link: `/${this.record.path}/${after.id}`,
+          }),
     });
   }
 

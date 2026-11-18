@@ -18,11 +18,21 @@
     "actorId": "Actor id",
     "none": "No details."
   },
+  "run": {
+    "open": "Show the run",
+    "entries": "What the run did",
+    "loading": "Loading…",
+    "more": "The first {{count}} entries; filter the log by this run for the rest."
+  },
   "dashboard": {
     "title": "Recent activity",
     "empty": "No activity yet."
   },
   "actions": {
+    "bulk": {
+      "started": "Bulk run",
+      "finished": "Bulk run ended"
+    },
     "member": {
       "signed-in": "Member signed in"
     },

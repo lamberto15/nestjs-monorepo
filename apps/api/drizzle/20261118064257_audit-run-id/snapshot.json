@@ -1,0 +1,107 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "9f2dc9e6-48ab-463c-afc0-15700b6eae31",
+  "prevIds": [
+    "7834661f-9068-4960-863a-d19544493bf1"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "audit_log",
+        "run_id"
+      ],
+      "writes": [
+        "s|col|public.audit_log.run_id",
+        "n|col|public.audit_log.run_id",
+        "e|col|public.audit_log.run_id"
+      ],
+      "reads": [
+        "n|tbl|public.audit_log",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "audit_log",
+        "audit_log_tenant_run_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.audit_log_tenant_run_id_idx",
+        "n|idx|public.audit_log_tenant_run_id_idx",
+        "e|idx|public.audit_log_tenant_run_id_idx",
+        "n|rel|public.audit_log_tenant_run_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.audit_log",
+        "n|sch|public",
+        "n|col|public.audit_log.tenant_id",
+        "n|col|public.audit_log.run_id",
+        "n|col|public.audit_log.id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "audit_log",
+        "name": "run_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "audit_log",
+        "name": "audit_log_tenant_run_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "run_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    }
+  ]
+}

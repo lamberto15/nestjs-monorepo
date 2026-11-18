@@ -1,4 +1,4 @@
-import { TransactionHost } from '@nestjs-cls/transactional';
+import { randomUUID } from 'node:crypto';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../../../test/boot.js';
 import { TEST_ITEM } from '../../../test/fixtures/test-items/test-item.record.js';
@@ -10,9 +10,9 @@ import {
 } from '../../../test/records.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { inAuditRun } from '../../iam/audit/audit-run.js';
 import type { UserPrincipal } from '../../iam/auth/principal.js';
 import { Records } from '../records/records.service.js';
-import { BULK_THRESHOLD } from './notifications.record.js';
 import { NotificationsModule } from './notifications.module.js';
 
 vi.hoisted(() => {
@@ -144,9 +144,9 @@ describe('watching a record (e2e)', () => {
     expect(await inbox(team.admin.headers)).toEqual([]);
   });
 
-  it('sums up a bulk change past the threshold, one notification per watcher', async () => {
+  it('tells a watcher of a bulk run once, opening the list of what it changed', async () => {
     const { editor, admin, tenantId } = await recordsTenant(app);
-    const total = BULK_THRESHOLD + 3;
+    const total = 4;
     const ids: string[] = [];
     for (let i = 0; i < total; i++) {
       ids.push((await createTestItem(app, editor.headers)).id);
@@ -162,17 +162,19 @@ describe('watching a record (e2e)', () => {
       timezone: null,
       tenantId,
     } satisfies UserPrincipal;
+    const runId = randomUUID();
     await app.get(Tenancy).run(tenantId, () =>
-      app.get(TransactionHost).withTransaction(async () => {
+      inAuditRun(runId, async () => {
         for (const id of ids) await store.update(by, id, { status: 'done' });
       }),
     );
     const notes = await inbox(editor.headers);
-    expect(notes.filter((each) => each.type === 'record.changed')).toHaveLength(
-      BULK_THRESHOLD,
-    );
+    expect(notes.filter((each) => each.type === 'record.changed')).toEqual([]);
     const summary = notes.filter((each) => each.type === 'record.bulk-changed');
     expect(summary).toHaveLength(1);
-    expect(summary[0]!.count).toBe(3);
+    expect(summary[0]).toMatchObject({
+      count: total,
+      link: `/test-items?bulkRun=${runId}`,
+    });
   });
 });

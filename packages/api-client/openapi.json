@@ -16989,6 +16989,32 @@
             }
           },
           {
+            "name": "runId",
+            "required": false,
+            "in": "query",
+            "description": "Filter: runId =",
+            "schema": {
+              "description": "Filter: runId =",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "runId.isNull",
+            "required": false,
+            "in": "query",
+            "description": "Filter: runId isNull",
+            "schema": {
+              "description": "Filter: runId isNull",
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
             "name": "at.gt",
             "required": false,
             "in": "query",
@@ -17050,9 +17076,9 @@
             "name": "filter",
             "required": false,
             "in": "query",
-            "description": "Conditions in and/or groups, JSON: a condition { field, op, value } or a group { \"and\": [...] } / { \"or\": [...] }, 3 groups deep and 30 conditions at most. Example: {\"or\":[{\"field\":\"action\",\"op\":\"eq\",\"value\":…},{…}]}. Fields and operators: action (eq, in, notIn, startsWith); actor (eq, in); actorLabel (eq, contains, startsWith); targetType (eq, in, isNull); targetId (eq); at (gt, gte, lt, lte, between).",
+            "description": "Conditions in and/or groups, JSON: a condition { field, op, value } or a group { \"and\": [...] } / { \"or\": [...] }, 3 groups deep and 30 conditions at most. Example: {\"or\":[{\"field\":\"action\",\"op\":\"eq\",\"value\":…},{…}]}. Fields and operators: action (eq, in, notIn, startsWith); actor (eq, in); actorLabel (eq, contains, startsWith); targetType (eq, in, isNull); targetId (eq); runId (eq, isNull); at (gt, gte, lt, lte, between).",
             "schema": {
-              "description": "Conditions in and/or groups, JSON: a condition { field, op, value } or a group { \"and\": [...] } / { \"or\": [...] }, 3 groups deep and 30 conditions at most. Example: {\"or\":[{\"field\":\"action\",\"op\":\"eq\",\"value\":…},{…}]}. Fields and operators: action (eq, in, notIn, startsWith); actor (eq, in); actorLabel (eq, contains, startsWith); targetType (eq, in, isNull); targetId (eq); at (gt, gte, lt, lte, between).",
+              "description": "Conditions in and/or groups, JSON: a condition { field, op, value } or a group { \"and\": [...] } / { \"or\": [...] }, 3 groups deep and 30 conditions at most. Example: {\"or\":[{\"field\":\"action\",\"op\":\"eq\",\"value\":…},{…}]}. Fields and operators: action (eq, in, notIn, startsWith); actor (eq, in); actorLabel (eq, contains, startsWith); targetType (eq, in, isNull); targetId (eq); runId (eq, isNull); at (gt, gte, lt, lte, between).",
               "type": "string",
               "maxLength": 20000
             }
@@ -17072,9 +17098,9 @@
             "name": "fields",
             "required": false,
             "in": "query",
-            "description": "Only these fields in each item, comma-separated; id always comes. Example: tenantId,at. Fields: id, tenantId, at, actor, actorLabel, actorName, action, targetType, targetId, details, ip.",
+            "description": "Only these fields in each item, comma-separated; id always comes. Example: tenantId,at. Fields: id, tenantId, at, actor, actorLabel, actorName, action, targetType, targetId, details, ip, runId.",
             "schema": {
-              "description": "Only these fields in each item, comma-separated; id always comes. Example: tenantId,at. Fields: id, tenantId, at, actor, actorLabel, actorName, action, targetType, targetId, details, ip.",
+              "description": "Only these fields in each item, comma-separated; id always comes. Example: tenantId,at. Fields: id, tenantId, at, actor, actorLabel, actorName, action, targetType, targetId, details, ip, runId.",
               "type": "string"
             }
           }
@@ -63697,6 +63723,13 @@
           "ip": {
             "nullable": true,
             "type": "string"
+          },
+          "runId": {
+            "nullable": true,
+            "description": "The bulk run the entry is part of (its `bulk.started` entry has none and targets the run: `targetType` `bulk`, `targetId` the run id). List a run with `runId=<id>`; leave runs out with `runId.isNull=true`.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
           }
         },
         "required": [
@@ -63710,7 +63743,8 @@
           "targetType",
           "targetId",
           "details",
-          "ip"
+          "ip",
+          "runId"
         ],
         "additionalProperties": false
       },

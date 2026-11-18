@@ -1,4 +1,6 @@
+import { inArray, sql } from 'drizzle-orm';
 import { listQuery } from '../../core/http/list-query.js';
+import { auditRunTargets } from '../../iam/audit/audit-run.js';
 import { fieldList } from '../fields/fields.list.js';
 import { searchFilters } from './full-text.js';
 import {
@@ -11,7 +13,7 @@ import {
  * What GET /<path> can be filtered, sorted and narrowed (`fields=`) by,
  * from the declaration: the fields as their types allow, the owner, the
  * unit, the dates, `?q=` and `?sort=-rank` with searchable fields,
- * `?deleted=true` with a recycle bin. What a record's add-ons add (`?tag=`)
+ * `?deleted=true` with a recycle bin, `?bulkRun=<id>` (what a bulk run changed). What a record's add-ons add (`?tag=`)
  * joins at runtime (RecordPresenter.query()).
  *
  * ```ts
@@ -51,6 +53,16 @@ export function recordList(declaration: RecordDeclaration, table: object) {
         type: 'datetime',
         ops: [...range],
         sortable: true,
+      },
+      // The records a bulk run changed: the list its notification opens.
+      bulkRun: {
+        column: t.id,
+        type: 'uuid',
+        ops: ['eq'],
+        conditions: {
+          eq: (value) =>
+            inArray(sql`${t.id}::text`, auditRunTargets(value as string)),
+        },
       },
     },
     {

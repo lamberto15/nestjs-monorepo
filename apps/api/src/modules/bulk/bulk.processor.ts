@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '../../core/database/database.js';
 import { inTenantOf, TenantWorkerHost } from '../../core/tenancy/tenant-job.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
+import { inAuditRun } from '../../iam/audit/audit-run.js';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
@@ -53,13 +54,9 @@ export class BulkProcessor extends TenantWorkerHost<BulkJob, BulkResult> {
       job.data,
     );
     const run = { id: job.id!, subject, action };
-    const result = await this.bulk.execute(
-      principal,
-      registration,
-      action,
-      selection,
-      input,
-      {
+    // Each item's audit entry carries the run's id, as its notifications do.
+    const result = await inAuditRun(job.id!, () =>
+      this.bulk.execute(principal, registration, action, selection, input, {
         cap: MAX_BULK_RESULTS,
         progress: async (tally) => {
           const counts = {
@@ -74,7 +71,7 @@ export class BulkProcessor extends TenantWorkerHost<BulkJob, BulkResult> {
             ...counts,
           });
         },
-      },
+      }),
     );
     await job.updateProgress({
       processed: result.done + result.failed,

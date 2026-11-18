@@ -1,4 +1,4 @@
-import { index, jsonb, text } from 'drizzle-orm/pg-core';
+import { index, jsonb, text, uuid } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { at, uuidPk } from '../../core/database/columns.js';
 import { tenantTable } from '../../core/tenancy/tenant-tables.js';
@@ -30,6 +30,8 @@ export const auditLog = tenantTable(
     targetId: text('target_id'),
     details: jsonb('details').$type<Record<string, unknown>>(),
     ip: text('ip'),
+    /** The run (a bulk run) the entry is part of: inAuditRun(). */
+    runId: uuid('run_id'),
   },
   (t) => [
     index('audit_log_at_idx').on(t.at),
@@ -43,6 +45,8 @@ export const auditLog = tenantTable(
     index('audit_log_actor_action_at_idx').on(t.actor, t.action, t.at),
     // One record's history, newest first.
     index('audit_log_target_id_id_idx').on(t.targetId, t.id),
+    // One run's entries (the audit screen expands a run).
+    index('audit_log_tenant_run_id_idx').on(t.tenantId, t.runId, t.id),
     // One actor's entries in id order.
     index('audit_log_actor_id_idx').on(t.actor, t.id),
     // An action within the tenant, newest first.

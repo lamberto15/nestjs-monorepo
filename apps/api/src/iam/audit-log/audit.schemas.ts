@@ -27,6 +27,12 @@ export const auditEntrySchema = z
     targetId: z.string().nullable(),
     details: z.record(z.string(), z.unknown()).nullable(),
     ip: z.string().nullable(),
+    runId: z
+      .uuid()
+      .nullable()
+      .describe(
+        'The bulk run the entry is part of (its `bulk.started` entry has none and targets the run: `targetType` `bulk`, `targetId` the run id). List a run with `runId=<id>`; leave runs out with `runId.isNull=true`.',
+      ),
   })
   .meta({ id: 'AuditEntry' });
 

@@ -13,6 +13,7 @@ import {
 } from '../../core/http/pagination.js';
 import { discoverOne } from '../auth/discover.js';
 import { actorOf, type Principal } from '../auth/principal.js';
+import { currentAuditRun } from './audit-run.js';
 import { ActorNameSource, type ActorNames } from './actor-names.js';
 import { auditLog } from './audit.tables.js';
 
@@ -22,6 +23,8 @@ export interface AuditEntry {
   targetId?: string;
   details?: Record<string, unknown>;
   ip?: string;
+  /** The run it is part of; default: the current one (inAuditRun()). */
+  runId?: string;
 }
 
 /**
@@ -129,4 +132,5 @@ const fieldsOf = (entry: AuditEntry) => ({
   targetId: entry.targetId ?? null,
   details: entry.details ?? null,
   ip: entry.ip ?? null,
+  runId: entry.runId ?? currentAuditRun() ?? null,
 });

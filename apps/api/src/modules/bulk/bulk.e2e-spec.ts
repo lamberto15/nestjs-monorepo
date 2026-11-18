@@ -109,11 +109,20 @@ describe('bulk operations (e2e)', () => {
     // The record's own audit entry, per item, then the run's.
     const entries = await inTenant(() =>
       db()
-        .select({ action: auditLog.action })
+        .select({ action: auditLog.action, runId: auditLog.runId })
         .from(auditLog)
         .where(eq(auditLog.targetId, a.id)),
     );
-    expect(entries.map((e) => e.action)).toContain('testItem.deleted');
+    const deleted = entries.find((e) => e.action === 'testItem.deleted');
+    // Stamped with the run, whose start names it.
+    const [start] = await inTenant(() =>
+      db()
+        .select({ targetId: auditLog.targetId })
+        .from(auditLog)
+        .where(eq(auditLog.action, 'bulk.started')),
+    ).then((rows) => rows.filter((row) => row.targetId === deleted?.runId));
+    expect(deleted?.runId).toBeTruthy();
+    expect(start).toBeDefined();
   });
 
   it('changes records with the one input, failing an item alone with its own 4xx (a record others refer to)', async () => {
@@ -274,6 +283,19 @@ describe('bulk operations (e2e)', () => {
       other.headers,
     );
     expect(stillDraft.json().status).toBe('draft');
+    // The run's items carry its id: the record list and the audit log expand it.
+    const changed = await call(
+      'GET',
+      `/v1/test-items?bulkRun=${started.json().id}`,
+      editor.headers,
+    );
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(
+      changed
+        .json()
+        .items.map((item: { code: string }) => item.code)
+        .sort(),
+    ).toEqual([0, 1, 2].map((i) => `${mark}-${i}`));
 
     // More ids than the synchronous limit (5): a job as well.
     const many = await Promise.all(
@@ -322,13 +344,26 @@ describe('bulk operations (e2e)', () => {
     ).toBe(404);
     const audited = await inTenant(() =>
       db()
-        .select({ action: auditLog.action })
+        .select({ action: auditLog.action, runId: auditLog.runId })
         .from(auditLog)
         .where(eq(auditLog.targetId, started.json().id)),
     );
-    expect(audited.map((e) => e.action).sort()).toEqual([
+    // The start is the run's line (no run id); its end and its items are in it.
+    expect(audited.sort((x, y) => x.action.localeCompare(y.action))).toEqual([
+      { action: 'bulk.finished', runId: started.json().id },
+      { action: 'bulk.started', runId: null },
+    ]);
+    const items = await inTenant(() =>
+      db()
+        .select({ action: auditLog.action })
+        .from(auditLog)
+        .where(eq(auditLog.runId, started.json().id)),
+    );
+    expect(items.map((e) => e.action).sort()).toEqual([
       'bulk.finished',
-      'bulk.started',
+      'testItem.updated',
+      'testItem.updated',
+      'testItem.updated',
     ]);
   });
 

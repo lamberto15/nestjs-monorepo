@@ -94,7 +94,8 @@ repository.
 - [x] the generator (`pnpm feature:add`, Nest schematics), proved by a
       generated fixture that may not drift from it. No sample feature ships
       (`notes` is not ported: AGENTS.md, "Decisions").
-- [ ] the web pages of a generated feature
+- [ ] the web pages of a generated feature (the list page reads
+      `?bulkRun=<id>`, the link of a bulk run's notification)
 
 ## Around the API
 
@@ -197,7 +198,11 @@ repository.
   `POST /v1/tenants/{id}/export` needs `Access.exportTenants` and leaves out
   hashes, secrets and encrypted columns.
 - Bulk: `POST /v1/<path>/bulk`, one transaction per record; a run names its
-  subject.
+  subject. Its audit entries carry its id (`runId`; the audit page shows
+  the run as one line, `bulk.started`, and lists its entries in its dialog);
+  a watcher gets one `record.bulk-changed` per run, linking to
+  `/<path>?bulkRun=<id>` (every record list takes `bulkRun`), instead of a
+  summary past 20 changes in one transaction.
 - Permissions renamed, none called `manage`: `DataQuality.read|scan|resolve`,
   `Approval.read|abandon|cancel|managePolicies`, `Automation.configure`,
   `Branding.update`, `ConfigBundle.export|apply`, `Access.testIntegrations`

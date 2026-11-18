@@ -20,6 +20,7 @@ import { walkList } from '../../core/http/pagination.js';
 import { JobIndex, type JobPage } from '../../core/jobs/job-index.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { AccessService } from '../../iam/access/access.service.js';
+import { inAuditRun } from '../../iam/audit/audit-run.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import {
   principalKey,
@@ -208,12 +209,14 @@ export class BulkService {
     }
     const id = randomUUID();
     await this.started(job, id);
-    const result = await this.execute(
-      principal,
-      registration,
-      request.action,
-      parsed.selection,
-      parsed.input,
+    const result = await inAuditRun(id, () =>
+      this.execute(
+        principal,
+        registration,
+        request.action,
+        parsed.selection,
+        parsed.input,
+      ),
     );
     await this.finished(job, id, result);
     return result;
@@ -506,7 +509,11 @@ export class BulkService {
     return state === 'completed' ? { ...base, result: job.returnvalue } : base;
   }
 
-  /** Audits the start of a run: what it acts on, by how many ids or by a filter. */
+  /**
+   * Audits the start of a run: what it acts on, by how many ids or by a
+   * filter. The run's one line in the audit log (`targetId` the run id):
+   * its items' entries and its end carry the run id and expand it.
+   */
   started(job: BulkJob, id: string) {
     return this.audit.record(job.principal, {
       action: 'bulk.started',
@@ -531,6 +538,7 @@ export class BulkService {
       action: 'bulk.finished',
       targetType: 'bulk',
       targetId: id,
+      runId: id,
       details: {
         subject: job.subject,
         action: job.action,
