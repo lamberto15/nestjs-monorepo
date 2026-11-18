@@ -33,9 +33,12 @@ pre-commit:
       skip:
         - run: test ! -x apps/api/node_modules/.bin/prettier
     # The API's `lint` (type-aware oxlint, apps/api/.oxlintrc.json) on the
-    # staged files alone.
+    # staged files alone. oxlint looks for its type-aware half (tsgolint) from
+    # the working directory, which here is the repository's root: tell it.
     - name: oxlint
       glob: 'apps/api/{src,test}/**/*.ts'
+      env:
+        OXLINT_TSGOLINT_PATH: apps/api/node_modules/.bin/tsgolint
       run: apps/api/node_modules/.bin/oxlint --type-aware -c apps/api/.oxlintrc.json --tsconfig apps/api/tsconfig.json {staged_files}
       skip:
         - run: test ! -x apps/api/node_modules/.bin/oxlint
