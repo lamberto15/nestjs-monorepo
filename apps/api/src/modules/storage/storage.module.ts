@@ -8,6 +8,8 @@ import { FilesController } from './files.controller.js';
 import { StorageDiagnostic } from './storage.diagnostic.js';
 import { storageConfig } from './storage.config.js';
 import { createStorageOptions, FILES_ROUTE } from './storage.disks.js';
+import { StorageErasure } from './storage.erasure.js';
+import { StoredFilesModule } from './storage.release.js';
 
 // A signed upload (PUT /files) carries its credential in the URL, not a
 // cookie: a browser page on another origin may send it.
@@ -19,9 +21,12 @@ csrfExclusions.set('storage.signed-upload', {
 /**
  * Files on @nestjs/storage's disks. Its module is global, so a service
  * injects `StorageDisk` (the private `files` disk) without importing this one.
+ * A module that deletes files with its rows imports `StoredFilesModule`
+ * (storage.release.ts) for `StoredFiles`; here it serves the erasures.
  */
 @Module({
   imports: [
+    StoredFilesModule,
     NestStorageModule.forRootAsync({
       imports: [
         ConfigModule.forFeature(storageConfig),
@@ -37,6 +42,6 @@ csrfExclusions.set('storage.signed-upload', {
     }),
   ],
   controllers: [FilesController],
-  providers: [StorageDiagnostic],
+  providers: [StorageDiagnostic, StorageErasure],
 })
 export class StorageModule {}

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { StorageDisk } from '@nestjs/storage';
@@ -20,7 +21,11 @@ import { MetricsModule } from '../../core/metrics/metrics.module.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
-import { RecycleBinPurgeJob } from '../records/recycle-bin.job.js';
+import {
+  RECYCLE_BIN_PURGE,
+  RecycleBinPurgeJob,
+} from '../records/recycle-bin.job.js';
+import { Records } from '../records/records.service.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { tenantQuotas } from '../quotas/quotas.tables.js';
 import { AttachmentsModule } from './attachments.module.js';
@@ -486,7 +491,43 @@ describe('attachments on test items (e2e)', () => {
         db().select().from(attachments).where(eq(attachments.id, added.id)),
       ),
     ).toEqual([]);
-    expect(await disk.exists(stored!.key)).toBe(false);
+    // After the commit, through the outbox (StoredFiles).
+    await vi.waitFor(
+      async () => expect(await disk.exists(stored!.key)).toBe(false),
+      { timeout: 10_000 },
+    );
+  });
+
+  it("keeps a purged record's files when the purge's transaction rolls back", async () => {
+    const item = await createTestItem(app, editor.headers);
+    const added = await attach(editor.headers, item.id, {
+      name: 'kept.txt',
+      type: 'text/plain',
+      data: TEXT,
+    });
+    const [stored] = await inTenant(() =>
+      db().select().from(attachments).where(eq(attachments.id, added.id)),
+    );
+    const disk = app.get(StorageDisk);
+    const store = app.get(Records).find(TEST_ITEM.subject)!.store;
+
+    await expect(
+      inTenant(() =>
+        app.get(TransactionHost).withTransaction(async () => {
+          await store.forget(RECYCLE_BIN_PURGE, [item.id]);
+          throw new Error('a later step fails');
+        }),
+      ),
+    ).rejects.toThrow('a later step fails');
+
+    expect(
+      await inTenant(() =>
+        db().select().from(attachments).where(eq(attachments.id, added.id)),
+      ),
+    ).toHaveLength(1);
+    // Nothing was released: the relay has nothing to delete, now or later.
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(await disk.exists(stored!.key)).toBe(true);
   });
 
   it("refuses a file past the tenant's storage quota (422) and keeps nothing; a legal hold keeps its files (409)", async () => {

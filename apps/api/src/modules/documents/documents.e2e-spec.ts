@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { StorageDisk } from '@nestjs/storage';
@@ -21,7 +22,11 @@ import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
-import { RecycleBinPurgeJob } from '../records/recycle-bin.job.js';
+import {
+  RECYCLE_BIN_PURGE,
+  RecycleBinPurgeJob,
+} from '../records/recycle-bin.job.js';
+import { Records } from '../records/records.service.js';
 import { AttachmentsModule } from '../attachments/attachments.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { DocumentClaimLost, DocumentsService } from './documents.service.js';
@@ -506,7 +511,36 @@ describe('documents (e2e)', () => {
         db.select().from(documents).where(eq(documents.id, asked.json().id)),
       ),
     ).toEqual([]);
-    expect(await files(asked.json().id)).toEqual([]);
+    // After the commit, through the outbox (StoredFiles).
+    await vi.waitFor(
+      async () => expect(await files(asked.json().id)).toEqual([]),
+      { timeout: 10_000 },
+    );
+  });
+
+  it("keeps a purged record's documents and files when the purge's transaction rolls back", async () => {
+    const record = await createTestItem(app, team.editor.headers);
+    const asked = await ask(team.editor.headers, record.id);
+    await done(team.editor.headers, asked.json().id);
+    expect(await files(asked.json().id)).toHaveLength(1);
+    const store = app.get(Records).find(TEST_ITEM.subject)!.store;
+
+    await expect(
+      inTenant(() =>
+        app.get(TransactionHost).withTransaction(async () => {
+          await store.forget(RECYCLE_BIN_PURGE, [record.id]);
+          throw new Error('a later step fails');
+        }),
+      ),
+    ).rejects.toThrow('a later step fails');
+
+    expect(
+      await inTenant(() =>
+        db.select().from(documents).where(eq(documents.id, asked.json().id)),
+      ),
+    ).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(await files(asked.json().id)).toHaveLength(1);
   });
 
   describe('a job run twice, and a failure told twice', () => {

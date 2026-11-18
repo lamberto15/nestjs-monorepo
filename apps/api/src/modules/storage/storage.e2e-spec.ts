@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { StorageDisk } from '@nestjs/storage';
 import { bootModules } from '../../../test/boot.js';
+import { DatabaseModule } from '../../core/database/database.module.js';
 import { FILE_CSP } from './files.controller.js';
 import { StorageModule } from './storage.module.js';
 
@@ -21,7 +22,8 @@ describe('storage', () => {
       STORAGE_ROOT: root,
       STORAGE_SIGNING_KEYS: 'k'.repeat(40),
     });
-    app = await bootModules(StorageModule);
+    // The database for the outbox, which deletes released files (StoredFiles).
+    app = await bootModules(DatabaseModule, StorageModule);
     disk = app.get(StorageDisk);
   });
 

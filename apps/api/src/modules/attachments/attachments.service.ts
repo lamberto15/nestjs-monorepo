@@ -41,6 +41,7 @@ import type { RenditionName } from '../images/renditions.js';
 import { publicRenditions, renditionKeys } from './attachments.renditions.js';
 import { Records } from '../records/records.service.js';
 import { isTenantFileKey, tenantFileKey } from '../storage/storage.keys.js';
+import { StoredFiles } from '../storage/storage.release.js';
 import { attachmentsConfig } from './attachments.config.js';
 import { recordAttachmentsChanged } from './attachments.events.js';
 import { ATTACHMENT_LIST } from './attachments.lists.js';
@@ -119,6 +120,7 @@ export class AttachmentsService {
     @InjectTransaction() private readonly db: Database,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly disk: StorageDisk,
+    private readonly files: StoredFiles,
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly audit: AuditService,
@@ -495,11 +497,6 @@ export class AttachmentsService {
     ]);
   }
 
-  /**
-   * Records gone for good (a purge, a delete without bin): their attachments
-   * go too, row and files, in the delete's transaction (the files are
-   * deleted at once; a failure leaves an orphan, never a row without its file).
-   */
   /** A merge: the duplicate's files move to the survivor (their keys stay). */
   async merge(subject: string, from: string, to: string) {
     await this.db
@@ -510,6 +507,11 @@ export class AttachmentsService {
       );
   }
 
+  /**
+   * Records gone for good (a purge, a delete without bin): their attachments
+   * go too, in the delete's transaction; their files are released with them
+   * (StoredFiles), deleted once it commits and kept if it rolls back.
+   */
   async forget(subject: string, ids: readonly string[]) {
     if (ids.length === 0) return;
     const earlier = await this.db
@@ -534,7 +536,7 @@ export class AttachmentsService {
         ),
       )
       .returning();
-    await this.deleteFiles([
+    await this.files.release([
       ...gone.flatMap((row) => [row.key, ...renditionKeys(row.renditions)]),
       ...earlier.map((version) => version.key),
     ]);

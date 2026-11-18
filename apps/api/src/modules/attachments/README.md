@@ -42,7 +42,9 @@ is one however many records take files.
   copy without it; `renditionStatus` `pending`, `ready` or `failed`. Waits for
   the scan. A copy past the storage quota or ATTACHMENT_MAX_MB ends `failed`.
 - **Records deleted for good** (the bin's purge, a delete without bin) take
-  their attachments with them (`purged`); a record in the bin keeps them,
+  their attachments with them (`purged`), the rows in the purge's
+  transaction and the files once it commits (modules/storage's
+  `StoredFiles`: a rollback keeps both); a record in the bin keeps them,
   hidden. A record under a legal hold keeps its files (409).
 - **Issued documents**: `AttachmentsService.attachStored()` records a file
   the app wrote, `locked` (409 `attachment_locked` on delete); call

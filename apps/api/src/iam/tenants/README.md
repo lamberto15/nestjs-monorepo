@@ -25,11 +25,13 @@ Who a tenant is and how it lives, on top of core/tenancy (which owns the
   `tenant_slug_taken`). Every change is audited in the operators' tenant and in the tenant.
 - **Deactivation** ends the tenant's sessions and refresh tokens and emits
   `tenancy.tenant-deactivated` (realtime closes its sockets).
-- **Nightly jobs**: TenantDeletionJob (04:30 UTC) claims a due tenant, emits
-  `tenancy.tenant-erasing` (awaited: what lives outside its tables), then
-  deletes its row (the cascade takes its rows), audited `tenant.purged` in
-  no tenant. SignUpSweepJob (04:15 UTC) deletes sign-ups' tenants nobody
-  verified within 7 days.
+- **Nightly jobs**: TenantDeletionJob (04:30 UTC) claims a due tenant and
+  SignUpSweepJob (04:15 UTC) finds sign-ups' tenants nobody verified within
+  7 days; both erase through `TenantsService.purge()`: under the row's lock,
+  in one transaction, it emits `tenancy.tenant-erasing` (awaited: what lives
+  outside its tables; modules/storage releases the tenant's files, deleted
+  after the commit), deletes its row (the cascade takes its rows), audited
+  `tenant.purged` in no tenant.
 - **Domains** (`/v1/branding/domains`, CUSTOM_DOMAINS, `Access.manageDomains`):
   a hostname proved by a TXT record `_app-verification.<hostname>`, checked
   on the queue and every night; a verified one routes its host to the tenant

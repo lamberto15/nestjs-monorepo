@@ -8,6 +8,17 @@ with a locked-down Content-Security-Policy); on S3 they point at the bucket.
 
 - `storage.keys.ts`: `tenantFileKey(tenantId, path)`, `accountFileKey(userId, path)`
   and `isTenantFileKey()` build and check object keys. The tenant is an argument.
+- **Deleting after the commit** (`storage.release.ts`): a module that deletes
+  rows naming files calls `StoredFiles.release(keys)` in that transaction
+  (import `StoredFilesModule`). It publishes `storage.files-released` through the
+  outbox, and the worker deletes the files once the transaction commits; a
+  rollback keeps them. Deleting is idempotent and a failure is retried.
+  Attachments, documents and branding use it.
+- **Erasure** (`storage.erasure.ts`): every file under `tenants/<id>/` goes
+  with the tenant (`tenancy.tenant-erasing`, in TenantsService.purge()'s
+  transaction: the operator's deletion and the sign-up sweep), and every
+  file under `accounts/<id>/` (picture, data exports) with the account
+  (the `account-files` section of iam/personal-data), both after the commit.
 - `storage.diagnostic.ts` registers the operators' storage test (`@Diagnostic` of modules/ops).
 - Add disks in `storage.disks.ts`; inject them with `@InjectDisk('name')`.
 
@@ -20,4 +31,4 @@ are the standard AWS_* variables or the instance role.
 ## Remove
 
 Delete this folder and its line in `app.module.ts`; modules that store files
-go with it.
+go with it. Needs SharedOutboxModule (StoredFilesModule imports it).

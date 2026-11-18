@@ -34,6 +34,7 @@ import {
 } from '../images/image-processor.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { tenantFileKey } from '../storage/storage.keys.js';
+import { StoredFiles } from '../storage/storage.release.js';
 import type {
   Branding,
   PublicBrand,
@@ -106,6 +107,7 @@ export class BrandingService {
     @InjectTransaction() private readonly db: Database,
     private readonly settings: SettingsService,
     private readonly disk: StorageDisk,
+    private readonly files: StoredFiles,
     private readonly audit: AuditService,
     private readonly images: ImageProcessor,
     private readonly tenancy: Tenancy,
@@ -277,7 +279,8 @@ export class BrandingService {
       details: { contentType: file.contentType, size: bytes.length, variant },
       ip,
     });
-    if (old) await this.disk.delete(old.key);
+    // After the commit: a rollback leaves the old row naming its file.
+    if (old) await this.files.release([old.key]);
     return this.view(actor);
   }
 
@@ -302,7 +305,7 @@ export class BrandingService {
       details: { variant },
       ip,
     });
-    await this.disk.delete(logo.key);
+    await this.files.release([logo.key]);
   }
 
   /**

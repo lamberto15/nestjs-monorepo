@@ -56,7 +56,9 @@ export class FavoritesPersonalData implements PersonalDataSection {
 tenant) and/or `account` (once, in no tenant: global tables). `erase` runs
 in the job's transaction of that scope. Here: `account` (profile,
 memberships, sessions), `consents`, `audit` (entries relabelled
-`Deleted user`); iam/account adds `sign-in-methods`.
+`Deleted user`); iam/account adds `sign-in-methods`; modules/storage adds
+`account-files` (every file under `accounts/<id>/`, deleted after the
+commit).
 
 `PersonalDataService.export(userId, write)` walks every section, for the
 module that writes the export file. Remove: delete this folder, its line

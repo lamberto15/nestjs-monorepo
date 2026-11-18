@@ -1,6 +1,5 @@
 import { InjectTransaction } from '@nestjs-cls/transactional';
-import { Injectable, Logger } from '@nestjs/common';
-import { StorageDisk } from '@nestjs/storage';
+import { Injectable } from '@nestjs/common';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '../../../core/database/database.js';
@@ -15,26 +14,18 @@ import {
   type PersonalDataSection,
   type PersonalDataSubject,
 } from '../../../iam/personal-data/personal-data.js';
-import { accountFileKey } from '../../storage/storage.keys.js';
 import { AvatarsService, avatarUrl } from './avatars.service.js';
 import { userAvatars } from './avatars.tables.js';
 
 /**
  * The person's picture: its address in their export. With their account the
- * row goes, and every file under `accounts/<id>/avatar/`, not only the one
- * the row named (a replaced picture whose delete failed is an orphan nothing
- * points at, and would outlive the person). A failed delete is logged, never
- * fails the erasure.
+ * row goes; the files go with every other file under `accounts/<id>/`
+ * (modules/storage's `account-files` section, after the erase commits).
  */
 @PersonalData({ name: 'avatar', scopes: ['account'] })
 @Injectable()
 export class AvatarsPersonalData implements PersonalDataSection {
-  private readonly logger = new Logger('Avatars');
-
-  constructor(
-    @InjectTransaction() private readonly db: Database,
-    private readonly disk: StorageDisk,
-  ) {}
+  constructor(@InjectTransaction() private readonly db: Database) {}
 
   async rows({ userId }: PersonalDataSubject) {
     const [row] = await this.db
@@ -48,20 +39,6 @@ export class AvatarsPersonalData implements PersonalDataSection {
 
   async erase({ userId }: PersonalDataSubject) {
     await this.db.delete(userAvatars).where(eq(userAvatars.userId, userId));
-    try {
-      const keys: string[] = [];
-      for await (const entry of this.disk.listAll({
-        prefix: accountFileKey(userId, 'avatar/'),
-      })) {
-        keys.push(entry.key);
-      }
-      if (keys.length > 0) await this.disk.delete(keys);
-    } catch (error) {
-      this.logger.warn("A deleted account's pictures were not deleted", {
-        userId,
-        error: String(error),
-      });
-    }
   }
 }
 

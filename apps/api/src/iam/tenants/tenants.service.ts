@@ -50,6 +50,7 @@ import {
 import {
   TENANT_EVENTS,
   type TenantDeactivatedEvent,
+  type TenantErasingEvent,
   tenantCreated,
   tenantDeactivated,
   tenantPurged,
@@ -541,9 +542,11 @@ export class TenantsService {
    * Deletes a tenant's row, outside any tenant, in one transaction with its
    * `tenant.purged` entry (in no tenant's log: its own goes with it) and
    * event: the database cascades to every tenant table's rows and its
-   * memberships. Never the operator tenant (undefined then). What lives
-   * outside its tables (`tenancy.tenant-erasing`) is the caller's to end
-   * first. `check` runs first in the transaction, under the row's lock.
+   * memberships. Never the operator tenant (undefined then). `check` runs
+   * first in the transaction, under the row's lock; then what lives outside
+   * its tables is ended (`tenancy.tenant-erasing`, awaited, in this
+   * transaction: a listener's error rolls the erase back), for every erase,
+   * the operator's deletion and the sign-up sweep alike.
    */
   async purge(
     system: SystemPrincipal,
@@ -562,6 +565,9 @@ export class TenantsService {
         if (!locked || locked.operator || (check && !(await check()))) {
           return undefined;
         }
+        await this.emitter.emitAsync(TENANT_EVENTS.erasing, {
+          tenantId,
+        } satisfies TenantErasingEvent);
         const [row] = await this.db
           .delete(tenants)
           .where(eq(tenants.id, tenantId))

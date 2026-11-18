@@ -914,14 +914,21 @@ describe('personal data sections: export and erase (e2e)', () => {
           .where(inArray(userAvatars.userId, [a.id, b.id])),
       );
       expect(left.map((r) => r.userId)).toEqual([b.id]);
+      // The files go after the erase commits (modules/storage's
+      // `account-files` section, through the outbox's relay).
       const disk = app.get(StorageDisk);
-      const keys: string[] = [];
-      for await (const entry of disk.listAll({ prefix: 'accounts/' }))
-        keys.push(entry.key);
-      expect(
-        keys.filter((k) => k.startsWith(`accounts/${a.id}/avatar/`)),
-      ).toEqual([]);
-      expect(keys).toContain(`accounts/${b.id}/avatar/one.png`);
+      await vi.waitFor(
+        async () => {
+          const keys: string[] = [];
+          for await (const entry of disk.listAll({ prefix: 'accounts/' }))
+            keys.push(entry.key);
+          expect(
+            keys.filter((k) => k.startsWith(`accounts/${a.id}/avatar/`)),
+          ).toEqual([]);
+          expect(keys).toContain(`accounts/${b.id}/avatar/one.png`);
+        },
+        { timeout: 10_000 },
+      );
     },
   );
 

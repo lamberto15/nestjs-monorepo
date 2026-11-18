@@ -14,6 +14,7 @@ import { RealtimeModule } from '../realtime/realtime.module.js';
 import type { RecordDeclaration } from '../records/record.js';
 import { RECORD } from '../records/record-extension.js';
 import { RecordsModule } from '../records/records.module.js';
+import { StoredFilesModule } from '../storage/storage.release.js';
 import { DocumentTemplates } from './document-templates.js';
 import { documentsConfig } from './documents.config.js';
 import { DocumentsController } from './documents.controller.js';
@@ -50,6 +51,8 @@ import { DocumentsFeature } from './documents.feature.js';
     AttachmentsModule,
     BrandingModule,
     PeopleModule,
+    // StoredFiles: a purged record's documents' files go after the commit.
+    StoredFilesModule,
     RecordsModule,
     AuditModule,
     RealtimeModule,

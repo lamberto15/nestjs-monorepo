@@ -34,7 +34,8 @@ The issued PDF is also a locked attachment of the record (modules/attachments: `
 token and its own file key, so a job run twice issues one PDF. Transient
 failures are retried (`DOCUMENTS_RENDER_ATTEMPTS`); a refused page or an
 inactive requester fails at once. A record deleted for good takes its
-documents and files with it.
+documents with it, and their files once the purge commits (modules/storage's
+`StoredFiles`).
 
 ## Variables (`documents.config.ts`)
 

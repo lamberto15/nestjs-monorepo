@@ -13,6 +13,7 @@ import { RECORD } from '../records/record-extension.js';
 import type { RecordDeclaration } from '../records/record.js';
 import { RecordsModule } from '../records/records.module.js';
 import { storageConfig } from '../storage/storage.config.js';
+import { StoredFilesModule } from '../storage/storage.release.js';
 import { attachmentsConfig } from './attachments.config.js';
 import {
   AttachmentsController,
@@ -73,6 +74,8 @@ import { AttachmentsPersonalData } from './attachments.personal-data.js';
     QuotasModule.forFeature(STORAGE_BYTES),
     RealtimeModule,
     RecordsModule,
+    // StoredFiles: a purged record's files go after the commit.
+    StoredFilesModule,
     BullModule.registerQueue({
       name: ATTACHMENT_SCAN,
       defaultJobOptions: DEFAULT_JOB_OPTIONS,

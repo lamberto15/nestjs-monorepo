@@ -6,6 +6,7 @@ import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
 import { ImagesModule } from '../images/images.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
+import { StoredFilesModule } from '../storage/storage.release.js';
 import {
   BrandingLogoUpload,
   BrandingDarkLogoUpload,
@@ -34,6 +35,8 @@ import { BRANDING_SETTINGS } from './branding.settings.js';
     DiscoveryModule,
     ImagesModule,
     SettingsModule.forFeature(BRANDING_SETTINGS),
+    // StoredFiles: a replaced or removed logo's file goes after the commit.
+    StoredFilesModule,
   ],
   controllers: [
     BrandingController,

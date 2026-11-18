@@ -40,6 +40,7 @@ import { Realtime } from '../realtime/realtime.service.js';
 import { recordView } from '../records/record.js';
 import { Records } from '../records/records.service.js';
 import { tenantFileKey } from '../storage/storage.keys.js';
+import { StoredFiles } from '../storage/storage.release.js';
 import { DocumentTemplates } from './document-templates.js';
 import { documentFailed, documentReady } from './documents.events.js';
 import { documentsConfig } from './documents.config.js';
@@ -128,6 +129,7 @@ export class DocumentsService {
     private readonly templates: DocumentTemplates,
     private readonly renderer: PdfRenderer,
     private readonly disk: StorageDisk,
+    private readonly files: StoredFiles,
     private readonly audit: AuditService,
     private readonly attachments: AttachmentsService,
     private readonly people: PeopleService,
@@ -603,7 +605,8 @@ export class DocumentsService {
 
   /**
    * Records are going for good (DocumentsExtension.purged): their documents
-   * and files go with them.
+   * go with them, in the purge's transaction, and their files once it
+   * commits (StoredFiles); a rollback keeps both.
    */
   async forget(subject: string, ids: readonly string[]) {
     const gone = await this.db
@@ -616,7 +619,7 @@ export class DocumentsService {
       )
       .returning({ fileKey: documents.fileKey });
     const keys = gone.flatMap((row) => (row.fileKey ? [row.fileKey] : []));
-    if (keys.length > 0) await this.disk.delete(keys);
+    await this.files.release(keys);
   }
 }
 

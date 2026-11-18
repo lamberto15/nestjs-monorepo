@@ -12,7 +12,8 @@ documents show for the tenant.
   512 KB, recognized by their bytes (never SVG), streamed to the private disk
   at a new key of the tenant's (`tenants/<id>/branding/…`), then checked and
   stripped of metadata by `modules/images`. One row per variant in
-  `branding_logos`; a new upload replaces the file.
+  `branding_logos`; a new upload replaces the file. A replaced or removed
+  file is deleted once the change commits (modules/storage's `StoredFiles`).
 - **The operators' lock** (`branding.locked`, platform scope only): while on,
   the values and logos answer 409 `branding_locked`, on `/v1/branding` and on
   the settings API. Operators may also enforce values at the platform scope.

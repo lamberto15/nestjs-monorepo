@@ -16,6 +16,9 @@ PNG, JPEG, WebP, GIF by their bytes (415), at most AVATAR_MAX_MB (413). Stored
 as uploaded. `AvatarsService.urlOf(userId)` and `avatarUrl()` give the
 `/v1/people/<id>/avatar?v=…` path a module that lists people shows.
 
+With the account (iam/personal-data) the row goes; its files go with
+everything under `accounts/<id>/` (modules/storage).
+
 Variable (`avatars.config.ts`): AVATAR_MAX_MB (2).
 
 Remove: delete this folder and its line in `app.module.ts`.

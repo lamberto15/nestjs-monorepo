@@ -15,11 +15,13 @@ export const TENANT_EVENTS = {
    */
   deactivated: 'tenancy.tenant-deactivated',
   /**
-   * Before the erase deletes the tenant's row, in the worker, outside any
-   * tenant: what of it lives outside its tables goes (queued jobs, stored
-   * files, workflows, outbox messages). A listener that must not be skipped
-   * declares `@OnEvent(name, { suppressErrors: false })`: its error stops
-   * the erase, and the next night tries again. Must be safe to run twice.
+   * Before an erase deletes the tenant's row (TenantsService.purge(): the
+   * operator's deletion and the sign-up sweep), in the worker, outside any
+   * tenant, in the erase's transaction: what of it lives outside its tables
+   * goes (modules/storage releases its files, deleted after the commit). A
+   * listener that must not be skipped declares
+   * `@OnEvent(name, { suppressErrors: false })`: its error rolls the erase
+   * back, and the next night tries again. Must be safe to run twice.
    */
   erasing: 'tenancy.tenant-erasing',
 } as const;

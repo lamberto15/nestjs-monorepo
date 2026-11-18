@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
+import { StorageDisk } from '@nestjs/storage';
 import sharp from 'sharp';
 import {
   accessModules,
@@ -12,8 +14,10 @@ import { bootModules } from '../../../test/boot.js';
 import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
+import { UsersRepository } from '../../iam/auth/users.repository.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { BrandingModule } from './branding.module.js';
+import { brandingLogos } from './branding.tables.js';
 import { BrandingService } from './branding.service.js';
 
 vi.hoisted(() => {
@@ -523,6 +527,70 @@ describe('branding (e2e)', () => {
         );
       }
     });
+  });
+
+  it("deletes a replaced or removed logo's file once its change commits, never when it rolls back", async () => {
+    const t = await tenantWithAdmin(app);
+    const db = app.get<Database>(getDrizzleToken());
+    const disk = app.get(StorageDisk);
+    const inTenant = <T>(work: () => Promise<T>) =>
+      app.get(Tenancy).run(t.tenantId, work);
+    const stored = async () =>
+      (await inTenant(() => db.select().from(brandingLogos)))[0]?.key;
+    const actor = (await app
+      .get(UsersRepository)
+      .inTenant(t.admin.id, t.tenantId))!;
+    const rolledBack = (work: () => Promise<unknown>) =>
+      expect(
+        inTenant(() =>
+          app.get(TransactionHost).withTransaction(async () => {
+            await work();
+            throw new Error('a later step fails');
+          }),
+        ),
+      ).rejects.toThrow('a later step fails');
+    const branding = app.get(BrandingService);
+
+    await upload('/v1/branding/logo', t.admin.headers, png);
+    const first = (await stored())!;
+
+    // A removal that rolls back keeps the row and its file.
+    await rolledBack(() => branding.removeLogo(actor, 'light'));
+    // A replacement that rolls back keeps the old file too.
+    const next = `tenants/${t.tenantId}/branding/${randomUUID()}.png`;
+    await disk.put(next, png, { contentType: 'image/png' });
+    await rolledBack(() =>
+      branding.logoUploaded(
+        actor,
+        { key: next, contentType: 'image/png' },
+        'light',
+      ),
+    );
+    expect(await stored()).toBe(first);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(await disk.exists(first)).toBe(true);
+    expect((await logo(t.tenantId)).statusCode).toBe(200);
+
+    // Committed, the file it let go of goes (after the commit, the outbox).
+    await upload(
+      '/v1/branding/logo',
+      t.admin.headers,
+      jpeg,
+      'l.jpg',
+      'image/jpeg',
+    );
+    const second = (await stored())!;
+    expect(second).not.toBe(first);
+    await vi.waitFor(async () => expect(await disk.exists(first)).toBe(false), {
+      timeout: 10_000,
+    });
+    expect(
+      (await call('DELETE', '/v1/branding/logo', t.admin.headers)).statusCode,
+    ).toBe(204);
+    await vi.waitFor(
+      async () => expect(await disk.exists(second)).toBe(false),
+      { timeout: 10_000 },
+    );
   });
 
   it('records the logo changes in the audit log', async () => {
