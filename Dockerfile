@@ -37,6 +37,11 @@ FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13
 # The app runs on node alone: drop the npm CLI the base image bundles. Nothing
 # uses it, and its own dependencies are what an image scan flags first.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+# Debian's security fixes the base image does not have yet (zlib1g,
+# CVE-2026-85091, 2026-11-18). Drop once a newer node image carries them.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends --only-upgrade zlib1g \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production TZ=UTC
 COPY --from=build --chown=root:root /deploy/api/package.json ./

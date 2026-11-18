@@ -14,3 +14,11 @@ allowBuilds:
   lefthook: true
   protobufjs: false
   re2: true
+
+# Advisories `pnpm audit` skips, each with no fixed version and a reason it
+# does not reach the app. Remove an entry once a fix is out (CI audits nightly).
+auditConfig:
+  ignoreGhsas:
+    # picomatch ReDoS (2026-10-19, no patched version): only through
+    # re2 > node-gyp, the native build at install time, never at runtime.
+    - GHSA-fc5q-39xc-vjpf
