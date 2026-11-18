@@ -34,10 +34,13 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\n%%EOF\n');
 describe('user avatars (e2e)', () => {
   let app: NestNodeApplication;
   let tenantId: string;
+  let admin: Record<string, string>;
 
   beforeAll(async () => {
     app = await bootModules(...accessModules(), StorageModule, AvatarsModule);
-    ({ tenantId } = await tenantWithAdmin(app));
+    const created = await tenantWithAdmin(app);
+    tenantId = created.tenantId;
+    admin = created.admin.headers;
   });
   afterAll(async () => {
     await app?.close();
@@ -91,6 +94,17 @@ describe('user avatars (e2e)', () => {
     const { avatarUrl } = set.json<{ avatarUrl: string }>();
     expect(avatarUrl).toMatch(new RegExp(`^/v1/people/${ada.id}/avatar\\?v=`));
     const first = (await keyOf(ada.id))!;
+    // The access API's members list shows it (iam/access's @MemberAvatars()).
+    const members = await app.inject({
+      method: 'GET',
+      url: '/v1/access/users',
+      headers: admin,
+    });
+    expect(
+      members
+        .json<{ items: { id: string; avatarUrl: string | null }[] }>()
+        .items.find((item) => item.id === ada.id)?.avatarUrl,
+    ).toBe(avatarUrl);
     expect(first).toMatch(new RegExp(`^accounts/${ada.id}/avatar/`));
 
     // A member of the tenant sees it, as the image itself, from the API's own origin.

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { switchFeature } from '../../core/http/feature.js';
 import { RealtimeGateway } from './realtime.gateway.js';
 import { RealtimeDisconnects } from './realtime.listeners.js';
 import { Realtime } from './realtime.service.js';
@@ -9,7 +10,12 @@ import { Realtime } from './realtime.service.js';
  * main.ts (the socket.io adapter on Redis).
  */
 @Module({
-  providers: [Realtime, RealtimeGateway, RealtimeDisconnects],
+  providers: [
+    Realtime,
+    RealtimeGateway,
+    RealtimeDisconnects,
+    switchFeature('realtime', 'The socket.io gateway at `/realtime`.'),
+  ],
   exports: [Realtime],
 })
 export class RealtimeModule {}

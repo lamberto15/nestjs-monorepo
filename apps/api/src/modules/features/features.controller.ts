@@ -11,7 +11,13 @@ import {
 import { z } from 'zod';
 import { DuringMfaEnrollment } from '../../iam/auth/mfa-enrollment.guard.js';
 import { DuringOnboarding } from '../../iam/auth/onboarding.js';
+import { Feature } from '../../core/http/feature.js';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
+import {
+  declaredShape,
+  openApiAdditions,
+  setResponseSchema,
+} from '../../core/http/openapi.js';
 import { FeaturesService } from './features.service.js';
 
 const featuresSchema = z
@@ -19,6 +25,16 @@ const featuresSchema = z
   .describe(
     'Each switch by name: true or false, or a value (`mode`, `locales`). Which names exist depends on the modules the deployment runs.',
   );
+
+// The document names every switch the app's modules declare (`@Feature()`),
+// with its value's schema, so a client is typed by them.
+openApiAdditions.document.set('features', (document, app) => {
+  setResponseSchema(
+    document,
+    '/v1/features',
+    z.object(declaredShape(app, Feature)).describe(featuresSchema.description!),
+  );
+});
 
 /** Which deployment switches are on, for a client to hide what is off. */
 @ApiTags('features')

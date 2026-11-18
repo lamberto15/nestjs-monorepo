@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { switchFeature } from '../../core/http/feature.js';
 import { redisConfig } from '../../core/redis/redis.config.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
@@ -33,6 +34,11 @@ import { UsageRollupJob } from './usage-rollup.job.js';
     UsageRollupJob,
     UsagePolicy,
     { provide: APP_INTERCEPTOR, useClass: UsageInterceptor },
+    switchFeature(
+      'usage',
+      "Usage metering: API clients' usage (`/v1/access/clients/{id}/usage`) and `/v1/usage` (USAGE).",
+      'usage.enabled',
+    ),
   ],
   exports: [UsageService],
 })

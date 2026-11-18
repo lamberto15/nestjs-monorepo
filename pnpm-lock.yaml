@@ -274,6 +274,9 @@ importers:
       '@nestjs/schedule':
         specifier: 12.0.4
         version: 12.0.4(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)
+      '@nestjs/serve-static':
+        specifier: 12.1.1
+        version: 12.1.1(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(@nestjs/platform-node@12.5.0(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(rxjs@7.8.2)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))
       '@nestjs/storage':
         specifier: 0.0.5
         version: 0.0.5(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(reflect-metadata@0.2.2)
@@ -563,7 +566,7 @@ importers:
     devDependencies:
       '@lhci/cli':
         specifier: 0.16.0
-        version: 0.16.0(@types/node@26.6.6)(rollup@4.68.4)(supports-color@7.2.0)
+        version: 0.16.0(@types/node@26.6.6)(rollup@4.68.4)(supports-color@7.2.0)(yauzl@3.4.0)
       '@size-limit/file':
         specifier: 14.3.0
         version: 14.3.0(size-limit@14.3.0)
@@ -2775,6 +2778,26 @@ packages:
       typescript: '>=6.0.0'
     peerDependenciesMeta:
       prettier:
+        optional: true
+
+  '@nestjs/serve-static@12.1.1':
+    resolution: {integrity: sha512-6eY7bYx1pEyD9TPZkpniE0/nrhDHuWOCoBlJXCrO4SOqa/jJU0qweq3rj0v4VR3/w83mu/ddv8QXI/+m5d8I1w==}
+    engines: {node: ^20.19.0 || ^22.12.0 || >=23.0.0}
+    peerDependencies:
+      '@fastify/static': ^10.0.0
+      '@nestjs/common': ^12.0.0
+      '@nestjs/core': ^12.0.0
+      '@nestjs/platform-node': ^12.3.1
+      express: ^5.0.1
+      fastify: ^5.2.1
+    peerDependenciesMeta:
+      '@fastify/static':
+        optional: true
+      '@nestjs/platform-node':
+        optional: true
+      express:
+        optional: true
+      fastify:
         optional: true
 
   '@nestjs/storage@0.0.5':
@@ -8522,6 +8545,9 @@ packages:
     resolution: {integrity: sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==}
     engines: {node: '>= 14.16'}
 
+  pend@1.2.0:
+    resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
+
   pg-cloudflare@1.4.1:
     resolution: {integrity: sha512-6PQbsFWZcp9EmJEwy5cGQ2La+AMWpP46lgbb8X+U/XsHIUweYDNCpeuKck5RxL2MdVFi7krbbEi5nX4Zh7JhrQ==}
 
@@ -10392,6 +10418,10 @@ packages:
     resolution: {integrity: sha512-9OpKOLeaoNFecEp7P6iYbzze/5CqWoH7N3SMs/6y1XF4nMvFMspEGZzJ6uFi9MmQwXhyzqYoSEKO3tvA3Z/o2w==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=23}
 
+  yauzl@3.4.0:
+    resolution: {integrity: sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw==}
+    engines: {node: '>=12'}
+
   yocto-spinner@1.2.2:
     resolution: {integrity: sha512-DODGl1wJjA/s5pnJFKau9lIYHT81lnhob1i3e1TjxZRxEhWRKl74nTbWE6H5KlkViQQTo/Z29YFdxzTZAMY3ng==}
     engines: {node: '>=18.19'}
@@ -12032,16 +12062,16 @@ snapshots:
 
   '@levischuck/tiny-cbor@0.2.11': {}
 
-  '@lhci/cli@0.16.0(@types/node@26.6.6)(rollup@4.68.4)(supports-color@7.2.0)':
+  '@lhci/cli@0.16.0(@types/node@26.6.6)(rollup@4.68.4)(supports-color@7.2.0)(yauzl@3.4.0)':
     dependencies:
-      '@lhci/utils': 0.16.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)
+      '@lhci/utils': 0.16.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)(yauzl@3.4.0)
       chrome-launcher: 0.13.4(supports-color@7.2.0)
       compression: 1.8.2(supports-color@7.2.0)
       debug: 4.4.3(supports-color@7.2.0)
       express: 4.22.3(supports-color@7.2.0)
       inquirer: 8.2.7(@types/node@26.6.6)
       isomorphic-fetch: 3.0.0
-      lighthouse: 13.6.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)
+      lighthouse: 13.6.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)(yauzl@3.4.0)
       lighthouse-logger: 1.2.0(supports-color@7.2.0)
       open: 8.4.2
       proxy-agent: 6.5.0(supports-color@7.2.0)
@@ -12058,12 +12088,12 @@ snapshots:
       - webpack
       - yauzl
 
-  '@lhci/utils@0.16.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)':
+  '@lhci/utils@0.16.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)(yauzl@3.4.0)':
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
       isomorphic-fetch: 3.0.0
       js-yaml: 5.5.0
-      lighthouse: 13.6.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)
+      lighthouse: 13.6.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)(yauzl@3.4.0)
       tree-kill: 1.2.2
     transitivePeerDependencies:
       - bufferutil
@@ -12452,6 +12482,15 @@ snapshots:
       prettier: 3.10.1
     transitivePeerDependencies:
       - chokidar
+
+  '@nestjs/serve-static@12.1.1(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(@nestjs/platform-node@12.5.0(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(rxjs@7.8.2)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))':
+    dependencies:
+      '@nestjs/common': 12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0)
+      '@nestjs/core': 12.5.0(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/platform-express@12.5.0)(@nestjs/websockets@12.5.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      path-to-regexp: 8.4.2
+    optionalDependencies:
+      '@nestjs/platform-node': 12.5.0(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(rxjs@7.8.2)(supports-color@7.2.0)
+      express: 5.3.0(supports-color@7.2.0)
 
   '@nestjs/storage@0.0.5(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(reflect-metadata@0.2.2)':
     dependencies:
@@ -13357,12 +13396,13 @@ snapshots:
 
   '@protobufjs/utf8@1.1.2': {}
 
-  '@puppeteer/browsers@3.2.7(proxy-agent@6.5.0(supports-color@7.2.0))':
+  '@puppeteer/browsers@3.2.7(proxy-agent@6.5.0(supports-color@7.2.0))(yauzl@3.4.0)':
     dependencies:
       modern-tar: 0.8.6
       yargs: 18.2.0
     optionalDependencies:
       proxy-agent: 6.5.0(supports-color@7.2.0)
+      yauzl: 3.4.0
 
   '@quansync/fs@1.1.0':
     dependencies:
@@ -16997,7 +17037,7 @@ snapshots:
 
   lighthouse-stack-packs@1.12.3: {}
 
-  lighthouse@13.6.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0):
+  lighthouse@13.6.0(proxy-agent@6.5.0(supports-color@7.2.0))(rollup@4.68.4)(supports-color@7.2.0)(yauzl@3.4.0):
     dependencies:
       '@paulirish/trace_engine': 0.0.67
       '@sentry/node': 11.12.0(rollup@4.68.4)
@@ -17014,7 +17054,7 @@ snapshots:
       lighthouse-logger: 2.0.2(supports-color@7.2.0)
       lighthouse-stack-packs: 1.12.3
       open: 11.0.4
-      puppeteer-core: 25.17.0(proxy-agent@6.5.0(supports-color@7.2.0))
+      puppeteer-core: 25.17.0(proxy-agent@6.5.0(supports-color@7.2.0))(yauzl@3.4.0)
       robots-parser: 3.0.1
       speedline-core: 1.4.3
       third-party-web: 0.30.0
@@ -18094,6 +18134,9 @@ snapshots:
 
   pathval@2.0.1: {}
 
+  pend@1.2.0:
+    optional: true
+
   pg-cloudflare@1.4.1:
     optional: true
 
@@ -18328,9 +18371,9 @@ snapshots:
 
   punycode@2.3.1: {}
 
-  puppeteer-core@25.17.0(proxy-agent@6.5.0(supports-color@7.2.0)):
+  puppeteer-core@25.17.0(proxy-agent@6.5.0(supports-color@7.2.0))(yauzl@3.4.0):
     dependencies:
-      '@puppeteer/browsers': 3.2.7(proxy-agent@6.5.0(supports-color@7.2.0))
+      '@puppeteer/browsers': 3.2.7(proxy-agent@6.5.0(supports-color@7.2.0))(yauzl@3.4.0)
       chromium-bidi: 157.0.8090-0(devtools-protocol@0.0.1717327)
       devtools-protocol: 0.0.1717327
       typed-query-selector: 2.12.4
@@ -20185,6 +20228,11 @@ snapshots:
       string-width: 8.3.0
       y18n: 5.0.8
       yargs-parser: 22.0.0
+
+  yauzl@3.4.0:
+    dependencies:
+      pend: 1.2.0
+    optional: true
 
   yocto-spinner@1.2.2:
     dependencies:

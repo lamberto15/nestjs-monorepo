@@ -8,6 +8,7 @@ import {
 import { browser, CheapPasswordsModule } from '../../../test/account.js';
 import { createUser } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
+import { buildOpenApiDocument } from '../../core/http/openapi.js';
 import { MAIL_QUEUE } from '../../core/mail/mail.queue.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { AccountModule } from './account.module.js';
@@ -112,6 +113,32 @@ describe('who am I, sign-in methods and the profile (e2e)', () => {
       passkeys: true,
       providers: [],
       captcha: null,
+    });
+  });
+
+  it("types both answers in the OpenAPI document with the parts' schemas", () => {
+    const document = buildOpenApiDocument(app);
+    const schemaOf = (path: string) => {
+      const answer = document.paths[path]!.get!.responses['200'];
+      return answer && 'content' in answer
+        ? answer.content!['application/json']!.schema
+        : undefined;
+    };
+    expect(schemaOf('/v1/auth/me')).toMatchObject({
+      additionalProperties: false,
+      properties: {
+        mfaEnabled: { type: 'boolean' },
+        can: { type: 'object', additionalProperties: { type: 'boolean' } },
+        authentication: {
+          properties: { authenticatedAt: { type: 'string' } },
+        },
+      },
+    });
+    expect(schemaOf('/v1/auth/methods')).toMatchObject({
+      properties: {
+        magicLink: { type: 'boolean' },
+        providers: { type: 'array', items: { type: 'string' } },
+      },
     });
   });
 

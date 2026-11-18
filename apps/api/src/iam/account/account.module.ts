@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { HttpClientModule } from '@nestjs/http-client';
+import { switchFeature } from '../../core/http/feature.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { MailModule } from '../../core/mail/mail.module.js';
 import { AccessModule } from '../access/access.module.js';
@@ -137,6 +138,21 @@ const accountFeature = ConfigModule.forFeature(accountConfig);
     AccountParts,
     AccountPersonalData,
     AccountOperations,
+    switchFeature(
+      'mfa',
+      'Two-factor enrollment (`/v1/auth/mfa/enroll`; AUTH_MFA). Off: enrolled users are still asked for a code.',
+      'account.mfa',
+    ),
+    switchFeature(
+      'passkeys',
+      'Passkeys (`/v1/auth/passkeys`; PASSKEYS).',
+      'account.passkeys.enabled',
+    ),
+    switchFeature(
+      'magicLink',
+      'Sign-in by email link (`POST /v1/auth/magic-link`; AUTH_MAGIC_LINK).',
+      'account.magicLink',
+    ),
   ],
   exports: [AccountOperations],
 })

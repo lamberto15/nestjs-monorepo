@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { publishSchemas } from '../../core/http/openapi.js';
 import { pageSchema } from '../../core/http/pagination.js';
 
 const changesSchema = z
@@ -64,3 +65,6 @@ export const revisionDiffSchema = z
     ),
   })
   .meta({ id: 'RevisionDiff' });
+
+// The record panels type their answers from these, with or without a feature.
+publishSchemas('revisions', revisionPageSchema, revisionDiffSchema);

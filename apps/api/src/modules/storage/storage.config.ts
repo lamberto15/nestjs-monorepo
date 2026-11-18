@@ -17,9 +17,8 @@ export const schema = z.object({
   STORAGE_ROOT: withDefault('.data/storage'),
   /**
    * Signs the app-served file URLs (local and memory disks): 32+ characters
-   * each, comma-separated, newest first. Unset, each process makes its own,
-   * so a URL is only valid on the instance that issued it: set it when
-   * several instances run the local disk.
+   * each, comma-separated, newest first. Unset, one is made once and kept in the
+   * database (core/secrets), so every instance signs with the same.
    */
   STORAGE_SIGNING_KEYS: secret(list()),
   /** The bucket, required with STORAGE_DRIVER=s3. */

@@ -8,8 +8,8 @@ import {
 
 /**
  * Which switches this deployment has on, for a client that hides what is
- * off: the values of every provider marked `@Feature(name)`. Custom code: no
- * @nestjs package reports an app's own switches.
+ * off: the values of every provider marked `@Feature({ name: schema })`.
+ * Custom code: no @nestjs package reports an app's own switches.
  */
 @Injectable()
 export class FeaturesService {
@@ -20,7 +20,9 @@ export class FeaturesService {
     for (const wrapper of this.discovery.getProviders({
       metadataKey: Feature.KEY,
     })) {
-      const name = this.discovery.getMetadataByDecorator(Feature, wrapper);
+      const [name] = Object.keys(
+        this.discovery.getMetadataByDecorator(Feature, wrapper) ?? {},
+      );
       if (name && wrapper.instance) {
         features[name] = (wrapper.instance as FeatureSwitch).value();
       }

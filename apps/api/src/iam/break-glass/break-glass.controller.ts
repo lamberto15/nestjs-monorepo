@@ -98,12 +98,14 @@ export class BreakGlassController {
   @Get()
   @Can(BreakGlassPolicy, 'breakGlass')
   @ApiOperation({ summary: 'Your break-glass grants to this tenant' })
-  @ApiOkResponse({ standardSchema: z.array(grantSchema) })
-  list(
+  @ApiOkResponse({
+    standardSchema: z.object({ items: z.array(grantSchema) }),
+  })
+  async list(
     @CurrentUser() user: UserPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.breakGlass.list(user, id);
+    return { items: await this.breakGlass.list(user, id) };
   }
 
   @Delete(':grantId')

@@ -36,6 +36,14 @@ const { VersioningType } = await import('@nestjs/common');
 const { NestFactory } = await import('@nestjs/core');
 const { AppModule } = await import('./app.module.js');
 const { buildOpenApiDocument } = await import('./core/http/openapi.js');
+// Record add-ons that AppModule does not list (a feature takes them with
+// `forRecord()`) put their schemas and realtime events in the document when
+// loaded: the client's record panels type their routes from those.
+await Promise.all([
+  import('./modules/comments/comments.module.js'),
+  import('./modules/merge/merge.module.js'),
+  import('./modules/revisions/revisions.module.js'),
+]);
 
 const app = await NestFactory.create(AppModule, {
   preview: true,

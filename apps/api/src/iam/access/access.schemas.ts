@@ -45,6 +45,10 @@ export const userViewSchema = z.object({
     .describe(
       "The tenant's identity provider provisions them over SCIM: their account and membership change there.",
     ),
+  avatarUrl: z
+    .string()
+    .nullable()
+    .describe('Their picture (`GET /v1/people/{id}/avatar?v=…`); null: none.'),
 });
 
 /** A role of the tenant, with its permissions and how many users hold it. */

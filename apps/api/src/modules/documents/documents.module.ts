@@ -27,6 +27,7 @@ import {
 } from './documents.source.js';
 import { gotenbergClient, PdfRenderer } from './pdf-renderer.js';
 import { DocumentsPersonalData } from './documents.personal-data.js';
+import { DocumentsFeature } from './documents.feature.js';
 
 /**
  * PDF documents (README.md): a record's PDF rendered by Gotenberg on a
@@ -63,6 +64,7 @@ import { DocumentsPersonalData } from './documents.personal-data.js';
     DocumentsService,
     DocumentsProcessor,
     DocumentsPersonalData,
+    DocumentsFeature,
   ],
   exports: [DocumentsService, PdfRenderer],
 })

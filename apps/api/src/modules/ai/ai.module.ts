@@ -20,6 +20,7 @@ import { AI, AiService } from './ai.service.js';
 import { AI_SETTINGS } from './ai.settings.js';
 import { AiSourceRegistration, AiSources } from './ai.source.js';
 import { AiPersonalData } from './ai.personal-data.js';
+import { AiFeature } from './ai.feature.js';
 
 /**
  * The AI helper (README.md): runs of a model over a record, their routes,
@@ -50,7 +51,7 @@ import { AiPersonalData } from './ai.personal-data.js';
     DiscoveryModule,
   ],
   controllers: [AiController],
-  providers: [AiSources, AiService, AiProcessor, AiPersonalData],
+  providers: [AiSources, AiService, AiProcessor, AiPersonalData, AiFeature],
 })
 export class AiModule {
   /**

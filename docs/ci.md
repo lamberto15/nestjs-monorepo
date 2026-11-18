@@ -58,9 +58,9 @@ lowered. `sql` fragments inside a builder query are not counted.
 
 ## The image
 
-`docker build -t app .` at the root builds the API: a build stage (pnpm
-`fetch`, frozen-lockfile install, `nest build`, `pnpm deploy --prod`) and a
-final stage with production dependencies only, running as `node`. Base images
+`docker build -t app .` at the root builds the API and the web app: a build
+stage (pnpm `fetch`, frozen-lockfile install, both builds, `pnpm deploy
+--prod`) and a final stage with production dependencies only, running as `node`. Base images
 are pinned by digest. One image, three commands:
 
 ```bash
@@ -70,5 +70,5 @@ docker run app node dist/migrate  # the migrations, once per deploy
 ```
 
 `/app/.data` is the only writable path (local files, the mail directory).
-The web app is added later in the marked place in the Dockerfile and served by
-the API.
+The web app's build is in `/app/web` (`WEB_ROOT`), served by the API from its
+own origin (`apps/api/src/core/web`): one image, one origin.

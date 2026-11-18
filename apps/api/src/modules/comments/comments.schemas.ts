@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { publishSchemas } from '../../core/http/openapi.js';
 import { pageSchema } from '../../core/http/pagination.js';
 
 /** The longest comment, in characters. */
@@ -75,3 +76,6 @@ export type CommentView = z.infer<typeof commentSchema>;
 export const commentPageSchema = pageSchema(commentSchema).meta({
   id: 'CommentPage',
 });
+
+// The record panels type their answers from these, with or without a feature.
+publishSchemas('comments', commentPageSchema);

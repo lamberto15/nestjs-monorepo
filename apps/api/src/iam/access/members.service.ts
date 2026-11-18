@@ -34,6 +34,7 @@ import {
 import { NO_MEMBERS, userList } from './access.lists.js';
 import { AccessService } from './access.service.js';
 import { rolePermissions, roles, userRoles } from './access.tables.js';
+import { MemberAvatars } from './member-avatars.js';
 import { liveGrant, RolesService } from './roles.service.js';
 import { ScimMembers } from './scim-members.js';
 import { UnitDirectory } from './unit-directory.js';
@@ -72,6 +73,7 @@ const memberColumns = {
 export class MembersService implements OnModuleInit {
   private units?: UnitDirectory;
   private scim?: ScimMembers;
+  private avatars?: MemberAvatars;
   private list = userList(NO_MEMBERS);
 
   constructor(
@@ -90,6 +92,11 @@ export class MembersService implements OnModuleInit {
       this.discovery,
       ScimMembers,
       'SCIM members source (@ScimMembers())',
+    );
+    this.avatars = discoverOne<MemberAvatars>(
+      this.discovery,
+      MemberAvatars,
+      'member avatars source (@MemberAvatars())',
     );
     this.units = discoverOne<UnitDirectory>(
       this.discovery,
@@ -233,10 +240,10 @@ export class MembersService implements OnModuleInit {
     return eq(memberships.tenantId, this.tenancy.tenantId());
   }
 
-  /** Members with their role grants still running, their current units and whether SCIM manages them. */
+  /** Members with their role grants still running, their current units, whether SCIM manages them and their picture. */
   private async withGrants<T extends { id: string }>(items: T[]) {
     const ids = items.map((user) => user.id);
-    const [assignments, units, scim] = ids.length
+    const [assignments, units, scim, avatars] = ids.length
       ? await Promise.all([
           // An ended grant is gone: never reported, so never echoed back.
           this.db
@@ -245,8 +252,14 @@ export class MembersService implements OnModuleInit {
             .where(and(inArray(userRoles.userId, ids), liveGrant(userRoles))),
           this.units?.unitIdsOf(ids) ?? new Map<string, string[]>(),
           this.scim?.managedUserIds(ids) ?? new Set<string>(),
+          this.avatars?.avatarUrls(ids) ?? new Map<string, string>(),
         ])
-      : [[], new Map<string, string[]>(), new Set<string>()];
+      : [
+          [],
+          new Map<string, string[]>(),
+          new Set<string>(),
+          new Map<string, string>(),
+        ];
     return items.map((user) => {
       const own = assignments.filter((grant) => grant.userId === user.id);
       return {
@@ -256,6 +269,7 @@ export class MembersService implements OnModuleInit {
         roles: own.map(({ roleId, expiresAt }) => ({ roleId, expiresAt })),
         unitIds: units.get(user.id) ?? [],
         managedByScim: scim.has(user.id),
+        avatarUrl: avatars.get(user.id) ?? null,
       };
     });
   }

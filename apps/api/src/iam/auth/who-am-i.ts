@@ -1,5 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
+import type { z } from 'zod';
 import type { UserPrincipal } from './principal.js';
 
 /** What a who-am-I part is asked with: the signed-in user and their credential. */
@@ -11,8 +12,9 @@ export interface WhoAmIRequest {
 
 /**
  * A slice of `GET /v1/auth/me` another module owns, without auth importing
- * it: mark one provider `@WhoAmIPart(['avatarUrl'])` and give it
- * `whoAmI()`, returning those keys. Only the declared keys are sent.
+ * it: mark one provider `@WhoAmIPart({ avatarUrl: z.string().nullable() })`
+ * and give it `whoAmI()`, returning those keys. Only the declared keys are
+ * sent; their schemas are the answer's in the OpenAPI document.
  */
 export interface WhoAmIProvider {
   whoAmI(request: WhoAmIRequest): Promise<Record<string, unknown>>;
@@ -20,19 +22,19 @@ export interface WhoAmIProvider {
 
 /**
  * A slice of `GET /v1/auth/methods` (what a sign-in page may offer):
- * mark one provider `@SignInMethodsPart(['magicLink'])` and give it
- * `signInMethods()`, returning those keys.
+ * mark one provider `@SignInMethodsPart({ magicLink: z.boolean() })` and
+ * give it `signInMethods()`, returning those keys.
  */
 export interface SignInMethodsProvider {
   signInMethods(): Promise<Record<string, unknown>> | Record<string, unknown>;
 }
 
-/** Marks a provider that adds these keys to who-am-I (WhoAmIProvider). */
-export const WhoAmIPart = DiscoveryService.createDecorator<readonly string[]>();
+/** Marks a provider that adds these keys, with their schemas, to who-am-I (WhoAmIProvider). */
+export const WhoAmIPart = DiscoveryService.createDecorator<z.ZodRawShape>();
 
-/** Marks a provider that adds these keys to the sign-in methods (SignInMethodsProvider). */
+/** Marks a provider that adds these keys, with their schemas, to the sign-in methods (SignInMethodsProvider). */
 export const SignInMethodsPart =
-  DiscoveryService.createDecorator<readonly string[]>();
+  DiscoveryService.createDecorator<z.ZodRawShape>();
 
 /** The keys auth answers itself: a part may not take them. */
 const OWN_ME_KEYS = [
@@ -104,8 +106,9 @@ export class WhoAmIParts implements OnModuleInit {
       const provider = wrapper.instance as T | undefined;
       if (!provider || seen.has(provider)) continue;
       seen.add(provider);
-      const keys =
-        this.discovery.getMetadataByDecorator(decorator, wrapper) ?? [];
+      const keys = Object.keys(
+        this.discovery.getMetadataByDecorator(decorator, wrapper) ?? {},
+      );
       for (const key of keys) {
         if (taken.has(key)) {
           throw new Error(

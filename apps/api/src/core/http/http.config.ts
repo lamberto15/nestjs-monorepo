@@ -26,7 +26,8 @@ export const schema = z.object({
   /**
    * The keys sorted lists' cursors are sealed with, newest first,
    * comma-separated (each `openssl rand -base64 32`). Every instance needs
-   * the same; unset, each process makes its own, whose cursors no other opens.
+   * the same; unset, one is made once and kept in the database (core/secrets),
+   * so every instance reads the same.
    */
   CURSOR_KEYS: secret(list()),
   /** The OpenAPI document and Swagger UI at /api. */

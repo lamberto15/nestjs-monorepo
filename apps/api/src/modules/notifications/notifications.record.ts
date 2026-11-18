@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { z } from 'zod';
 import type { DatabaseTransactions } from '../../core/database/database.js';
+import { publishSchemas } from '../../core/http/openapi.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import type { RecordDeclaration, RecordRow } from '../records/record.js';
 import {
@@ -66,7 +67,12 @@ export const RECORD_NOTIFICATIONS = defineNotifications([
   },
 ]);
 
-const watchingSchema = z.object({ watching: z.boolean() });
+const watchingSchema = z
+  .object({ watching: z.boolean() })
+  .meta({ id: 'Watching' });
+
+// The record panels type their answers from it, with or without a feature.
+publishSchemas('watching', watchingSchema);
 
 /**
  * What watching adds to a record: its creator watches it from the start,

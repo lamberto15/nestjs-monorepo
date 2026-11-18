@@ -142,7 +142,9 @@ describe('break-glass (e2e)', () => {
     ).toBe(true);
 
     const listed = await call('GET', grants(target.tenantId), operator);
-    expect(listed.json().map((g: { id: string }) => g.id)).toContain(grant.id);
+    expect(
+      listed.json<{ items: { id: string }[] }>().items.map((g) => g.id),
+    ).toContain(grant.id);
 
     const ended = await call(
       'DELETE',

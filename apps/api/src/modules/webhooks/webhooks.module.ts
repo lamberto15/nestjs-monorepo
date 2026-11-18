@@ -15,6 +15,7 @@ import { OnDomainEvent } from '../../core/outbox/events.js';
 import { queuesConfig, runsWorkers } from '../../core/queues/queues.config.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
+import { switchFeature } from '../../core/http/feature.js';
 import { authConfig } from '../../iam/auth/auth.config.js';
 import { aNoun, type RecordDeclaration } from '../records/record.js';
 import { recordEvents } from '../records/record.events.js';
@@ -138,6 +139,10 @@ import { WebhooksService } from './webhooks.service.js';
     WebhookDeliveryRetentionJob,
     WebhookMetrics,
     SecurityWebhooks,
+    switchFeature(
+      'webhooks',
+      'Webhook endpoints and their deliveries (`/v1/webhook-endpoints`).',
+    ),
   ],
   exports: [WebhookPublisher],
 })

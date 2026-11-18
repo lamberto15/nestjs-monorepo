@@ -8,7 +8,7 @@ listener; what a command starts (a security alert's mail) waits in the queue.
 
 ```bash
 pnpm ops <command>                                   # development
-docker compose run --rm api node dist/cli <command>  # a deployment
+node dist/cli <command>                              # in the image (a deployment)
 ```
 
 Every changing command shows what it will do and asks; `--yes` skips the

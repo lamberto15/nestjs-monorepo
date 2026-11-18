@@ -1,7 +1,7 @@
 # core/http
 
-The HTTP conventions every route shares (the earlier template's
-docs/api-conventions.md).
+The HTTP conventions every route shares; [docs/api-conventions.md](../../../../../docs/api-conventions.md)
+says how a route uses them.
 
 - **Errors** are RFC 9457 problem details (`application/problem+json`):
   `type`, `title`, `status`, `detail`, a stable `code`, `instance`,
@@ -25,12 +25,12 @@ docs/api-conventions.md).
 
 ## Variables
 
-| Variable       | Default | Meaning                                                              |
-| -------------- | ------- | -------------------------------------------------------------------- |
-| `CORS_ORIGINS` | none    | Browser apps on other origins, comma-separated: CORS and CSRF trust. |
-| `CURSOR_KEYS`  | none    | Keys sealing list cursors, newest first; unset, one per process.     |
-| `OPENAPI`      | `on`    | `off` serves no `/api`.                                              |
-| `NODE_ENV`     | none    | `production` keeps CSP's `upgrade-insecure-requests`.                |
+| Variable       | Default | Meaning                                                                   |
+| -------------- | ------- | ------------------------------------------------------------------------- |
+| `CORS_ORIGINS` | none    | Browser apps on other origins, comma-separated: CORS and CSRF trust.      |
+| `CURSOR_KEYS`  | none    | Keys sealing list cursors, newest first; unset, one kept in the database. |
+| `OPENAPI`      | `on`    | `off` serves no `/api`.                                                   |
+| `NODE_ENV`     | none    | `production` keeps CSP's `upgrade-insecure-requests`.                     |
 
 ## Removing it
 

@@ -11,6 +11,11 @@ import {
 } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
+import {
+  declaredShape,
+  openApiAdditions,
+  setResponseSchema,
+} from '../../core/http/openapi.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuthPolicy } from './auth-policy.js';
 import { DuringMfaEnrollment } from './mfa-enrollment.guard.js';
@@ -20,7 +25,7 @@ import type { UserPrincipal } from './principal.js';
 import { SessionLifetime } from './session-lifetime.js';
 import { WithoutSso } from './sign-in-gate.js';
 import { UserOnly } from './user-only.decorator.js';
-import { WhoAmIParts } from './who-am-i.js';
+import { SignInMethodsPart, WhoAmIPart, WhoAmIParts } from './who-am-i.js';
 
 const userSchema = z.object({
   kind: z.literal('user'),
@@ -89,6 +94,25 @@ const meSchema = z.looseObject({
 
 // Loose: the modules' parts (@SignInMethodsPart()) add their keys.
 const methodsSchema = z.looseObject({ password: z.literal(true) });
+
+// The document carries every part's keys with its schema: the parts are
+// found on the app's providers when it is built (the route's own schema
+// above can't name them).
+openApiAdditions.document.set('who-am-i', (document, app) => {
+  setResponseSchema(
+    document,
+    '/v1/auth/me',
+    z.object({ ...meSchema.shape, ...declaredShape(app, WhoAmIPart) }),
+  );
+  setResponseSchema(
+    document,
+    '/v1/auth/methods',
+    z.object({
+      ...methodsSchema.shape,
+      ...declaredShape(app, SignInMethodsPart),
+    }),
+  );
+});
 
 /**
  * Who is signed in, and how one may sign in here: what a frontend reads

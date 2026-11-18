@@ -37,10 +37,16 @@ const querySchema = z.object({
   cursor: z.uuid().optional().describe('`nextCursor` of the previous page.'),
 });
 const startedSchema = z.object({ id: z.string(), status: z.literal('queued') });
+// Shaped like a transfer (data-transfer.schemas.ts): the pages show both alike.
 const exportSchema = z.object({
   id: z.string(),
+  kind: z.literal('export'),
+  name: z.literal('account'),
   format: z.enum(TRANSFER_FORMATS),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
+  progress: z
+    .record(z.string(), z.number())
+    .describe('Rows written so far: `{ processed }`.'),
   createdAt: z.iso.datetime(),
   finishedAt: z.iso.datetime().nullable(),
   expiresAt: z.iso

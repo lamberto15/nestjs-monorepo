@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
 import { HttpClientModule } from '@nestjs/http-client';
 import { SharedHttpClientModule } from '../../core/http-client/http-client.module.js';
+import { switchFeature } from '../../core/http/feature.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { ECB_RATES, ExchangeRatesJob } from './exchange-rates.job.js';
 import { ExchangeRatesMetrics } from './exchange-rates.metrics.js';
@@ -37,7 +38,16 @@ import './money.errors.js';
     }),
   ],
   controllers: [MoneyController],
-  providers: [ExchangeRatesService, ExchangeRatesJob, ExchangeRatesMetrics],
+  providers: [
+    ExchangeRatesService,
+    ExchangeRatesJob,
+    ExchangeRatesMetrics,
+    switchFeature(
+      'exchangeRates',
+      'The ECB reference rates are fetched (EXCHANGE_RATES_FETCH). Off: none are stored, and conversions have none.',
+      'money.fetchRates',
+    ),
+  ],
   exports: [ExchangeRatesService],
 })
 export class MoneyModule {}

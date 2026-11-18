@@ -109,6 +109,8 @@ export class AccountExports {
         : null;
     return {
       id: job.id!,
+      kind: 'export' as const,
+      name: 'account' as const,
       format: job.data.format,
       status:
         state === 'completed'
@@ -118,6 +120,10 @@ export class AccountExports {
             : state === 'active'
               ? ('running' as const)
               : ('queued' as const),
+      progress:
+        typeof job.progress === 'object'
+          ? (job.progress as Record<string, number>)
+          : {},
       createdAt: new Date(job.timestamp).toISOString(),
       finishedAt: finishedAt && new Date(finishedAt).toISOString(),
       expiresAt:

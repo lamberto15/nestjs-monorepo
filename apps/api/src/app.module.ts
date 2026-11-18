@@ -20,6 +20,7 @@ import { RedisModule } from './core/redis/redis.module.js';
 import { SecretsModule } from './core/secrets/secrets.module.js';
 import { TenancyModule } from './core/tenancy/tenancy.module.js';
 import { ThrottlingModule } from './core/throttling/throttling.module.js';
+import { WebModule } from './core/web/web.module.js';
 import { SharedWorkflowsModule } from './core/workflows/workflows.module.js';
 import { AccessModule } from './iam/access/access.module.js';
 import { AuditLogModule } from './iam/audit-log/audit-log.module.js';
@@ -118,6 +119,8 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
     SharedOutboxModule,
     SharedWorkflowsModule,
     JobsModule,
+    // The built web app, on every path the API doesn't own (WEB_ROOT).
+    WebModule,
     // Global interceptors and guards run in the order their modules are
     // first reached, so this block's order matters.
     // Interceptors: idempotency comes before every one that does work (a

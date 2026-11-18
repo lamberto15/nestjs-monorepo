@@ -40,10 +40,12 @@ Discovery decorators (DiscoveryService, put on one provider of yours):
   (iam/auth-policy). `AuthPolicy.assertPasswordLength(password, path,
 owner)` is the 400 `password_too_short` every route that sets a
   password calls.
-- `@WhoAmIPart(['avatarUrl'])` (`who-am-i.ts`): keys a provider's
-  `whoAmI({ user, session })` adds to `GET /v1/auth/me`;
-  `@SignInMethodsPart(['signUp'])`: keys its `signInMethods()` adds to
-  `GET /v1/auth/methods`. A key declared twice fails the boot.
+- `@WhoAmIPart({ avatarUrl: z.string().nullable() })` (`who-am-i.ts`):
+  keys, with their Zod schemas, a provider's `whoAmI({ user, session })`
+  adds to `GET /v1/auth/me`; `@SignInMethodsPart({ signUp: z.boolean() })`:
+  keys its `signInMethods()` adds to `GET /v1/auth/methods`. A key declared
+  twice fails the boot. The OpenAPI document types both answers from the
+  parts' schemas (`declaredShape()`, core/http/openapi.ts).
 - `@HostTenantResolver()`: `tenantOfHost(host)` for tenants' own domains.
 - `@BreakGlassGrantSource()` (`break-glass-session.ts`): `open(user,
 grantId, request)` checks a request naming a grant (`Break-Glass`

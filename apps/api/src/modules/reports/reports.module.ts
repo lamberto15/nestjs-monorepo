@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { switchFeature } from '../../core/http/feature.js';
 import { MailModule } from '../../core/mail/mail.module.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
@@ -34,6 +35,7 @@ import { ReportsPersonalData } from './reports.personal-data.js';
     ReportReadyMail,
     ReportFailedMail,
     ReportsPersonalData,
+    switchFeature('reports', 'Scheduled reports (`/v1/reports`).'),
   ],
 })
 export class ReportsModule {}

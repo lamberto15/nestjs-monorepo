@@ -34,5 +34,24 @@ services:
       timeout: 5s
       retries: 15
 
+  # Gotenberg: renders a record's PDF (modules/documents; GOTENBERG_URL=http://127.0.0.1:3100).
+  # Only with the profile: docker compose -f compose.dev.yaml --profile documents up -d --wait
+  # Its Chromium may load the page it is given and nothing else, and runs no script.
+  gotenberg:
+    image: gotenberg/gotenberg:9.7.0-chromium
+    profiles: [documents]
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --chromium-allow-list=^file:///tmp/
+      - --chromium-deny-private-ips
+      - --chromium-deny-public-ips
+      - --chromium-disable-javascript
+      - --api-disable-download-from
+      - --webhook-disable
+      - --api-timeout=60s
+    ports:
+      - '127.0.0.1:3100:3000'
+
 volumes:
   postgres_data:

@@ -23,7 +23,7 @@ import {
 
 type Config = ConfigType<typeof webhooksConfig>;
 
-/** The one address WEBHOOKS_ALLOW_LOOPBACK opens, as in the earlier template: not other private ranges. */
+/** The one address WEBHOOKS_ALLOW_LOOPBACK opens: not other private ranges. */
 const LOOPBACK = '127.0.0.1';
 
 /** Whether a webhook may be sent to `address`: safeFetch's address rules (core/http), and 127.0.0.1 with WEBHOOKS_ALLOW_LOOPBACK. */

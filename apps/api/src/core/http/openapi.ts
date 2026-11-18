@@ -1,10 +1,16 @@
 import type { INestApplication } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import {
+  DiscoveryService,
+  ModulesContainer,
+  type DiscoverableDecorator,
+} from '@nestjs/core';
+import {
   DocumentBuilder,
   SwaggerModule,
   type OpenAPIObject,
 } from '@nestjs/swagger';
+import { z } from 'zod';
 import { httpConfig } from './http.config.js';
 
 /**
@@ -13,9 +19,45 @@ import { httpConfig } from './http.config.js';
  * entry: core/idempotency marks its header optional and fills it in.
  */
 export const openApiAdditions = {
-  document: new Map<string, (document: OpenAPIObject) => void>(),
+  document: new Map<
+    string,
+    (document: OpenAPIObject, app: INestApplication) => void
+  >(),
   swaggerOptions: {} as Record<string, unknown>,
 };
+
+/**
+ * Publishes named Zod schemas (`.meta({ id })`, and the named schemas they
+ * contain) as components of the document, whether or not a route uses them.
+ * A record add-on's routes exist only for the features that take it
+ * (`XModule.forRecord()`), but the typed client's panels type their answers
+ * from these components, so they must be there with no feature at all. Call
+ * it where the schemas are defined; `key` names the addition, so a second
+ * app in one process replaces it.
+ */
+export function publishSchemas(key: string, ...schemas: z.ZodType[]) {
+  openApiAdditions.document.set(key, (document) => {
+    const components = ((document.components ??= {}).schemas ??= {});
+    for (const schema of schemas) {
+      const { $schema: _, ...json } = z.toJSONSchema(schema, {
+        target: 'openapi-3.0',
+        io: 'output',
+        unrepresentable: 'any',
+      }) as Record<string, unknown>;
+      const named = (json.definitions ?? json.$defs ?? {}) as Record<
+        string,
+        unknown
+      >;
+      for (const [id, definition] of Object.entries(named)) {
+        components[id] ??= JSON.parse(
+          JSON.stringify(definition)
+            .replaceAll('"#/$defs/', '"#/components/schemas/')
+            .replaceAll('"#/definitions/', '"#/components/schemas/'),
+        ) as (typeof components)[string];
+      }
+    }
+  });
+}
 
 /** Your API's name, in the document and Swagger UI's title. */
 const API_TITLE = 'My API';
@@ -99,6 +141,65 @@ export function buildOpenApiDocument(app: INestApplication) {
     )
     .build();
   const document = SwaggerModule.createDocument(app, config);
-  for (const add of openApiAdditions.document.values()) add(document);
+  for (const add of openApiAdditions.document.values()) add(document, app);
   return document;
+}
+
+/**
+ * The Zod shapes the app's providers declare with `decorator`, merged: the
+ * keys of an answer assembled from modules' parts (`@WhoAmIPart()`,
+ * `@Feature()`). Read from the classes, so it works in openapi-dump's preview
+ * mode, where nothing is instantiated but Nest's core module (which
+ * provides ModulesContainer).
+ */
+export function declaredShape<T extends z.ZodRawShape>(
+  app: INestApplication,
+  decorator: DiscoverableDecorator<T>,
+): z.ZodRawShape {
+  const discovery = new DiscoveryService(app.get(ModulesContainer));
+  const shape: z.ZodRawShape = {};
+  for (const wrapper of discovery.getProviders({
+    metadataKey: decorator.KEY,
+  })) {
+    Object.assign(shape, discovery.getMetadataByDecorator(decorator, wrapper));
+  }
+  return shape;
+}
+
+/**
+ * Replaces the 200 answer's schema of `GET path` with `schema`: for an
+ * answer whose keys the route's own decorator can't know, as modules loaded
+ * after it contribute them (declaredShape). Named parts become components.
+ */
+export function setResponseSchema(
+  document: OpenAPIObject,
+  path: string,
+  schema: z.ZodType,
+) {
+  const answer = document.paths[path]?.get?.responses['200'];
+  const content = answer && 'content' in answer ? answer.content : undefined;
+  if (!content?.['application/json']) return;
+  const {
+    $schema: _,
+    $defs,
+    definitions,
+    ...converted
+  } = z.toJSONSchema(schema, {
+    target: 'openapi-3.0',
+    io: 'output',
+    unrepresentable: 'any',
+  }) as Record<string, unknown>;
+  const point = <T>(value: unknown) =>
+    JSON.parse(
+      JSON.stringify(value)
+        .replaceAll('"#/$defs/', '"#/components/schemas/')
+        .replaceAll('"#/definitions/', '"#/components/schemas/'),
+    ) as T;
+  const components = ((document.components ??= {}).schemas ??= {});
+  for (const [id, definition] of Object.entries(
+    (definitions ?? $defs ?? {}) as Record<string, unknown>,
+  )) {
+    components[id] ??= point(definition);
+  }
+  content['application/json'].schema = point(converted);
 }

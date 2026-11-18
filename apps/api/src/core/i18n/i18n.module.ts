@@ -11,6 +11,7 @@ import {
 } from '@nestjs/i18n';
 import { ModuleCatalogLoader } from './catalog.loader.js';
 import { i18nConfig } from './i18n.config.js';
+import { LocalesFeature } from './i18n.feature.js';
 
 /**
  * The language a signed-in user saved (`locale` on `request.user`): it beats the
@@ -57,6 +58,8 @@ class UserLocaleResolver extends LocaleResolver {
         new AcceptLanguageLocaleResolver(),
       ],
     }),
+    ConfigModule.forFeature(i18nConfig),
   ],
+  providers: [LocalesFeature],
 })
 export class I18nModule {}

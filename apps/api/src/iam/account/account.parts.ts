@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MfaService } from '@nestjs/authentication';
+import { z } from 'zod';
 import { AccessService } from '../access/access.service.js';
+import { SIGN_IN_METHODS } from '../auth/authentication-method.js';
 import { PermissionCatalog } from '../access/permission-catalog.js';
 import {
   SignInMethodsPart,
@@ -10,6 +12,7 @@ import {
   type WhoAmIProvider,
   type WhoAmIRequest,
 } from '../auth/who-am-i.js';
+import { captchaSettingsSchema } from '../captcha/captcha.schemas.js';
 import { CaptchaService } from '../captcha/captcha.service.js';
 import { accountConfig } from './account.config.js';
 import { AccountUsers } from './account.users.js';
@@ -21,8 +24,47 @@ import { ReauthenticationService } from './reauthentication.service.js';
  * methods (`GET /v1/auth/methods`): its factors, how this credential was
  * authenticated, what the user may do, and the ways in it offers.
  */
-@WhoAmIPart(['mfaEnabled', 'hasPassword', 'authentication', 'can'])
-@SignInMethodsPart(['magicLink', 'passkeys', 'providers', 'captcha'])
+@WhoAmIPart({
+  mfaEnabled: z.boolean(),
+  hasPassword: z
+    .boolean()
+    .describe('false: an account with no password (a provider, SSO, a link).'),
+  authentication: z
+    .object({
+      via: z.enum(['session', 'token']),
+      method: z.enum(SIGN_IN_METHODS).nullable(),
+      provider: z
+        .string()
+        .nullable()
+        .describe('The OIDC provider or the SSO connection.'),
+      mfa: z.boolean().describe('A second factor was verified.'),
+      authenticatedAt: z.iso
+        .datetime()
+        .nullable()
+        .describe('When you last proved who you are with this credential.'),
+      recentUntil: z.iso
+        .datetime()
+        .nullable()
+        .describe(
+          'Until when that counts as recent (a sensitive change asks again after it); null while impersonating.',
+        ),
+    })
+    .nullable()
+    .describe('How this credential was authenticated.'),
+  can: z
+    .record(z.string(), z.boolean())
+    .describe(
+      'Every action of the permission catalog as `Subject.action`: true when you may do it on some records at least. The routes check again.',
+    ),
+})
+@SignInMethodsPart({
+  magicLink: z.boolean(),
+  passkeys: z.boolean(),
+  providers: z
+    .array(z.string())
+    .describe('The OIDC providers one may sign in with.'),
+  captcha: captchaSettingsSchema,
+})
 @Injectable()
 export class AccountParts implements WhoAmIProvider, SignInMethodsProvider {
   constructor(

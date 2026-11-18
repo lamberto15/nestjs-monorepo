@@ -12,6 +12,6 @@ to, and the mail worker asks it before every send.
 - **Metrics**: `mail_events_total{provider,type}`, `mail_suppressions{reason}`. A nightly job (03:40 UTC) deletes events older than `MAIL_EVENTS_RETENTION_DAYS`.
 - JSON providers need `rawBody: true` when the app is created (main.ts); SNS posts `text/plain`, read from the stream.
 
-Setup of SES, SNS, SPF, DKIM and DMARC for the sending domain is DNS and console work, not code: the old docs/deliverability.md has the steps.
+Setup of SES, SNS, SPF, DKIM and DMARC for the sending domain is DNS and console work, not code: follow the mail provider's own guide.
 
 Remove: delete this folder and its line in `app.module.ts`.

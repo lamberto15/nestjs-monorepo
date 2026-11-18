@@ -13,7 +13,7 @@ and makes the setting refuse a new value (use it when the API cannot be reached)
 | `maintenance` | Everything answers 503 `maintenance`, but `@AllowInMaintenance()`. | Paused, skipped  |
 
 Both refusals are problem documents with `Retry-After: 30`. A route that must
-keep working carries `@AllowInMaintenance()` (`modules/settings/maintenance.ts`):
+keep working carries `@AllowInMaintenance()` (`core/http/maintenance.ts`):
 health, signing in, the operators' routes, `GET /v1/features` (it carries `mode`).
 Where workers run (`APP_ROLE` worker or all) a restricted mode pauses this
 process's queue workers (running jobs finish) and stops the `@Cron` jobs; `normal`

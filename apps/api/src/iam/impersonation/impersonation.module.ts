@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { switchFeature } from '../../core/http/feature.js';
 import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { impersonationConfig } from './impersonation.config.js';
@@ -20,6 +21,14 @@ import { ImpersonationService } from './impersonation.service.js';
     ConfigModule.forFeature(impersonationConfig),
   ],
   controllers: [ImpersonationController],
-  providers: [ImpersonationService, ImpersonationPolicy],
+  providers: [
+    ImpersonationService,
+    ImpersonationPolicy,
+    switchFeature(
+      'impersonation',
+      'Acting as another user (`POST /v1/access/users/{id}/impersonate`; IMPERSONATION).',
+      'auth.impersonation',
+    ),
+  ],
 })
 export class ImpersonationModule {}

@@ -4,6 +4,7 @@ import { ClsModule } from 'nestjs-cls';
 import { EncryptionTenant } from '../encryption/encryption.service.js';
 import './tenancy-errors.js';
 import { tenancyConfig } from './tenancy.config.js';
+import { TenancyFeature } from './tenancy.feature.js';
 import { Tenancy } from './tenancy.service.js';
 import { currentTenantScope } from './tenant-scope.js';
 
@@ -22,6 +23,7 @@ import { currentTenantScope } from './tenant-scope.js';
   ],
   providers: [
     Tenancy,
+    TenancyFeature,
     {
       provide: EncryptionTenant,
       useValue: {

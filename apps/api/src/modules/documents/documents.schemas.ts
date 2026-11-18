@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { publishSchemas } from '../../core/http/openapi.js';
 import { pageSchema } from '../../core/http/pagination.js';
 import { DOCUMENT_STATUSES } from './documents.tables.js';
 
@@ -45,10 +46,12 @@ export const documentSchema = z.object({
 export type DocumentView = z.infer<typeof documentSchema>;
 
 /** A document handed to the workers: follow it at GET /v1/documents/{id}. */
-export const documentQueuedSchema = z.object({
-  id: z.uuid(),
-  status: z.literal('queued'),
-});
+export const documentQueuedSchema = z
+  .object({
+    id: z.uuid(),
+    status: z.literal('queued'),
+  })
+  .meta({ id: 'DocumentQueued' });
 
 /** A document of a record, as the record's documents list shows it. */
 export const recordDocumentSchema = z
@@ -85,3 +88,6 @@ export type RecordDocumentView = z.infer<typeof recordDocumentSchema>;
 export const recordDocumentPageSchema = pageSchema(recordDocumentSchema).meta({
   id: 'RecordDocumentPage',
 });
+
+// The record panels type their answers from these, with or without a feature.
+publishSchemas('documents', documentQueuedSchema, recordDocumentPageSchema);

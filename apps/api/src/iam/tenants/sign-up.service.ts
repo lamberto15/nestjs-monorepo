@@ -22,6 +22,7 @@ import { slugOf } from '../access/access.seeder.js';
 import { roles, userRoles } from '../access/access.tables.js';
 import { PermissionCatalog } from '../access/permission-catalog.js';
 import { AuditService } from '../audit/audit.service.js';
+import { z } from 'zod';
 import { AuthPolicy } from '../auth/auth-policy.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import {
@@ -79,7 +80,12 @@ const ATTEMPTS = 3;
  * An account refused (its address taken) leaves no tenant behind.
  */
 @Injectable()
-@SignInMethodsPart(['signUp', 'tenantSignUp'])
+@SignInMethodsPart({
+  signUp: z.boolean().describe('Self sign-up (`POST /v1/auth/sign-up`).'),
+  tenantSignUp: z
+    .boolean()
+    .describe('A sign-up makes its own tenant (asks for `tenantName`).'),
+})
 export class SignUpService
   implements OnApplicationBootstrap, SignInMethodsProvider
 {

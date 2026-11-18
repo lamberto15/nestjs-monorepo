@@ -8,7 +8,11 @@ import {
 } from './avatars.controller.js';
 import { AvatarsService } from './avatars.service.js';
 import { AvatarUpload } from './avatars.upload.js';
-import { AvatarsPersonalData, AvatarsWhoAmI } from './avatars.personal-data.js';
+import {
+  AvatarsMembers,
+  AvatarsPersonalData,
+  AvatarsWhoAmI,
+} from './avatars.personal-data.js';
 
 /**
  * Users' pictures (README.md): `PUT|DELETE /v1/account/avatar` and
@@ -20,7 +24,13 @@ import { AvatarsPersonalData, AvatarsWhoAmI } from './avatars.personal-data.js';
 @Module({
   imports: [ConfigModule.forFeature(avatarsConfig), AuditModule],
   controllers: [AvatarController, PeopleAvatarController],
-  providers: [AvatarsService, AvatarUpload, AvatarsPersonalData, AvatarsWhoAmI],
+  providers: [
+    AvatarsService,
+    AvatarUpload,
+    AvatarsPersonalData,
+    AvatarsWhoAmI,
+    AvatarsMembers,
+  ],
   exports: [AvatarsService],
 })
 export class AvatarsModule {}

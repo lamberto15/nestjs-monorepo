@@ -64,7 +64,7 @@ export const settingViewSchema = z.object({
   canEdit: z
     .boolean()
     .describe(
-      'You may set and remove its value for the tenant, a unit or a principal (PUT and DELETE /v1/settings/{key}, every scope it takes): Access.manageSettings, not while impersonating.',
+      'You may set and remove its value for the tenant, a unit or a principal (PUT and DELETE /v1/settings/{key}, every scope it takes): Setting.update, not while impersonating.',
     ),
   canSetMine: z
     .boolean()
@@ -96,7 +96,7 @@ export const settingViewSchema = z.object({
   canEditPlatform: z
     .boolean()
     .describe(
-      'You may set and remove the platform value (PUT and DELETE /v1/settings/{key}/platform): Access.manageSettings in the operator tenant.',
+      'You may set and remove the platform value (PUT and DELETE /v1/settings/{key}/platform): Setting.update in the operator tenant.',
     ),
 });
 

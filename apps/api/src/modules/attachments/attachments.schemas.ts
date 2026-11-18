@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { ResponseObject, SchemaObject } from '@nestjs/swagger';
+import { openApiAdditions, publishSchemas } from '../../core/http/openapi.js';
 import { pageSchema } from '../../core/http/pagination.js';
 
 /** A derived file of an image attachment: how big it is, not where it is stored. */
@@ -153,6 +155,51 @@ export const presignedUploadSchema = z
   })
   .meta({ id: 'PresignedUpload' });
 export type PresignedUploadView = z.infer<typeof presignedUploadSchema>;
+
+/** What a file may be, as the upload routes enforce it (`attachmentLimits` of a record's list description). */
+export const attachmentLimitsSchema = z
+  .object({
+    maxBytes: z
+      .int()
+      .describe(
+        'The largest file, in bytes (ATTACHMENT_MAX_MB × 1024²): larger is a 413 `payload_too_large`.',
+      )
+      .meta({ example: 26_214_400 }),
+    maxMb: z
+      .int()
+      .describe('The same, in MB (ATTACHMENT_MAX_MB).')
+      .meta({ example: 25 }),
+    types: z
+      .array(z.string())
+      .describe(
+        'The types a file may be (ATTACHMENT_ALLOWED_TYPES), recognized from its bytes: another is a 415 `unsupported_media_type`.',
+      )
+      .meta({ example: ['image/png', 'application/pdf', 'text/plain'] }),
+  })
+  .meta({ id: 'AttachmentLimits' });
+
+// The record panels type their answers from these, with or without a feature.
+publishSchemas(
+  'attachments',
+  attachmentPageSchema,
+  presignedUploadSchema,
+  attachmentLimitsSchema,
+);
+
+// The list description keeps what add-ons contribute in an open map (lists
+// cannot import the add-ons); this types the key of this one.
+openApiAdditions.document.set('attachments-list-description', (document) => {
+  const response = document.paths['/v1/lists/{subject}']?.get?.responses?.[
+    '200'
+  ] as ResponseObject | undefined;
+  const description = response?.content?.['application/json']?.schema as
+    SchemaObject | undefined;
+  if (description?.properties) {
+    description.properties.attachmentLimits = {
+      $ref: '#/components/schemas/AttachmentLimits',
+    };
+  }
+});
 
 /** The body of `POST …/attachments/complete`. */
 export const attachmentCompleteSchema = z.object({

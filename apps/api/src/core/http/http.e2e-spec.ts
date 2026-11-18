@@ -33,7 +33,7 @@ import {
   setupHttp,
 } from './http-setup.js';
 import { listQuery, type ListQuery } from './list-query.js';
-import { setupOpenApi } from './openapi.js';
+import { publishSchemas, setupOpenApi } from './openapi.js';
 import { countMatching, countPage } from './pagination.js';
 
 const WEB = 'https://web.example.com';
@@ -526,10 +526,22 @@ describe('HTTP conventions (e2e)', () => {
 
   describe('OpenAPI', () => {
     it('documents the routes, deprecations and security schemes at /api-json', async () => {
+      // A schema no route uses (a record add-on's, with no feature) is published by name.
+      publishSchemas(
+        'probe',
+        z.object({ a: z.string() }).meta({ id: 'PublishedProbe' }),
+      );
       const document = (await app.inject('/api-json')).json() as {
         paths: Record<string, { get?: { deprecated?: boolean } }>;
-        components: { securitySchemes: Record<string, unknown> };
+        components: {
+          securitySchemes: Record<string, unknown>;
+          schemas: Record<string, unknown>;
+        };
       };
+      expect(document.components.schemas.PublishedProbe).toMatchObject({
+        type: 'object',
+        required: ['a'],
+      });
       expect(document.paths['/v1/things/deprecated/old']?.get?.deprecated).toBe(
         true,
       );

@@ -40,5 +40,22 @@ documents and files with it.
 
 GOTENBERG_URL, GOTENBERG_TIMEOUT_MS (30000), DOCUMENTS_RENDER_ATTEMPTS (3).
 
+## Gotenberg
+
+Its own container, reachable by the workers only: never Chromium in the
+worker. In development:
+
+```bash
+docker compose -f compose.dev.yaml --profile documents up -d --wait
+# then GOTENBERG_URL=http://127.0.0.1:3100 in apps/api/.env
+```
+
+A deployment starts it the same way (`compose.dev.yaml` has the flags):
+`--chromium-allow-list=^file:///tmp/`, `--chromium-deny-private-ips`,
+`--chromium-deny-public-ips` and `--chromium-disable-javascript` (the page
+loads nothing but itself and runs no script), `--api-disable-download-from`,
+`--webhook-disable`, and an `--api-timeout` longer than
+`GOTENBERG_TIMEOUT_MS`. No published port, and a network with no way out.
+
 Remove: delete this folder and its line in `app.module.ts`, and the
 `DocumentsModule.forRecord()` imports.

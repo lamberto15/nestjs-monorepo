@@ -113,8 +113,17 @@ describe('account export, personal data sections and who-am-I parts (e2e)', () =
             url: `/v1/account/exports/${id}`,
             headers: team.editor.headers,
           })
-        ).json<{ status: string; result?: { url: string } }>();
+        ).json<{
+          status: string;
+          kind: string;
+          name: string;
+          progress: { processed?: number };
+          result?: { url: string };
+        }>();
         expect(status.status).toBe('completed');
+        // Shaped like a transfer: the pages show both alike.
+        expect([status.kind, status.name]).toEqual(['export', 'account']);
+        expect(status.progress.processed).toBeGreaterThan(0);
         url = status.result!.url;
       },
       { timeout: 60_000 },

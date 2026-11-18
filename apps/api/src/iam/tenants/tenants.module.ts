@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { switchFeature } from '../../core/http/feature.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
@@ -66,6 +67,11 @@ import { TenantsService } from './tenants.service.js';
     TenantDomainsProcessor,
     TenantDomainsCheckJob,
     { provide: TXT_RESOLVER, useValue: systemTxtResolver },
+    switchFeature(
+      'signUp',
+      'Self sign-up (`POST /v1/auth/sign-up`; AUTH_SIGN_UP).',
+      'tenants.signUp',
+    ),
   ],
   // The operator CLI makes tenants (src/cli).
   exports: [TenantsService],

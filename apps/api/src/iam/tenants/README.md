@@ -33,7 +33,7 @@ Who a tenant is and how it lives, on top of core/tenancy (which owns the
   on the queue and every night; a verified one routes its host to the tenant
   (TenantDomainsService is the `@HostTenantResolver()`).
 - **Domain lock:** a provider marked `@DomainChangeGuard()` (`domain-change-guard.ts`; modules/branding) may refuse adding a domain or asking its check (409 `branding_locked`); removing is always allowed.
-- **Sign-in methods:** the service is a `@SignInMethodsPart(['signUp','tenantSignUp'])` of `GET /v1/auth/methods`. A sign-up's password meets the one tenant's minimum length (TENANCY=single).
+- **Sign-in methods:** the service is a `@SignInMethodsPart({ signUp, tenantSignUp })` of `GET /v1/auth/methods`. A sign-up's password meets the one tenant's minimum length (TENANCY=single).
 - Exports `TenantsService` (the operator CLI makes tenants with it).
 - Domain events (outbox): `tenant.created`, `tenant.deactivated`,
   `tenant.reactivated`, `tenant.purged`.

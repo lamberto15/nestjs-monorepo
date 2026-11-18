@@ -76,6 +76,9 @@ its roles; only in the grant's tenant, in its read-only scope.
 - `@ScimMembers()`: the provider that tells which members the tenant's IdP
   provisions (iam/sso): the users routes show `managedByScim`. Without
   one, nobody is.
+- `@MemberAvatars()`: the provider that gives the members' pictures
+  (modules/attachments/avatars): the users routes show `avatarUrl`.
+  Without one, nobody has one (null).
 - `@AccessRecordFinder('Note')`: finds a record for the explanation route
   (`?recordId=`), as its asker may read it.
 - Events (`access.events.ts`): `access.member-deactivated` (its actor an

@@ -23,7 +23,8 @@ held what and why. `legal_holds` is a tenant table.
   (`holds.tables.ts`) in its SQL, so a held row is never selected. The
   retention job does (modules/retention).
 - **An account deletion:** a hold with subject `User` and the person's id.
-  The account module asks `heldAmong('User', [id])`; not wired yet.
+  The deletion job (iam/personal-data) asks `heldAmong('User', [id])` and
+  keeps the account while one is active.
 
 Deleting a whole tenant ignores holds: the tenant is the unit the owner
 removes.
