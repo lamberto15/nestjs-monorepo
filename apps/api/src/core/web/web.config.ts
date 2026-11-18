@@ -16,11 +16,36 @@ export const schema = z.object({
    * browsers upload and download there directly (STORAGE_DRIVER=s3).
    */
   WEB_FILES_ORIGINS: list(),
+  /**
+   * Where to report a vulnerability, published at
+   * `/.well-known/security.txt` (RFC 9116): an address
+   * (`security@example.com`) or a `https://` page. Unset, there is none (404).
+   */
+  SECURITY_CONTACT: optional().refine(
+    (value) =>
+      value === undefined ||
+      /^https:\/\/\S+$/.test(value) ||
+      /^(?:mailto:)?[^\s@]+@[^\s@]+$/.test(value),
+    'An email address or an https:// URL.',
+  ),
+  /**
+   * When security.txt says it goes stale (ISO 8601, `2027-06-30T00:00:00Z`):
+   * a date you will renew it by. Unset: always 180 days ahead.
+   */
+  SECURITY_TXT_EXPIRES: optional().refine(
+    (value) => value === undefined || !Number.isNaN(Date.parse(value)),
+    'An ISO 8601 date and time.',
+  ),
 });
 
 export const webConfig = registerAs('web', () => {
   const env = readEnv(schema);
-  return { root: env.WEB_ROOT, filesOrigins: env.WEB_FILES_ORIGINS };
+  return {
+    root: env.WEB_ROOT,
+    filesOrigins: env.WEB_FILES_ORIGINS,
+    securityContact: env.SECURITY_CONTACT,
+    securityTxtExpires: env.SECURITY_TXT_EXPIRES,
+  };
 });
 
 /**

@@ -128,7 +128,7 @@ repository.
       run in CI.
 - [x] Auth policy of a unit stays administrators' (`Access.manageAuthPolicy`);
       a dry-run import validates custom values as the import does.
-- [ ] `/.well-known/security.txt` from SECURITY_CONTACT (none when unset);
+- [x] `/.well-known/security.txt` from SECURITY_CONTACT (none when unset);
       no maintenance page (the host's job).
 - [x] An API client's create takes `dailyQuota`, written in its transaction
       through a hook the usage module provides.

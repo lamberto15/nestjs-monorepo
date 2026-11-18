@@ -16,6 +16,8 @@ const ROOT = await vi.hoisted(async () => {
   const root = mkdtempSync(`${tmpdir()}/web-root-`);
   process.env.WEB_ROOT = root;
   process.env.WEB_FILES_ORIGINS = 'https://files.example.com';
+  process.env.SECURITY_CONTACT = 'security@example.com';
+  process.env.SECURITY_TXT_EXPIRES = '2030-01-01T00:00:00Z';
   return root;
 });
 
@@ -84,6 +86,15 @@ describe('the web app, served by the API (e2e)', () => {
     const version = await get('/version.json');
     expect(version.json()).toEqual({ sha: 'abc' });
     expect(version.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('publishes /.well-known/security.txt from SECURITY_CONTACT', async () => {
+    const txt = await get('/.well-known/security.txt');
+    expect(txt.statusCode).toBe(200);
+    expect(txt.headers['content-type']).toMatch(/^text\/plain/);
+    expect(txt.body).toBe(
+      'Contact: mailto:security@example.com\nExpires: 2030-01-01T00:00:00.000Z\nPreferred-Languages: en\n',
+    );
   });
 
   it("leaves the API's paths to the API: a route answers, an unknown one is a 404, not the page", async () => {

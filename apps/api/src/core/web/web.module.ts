@@ -2,6 +2,7 @@ import { sep } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { SecurityTxtController } from './security-txt.controller.js';
 import { API_PATHS, webConfig } from './web.config.js';
 
 /** What a response's headers are set on (the adapter's response). */
@@ -78,6 +79,9 @@ export function pagePolicy(filesOrigins: readonly string[]) {
         ];
       },
     }),
+    ConfigModule.forFeature(webConfig),
   ],
+  // With or without WEB_ROOT: an API alone has a contact too.
+  controllers: [SecurityTxtController],
 })
 export class WebModule {}

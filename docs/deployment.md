@@ -22,7 +22,10 @@ its own origin: one image, one origin
 writable path (local files and the mail directory); mount a volume on it or
 use S3 and an SMTP or mail API instead. The image's `HEALTHCHECK` calls
 `/health/live`. A `worker` container serves no HTTP, so turn the health check
-off for it.
+off for it. Set `SECURITY_CONTACT` to publish `/.well-known/security.txt`. A
+static page while the app is down (a deploy, an outage) is the host's: the
+load balancer or proxy in front serves it; `APP_MODE=maintenance` covers a
+running app.
 
 Set `GIT_SHA` (the release the observability backends report) and
 `SERVICE_NAME` when you run it.
