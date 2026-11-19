@@ -56,12 +56,20 @@ describe('a tenant export leaves secrets out', () => {
         .filter((column) => !(column in NOT_SECRET));
     });
     expect(unmarked).toEqual([]);
-    // The list keeps up: each entry is a column that exists.
-    const columns = new Set(
-      tenantTables().flatMap(({ name, table }) =>
-        Object.keys(getColumns(table)).map((property) => `${name}.${property}`),
-      ),
+    // The list keeps up: each entry of a table that is here is a column that
+    // exists. A table that is not is a module the project removed
+    // (pnpm module:remove), whose entries stay harmless.
+    const tables = new Map(
+      tenantTables().map(({ name, table }) => [
+        name,
+        new Set(Object.keys(getColumns(table))),
+      ]),
     );
-    expect(Object.keys(NOT_SECRET).filter((c) => !columns.has(c))).toEqual([]);
+    expect(
+      Object.keys(NOT_SECRET).filter((column) => {
+        const [table, property] = column.split('.');
+        return tables.has(table!) && !tables.get(table!)!.has(property!);
+      }),
+    ).toEqual([]);
   });
 });
