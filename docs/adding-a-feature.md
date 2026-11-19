@@ -65,9 +65,9 @@ than one series); the test has a case for each. CI proves the pages by generatin
 feature, type-checking the app and running their test (`verify`). Then:
 
 ```bash
-./node_modules/.bin/drizzle-kit generate --name invoices   # the table's migration
-./node_modules/.bin/vitest run --config ./vitest.config.e2e.ts src/features/invoices/invoices.e2e-spec.ts
-pnpm client:generate        # from the root: the typed client the web pages use
+pnpm --filter api db:generate --name invoices   # the table's migration
+pnpm --filter api test:e2e src/features/invoices/invoices.e2e-spec.ts
+pnpm client:generate        # the typed client the web pages use
 ```
 
 The business logic goes where the generated files say "Business logic": the

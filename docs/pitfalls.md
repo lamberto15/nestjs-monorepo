@@ -65,10 +65,11 @@ what to do.
   it and the retries of outbound calls innermost. A replay passes through no other
   interceptor, so it is neither metered nor held to a quota. A module with a
   global guard or interceptor goes where its comment in `app.module.ts` says, and
-  a module that imports `AccessModule` goes after `AuthModule`. A boot warning
-  such as "IdempotencyInterceptor runs inside …" means a global interceptor got in
-  front of idempotency. `src/app.module.e2e-spec.ts` boots every module and fails
-  at start when the order breaks.
+  a module that imports `AccessModule` goes after `AuthModule`. The boot warning
+  "IdempotencyInterceptor runs inside" I18nInterceptor, NestrixInterceptor and
+  Object (in either order) is expected: the language, the trace and nestjs-cls's pass-through.
+  Another name in it means a global interceptor got in front of idempotency;
+  `src/app.module.e2e-spec.ts` boots every module and fails then.
 - **Global guards and interceptors also run on non-HTTP contexts.** Each tool
   call of the MCP endpoint (`POST /v1/mcp`) goes through them again with context
   type `'mcp'`, and sockets use `'ws'`. Code that reads the request must check

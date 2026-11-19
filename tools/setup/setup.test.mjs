@@ -13,7 +13,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { compare, parseEnv, setValue, valueOf } from './envfile.mjs';
-import { KEY_LISTS, plan, run } from './setup.mjs';
+import { DEV_WEB_URL, KEY_LISTS, plan, run } from './setup.mjs';
 
 const REPO = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -34,6 +34,7 @@ const TEMPLATE = [
   '# WEB_PUSH_SUBJECT=',
   '# WEB_PUSH_PUBLIC_KEY=',
   '# WEB_PUSH_PRIVATE_KEY=',
+  '# WEB_URL=',
   '',
 ].join('\n');
 
@@ -97,6 +98,16 @@ test('plan generates each key list once and keeps the existing ones', () => {
   const again = plan(first.text);
   assert.equal(again.text, first.text);
   assert.deepEqual(again.generated, []);
+});
+
+test('plan points WEB_URL at the web app in development, and keeps one already set', () => {
+  const first = plan(TEMPLATE);
+  assert.equal(valueOf(first.text, 'WEB_URL'), DEV_WEB_URL);
+  assert.deepEqual(first.defaults, [`WEB_URL=${DEV_WEB_URL}`]);
+  assert.ok(!first.generated.includes('WEB_URL'));
+  assert.deepEqual(plan(first.text).defaults, []);
+  const own = setValue(TEMPLATE, 'WEB_URL', 'https://app.example.com');
+  assert.equal(valueOf(plan(own).text, 'WEB_URL'), 'https://app.example.com');
 });
 
 test('plan --rotate puts a new key in front of the old one', () => {

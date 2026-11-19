@@ -125,6 +125,8 @@ A module's reference is its own `README.md`
 (`apps/api/src/{core,iam,modules}/<name>/README.md`). The pages in `docs/`
 are what comes before them:
 
+- [getting-started](docs/getting-started.md): from a copy of the template to
+  a deployed app, in order; start here.
 - [architecture](docs/architecture.md): where things are, the four levels,
   how modules extend each other, the processes, how a request flows.
 - [development](docs/development.md): setup, commands, tests, migrations,

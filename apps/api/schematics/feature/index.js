@@ -172,13 +172,17 @@ export function feature(options) {
       ? null
       : await addToAppModule(tree, c, schematic.logger);
     const fixture = !c.dir.startsWith(c.sourceRoot + '/');
+    // `pnpm --filter api` runs in the API's folder, from the root or from
+    // apps/api alike: paths in its commands are relative to that folder.
+    const inApi = posix.relative(posix.dirname(c.sourceRoot), c.dir);
     schematic.logger.info(
       [
         '',
         'Next:',
-        '  ./node_modules/.bin/drizzle-kit generate --name ' +
+        '  pnpm --filter api ' +
+          (fixture ? 'db:generate:fixtures' : 'db:generate') +
+          ' --name ' +
           c.t.plural +
-          (fixture ? ' --config test/fixtures/drizzle.config.ts' : '') +
           '   # the ' +
           c.t.table +
           " table's migration",
@@ -189,8 +193,8 @@ export function feature(options) {
           '.service.ts, where it says "Business logic" (README.md there lists the rest).',
         '  Texts: ' +
           c.dir +
-          '/i18n/en.json. Test: ./node_modules/.bin/vitest run --config ./vitest.config.e2e.ts ' +
-          c.dir +
+          '/i18n/en.json. Test: pnpm --filter api test:e2e ' +
+          inApi +
           '/' +
           c.t.plural +
           '.e2e-spec.ts',

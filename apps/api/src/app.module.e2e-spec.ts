@@ -1,3 +1,4 @@
+import { ApplicationConfig } from '@nestjs/core';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../test/boot.js';
 import { PermissionCatalog } from './iam/access/permission-catalog.js';
@@ -33,6 +34,28 @@ describe('the whole app (e2e)', () => {
     expect((await app.inject({ url: '/v1/access/roles' })).statusCode).toBe(
       401,
     );
+  });
+
+  // Idempotency's boot warning lists the global interceptors outside it.
+  // Only these may be: the request's language (I18nInterceptor), the trace
+  // around everything (NestrixInterceptor, core/observability) and
+  // nestjs-cls's pass-through (a plain object: its interceptor is off, the
+  // middleware sets the context). Anything else would also see replays.
+  it('runs idempotency inside only the interceptors that set context or trace', () => {
+    // By name, as the warning prints them: @nestjs/idempotency doesn't
+    // export its interceptor's class.
+    const names = app
+      .get(ApplicationConfig)
+      .getGlobalInterceptors()
+      .map((interceptor) => interceptor.constructor.name);
+    const position = names.indexOf('IdempotencyInterceptor');
+    expect(position).toBeGreaterThan(0);
+    // In any order: Nestrix's comes first when it is on.
+    expect(names.slice(0, position).sort()).toEqual([
+      'I18nInterceptor',
+      'NestrixInterceptor',
+      'Object',
+    ]);
   });
 
   // A subject two modules add to has its label in one of them: only the

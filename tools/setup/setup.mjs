@@ -43,15 +43,24 @@ export const KEY_LISTS = [
 const newKey = () => randomBytes(32).toString('base64');
 
 /**
+ * Where the web app runs in development: Vite's default port (apps/web sets
+ * none). Links in mails open the web app's pages at WEB_URL, which otherwise
+ * falls back to APP_URL, the API, where `pnpm dev` serves no pages.
+ */
+export const DEV_WEB_URL = 'http://localhost:5173';
+
+/**
  * The file's text after setup: each key list gets a key when it is unset (or
  * a new first one with `rotate`), and web push its subject and key pair.
- * Returns { text, generated, warnings }.
+ * WEB_URL gets the web app's development address when unset (not a secret:
+ * `defaults`, shown). Returns { text, generated, defaults, warnings }.
  */
 export function plan(
   text,
   { rotate = false, webPush, vapid = generateVapidKeys } = {},
 ) {
   const generated = [];
+  const defaults = [];
   const warnings = [];
   const put = (key, value) => {
     const next = setValue(text, key, value);
@@ -65,6 +74,13 @@ export function plan(
     const current = valueOf(text, key);
     if (current === undefined) put(key, newKey());
     else if (rotate) put(key, `${newKey()},${current}`);
+  }
+  if (valueOf(text, 'WEB_URL') === undefined) {
+    const next = setValue(text, 'WEB_URL', DEV_WEB_URL);
+    if (next !== null) {
+      text = next;
+      defaults.push(`WEB_URL=${DEV_WEB_URL}`);
+    }
   }
   if (webPush !== undefined) {
     if (!/^(mailto:[^\s@]+@[^\s@]+|https:\/\/[^\s/]+)/.test(webPush)) {
@@ -85,7 +101,7 @@ export function plan(
       put('WEB_PUSH_SUBJECT', webPush);
     }
   }
-  return { text, generated, warnings };
+  return { text, generated, defaults, warnings };
 }
 
 /** Runs the command; returns the exit code. `io` is for tests. */
@@ -121,7 +137,7 @@ export function run(argv, io = {}) {
   if (!values.check) {
     const existed = existsSync(filePath);
     const before = existed ? readFileSync(filePath, 'utf8') : template;
-    const { text, generated, warnings } = plan(before, {
+    const { text, generated, defaults, warnings } = plan(before, {
       rotate: values.rotate,
       webPush: values['web-push'],
       vapid: io.vapid,
@@ -137,6 +153,7 @@ export function run(argv, io = {}) {
         ? `Generated (not shown): ${generated.join(', ')}.`
         : 'No secret to generate.',
     );
+    if (defaults.length) out(`Set for development: ${defaults.join(', ')}.`);
     if (values['dry-run']) {
       out('Dry run: nothing written.');
     } else if (text !== before || !existed) {

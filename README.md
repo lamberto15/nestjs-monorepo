@@ -10,6 +10,7 @@ pnpm dev                  # the API on http://localhost:3000, the web app on htt
 pnpm feature:add          # your first feature
 ```
 
+- [docs/getting-started.md](docs/getting-started.md): from a copy of the template to a deployed app, step by step.
 - [AGENTS.md](AGENTS.md): the rules the code follows, the decisions, and the map of the docs.
 - [docs/architecture.md](docs/architecture.md): where things are and how they fit.
 - [docs/development.md](docs/development.md): setup, commands and tests.

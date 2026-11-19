@@ -33,6 +33,10 @@ pnpm dev                  # the API (http://localhost:3000) and the web app
 - `APP_ROLE` defaults to `all`, so `pnpm dev` runs the queue workers and
   scheduled jobs in the API process. A separate worker is
   `pnpm --filter api dev:worker`.
+- `pnpm dev` builds the packages the apps import (the typed client, the
+  components) first.
+- `pnpm run setup` sets `WEB_URL=http://localhost:5173`: in development the
+  API serves no web app, and the links in mails open the web app's pages.
 - `pnpm services:down` stops the services. Every module's variables are in its README.
 
 ## Commands
