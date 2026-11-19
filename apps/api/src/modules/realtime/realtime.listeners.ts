@@ -26,8 +26,6 @@ import {
  * auth's (auth.events.ts), the third access's (access.events.ts).
  */
 export const REALTIME_DISCONNECT_EVENTS = {
-  /** An account was deactivated or deleted: every connection of that user ends. */
-  userDeactivated: 'access.user-deactivated',
   /** An API client was deleted or deactivated: its connections end. */
   clientRevoked: 'access.client-revoked',
   /** API keys were revoked (one, or a rotation's without a grace period): the sockets they opened end; the client's others stay. */
@@ -36,9 +34,6 @@ export const REALTIME_DISCONNECT_EVENTS = {
   tenantDeactivated: 'tenancy.tenant-deactivated',
 } as const;
 
-export interface UserDeactivatedEvent {
-  userId: string;
-}
 export interface ClientRevokedEvent {
   clientId: string;
   tenantId: string;
@@ -73,14 +68,6 @@ export class RealtimeDisconnects {
   memberDeactivated({ userId, tenantId }: MemberDeactivatedEvent) {
     this.realtime.disconnect([
       principalRoom({ kind: 'user', id: userId }, tenantId),
-    ]);
-  }
-
-  /** The account room holds every connection of the user, in any tenant. */
-  @OnEvent(EVENTS.userDeactivated)
-  userDeactivated({ userId }: UserDeactivatedEvent) {
-    this.realtime.disconnect([
-      principalRoom({ kind: 'user', id: userId }, null),
     ]);
   }
 

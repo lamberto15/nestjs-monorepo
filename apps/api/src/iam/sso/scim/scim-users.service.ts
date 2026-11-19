@@ -1,3 +1,4 @@
+import { SessionService, TokenService } from '@nestjs/authentication';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
@@ -121,6 +122,8 @@ export class ScimUsersService implements ScimMembers {
     private readonly tenancy: Tenancy,
     @Inject(httpConfig.KEY)
     private readonly http: ConfigType<typeof httpConfig>,
+    private readonly sessions: SessionService,
+    private readonly tokens: TokenService,
   ) {}
 
   /** Those of these users the tenant's IdP provisioned: access lists them `managedByScim`. */
@@ -180,6 +183,7 @@ export class ScimUsersService implements ScimMembers {
   async create(actor: ClientPrincipal, input: ScimUserInput, ip?: string) {
     const tenantId = this.tenancy.tenantId();
     const email = await this.verifiedEmailOf(input);
+    let deactivated = false;
     const userId = await this.unique(() =>
       this.txHost.withTransaction(async () => {
         if (input.externalId) {
@@ -252,7 +256,7 @@ export class ScimUsersService implements ScimMembers {
         if (active !== wasActive) {
           await this.setActive(actor, tenantId, account!.id, active);
         }
-        await this.settleAccount(actor, account!.id, active, ip);
+        deactivated = await this.settleAccount(actor, account!.id, active, ip);
         await this.audit.record(actor, {
           action: 'scim.user-provisioned',
           targetType: 'user',
@@ -269,6 +273,7 @@ export class ScimUsersService implements ScimMembers {
         return account!.id;
       }),
     );
+    if (deactivated) await this.signOutEverywhere(userId);
     this.access.invalidate();
     return this.get(userId);
   }
@@ -281,6 +286,7 @@ export class ScimUsersService implements ScimMembers {
     ip?: string,
   ) {
     const tenantId = this.tenancy.tenantId();
+    let deactivated = false;
     await this.unique(() =>
       this.txHost.withTransaction(async () => {
         // The account's lock first, as a creation takes it: never the
@@ -302,7 +308,7 @@ export class ScimUsersService implements ScimMembers {
         const active = input.active ?? before.active;
         if (active !== before.active) {
           await this.setActive(actor, tenantId, id, active);
-          await this.settleAccount(actor, id, active, ip);
+          deactivated = await this.settleAccount(actor, id, active, ip);
         }
         await this.audit.record(actor, {
           action: 'scim.user-updated',
@@ -324,6 +330,7 @@ export class ScimUsersService implements ScimMembers {
         });
       }),
     );
+    if (deactivated) await this.signOutEverywhere(id);
     this.access.invalidate();
     return this.get(id);
   }
@@ -376,6 +383,7 @@ export class ScimUsersService implements ScimMembers {
    */
   async remove(actor: ClientPrincipal, id: string, ip?: string) {
     const tenantId = this.tenancy.tenantId();
+    let deactivated = false;
     await this.txHost.withTransaction(async () => {
       await this.lockAccount(id);
       await this.lockMembership(tenantId, id);
@@ -383,7 +391,7 @@ export class ScimUsersService implements ScimMembers {
       if (before.active) {
         await this.setActive(actor, tenantId, id, false);
       }
-      await this.settleAccount(actor, id, false, ip);
+      deactivated = await this.settleAccount(actor, id, false, ip);
       await this.db.delete(scimUsers).where(eq(scimUsers.userId, id));
       await this.audit.record(actor, {
         action: 'scim.user-deprovisioned',
@@ -393,6 +401,7 @@ export class ScimUsersService implements ScimMembers {
         ip,
       });
     });
+    if (deactivated) await this.signOutEverywhere(id);
     this.access.invalidate();
   }
 
@@ -449,14 +458,15 @@ export class ScimUsersService implements ScimMembers {
    * deprovisioning leaves it no active membership in any tenant (its
    * sessions and tokens stop working: `users.active`); reactivated, the
    * same account with its data, when SCIM turns one on again. Audited in
-   * the change's transaction.
+   * the change's transaction. Returns whether it deactivated the account:
+   * the caller then signs it out everywhere, once that is committed.
    */
   private async settleAccount(
     actor: ClientPrincipal,
     userId: string,
     active: boolean,
     ip?: string,
-  ) {
+  ): Promise<boolean> {
     let changed = false;
     if (active) {
       const [marked] = await this.db
@@ -504,6 +514,18 @@ export class ScimUsersService implements ScimMembers {
         ip,
       });
     }
+    return changed && !active;
+  }
+
+  /**
+   * A deactivated account's browser sessions and token families end (the
+   * stores announce each, so its live sockets close too, modules/realtime),
+   * as an erased account's do (iam/personal-data). `users.active` already
+   * refuses them; this ends what is open.
+   */
+  private async signOutEverywhere(userId: string) {
+    await this.sessions.revokeAll(userId);
+    await this.tokens.revokeAll(userId);
   }
 
   /**

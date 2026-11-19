@@ -1,3 +1,4 @@
+import { SessionService } from '@nestjs/authentication';
 import { randomUUID } from 'node:crypto';
 import {
   Controller,
@@ -304,6 +305,10 @@ describe('SCIM provisioning (e2e)', () => {
     expect(off.json().active).toBe(false);
     expect((await membership(user.id))?.active).toBe(false);
     expect((await account(user.id))?.active).toBe(false);
+    // Ended, not only refused: the store announces it, so live sockets close.
+    expect(
+      await app.get(SessionService, { strict: false }).list(user.id),
+    ).toEqual([]);
     expect(
       (
         await app.inject({

@@ -73,8 +73,9 @@ the change commits: `auth.session-ended` `{ sessionId }`,
 `{ userId, tenantId }` (iam/access), `access.client-revoked`
 `{ clientId, tenantId }` and `access.keys-revoked` `{ keyIds }`
 (iam/api-clients), `tenancy.tenant-deactivated` `{ tenantId }`
-(iam/tenants), and `access.user-deactivated` `{ userId }`, which no module
-emits yet. `access.abilities-changed` (iam/access, on every instance) is the
+(iam/tenants). An account deactivated or erased has its sessions and
+token families ended, so the first two close its sockets.
+`access.abilities-changed` (iam/access, on every instance) is the
 gateway's own: a re-check of this instance's impersonation sockets.
 
 ## Wiring
