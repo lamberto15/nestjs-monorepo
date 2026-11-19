@@ -35,6 +35,8 @@ import {
 @Injectable()
 export class Tenancy implements OnApplicationBootstrap {
   private readonly logger = new Logger('Tenancy');
+  /** The jobs whose cross-tenant run this process already logged (acrossTenants()). */
+  private readonly acrossJobsLogged = new Set<string>();
 
   constructor(
     private readonly cls: ClsService,
@@ -127,7 +129,10 @@ export class Tenancy implements OnApplicationBootstrap {
    * table whole (retention by age). Its queries run as the maintenance role
    * (DATABASE_MAINTENANCE_URL), refused where that is not configured, and
    * never inside a request. Work that acts per tenant walks them instead
-   * (forEachTenant()). Logged with the job's name.
+   * (forEachTenant()). Logged with the job's name: its first run in the
+   * process at the log level, which says which jobs bypass row-level
+   * security, and the repeats at debug, as a gauge read every few seconds
+   * (approvals.metrics) would fill the logs.
    */
   acrossTenants<T>(job: string, work: () => Promise<T>): Promise<T> {
     if (
@@ -138,7 +143,12 @@ export class Tenancy implements OnApplicationBootstrap {
         `${job}: work across every tenant never runs in a request.`,
       );
     }
-    this.logger.log(`${job}: across every tenant (the maintenance role)`);
+    const line = `${job}: across every tenant (the maintenance role)`;
+    if (this.acrossJobsLogged.has(job)) this.logger.debug(line);
+    else {
+      this.acrossJobsLogged.add(job);
+      this.logger.log(line);
+    }
     return this.runIn(ACROSS_TENANTS, work);
   }
 

@@ -1,4 +1,5 @@
 import { TransactionHost } from '@nestjs-cls/transactional';
+import { Logger } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { eq, sql } from 'drizzle-orm';
@@ -422,6 +423,22 @@ describe('tenancy (e2e)', () => {
       expect(error).toBeInstanceOf(TenantRunsFailed);
       expect((error as Error).message).toMatch(/a \(boom\)/);
       expect(ran).toEqual(['a', 'b']);
+    });
+
+    it("logs a job's first run across every tenant, and its repeats at debug", async () => {
+      const log = vi.spyOn(Logger.prototype, 'log');
+      const debug = vi.spyOn(Logger.prototype, 'debug');
+      try {
+        for (let run = 0; run < 3; run++) {
+          await tenancy.acrossTenants('test-logged', async () => undefined);
+        }
+        const line = 'test-logged: across every tenant (the maintenance role)';
+        expect(log.mock.calls.filter(([m]) => m === line)).toHaveLength(1);
+        expect(debug.mock.calls.filter(([m]) => m === line)).toHaveLength(2);
+      } finally {
+        log.mockRestore();
+        debug.mockRestore();
+      }
     });
 
     it('works across every tenant as the maintenance role, never in a request', async () => {
