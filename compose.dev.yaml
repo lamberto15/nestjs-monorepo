@@ -74,6 +74,31 @@ services:
       timeout: 5s
       retries: 15
 
+  # Nestrix: the self-hosted tracing server (core/observability), to see where
+  # a request spends its time while you use the app. Only with the profile:
+  # pnpm traces:up (makes its database in the postgres above, then starts
+  # it), and OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 in
+  # apps/api/.env. Dashboard: http://localhost:4318, the password below.
+  # Development values only: no ingest key (it listens on loopback alone).
+  nestrix:
+    image: ghcr.io/nestrix-js/nestrix-server:0.8.0@sha256:3dcaef8aa6652c5ea6c531d2feabfe9a7a0bc8af9e43b024889623dd59966403
+    profiles: [traces]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/nestrix
+      NESTRIX_INGEST_AUTH: none
+      NESTRIX_ADMIN_PASSWORD: ${NESTRIX_ADMIN_PASSWORD:-nestrix-dev-password}
+      # Sessions survive a restart of the server.
+      NESTRIX_SESSION_SECRET: nestrix-dev-session-secret-0123456789abcdef
+      # CPU, memory, event-loop delay and request durations, beside the traces.
+      NESTRIX_METRICS: 'on'
+      NESTRIX_LOG_FORMAT: text
+    ports:
+      - '127.0.0.1:4318:4318'
+
 configs:
   # Inline, not a mounted file: some Docker setups mount files empty.
   garage:

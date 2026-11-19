@@ -56,6 +56,7 @@ Run from the root. Turborepo runs a script in every package that has it
 | `pnpm test:tools`                           | The tests of `tools/` (Node's test runner).                             |
 | `pnpm services:up`, `pnpm services:down`    | The development PostgreSQL and Redis.                                   |
 | `pnpm storage:up`                           | Garage, an S3-compatible store, ready for `STORAGE_DRIVER=s3`.          |
+| `pnpm traces:up`                            | The Nestrix server, to see where requests spend their time ([below](#traces)). |
 | `pnpm run setup`                            | Writes `apps/api/.env`.                                                 |
 | `pnpm env:example`, `pnpm env:check`        | Writes or checks `apps/api/env.example`.                                |
 | `pnpm feature:add <name> …`                 | Generates a feature ([adding-a-feature.md](adding-a-feature.md)).       |
@@ -199,6 +200,24 @@ it) runs fast checks on the staged files:
 Skip them once with `git commit --no-verify` or `LEFTHOOK=0 git commit …`. CI runs
 the slow checks. To format a Markdown file:
 `apps/api/node_modules/.bin/prettier --write <file>`.
+
+## Traces
+
+`pnpm traces:up` starts the Nestrix server (`compose.dev.yaml`, profile
+`traces`) with its own database in the development PostgreSQL. Add
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` to `apps/api/.env` and
+restart `pnpm dev`: the API and the worker send their traces and runtime
+metrics there. Open http://localhost:4318 and sign in with
+`nestrix-dev-password` (or `NESTRIX_ADMIN_PASSWORD` when you start it). The
+routes view lists each route's calls and their slowest time; a trace shows
+where one request went: its queries, outgoing calls and jobs.
+
+Queries that run outside any request (the migrations at start, the workflow
+engine's polling) are recorded as traces of their own: Nestrix drops such
+roots for Redis and for methods, not yet for PostgreSQL. They fill the
+trace list, not the routes view. `docker compose -f compose.dev.yaml
+--profile traces stop nestrix` stops it; without the variable the app sends
+nothing.
 
 ## Demo data
 
