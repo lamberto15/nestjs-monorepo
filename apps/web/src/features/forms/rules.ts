@@ -2,7 +2,7 @@ import type { components } from '@nestjs-monorepo/api-client';
 
 /**
  * A form's conditions (docs/forms.md, "Conditions"), as the browser decides
- * them: a mirror of the API's apps/api/src/platform/forms/form-rules.ts,
+ * them: a mirror of the API's apps/api/src/modules/forms/form-rules.ts,
  * which stays authoritative. rules.test.ts runs both on the same cases, so
  * what shows and what is required here is what the server checks. Data,
  * never code: predicates on the answers of earlier fields, no eval.

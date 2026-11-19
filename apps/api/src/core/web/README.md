@@ -11,4 +11,4 @@ The built web app, served by the API from its own origin (`@nestjs/serve-static`
 
 Variables (`web.config.ts`): WEB_ROOT, WEB_FILES_ORIGINS (the bucket's origin when browsers upload and download there directly), SECURITY_CONTACT, SECURITY_TXT_EXPIRES.
 
-Remove (an API with no web app): delete this folder and its line in `app.module.ts`.
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

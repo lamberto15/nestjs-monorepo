@@ -37,7 +37,7 @@ const LIMIT = 20;
 const WINDOW_MS = 60_000;
 let sent: number[] = [];
 
-/** Field limits of apps/api/src/platform/client-errors/client-errors.schemas.ts. */
+/** Field limits of apps/api/src/modules/client-errors/client-errors.schemas.ts. */
 const truncate = (text: string, max: number) =>
   text.length > max ? text.slice(0, max) : text;
 

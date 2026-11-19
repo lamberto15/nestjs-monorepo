@@ -23,6 +23,8 @@ const searchQuerySchema = z
       .optional()
       .describe('Only this kind of record (`Note`); default: every kind.'),
     limit: z.coerce.number().int().min(1).max(50).default(20),
+    // The language switch of @nestjs/i18n (`?lang=`, core/i18n): the
+    // subjects' labels come in it. Listed because the schema is strict.
     lang: z.string().max(35).optional(),
   })
   .strict();

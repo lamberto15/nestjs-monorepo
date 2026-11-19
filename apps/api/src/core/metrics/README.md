@@ -4,4 +4,4 @@ Prometheus metrics (prom-client) at `GET /metrics`: HTTP request durations by ro
 
 - **Variable:** `METRICS_TOKEN` (16 characters or more). Unset, `/metrics` answers 404; set, it needs `Authorization: Bearer <token>`. Scrape it from inside the private network.
 - **Your own metrics**, in your own module's folder: inject `MetricsService` (the module is global). A counter or histogram: `new Counter({ name, help, registers: [metrics.registry] })`. A value read at scrape time (queue depth, lag): `metrics.collect(name, help, () => [{ value }])`; a read that fails or takes over 2 s leaves the gauge out of that scrape.
-- **Remove:** delete this folder and its line in `app.module.ts`.
+- Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

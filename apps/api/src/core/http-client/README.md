@@ -4,4 +4,4 @@
 
 Order: ResilienceModule's global interceptor retries routes; list this module after `SharedIdempotencyModule` (and usage).
 
-Remove: delete this folder and its line in `app.module.ts`.
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

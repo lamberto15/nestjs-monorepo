@@ -9,4 +9,4 @@ Translations (`@nestjs/i18n`, global). Texts live in each module's own `i18n/<lo
 
 Variables (`i18n.config.ts`): LOCALES (comma separated, the first is the default; default `en`), NODE_ENV.
 
-Remove: delete this folder and its line in `app.module.ts` (every module that translates needs it).
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

@@ -8,4 +8,4 @@ Rate limiting (`@nestjs/throttler`) on every route: 600 requests a minute per IP
 
 Variables (`throttling.config.ts`): RATE_LIMIT_STORE (`redis` default, or `memory` for one instance and tests), RATE_LIMIT_MULTIPLIER (1), NODE_ENV, APP_ENV.
 
-Remove: delete this folder and its line in `app.module.ts`.
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

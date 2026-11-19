@@ -7,4 +7,4 @@
 
 Variables (`idempotency.config.ts`): IDEMPOTENCY, IDEMPOTENCY_KEYS.
 
-Remove: delete this folder and its line in `app.module.ts`, and `@IdempotentRoute()` from the routes.
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

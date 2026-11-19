@@ -8,4 +8,4 @@
 
 No variables.
 
-Remove: delete this folder and its line in `app.module.ts` (the checks of other modules then have no endpoint).
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

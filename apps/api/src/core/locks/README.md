@@ -9,4 +9,4 @@ Distributed locks (`@nestjs/locks`, kept in PostgreSQL by `DrizzleLockStore`: th
 
 Variables (`locks.config.ts`): SCHEDULER (`on` by default; `off` for tests and an instance that must not run jobs).
 
-Remove: delete this folder and its line in `app.module.ts`, and every module with a `@Cron()` job.
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

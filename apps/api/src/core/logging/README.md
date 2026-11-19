@@ -9,4 +9,4 @@ The logger, the request log and the redaction of secrets.
 
 Variables (`logging.config.ts`): LOG_LEVEL (`verbose`, `debug`, `log` default, `warn`, `error`, `fatal`), LOG_FORMAT (`json` or `text`).
 
-Remove: not removable: `main.ts` and the HTTP setup use it.
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

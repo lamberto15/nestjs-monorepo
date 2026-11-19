@@ -11,4 +11,4 @@
 
 Variables (`workflows.config.ts`): WORKFLOWS_WORKER (`on`; `off` in a worker kept for heavy queues and in tests), WORKFLOW_CONCURRENCY (10), WORKFLOWS_RETENTION_DAYS (14).
 
-Remove: delete this folder and its line in `app.module.ts`.
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

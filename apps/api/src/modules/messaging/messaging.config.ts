@@ -60,7 +60,7 @@ export const schema = z.object({
   SMS_DAILY_LIMIT_PER_USER: integer(10, { min: 0 }),
   /** Codes one client IP may have texted per day in a tenant (the route also has its own throttle). */
   SMS_DAILY_LIMIT_PER_IP: integer(20, { min: 0 }),
-  /** A tenant's SMS spend cap per UTC month, in minor units of one currency; 0 is no cap. Sending stops at the cap; 80 % is logged as an error and shown by `sms_budget_used_ratio`. */
+  /** A tenant's SMS spend cap per UTC month, in minor units of one currency; 0 is no cap. Sending stops at the cap; passing 80 % is logged as an error, once a month; `sms_spend_minor_total` counts the spend for an alert. */
   SMS_MONTHLY_BUDGET_MINOR: integer(0, { min: 0 }),
   /** The price of one SMS segment per prefix, minor units: `+1=79,+44=120`. */
   SMS_PRICES: list().transform((entries, ctx) => {

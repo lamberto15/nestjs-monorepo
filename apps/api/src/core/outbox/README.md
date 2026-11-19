@@ -10,6 +10,6 @@
 
 Variables (`outbox.config.ts`): OUTBOX_RELAY (`on`; `off` in tests and a worker kept for heavy queues), OUTBOX_RELAY_BATCH_SIZE (100), OUTBOX_RELAY_CONCURRENCY (10), OUTBOX_DEAD_LETTER_RETENTION_DAYS (14), OUTBOX_INBOX_RETENTION_DAYS (30).
 
-Remove: delete this folder and its line in `app.module.ts` (and the modules that publish or subscribe).
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").
 
 - **Metrics:** `outbox_lag_seconds` on a worker's `/metrics`: how long the longest-waiting due message has waited (the relay's `lagMs`; 0 when none). Shared state: aggregate with max().

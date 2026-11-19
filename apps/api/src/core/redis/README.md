@@ -9,4 +9,4 @@ The shared Redis connection (ioredis, Redis 7 or later). `RedisModule` is global
 
 Variables (`redis.config.ts`): REDIS_URL, REDIS_PASSWORD (both secrets: `_FILE` works), REDIS_SENTINELS, REDIS_SENTINEL_NAME, REDIS_PREFIX.
 
-Remove: delete this folder and its line in `app.module.ts`, and everything that needs Redis (queues, throttling, quotas, realtime...).
+Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").
