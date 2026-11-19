@@ -78,6 +78,21 @@ describe('McpToolChecks', () => {
     await expect(start(Checked)).resolves.toBeUndefined();
   });
 
+  // A provider's value may have no prototype (Object.create(null), as a
+  // package's options object can): it has no class, so no tool.
+  it('passes over a provider value without a prototype', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [DiscoveryModule],
+      providers: [
+        McpToolChecks,
+        Checked,
+        { provide: 'BARE', useValue: Object.create(null) as object },
+      ],
+    }).compile();
+    await expect(moduleRef.init()).resolves.toBeDefined();
+    await moduleRef.close();
+  });
+
   it('refuses a tool without @Can() or @Can.Anyone()', async () => {
     await expect(start(Checked, Unchecked)).rejects.toThrow(
       'Unchecked.unchecked: declares no @Can() or @Can.Anyone()',

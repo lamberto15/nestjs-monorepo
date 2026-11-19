@@ -135,7 +135,9 @@ export class McpToolChecks implements OnModuleInit {
       const prototype = Object.getPrototypeOf(instance) as Record<
         string,
         unknown
-      >;
+      > | null;
+      // A value made by Object.create(null) has no class, so no tool.
+      if (!prototype) continue;
       const type = prototype.constructor as { name: string };
       for (const name of this.scanner.getAllMethodNames(prototype)) {
         const method = prototype[name] as object;
