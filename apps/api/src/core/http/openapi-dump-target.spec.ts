@@ -1,6 +1,6 @@
 import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, parse, resolve } from 'node:path';
 import { dumpTarget } from './openapi-dump-target.js';
 
 /** `pnpm openapi:dump [file]` writes only a .json in the repository or the temp directory. */
@@ -58,7 +58,9 @@ describe('dumpTarget', () => {
   it('refuses a symlink that leads out of the roots, or to nothing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dump-links-'));
     try {
-      symlinkSync(resolve(repo, '..'), join(dir, 'out'), 'dir');
+      // The filesystem's root: outside the repository and the temp
+      // directory wherever they are (a clone may itself sit in $TMPDIR).
+      symlinkSync(parse(repo).root, join(dir, 'out'), 'dir');
       expect(() => dumpTarget(join(dir, 'out/openapi.json'))).toThrow(
         /\.json file under/,
       );
