@@ -174,6 +174,9 @@ account), and consents. A module that holds data about a person marks a
 provider `@PersonalData()`, and the deletion and the copy both walk those
 sections. The copy itself is requested at `POST /v1/account/export`
 ([modules/data-transfer](../apps/api/src/modules/data-transfer/README.md)).
+How long an erased tenant's or account's data lingers in queues, dead
+letters and workflows:
+[iam/personal-data](../apps/api/src/iam/personal-data/README.md#how-long-erased-data-lingers).
 
 ## Bot protection
 

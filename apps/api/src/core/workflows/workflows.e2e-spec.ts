@@ -5,6 +5,7 @@ import {
   Workflow,
   WorkflowClient,
   type WorkflowContext,
+  type WorkflowRunner,
 } from '@nestjs/workflows';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../../../test/boot.js';
@@ -14,11 +15,13 @@ import {
 } from '../../../test/fixtures/tenant-items.js';
 import type { Database } from '../database/database.js';
 import { DatabaseModule } from '../database/database.module.js';
+import { SharedLocksModule } from '../locks/locks.module.js';
 import { Tenancy } from '../tenancy/tenancy.service.js';
 import { TenancyModule } from '../tenancy/tenancy.module.js';
 import { withTenant } from '../tenancy/tenant-job.js';
 import { TenantWorkflow } from './tenant-workflow.js';
 import { SharedWorkflowsModule } from './workflows.module.js';
+import { WorkflowsRetentionJob } from './workflows-retention.job.js';
 
 vi.hoisted(() => {
   process.env.DATA_ENCRYPTION_KEYS =
@@ -45,9 +48,23 @@ class ListItemsWorkflow extends TenantWorkflow<{ suffix: string }, string[]> {
   }
 }
 
+@Workflow('e2e-done')
+class DoneWorkflow implements WorkflowRunner<object, number> {
+  run(ctx: WorkflowContext) {
+    return ctx.step('one', () => Promise.resolve(1));
+  }
+}
+
+@Workflow('e2e-waits')
+class WaitsWorkflow implements WorkflowRunner<object, unknown> {
+  run(ctx: WorkflowContext) {
+    return ctx.waitForSignal('never', 'e2e.never-sent');
+  }
+}
+
 @Module({
   imports: [TenantItemsModule],
-  providers: [ListItemsWorkflow],
+  providers: [ListItemsWorkflow, DoneWorkflow, WaitsWorkflow],
 })
 class WorkflowsTestModule {}
 
@@ -58,6 +75,7 @@ describe('workflows (e2e)', () => {
     app = await bootModules(
       DatabaseModule,
       TenancyModule,
+      SharedLocksModule,
       SharedWorkflowsModule,
       WorkflowsTestModule,
     );
@@ -85,5 +103,39 @@ describe('workflows (e2e)', () => {
       );
     expect(stored.rows[0]!.input).not.toContain(a);
     expect(stored.rows[0]!.output).not.toContain('from-workflow-1');
+  });
+
+  it('purges finished instances past WORKFLOWS_RETENTION_DAYS (14), never an unfinished one', async () => {
+    const client = app.get(WorkflowClient);
+    const db = app.get<Database>(getDrizzleToken());
+    const [old, recent] = [`done-old-${Date.now()}`, `done-new-${Date.now()}`];
+    for (const id of [old, recent]) {
+      await client.startAndWait(DoneWorkflow, {}, { id }, { timeout: '20s' });
+    }
+    const waiting = (await client.start(WaitsWorkflow, {})).id;
+    for (
+      let i = 0;
+      (await client.getStatus(waiting))?.status !== 'suspended';
+      i++
+    ) {
+      if (i > 200) throw new Error(`${waiting} never parked`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // Finished (or last changed) 15 days ago; `recent` 13 days ago.
+    const daysAgo = (days: number) => Date.now() - days * 86_400_000;
+    for (const [id, days] of [
+      [old, 15],
+      [waiting, 15],
+      [recent, 13],
+    ] as const) {
+      await db.execute(
+        sql`update nest_workflows.instances set updated_at = ${daysAgo(days)} where id = ${id}`,
+      );
+    }
+
+    expect((await app.get(WorkflowsRetentionJob).run()).instances).toBe(1);
+    expect(await client.getStatus(old)).toBeNull();
+    expect((await client.getStatus(recent))?.status).toBe('completed');
+    expect((await client.getStatus(waiting))?.status).toBe('suspended');
   });
 });

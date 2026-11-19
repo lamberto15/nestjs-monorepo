@@ -40,6 +40,27 @@ and token families.
 request due now, audited, then the same steps. The module exports the job
 for it.
 
+## How long erased data lingers
+
+The one place this is stated; the other pages link here. An erase (a
+tenant's, `TenantsService.purge()`, iam/tenants; an account's, the job
+above) deletes its rows in its transaction, and its files right after the
+commit (modules/storage, through the outbox). What it can't reach in that
+transaction ages out of the background stores, each by its own setting:
+
+- **Queued jobs** (Redis) of the erased tenant or account find nothing,
+  fail or finish, and are dropped with the queue's finished jobs: within 7
+  days at most (core/queues `DEFAULT_JOB_OPTIONS`, `removeOnFail`; no queue
+  keeps one longer).
+- **Outbox dead letters** (events given up on) within
+  OUTBOX_DEAD_LETTER_RETENTION_DAYS (core/outbox).
+- **Finished workflow instances**, with their journals, within
+  WORKFLOWS_RETENTION_DAYS (core/workflows). An erased tenant's unfinished
+  approval workflows are deleted after the commit (modules/approvals).
+
+So everything is gone within the longest of these: 14 days with the
+defaults. Lengthen one of them and the window grows with it.
+
 ## Taking part: `@PersonalData()`
 
 A module that holds something about a person marks one provider:

@@ -119,6 +119,7 @@ from the transaction that wrote its rows.
   workflow payloads.
 - `WORKFLOWS_WORKER=off` keeps a worker from running steps. Operators see and
   retry workflows at `/v1/ops/workflows`.
+- A nightly job removes finished instances (`WORKFLOWS_RETENTION_DAYS`).
 
 Example: `apps/api/src/modules/approvals/approval.workflow.ts`, started in
 `approvals.service.ts`.

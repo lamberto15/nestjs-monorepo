@@ -8,6 +8,7 @@ import { encryptionConfig } from '../encryption/encryption.config.js';
 import { queuesConfig, runsWorkers } from '../queues/queues.config.js';
 import { workflowPayloadCodec } from './workflow-payload.codec.js';
 import { workflowsConfig } from './workflows.config.js';
+import { WorkflowsRetentionJob } from './workflows-retention.job.js';
 
 /**
  * Durable workflows (@nestjs/workflows on PostgreSQL): a module registers
@@ -20,6 +21,7 @@ import { workflowsConfig } from './workflows.config.js';
  */
 @Module({
   imports: [
+    ConfigModule.forFeature(workflowsConfig),
     WorkflowsModule.forRootAsync({
       imports: [
         ConfigModule.forFeature(workflowsConfig),
@@ -53,6 +55,7 @@ import { workflowsConfig } from './workflows.config.js';
           storage,
         ),
     },
+    WorkflowsRetentionJob,
   ],
 })
 export class SharedWorkflowsModule {}

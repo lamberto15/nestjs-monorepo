@@ -84,6 +84,7 @@ import { ApprovalsService } from './approvals.service.js';
 import { APPROVAL_SETTINGS } from './approvals.settings.js';
 import { Approvers } from './approvers.js';
 import { ApprovalsPersonalData } from './approvals.personal-data.js';
+import { ApprovalsErasure } from './approvals.erasure.js';
 
 /**
  * A deactivated member decides nothing more: their pending assignments
@@ -193,6 +194,7 @@ export class ApprovalsExtension implements RecordHooks {
     ApprovalInboxSource,
     ApprovalsDeactivation,
     ApprovalsPersonalData,
+    ApprovalsErasure,
     ApprovalMetrics,
   ],
   exports: [ApprovalsService],

@@ -29,9 +29,11 @@ Who a tenant is and how it lives, on top of core/tenancy (which owns the
   SignUpSweepJob (04:15 UTC) finds sign-ups' tenants nobody verified within
   7 days; both erase through `TenantsService.purge()`: under the row's lock,
   in one transaction, it emits `tenancy.tenant-erasing` (awaited: what lives
-  outside its tables; modules/storage releases the tenant's files, deleted
-  after the commit), deletes its row (the cascade takes its rows), audited
-  `tenant.purged` in no tenant. Its reason is `deletion`, `sign-up-unverified`
+  outside its tables; modules/storage releases the tenant's files and
+  modules/approvals names its unfinished workflows, both deleted after the
+  commit), deletes its row (the cascade takes its rows), audited
+  `tenant.purged` in no tenant. What lingers in the background stores, and
+  for how long: [iam/personal-data](../personal-data/README.md#how-long-erased-data-lingers). Its reason is `deletion`, `sign-up-unverified`
   or `moved` (a tenant moved to its own server, modules/tenant-move).
 - **Freeze and restore** (for a move): `setFrozen()` makes a tenant read only
   or writable again (never the operators' own), audited `tenant.frozen` /

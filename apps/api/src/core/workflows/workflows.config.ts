@@ -8,6 +8,8 @@ export const schema = z.object({
   WORKFLOWS_WORKER: flag('on'),
   /** Workflow instances this process executes at once. */
   WORKFLOW_CONCURRENCY: integer(10, { min: 1 }),
+  /** Finished workflow instances (completed, failed, cancelled) older than this many days are deleted every night, with their journals; retry a failed one before. Keep it longer than any signal sender's redelivery window. */
+  WORKFLOWS_RETENTION_DAYS: integer(14, { min: 1 }),
 });
 
 export const workflowsConfig = registerAs('workflows', () => {
@@ -15,5 +17,6 @@ export const workflowsConfig = registerAs('workflows', () => {
   return {
     worker: env.WORKFLOWS_WORKER,
     concurrency: env.WORKFLOW_CONCURRENCY,
+    retentionDays: env.WORKFLOWS_RETENTION_DAYS,
   };
 });
