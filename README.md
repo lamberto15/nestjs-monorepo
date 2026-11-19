@@ -7,6 +7,7 @@ pnpm install
 pnpm services:up          # PostgreSQL and Redis
 pnpm run setup            # apps/api/.env, with generated keys
 pnpm dev                  # the API on http://localhost:3000, the web app on http://localhost:5173
+pnpm traces:up            # optional: Nestrix on http://localhost:4318, to see where requests spend their time
 pnpm feature:add          # your first feature
 ```
 

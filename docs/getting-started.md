@@ -77,6 +77,7 @@ pnpm install
 pnpm services:up          # PostgreSQL and Redis (compose.dev.yaml)
 pnpm run setup            # writes apps/api/.env, with generated keys
 pnpm dev                  # the API on http://localhost:3000, the web app on http://localhost:5173
+pnpm traces:up            # optional: Nestrix on http://localhost:4318, to see where requests spend their time
 ```
 
 `pnpm run setup` prints:
@@ -96,6 +97,10 @@ serves on its own port. Details of each command: [development](development.md).
 
 Worth adding to `apps/api/.env` before the first start: `ADMIN_EMAIL` and
 `ADMIN_PASSWORD` (below).
+
+To see each request's queries and timings while you use the app, start
+Nestrix (`pnpm traces:up`) and set `OTEL_EXPORTER_OTLP_ENDPOINT` in
+`apps/api/.env`: [development, "Traces"](development.md#traces).
 
 ### The first sign-in
 

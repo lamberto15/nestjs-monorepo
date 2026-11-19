@@ -108,6 +108,7 @@ pnpm install
 pnpm services:up          # PostgreSQL and Redis (compose.dev.yaml)
 pnpm run setup            # writes apps/api/.env from env.example, with generated keys
 pnpm dev                  # the API on http://localhost:3000, the web app on http://localhost:5173
+pnpm traces:up            # optional: Nestrix on http://localhost:4318, to see where requests spend their time
 pnpm feature:add          # a new feature (docs/adding-a-feature.md)
 pnpm module:list          # what can be removed (docs/removing-a-module.md)
 pnpm module:remove <name> # a dry run; --apply removes it and regenerates
