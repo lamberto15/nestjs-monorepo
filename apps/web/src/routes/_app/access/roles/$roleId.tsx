@@ -9,8 +9,13 @@ import { requirePermission } from '@/features/access/gate';
 import { RoleForm } from '@/features/access/role-form';
 import { errorMessage } from '@/lib/errors';
 import { FormAlert } from '@/lib/form';
+import { z } from '@/lib/zod';
 
 export const Route = createFileRoute('/_app/access/roles/$roleId')({
+  // The subject the editor opens on (a cell of the roles' grid).
+  validateSearch: z.object({
+    subject: z.string().max(100).optional().catch(undefined),
+  }),
   beforeLoad: requirePermission('Access.manageRoles'),
   component: EditRole,
 });
@@ -19,6 +24,7 @@ export const Route = createFileRoute('/_app/access/roles/$roleId')({
 function EditRole() {
   const { t } = useTranslation('access');
   const { roleId } = Route.useParams();
+  const { subject } = Route.useSearch();
   // A 404 is this page's to say, not a toast's. The form is made from one
   // read and saved with its ETag (as the note and policy editors): a refetch
   // in the background would rebuild it and drop the user's edits; another
@@ -30,24 +36,29 @@ function EditRole() {
     refetchOnReconnect: false,
   });
   const missing = isApiError(role.error) && role.error.status === 404;
+  const title = role.data ? role.data.role.name : t('roles.editTitle');
   return (
-    <Page width="narrow">
-      <PageHeader
-        title={role.data ? role.data.role.name : t('roles.editTitle')}
-      />
-      {role.isPending ? (
-        <Spinner />
-      ) : missing ? (
-        <FormAlert message={t('roles.notFound')} />
-      ) : role.isError ? (
-        <FormAlert message={errorMessage(role.error)} />
-      ) : (
+    <Page>
+      {role.isSuccess ? (
         // Read again (after a save or a 412's reload): a fresh form.
         <RoleForm
           key={role.data.etag ?? role.data.role.updatedAt}
+          title={title}
           role={role.data.role}
           etag={role.data.etag}
+          subject={subject}
         />
+      ) : (
+        <>
+          <PageHeader title={title} />
+          {role.isPending ? (
+            <Spinner />
+          ) : missing ? (
+            <FormAlert message={t('roles.notFound')} />
+          ) : (
+            <FormAlert message={errorMessage(role.error)} />
+          )}
+        </>
       )}
     </Page>
   );

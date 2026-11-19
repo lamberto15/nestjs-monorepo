@@ -192,3 +192,51 @@ export function toPermissions(
   }
   return permissions;
 }
+
+/** Whether two lists of rules grant the same (order and repeats aside). */
+export function sameRules(a: readonly Rule[] = [], b: readonly Rule[] = []) {
+  const signature = (rules: readonly Rule[]) =>
+    [...new Set(rules.map(ruleSignature))].toSorted().join('\n');
+  return signature(a) === signature(b);
+}
+
+/**
+ * Whether an action's rules fit the editor's simple controls: one rule with
+ * at most one condition. Anything more is edited rule by rule.
+ */
+export function isSimple(rules: readonly Rule[]): boolean {
+  return rules.length === 1 && Object.keys(rules[0]!.conditions).length <= 1;
+}
+
+/** Whether every rule has a condition: the action covers only some records. */
+export const onSomeRecords = (rules: readonly Rule[] = []) =>
+  rules.length > 0 &&
+  rules.every((rule) => Object.keys(rule.conditions).length > 0);
+
+/** An action that differs from the saved role, and how. */
+export interface Change {
+  key: string;
+  subject: CatalogSubject;
+  action: CatalogAction;
+  kind: 'granted' | 'revoked' | 'changed';
+}
+
+/** What differs between the saved state and the edited one, in catalog order. */
+export function changesOf(
+  catalog: Catalog,
+  saved: EditorState,
+  current: EditorState,
+): Change[] {
+  const changes: Change[] = [];
+  for (const subject of catalog.subjects) {
+    for (const action of subject.actions) {
+      const key = actionKey(subject.subject, action.action);
+      const before = saved[key];
+      const after = current[key];
+      if (sameRules(before, after)) continue;
+      const kind = !before ? 'granted' : !after ? 'revoked' : 'changed';
+      changes.push({ key, subject, action, kind });
+    }
+  }
+  return changes;
+}

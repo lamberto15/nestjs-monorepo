@@ -16,6 +16,7 @@ import { unitRefsQuery } from '@/lib/list-refs';
 import { peopleQuery, unitNameQuery } from '@/lib/people';
 import { nav, visibleGroups } from '@/nav';
 import { principalsHandler, userPrincipal } from '@/test/principals';
+import { axeViolations } from '@/test/axe';
 import { renderApp } from '@/test/render-app';
 import { renderComponent } from '@/test/render-component';
 import { allFeatures, problem, server, signedInUser } from '@/test/server';
@@ -57,26 +58,47 @@ function capture(
 }
 
 describe('roles: the permission editor', () => {
-  it('creates a role with the permissions ticked, as the catalog names them', async () => {
+  /** Opens a subject of the editor's list. */
+  async function openSubject(
+    user: ReturnType<typeof userEvent.setup>,
+    label: string,
+  ) {
+    const list = await screen.findByRole('list', { name: 'Subjects' });
+    await user.click(
+      within(list).getByRole('button', { name: new RegExp(`^${label}`) }),
+    );
+    return screen.getByRole('region', { name: new RegExp(`^${label}`) });
+  }
+
+  it('creates a role from the simple choices: which records and which fields', async () => {
     signedInWith(everything);
     const created = capture('post', '/v1/access/roles', 201);
     const { router } = await renderApp('/access/roles/new');
     const user = userEvent.setup();
 
     await user.type(await screen.findByLabelText('Name'), 'Support');
-    await user.click(screen.getByRole('checkbox', { name: /See notes/ }));
-    // A rule appears: narrow it to "Created by me", and only the text.
-    const rule = screen.getByRole('group', { name: 'Rule 1' });
+    const notes = await openSubject(user, 'Notes');
+    await user.click(within(notes).getByRole('switch', { name: /See notes/ }));
+    // Narrowed to "Created by me", and only the text.
     await user.click(
-      within(rule).getByRole('checkbox', { name: /Created by me/ }),
+      within(notes).getByRole('radio', { name: 'Created by me' }),
     );
     await user.click(
-      within(rule).getByRole('checkbox', { name: /All fields/ }),
+      within(notes).getByRole('button', { name: 'Fields All fields' }),
     );
     await user.click(
-      within(rule).getByRole('checkbox', { name: /The custom fields/ }),
+      await screen.findByRole('checkbox', { name: /All fields/ }),
     );
-    await user.click(screen.getByRole('checkbox', { name: /Write notes/ }));
+    await user.click(
+      screen.getByRole('checkbox', { name: /The custom fields/ }),
+    );
+    await user.keyboard('{Escape}');
+    expect(
+      within(notes).getByRole('button', { name: 'Fields 1 of 2 fields' }),
+    ).toBeVisible();
+    await user.click(
+      within(notes).getByRole('switch', { name: /Write notes/ }),
+    );
     await user.click(screen.getByRole('button', { name: 'Create role' }));
 
     await waitFor(() => expect(created).toHaveLength(1));
@@ -102,15 +124,15 @@ describe('roles: the permission editor', () => {
     signedInWith({ ...everything, 'Expense.approve': true });
     const user = userEvent.setup();
     await renderApp('/access/roles/new');
+    const expenses = await openSubject(user, 'Expenses');
     await user.click(
-      await screen.findByRole('checkbox', { name: /Approve expenses/ }),
+      within(expenses).getByRole('switch', { name: /Approve expenses/ }),
     );
-    const rule = screen.getByRole('group', { name: 'Rule 1' });
     await user.click(
-      within(rule).getByRole('checkbox', { name: /Up to an amount/ }),
+      within(expenses).getByRole('radio', { name: 'Up to an amount' }),
     );
     // An empty parameter is refused at once; the hint stays beside the reason.
-    const amount = within(rule).getByLabelText('Amount');
+    const amount = within(expenses).getByLabelText('Amount');
     expect(amount).toBeInvalid();
     expect(amount).toHaveAccessibleDescription(
       'An amount in cents (minor units). Enter a value.',
@@ -127,15 +149,231 @@ describe('roles: the permission editor', () => {
     );
   });
 
-  it('does not offer to grant what the user doesn’t hold', async () => {
+  it('does not offer to grant what the user doesn’t hold, nor grant it with Grant all', async () => {
     signedInWith({ 'Access.manageRoles': true, 'Note.read': true });
+    const user = userEvent.setup();
     await renderApp('/access/roles/new');
+    const notes = await openSubject(user, 'Notes');
     expect(
-      await screen.findByRole('checkbox', { name: /See notes/ }),
+      within(notes).getByRole('switch', { name: /See notes/ }),
     ).not.toHaveAttribute('aria-disabled', 'true');
     expect(
-      screen.getByRole('checkbox', { name: /Write notes/ }),
+      within(notes).getByRole('switch', { name: /Write notes/ }),
     ).toHaveAttribute('aria-disabled', 'true');
+
+    await user.click(within(notes).getByRole('button', { name: 'Grant all' }));
+    expect(
+      within(notes).getByRole('switch', { name: /See notes/ }),
+    ).toBeChecked();
+    expect(
+      within(notes).getByRole('switch', { name: /Write notes/ }),
+    ).not.toBeChecked();
+    expect(within(notes).getByText('1 of 3 actions granted.')).toBeVisible();
+    const list = screen.getByRole('list', { name: 'Subjects' });
+    expect(
+      within(list).getByRole('button', { name: /Notes/ }),
+    ).toHaveTextContent('1 of 3');
+
+    await user.click(within(notes).getByRole('button', { name: 'Clear' }));
+    expect(
+      within(notes).getByRole('switch', { name: /See notes/ }),
+    ).not.toBeChecked();
+    expect(
+      within(list).getByRole('button', { name: /Notes/ }),
+    ).toHaveTextContent('None of 3');
+  });
+
+  it('switches subjects and filters them by label or key, granted or changed', async () => {
+    signedInWith(everything);
+    const user = userEvent.setup();
+    await renderApp(`/access/roles/${ids.editor}`);
+    const list = await screen.findByRole('list', { name: 'Subjects' });
+    // Catalog order; the first is open.
+    expect(
+      within(list)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Access controlNone of 2', 'Notes2 of 3', 'ExpensesNone of 1']);
+    expect(
+      screen.getByRole('heading', { name: /Access control/ }),
+    ).toBeVisible();
+    const notes = await openSubject(user, 'Notes');
+    expect(
+      within(notes).getByText(
+        '2 of 3 actions granted, 1 of them only on some records.',
+      ),
+    ).toBeVisible();
+
+    await user.type(screen.getByLabelText('Filter permissions'), 'approve');
+    expect(within(list).getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: /Expenses/ })).toBeVisible();
+    await user.clear(screen.getByLabelText('Filter permissions'));
+    await user.type(screen.getByLabelText('Filter permissions'), 'Note.upd');
+    expect(
+      within(screen.getByRole('region', { name: /^Notes/ })).getAllByRole(
+        'switch',
+      ),
+    ).toHaveLength(1);
+    await user.clear(screen.getByLabelText('Filter permissions'));
+
+    await user.click(screen.getByRole('button', { name: 'Granted' }));
+    expect(screen.getByRole('button', { name: 'Granted' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      within(list)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Notes2 of 3']);
+    await user.click(screen.getByRole('button', { name: 'Changed' }));
+    expect(screen.getByText('No permission matches.')).toBeVisible();
+  });
+
+  it('opens on the subject the link names', async () => {
+    signedInWith(everything);
+    await renderApp(`/access/roles/${ids.editor}?subject=Expense`);
+    expect(
+      await screen.findByRole('heading', { name: /Expenses/ }),
+    ).toBeVisible();
+  });
+
+  it('marks what changed, counts it, says it in words, and discards it', async () => {
+    signedInWith(everything);
+    const user = userEvent.setup();
+    await renderApp(`/access/roles/${ids.editor}`);
+    const summary = await screen.findByRole('complementary', {
+      name: 'Summary',
+    });
+    expect(
+      within(summary)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      // Can:
+      'See notes, only: Created by me',
+      'Write notes',
+      // Cannot, by subject:
+      'Create, edit and delete roles, Create users, assign roles',
+      'Change notes',
+      'Approve expenses',
+    ]);
+    expect(within(summary).getByText('Changes · 0')).toBeVisible();
+
+    const notes = await openSubject(user, 'Notes');
+    await user.click(
+      within(notes).getByRole('switch', { name: /Write notes/ }),
+    );
+    await user.click(
+      within(notes).getByRole('radio', { name: 'Every record' }),
+    );
+    await user.click(
+      within(notes).getByRole('switch', { name: /Change notes/ }),
+    );
+    expect(within(notes).getAllByText('Changed')).toHaveLength(3);
+    expect(screen.getByText('3 unsaved changes')).toBeVisible();
+    const changes = within(summary).getByRole('heading', {
+      name: 'Changes · 3',
+    }).parentElement!;
+    expect(
+      within(changes)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      '~Changed: See notes',
+      '−Taken away: Write notes',
+      '+Granted: Change notes',
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByText(/unsaved change/)).not.toBeInTheDocument();
+    expect(within(notes).queryByText('Changed')).not.toBeInTheDocument();
+    expect(
+      within(notes).getByRole('switch', { name: /Write notes/ }),
+    ).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeDisabled();
+  });
+
+  it('keeps rules the simple choice can’t express, and edits them rule by rule', async () => {
+    signedInWith(everything);
+    const editor = roles.find((role) => role.id === ids.editor)!;
+    const stored = [
+      // Either rule grants it: mine, or in my units.
+      { subject: 'Note', action: 'read', conditions: [{ key: 'mine' }] },
+      { subject: 'Note', action: 'read', conditions: [{ key: 'inMyUnits' }] },
+      // Both conditions must hold.
+      {
+        subject: 'Note',
+        action: 'update',
+        conditions: [{ key: 'mine' }, { key: 'draft' }],
+      },
+    ];
+    server.use(
+      http.get('/v1/access/roles/:id', () =>
+        HttpResponse.json({ ...editor, permissions: stored }),
+      ),
+    );
+    const saved = capture('patch', '/v1/access/roles/:id');
+    const user = userEvent.setup();
+    await renderApp(`/access/roles/${ids.editor}`);
+    const notes = await openSubject(user, 'Notes');
+    expect(
+      within(notes).getAllByText(
+        'This permission has several rules or conditions, so it is edited rule by rule.',
+      ),
+    ).toHaveLength(2);
+    expect(within(notes).queryByRole('radio')).toBeNull();
+    expect(
+      within(notes).getAllByRole('group', { name: 'Rule 2' }),
+    ).toHaveLength(1);
+    const summary = screen.getByRole('complementary', { name: 'Summary' });
+    expect(
+      within(summary).getByText(
+        'See notes, only: Created by me or In my units',
+      ),
+    ).toBeVisible();
+    expect(
+      within(summary).getByText(
+        'Change notes, only: Created by me and Still a draft',
+      ),
+    ).toBeVisible();
+
+    // Down to one rule: the simple choice is back, on the rule that is left.
+    const [, second] = within(notes).getAllByRole('group', { name: /Rule/ });
+    await user.click(
+      within(second!).getByRole('button', { name: 'Remove this rule' }),
+    );
+    expect(
+      within(notes).getByRole('radio', { name: 'Created by me' }),
+    ).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Discard' }));
+
+    // Saved untouched but for the name: every rule goes back as it came.
+    const name = screen.getByLabelText('Name');
+    await user.clear(name);
+    await user.type(name, 'Editors');
+    await user.click(screen.getByRole('button', { name: 'Save role' }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]!.body).toEqual({
+      name: 'Editors',
+      description: 'Writes records.',
+      permissions: stored,
+    });
+  });
+
+  it('opens the rule editor of a simple permission on demand, to add a rule', async () => {
+    signedInWith(everything);
+    const user = userEvent.setup();
+    await renderApp(`/access/roles/${ids.editor}`);
+    const notes = await openSubject(user, 'Notes');
+    await user.click(
+      within(notes).getByRole('button', {
+        name: 'Advanced: several rules or conditions',
+      }),
+    );
+    await user.click(within(notes).getByRole('button', { name: 'Add a rule' }));
+    expect(within(notes).queryByRole('radio')).toBeNull();
+    expect(within(notes).getByRole('group', { name: 'Rule 2' })).toBeVisible();
   });
 
   it('shows a built-in role read-only', async () => {
@@ -147,8 +385,168 @@ describe('roles: the permission editor', () => {
       ),
     ).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Save role' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Grant all' })).toBeNull();
     expect(
-      screen.getByText('Everything, including access control'),
+      within(screen.getByRole('complementary', { name: 'Summary' })).getByText(
+        'Everything, including access control',
+      ),
+    ).toBeVisible();
+  });
+
+  it('breaks none of the checked accessibility rules', async () => {
+    signedInWith(everything);
+    const user = userEvent.setup();
+    await renderApp(`/access/roles/${ids.editor}`);
+    await openSubject(user, 'Notes');
+    expect(
+      await axeViolations([
+        'aria-allowed-attr',
+        'aria-valid-attr-value',
+        'button-name',
+        'label',
+        'list',
+        'listitem',
+        'nested-interactive',
+        'duplicate-id',
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('roles: the comparison grid', () => {
+  /** The cell of a role for an action, by its accessible name. */
+  const cell = (role: string, action: string) =>
+    screen.getByRole('link', { name: new RegExp(`^${role}, ${action}:`) });
+
+  it('shows what each role grants of each permission, the built-in one everything', async () => {
+    signedInWith(everything);
+    await renderApp('/access/roles');
+    expect(
+      await screen.findByRole('columnheader', { name: /Editor/ }),
+    ).toHaveTextContent('Editor2 members');
+    expect(cell('Administrator', 'Approve expenses')).toHaveAccessibleName(
+      'Administrator, Approve expenses: Every record',
+    );
+    expect(cell('Editor', 'See notes')).toHaveAccessibleName(
+      'Editor, See notes: some records (Created by me)',
+    );
+    expect(cell('Viewer', 'See notes')).toHaveAccessibleName(
+      'Viewer, See notes: Every record',
+    );
+    expect(cell('Viewer', 'Write notes')).toHaveAccessibleName(
+      'Viewer, Write notes: Not granted',
+    );
+    // A cell opens that role's editor on its subject.
+    expect(cell('Editor', 'See notes')).toHaveAttribute(
+      'href',
+      `/access/roles/${ids.editor}?subject=Note`,
+    );
+    expect(
+      await axeViolations([
+        'scope-attr-valid',
+        'th-has-data-cells',
+        'td-headers-attr',
+        'link-name',
+        'button-name',
+        'label',
+        'aria-allowed-attr',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('collapses the subjects where roles agree, and keeps only rows that differ', async () => {
+    signedInWith(everything);
+    server.use(
+      http.get('/v1/access/roles', () =>
+        HttpResponse.json({
+          items: roles.filter((role) => role.id !== ids.admin),
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    await renderApp('/access/roles');
+    // Editor and Viewer grant nothing of Access: closed; they differ on notes.
+    const access = await screen.findByRole('button', {
+      name: /Access control/,
+    });
+    expect(access).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      screen.queryByRole('rowheader', { name: /Create users/ }),
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: /^Notes/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(
+      screen.getByRole('rowheader', { name: /Change notes/ }),
+    ).toBeVisible();
+
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Only rows where roles differ' }),
+    );
+    expect(
+      screen.queryByRole('rowheader', { name: /Change notes/ }),
+    ).toBeNull();
+    expect(screen.getByRole('rowheader', { name: /See notes/ })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Access control/ })).toBeNull();
+
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Only rows where roles differ' }),
+    );
+    await user.click(screen.getByRole('button', { name: /Access control/ }));
+    expect(
+      screen.getByRole('rowheader', { name: /Create users/ }),
+    ).toBeVisible();
+  });
+
+  it('filters the permissions by label or key', async () => {
+    signedInWith(everything);
+    const user = userEvent.setup();
+    await renderApp('/access/roles');
+    await user.type(
+      await screen.findByLabelText('Filter permissions'),
+      'Expense.app',
+    );
+    expect(
+      screen
+        .getAllByRole('rowheader')
+        .filter((header) => header.getAttribute('scope') === 'row')
+        .map((header) => header.textContent),
+    ).toEqual(['Approve expensesExpense.approve']);
+    await user.clear(screen.getByLabelText('Filter permissions'));
+    await user.type(screen.getByLabelText('Filter permissions'), 'nothing');
+    expect(screen.getByText('No permission matches.')).toBeVisible();
+  });
+
+  it('opens a role’s editor from a cell, and deletes a custom role from its column', async () => {
+    signedInWith(everything);
+    const deleted = capture('delete', '/v1/access/roles/:id');
+    const user = userEvent.setup();
+    const { router } = await renderApp('/access/roles');
+    expect(
+      screen.queryByRole('button', { name: 'Delete the role Administrator' }),
+    ).toBeNull();
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete the role Viewer' }),
+    );
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+    await waitFor(() => expect(deleted).toHaveLength(1));
+    expect(deleted[0]!.url).toContain(ids.viewer);
+    expect(await findToast('Role Viewer deleted.')).toBeVisible();
+
+    await user.click(cell('Editor', 'Approve expenses'));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        `/access/roles/${ids.editor}`,
+      ),
+    );
+    expect(
+      await screen.findByRole('heading', { name: /Expenses/ }),
     ).toBeVisible();
   });
 });

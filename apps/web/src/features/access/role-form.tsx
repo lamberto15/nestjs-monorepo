@@ -4,9 +4,11 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { useStore } from '@tanstack/react-form';
+import { useNavigate } from '@tanstack/react-router';
 import { Alert, AlertDescription } from '@nestjs-monorepo/ui/components/alert';
-import { buttonVariants } from '@nestjs-monorepo/ui/components/button';
+import { Badge } from '@nestjs-monorepo/ui/components/badge';
+import { Button } from '@nestjs-monorepo/ui/components/button';
 import { FieldGroup } from '@nestjs-monorepo/ui/components/field';
 import { Spinner } from '@nestjs-monorepo/ui/components/spinner';
 import { LockIcon } from 'lucide-react';
@@ -24,7 +26,9 @@ import {
   type RoleBody,
 } from '@/features/access/api';
 import { PermissionEditor } from '@/features/access/permission-editor';
+import { RoleSummary } from '@/features/access/role-summary';
 import {
+  changesOf,
   fromPermissions,
   isValid,
   toPermissions,
@@ -32,6 +36,7 @@ import {
   type EditorState,
   type Permission,
 } from '@/features/access/permissions';
+import { PageHeader } from '@/components/page-header';
 import { ConflictAlert } from '@/components/records/conflict-alert';
 import { applyFieldErrors, errorMessage } from '@/lib/errors';
 import { useMe } from '@/lib/features';
@@ -40,33 +45,45 @@ import { isPreconditionFailed } from '@/lib/records';
 import { useUnsavedChangesGuard } from '@/lib/unsaved-changes';
 import { z } from '@/lib/zod';
 
-/** A new role, or an existing one (read-only when built in). */
-export function RoleForm(props: { role?: Role; etag?: string }) {
+/**
+ * A new role, or an existing one (read-only when built in): the page's
+ * header with what is unsaved, the role's name and description, the
+ * permission editor and, beside it, what the role grants in words.
+ */
+export function RoleForm(props: {
+  title: string;
+  role?: Role;
+  etag?: string;
+  /** The subject the editor opens on (`?subject=`). */
+  subject?: string;
+}) {
   const { i18n } = useTranslation();
   // Labels in the UI's language; the previous ones stay while the new load.
   const catalog = useQuery({
     ...catalogQuery(i18n.language),
     placeholderData: keepPreviousData,
   });
-  if (catalog.isPending) {
-    return <Spinner />;
+  if (catalog.isPending || catalog.isError) {
+    return (
+      <>
+        <PageHeader title={props.title} />
+        {catalog.isPending ? (
+          <Spinner />
+        ) : (
+          <FormAlert message={errorMessage(catalog.error)} />
+        )}
+      </>
+    );
   }
-  if (catalog.isError) {
-    return <FormAlert message={errorMessage(catalog.error)} />;
-  }
-  return (
-    <RoleFormLoaded
-      catalog={catalog.data}
-      role={props.role}
-      etag={props.etag}
-    />
-  );
+  return <RoleFormLoaded {...props} catalog={catalog.data} />;
 }
 
 function RoleFormLoaded(props: {
+  title: string;
   catalog: Catalog;
   role?: Role;
   etag?: string;
+  subject?: string;
 }) {
   const { t } = useTranslation('access');
   const navigate = useNavigate();
@@ -136,15 +153,59 @@ function RoleFormLoaded(props: {
     },
   });
   useUnsavedChangesGuard(form);
+  const values = useStore(form.store, (state) => state.values);
+  const changes = changesOf(props.catalog, initial.state, values.permissions);
+  const edited = (['name', 'description'] as const).filter(
+    (name) => values[name] !== form.options.defaultValues?.[name],
+  );
+  const unsaved = changes.length + edited.length;
+  const everything = initial.unknown.some(
+    (p) => p.subject === 'all' && p.action === 'manage',
+  );
 
   return (
     <form
       noValidate
+      className="flex flex-col gap-6"
       onSubmit={(event) => {
         event.preventDefault();
         void form.handleSubmit();
       }}
     >
+      <PageHeader
+        title={props.title}
+        description={props.role?.description || undefined}
+        badges={
+          readOnly && (
+            <Badge variant="secondary">{t('roles.builtInBadge')}</Badge>
+          )
+        }
+        actions={
+          !readOnly && (
+            <>
+              <span
+                aria-live="polite"
+                className="text-sm text-muted-foreground"
+              >
+                {unsaved > 0 && t('roles.unsaved', { count: unsaved })}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={unsaved === 0}
+                onClick={() => form.reset()}
+              >
+                {t('roles.discard')}
+              </Button>
+              <form.AppForm>
+                <form.SubmitButton>
+                  {t(props.role ? 'roles.save' : 'roles.create')}
+                </form.SubmitButton>
+              </form.AppForm>
+            </>
+          )
+        }
+      />
       <FieldGroup>
         {readOnly && (
           <Alert>
@@ -166,58 +227,61 @@ function RoleFormLoaded(props: {
             }
           />
         )}
-        <form.AppField name="name">
-          {(field) => <field.TextField label={t('roles.fields.name')} />}
-        </form.AppField>
-        <form.AppField name="description">
-          {(field) => <field.TextField label={t('roles.fields.description')} />}
-        </form.AppField>
+        <div className="grid max-w-3xl gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <form.AppField name="name">
+            {(field) => <field.TextField label={t('roles.fields.name')} />}
+          </form.AppField>
+          <form.AppField name="description">
+            {(field) => (
+              <field.TextField label={t('roles.fields.description')} />
+            )}
+          </form.AppField>
+        </div>
         {initial.unknown.length > 0 && (
           <UnknownPermissions
             permissions={initial.unknown}
             readOnly={readOnly}
           />
         )}
+      </FieldGroup>
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <form.Field name="permissions">
           {(field) => (
-            <div className="flex flex-col gap-2">
-              <h2 className="text-base font-medium">
-                {t('roles.fields.permissions')}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {t('roles.editor.hint')}
-              </p>
-              <PermissionEditor
-                catalog={props.catalog}
-                value={field.state.value}
-                onChange={field.handleChange}
-                disabled={readOnly}
-                holds={(key) => can?.[key] === true}
-              />
+            <div className="flex min-w-0 flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-base font-medium">
+                  {t('roles.fields.permissions')}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {t('roles.editor.hint')}
+                </p>
+              </div>
               {field.state.meta.errors.length > 0 && (
                 <p role="alert" className="text-sm text-destructive">
                   {t('roles.errors.params')}
                 </p>
               )}
+              <PermissionEditor
+                catalog={props.catalog}
+                value={field.state.value}
+                saved={initial.state}
+                onChange={field.handleChange}
+                disabled={readOnly}
+                holds={(key) => can?.[key] === true}
+                subject={props.subject}
+              />
             </div>
           )}
         </form.Field>
-        <div className="flex gap-2">
-          {!readOnly && (
-            <form.AppForm>
-              <form.SubmitButton>
-                {t(props.role ? 'roles.save' : 'roles.create')}
-              </form.SubmitButton>
-            </form.AppForm>
-          )}
-          <Link
-            to="/access/roles"
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            {t('cancel')}
-          </Link>
-        </div>
-      </FieldGroup>
+        <RoleSummary
+          catalog={props.catalog}
+          value={values.permissions}
+          everything={everything}
+          role={values.name}
+          changes={changes}
+          edited={edited}
+        />
+      </div>
     </form>
   );
 }

@@ -21,6 +21,8 @@ const SIGNED_IN = [
   '/account/notifications',
   '/account/privacy',
   '/account/watching',
+  '/access/roles',
+  '/access/roles/new',
 ];
 
 /** A scan name from a path: "/account/profile" becomes "account-profile". */
@@ -68,7 +70,12 @@ test.describe('signed in as the administrator', () => {
       await page.addInitScript(() => localStorage.setItem('theme', 'dark'));
     });
 
-    for (const path of ['/', '/settings']) {
+    for (const path of [
+      '/',
+      '/settings',
+      '/access/roles',
+      '/access/roles/new',
+    ]) {
       test(path, async ({ page, expectAccessible }) => {
         await page.goto(path);
         await expect(page.locator('html')).toHaveClass(/dark/);
@@ -113,7 +120,7 @@ test.describe('signed in as the administrator', () => {
 
   // A wide table scrolls in its own box, not the page: the header's search
   // and bell stay on screen (the inset is a flex child, so it needs min-w-0).
-  for (const path of ['/audit', '/sign-ins']) {
+  for (const path of ['/audit', '/sign-ins', '/access/roles']) {
     test(`${path} never scrolls the page sideways on a laptop`, async ({
       page,
     }) => {
