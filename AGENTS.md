@@ -10,6 +10,26 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
 (NestJS's first-party packages and their docs); in `apps/web` or
 `packages/ui`, [apps/web/AGENTS.md](apps/web/AGENTS.md).
 
+## In a copy of the template
+
+A repository with a `template` git remote (`git remote`) is a project made
+from the template (`pnpm create nestjs-monorepo`), not the template. There:
+
+- **Its code goes where the template has nothing:** business records in
+  `apps/api/src/features/<name>` (`pnpm feature:add`), a capability of its
+  own in a new `apps/api/src/modules/<name>`, new files in the web app.
+- **`core`, `iam` and the shipped modules are the template's.** Extend them
+  through what they offer (their `*.config.ts` variables, decorators,
+  `forFeature()`/`forRecord()`, events) rather than editing them; drop one
+  with `pnpm module:remove`. Every edit of the template's files is a
+  conflict on the next upgrade ([upgrading](docs/upgrading.md)).
+- **When an edit is the only way,** keep it small, say why in its commit,
+  and tell the developer which extension point is missing, so they can ask
+  the template for it. Before and after such work, run `pnpm template:check`.
+- **The rules below hold; the decisions are the template owner's**, kept as
+  the reasons the template is as it is. The project's own decisions go in a
+  section of their own, and "Git" is the project's to decide.
+
 ## Rules
 
 1. **First-party first.** Use the `@nestjs/*` package when one exists, the
@@ -96,8 +116,13 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
   (nestrix-js/nestrix#49 tracks them) and fixed there with a pull request,
   not worked around here.
 - **No bundled operations:** no monitoring, backups, load tests, proxies or
-  deploy pipelines. The one exception: `publish.yml` publishes the image to
-  GHCR (the owner, 2026-11-19).
+  deploy pipelines. The exceptions: `publish.yml` publishes the image to
+  GHCR (the owner, 2026-11-19); `release.yml` publishes
+  `create-nestjs-monorepo` to npm for a release tag.
+- **The template is distributed** as `pnpm create nestjs-monorepo`
+  (`packages/create-nestjs-monorepo`): a clone of a release tag with its
+  history, so a project upgrades by merging the next tag;
+  `template.json` names the release (the owner, 2026-11-19).
 - **Git:** commits on `main`, pushed to the private `origin` (the owner,
   2026-11-19); no pull request until the owner asks.
 
@@ -112,6 +137,7 @@ pnpm traces:up            # optional: Nestrix on http://localhost:4318, to see w
 pnpm feature:add          # a new feature (docs/adding-a-feature.md)
 pnpm module:list          # what can be removed (docs/removing-a-module.md)
 pnpm module:remove <name> # a dry run; --apply removes it and regenerates
+pnpm template:check       # in a copy: the template's files it changed (docs/upgrading.md)
 pnpm build && pnpm lint && pnpm test && pnpm test:e2e
 pnpm client:check         # after route changes (pnpm client:generate fixes it)
 pnpm ops tenant:export <slug> --out <dir>  # a tenant to its own server (docs/moving-a-tenant.md)
@@ -136,6 +162,8 @@ are what comes before them:
   writes.
 - [removing-a-module](docs/removing-a-module.md): `pnpm module:remove`, what
   it removes and regenerates, and when it refuses.
+- [upgrading](docs/upgrading.md): a copy of the template upgraded to a newer
+  release, what `pnpm template:check` reports, and making a release.
 - [api-conventions](docs/api-conventions.md): versions, errors, validation,
   lists, ETags, idempotency, rate limits.
 - [identity](docs/identity.md): accounts, tenants, sign-in, roles and

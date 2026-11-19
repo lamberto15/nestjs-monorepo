@@ -26,6 +26,7 @@
     "feature:add": "node tools/feature-add.mjs",
     "module:list": "node tools/module.mjs list",
     "module:remove": "node tools/module.mjs remove",
+    "template:check": "node tools/template.mjs check",
     "ops": "pnpm --filter api ops",
     "openapi:dump": "pnpm --filter api openapi:dump",
     "client:generate": "pnpm openapi:dump && pnpm --filter @nestjs-monorepo/api-client generate",

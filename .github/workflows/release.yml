@@ -1,0 +1,68 @@
+# A release of the template, from its tag (`v1.2.3`, docs/upgrading.md, "For
+# the template's maintainer"): `create-nestjs-monorepo` published to npm at
+# the tag's version, and the release's notes on GitHub. npm's trusted
+# publishing: no token is stored, the job's OIDC identity is the publisher
+# (set once on npmjs.com, for this repository and this workflow file), and
+# the package carries a provenance statement. The image for the same tag is
+# publish.yml's.
+#
+# Third-party actions are pinned by commit SHA (the comment names the
+# release); Dependabot proposes newer ones.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # npm's trusted publishing and provenance
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node 26 ships npm 11.20: trusted publishing needs 11.5.1 or later.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - name: The tag is template.json's version
+        run: |
+          version=$(node -p "require('./template.json').version")
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::$TAG is not template.json's version ($version)."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Test the package
+        working-directory: packages/create-nestjs-monorepo
+        run: node --test
+      - name: Publish create-nestjs-monorepo
+        working-directory: packages/create-nestjs-monorepo
+        run: |
+          if npm view "create-nestjs-monorepo@$VERSION" version >/dev/null 2>&1; then
+            echo "create-nestjs-monorepo@$VERSION is published already."
+            exit 0
+          fi
+          npm version "$VERSION" --no-git-tag-version
+          npm publish --provenance --access public
+      - name: The release's notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG has a release already."
+          else
+            gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+          fi

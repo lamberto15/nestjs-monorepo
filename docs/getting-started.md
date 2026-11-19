@@ -22,19 +22,21 @@ you never switch something on.
 
 ## 2. Start a project from the template
 
-Copy it with a history of its own:
-
 ```bash
-git clone --depth 1 <the template's URL> my-app
+pnpm create nestjs-monorepo my-app
 cd my-app
-rm -rf .git
-git init -b main
-pnpm install                 # also installs the git hooks, which need .git
-git add -A
-git commit -m "chore: start from the template"
+git remote add origin <your repository's URL>
+git push -u origin main
 ```
 
-The commit hook checks Conventional Commits (`type(scope): subject`).
+It clones the newest release of the template (`--version 0.2.0` for
+another) with the template's history, keeps the template as the `template`
+remote, names the project after its folder (the root package, the
+development services and the README's title), commits that on a `main`
+branch and runs `pnpm install`, which also installs the git hooks. The
+template's history is what a later release is merged against:
+[upgrading](upgrading.md). The commit hook checks Conventional Commits
+(`type(scope): subject`).
 
 ### The licence
 
@@ -45,17 +47,17 @@ product is commercial, get a licence from the licensor before you build on it.
 
 ### Renaming
 
-There is no rename command. What carries the template's name:
+`pnpm create nestjs-monorepo` renames the first two rows' files; the rest is yours. What carries the template's name:
 
-| What                         | Where                                                                                                                                       | Change it?                                                                                                                                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The root package             | `package.json` (`"name": "nestjs-monorepo"`), the title of `README.md`                                                                      | Yes.                                                                                                                                                                                           |
-| The development services     | `compose.dev.yaml` (`name: nestjs-monorepo-dev`)                                                                                            | Yes, if another copy of the template runs on the same machine: the same name shares the containers and volumes. Both also bind ports 5432 and 6379.                                            |
-| The workspace scope          | `@nestjs-monorepo/*`: the `name` of `apps/web`, `apps/web-e2e`, `packages/ui`, `packages/api-client`, and every import of them (`pnpm-lock.yaml`, `turbo.json`, `Dockerfile`, `.github/workflows/ci.yml`, the generator's web templates) | Optional: the packages are private and never published. To change it, replace the string in every tracked file, run `pnpm install && pnpm build && pnpm test`, and commit (`pnpm client:check` compares the client with what is committed).                                  |
-| The name people see          | `apps/web/src/locales/en/common.json` (`app.name`), `apps/web/index.html` (`<title>`), `apps/web/vite.config.ts` (the PWA manifest's `name`, `short_name`, `description`, `theme_color`) | Yes.                                                                                                                                                                                           |
-| The API's name               | `API_TITLE` in `apps/api/src/core/http/openapi.ts` (`My API`; then `pnpm client:generate`); `MAIL_FROM` and `SERVICE_NAME` in the environment (authenticator apps and passkeys show `SERVICE_NAME`) | Yes.                                                                                                                                                                                           |
-| The image                    | `.github/workflows/publish.yml` publishes `ghcr.io/<owner>/<repo>`, taken from the repository                                                | Nothing to edit.                                                                                                                                                                               |
-| Internal labels              | an advisory lock name in `core/database/roles.ts`, the cursor key label in `core/http/cursor-seal.ts`, the schematic's `$id`                | No: nobody sees them, and the cursor label is part of every list cursor.                                                                                                                       |
+| What                     | Where                                                                                                                                                                                                                                    | Change it?                                                                                                                                                                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The root package         | `package.json` (`"name": "nestjs-monorepo"`), the title of `README.md`                                                                                                                                                                   | Yes.                                                                                                                                                                                                                                        |
+| The development services | `compose.dev.yaml` (`name: nestjs-monorepo-dev`)                                                                                                                                                                                         | Yes, if another copy of the template runs on the same machine: the same name shares the containers and volumes. Both also bind ports 5432 and 6379.                                                                                         |
+| The workspace scope      | `@nestjs-monorepo/*`: the `name` of `apps/web`, `apps/web-e2e`, `packages/ui`, `packages/api-client`, and every import of them (`pnpm-lock.yaml`, `turbo.json`, `Dockerfile`, `.github/workflows/ci.yml`, the generator's web templates) | Optional: the packages are private and never published. To change it, replace the string in every tracked file, run `pnpm install && pnpm build && pnpm test`, and commit (`pnpm client:check` compares the client with what is committed). |
+| The name people see      | `apps/web/src/locales/en/common.json` (`app.name`), `apps/web/index.html` (`<title>`), `apps/web/vite.config.ts` (the PWA manifest's `name`, `short_name`, `description`, `theme_color`)                                                 | Yes.                                                                                                                                                                                                                                        |
+| The API's name           | `API_TITLE` in `apps/api/src/core/http/openapi.ts` (`My API`; then `pnpm client:generate`); `MAIL_FROM` and `SERVICE_NAME` in the environment (authenticator apps and passkeys show `SERVICE_NAME`)                                      | Yes.                                                                                                                                                                                                                                        |
+| The image                | `.github/workflows/publish.yml` publishes `ghcr.io/<owner>/<repo>`, taken from the repository                                                                                                                                            | Nothing to edit.                                                                                                                                                                                                                            |
+| Internal labels          | an advisory lock name in `core/database/roles.ts`, the cursor key label in `core/http/cursor-seal.ts`, the schematic's `$id`                                                                                                             | No: nobody sees them, and the cursor label is part of every list cursor.                                                                                                                                                                    |
 
 The scope's replacement, for example to `@acme/` (macOS `sed`; GNU `sed`
 takes `-i` without `''`):
@@ -180,7 +182,7 @@ one made before the services marked theirs needs `pnpm db:mark-dev` first.
   deployment's operators only when `OPERATOR_TENANT` names it: set
   `OPERATOR_TENANT=operators`, or nobody may use the routes that reach past
   one tenant. Customers' tenants come from `pnpm ops tenant:create <slug> -a
-  <email>`, or from self sign-up (`AUTH_SIGN_UP=on` and `TENANT_SIGN_UP=on`).
+<email>`, or from self sign-up (`AUTH_SIGN_UP=on` and `TENANT_SIGN_UP=on`).
 - **`single`**: one tenant (`Default`, slug `default`), made at the first
   start; no other can be made, and its administrator is the operator.
 
