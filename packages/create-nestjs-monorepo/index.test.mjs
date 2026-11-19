@@ -74,6 +74,15 @@ describe('create-nestjs-monorepo', () => {
     assert.equal(git(dir, 'status', '--porcelain'), '');
   });
 
+  it('names its command so npm keeps it', () => {
+    // npm 11 drops a bin whose path starts with `./` when publishing, and
+    // `pnpm create nestjs-monorepo` would then have nothing to run.
+    const manifest = JSON.parse(
+      readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+    );
+    assert.deepEqual(manifest.bin, { 'create-nestjs-monorepo': 'index.mjs' });
+  });
+
   it('refuses a folder that is not empty', () => {
     assert.throws(
       () => create(path.join(root, 'acme'), { from: template }),
