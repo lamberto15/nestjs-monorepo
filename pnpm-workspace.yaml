@@ -23,4 +23,4 @@ auditConfig:
     # re2 > node-gyp, the native build at install time, never at runtime.
     - GHSA-fc5q-39xc-vjpf
 minimumReleaseAgeExclude:
-  - '@nestrix-js/nestjs@0.7.0 || 0.8.0'
+  - '@nestrix-js/nestjs@0.7.0 || 0.8.0 || 0.9.1'

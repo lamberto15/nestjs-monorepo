@@ -81,7 +81,7 @@ services:
   # apps/api/.env. Dashboard: http://localhost:4318, the password below.
   # Development values only: no ingest key (it listens on loopback alone).
   nestrix:
-    image: ghcr.io/nestrix-js/nestrix-server:0.8.0@sha256:3dcaef8aa6652c5ea6c531d2feabfe9a7a0bc8af9e43b024889623dd59966403
+    image: ghcr.io/nestrix-js/nestrix-server:0.9.1@sha256:9ec653445ed9ebb31fbfa51f59f4866083def1a69f8c1442461eb4da9cac7b60
     profiles: [traces]
     restart: unless-stopped
     depends_on:

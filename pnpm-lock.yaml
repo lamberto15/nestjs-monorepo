@@ -299,8 +299,8 @@ importers:
         specifier: 0.0.5
         version: 0.0.5(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(drizzle-orm@1.0.0-rc.5(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(pg@8.23.1)(zod@4.6.7))(pg@8.23.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestrix-js/nestjs':
-        specifier: 0.8.0
-        version: 0.8.0(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-logs-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/exporter-metrics-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(pg@8.23.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+        specifier: 0.9.1
+        version: 0.9.1(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-logs-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/exporter-metrics-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(pg@8.23.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@node-saml/node-saml':
         specifier: 5.2.0
         version: 5.2.0
@@ -2939,14 +2939,14 @@ packages:
       '@nestjs/cqrs':
         optional: true
 
-  '@nestrix-js/nestjs@0.8.0':
-    resolution: {integrity: sha512-ilVAU/6We9AsT2kkGPoceDKRDP8fmJ0cfeZHqIEBAm0soALLoVN++V3MDVy+SqSrM57uS+kXAQqeasDcgsAnqg==}
+  '@nestrix-js/nestjs@0.9.1':
+    resolution: {integrity: sha512-ge8henCP2vCNtUn0dgWuc8rv5OCbWClXggl2TNoiUIq5niCu3nQEGzg2P2xc5/vPOMFhDCCCk8i6zcAz4kbMsA==}
     engines: {node: '>=26.13.0'}
     peerDependencies:
       '@nestjs/common': ^12.0.0
       '@nestjs/core': ^12.0.0
       '@nestjs/microservices': ^12.0.4
-      '@nestrix-js/ui': 0.8.0
+      '@nestrix-js/ui': 0.9.1
       '@opentelemetry/api': '>=1.10.0 <1.11.0'
       '@opentelemetry/exporter-logs-otlp-http': ^0.301.1
       '@opentelemetry/exporter-metrics-otlp-http': ^0.301.1
@@ -12455,7 +12455,7 @@ snapshots:
       - mysql2
       - pg
 
-  '@nestrix-js/nestjs@0.8.0(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-logs-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/exporter-metrics-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(pg@8.23.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
+  '@nestrix-js/nestjs@0.9.1(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.5.0)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-logs-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/exporter-metrics-otlp-http@0.301.2(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(pg@8.23.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
       '@nestjs/common': 12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0)
       '@nestjs/core': 12.5.0(@nestjs/common@12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/platform-express@12.5.0)(@nestjs/websockets@12.5.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)

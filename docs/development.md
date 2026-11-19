@@ -213,12 +213,10 @@ metrics there. Open http://localhost:4318 and sign in with
 routes view lists each route's calls and their slowest time; a trace shows
 where one request went: its queries, outgoing calls and jobs.
 
-Queries that run outside any request (the migrations at start, the workflow
-engine's polling) are recorded as traces of their own: Nestrix drops such
-roots for Redis and for methods, not yet for PostgreSQL. They fill the
-trace list, not the routes view. `docker compose -f compose.dev.yaml
---profile traces stop nestrix` stops it; without the variable the app sends
-nothing.
+Queries that run outside any request, job or traced method (the migrations
+at start, the workflow engine's polling) get no trace: Nestrix drops them.
+`docker compose -f compose.dev.yaml --profile traces stop nestrix` stops it;
+without the variable the app sends nothing.
 
 ## Demo data
 
