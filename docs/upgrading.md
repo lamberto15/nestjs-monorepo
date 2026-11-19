@@ -6,6 +6,12 @@ step 2). A newer release is a tag of that remote (`v0.2.0`), merged like any
 branch. `template.json` names the release the project is on; the merge
 brings the new one.
 
+**Your copy is yours to maintain.** Upgrading is best-effort: a release
+promises no compatibility with what a project changed, and a project may
+never merge one. What this page gives is the way to take the template's
+later fixes and modules when you want them, and to see beforehand what
+will conflict.
+
 ## Keep upgrades cheap
 
 An upgrade conflicts only where both sides changed the same file. The

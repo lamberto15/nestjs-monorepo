@@ -22,7 +22,8 @@ from the template (`pnpm create nestjs-monorepo`), not the template. There:
   through what they offer (their `*.config.ts` variables, decorators,
   `forFeature()`/`forRecord()`, events) rather than editing them; drop one
   with `pnpm module:remove`. Every edit of the template's files is a
-  conflict on the next upgrade ([upgrading](docs/upgrading.md)).
+  conflict on the next upgrade ([upgrading](docs/upgrading.md)). The copy
+  is the developer's to maintain; upgrading is their choice, best-effort.
 - **When an edit is the only way,** keep it small, say why in its commit,
   and tell the developer which extension point is missing, so they can ask
   the template for it. Before and after such work, run `pnpm template:check`.
@@ -121,8 +122,9 @@ from the template (`pnpm create nestjs-monorepo`), not the template. There:
   `create-nestjs-monorepo` to npm for a release tag.
 - **The template is distributed** as `pnpm create nestjs-monorepo`
   (`packages/create-nestjs-monorepo`): a clone of a release tag with its
-  history, so a project upgrades by merging the next tag;
-  `template.json` names the release (the owner, 2026-11-19).
+  history, so a project may upgrade by merging a later tag, best-effort, with
+  no compatibility promised; `template.json` names the release (the owner,
+  2026-11-19).
 - **Git:** commits on `main`, pushed to the private `origin` (the owner,
   2026-11-19); no pull request until the owner asks.
 

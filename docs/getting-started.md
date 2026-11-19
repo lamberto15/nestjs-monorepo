@@ -33,9 +33,9 @@ It clones the newest release of the template (`--version 0.2.0` for
 another) with the template's history, keeps the template as the `template`
 remote, names the project after its folder (the root package, the
 development services and the README's title), commits that on a `main`
-branch and runs `pnpm install`, which also installs the git hooks. The
-template's history is what a later release is merged against:
-[upgrading](upgrading.md). The commit hook checks Conventional Commits
+branch and runs `pnpm install`, which also installs the git hooks. The copy
+is yours to maintain; the template's history is what a later release can be
+merged against, when you want one: [upgrading](upgrading.md). The commit hook checks Conventional Commits
 (`type(scope): subject`).
 
 ### The licence
