@@ -58,6 +58,12 @@ Before changing code in `apps/api`, read [apps/api/AGENTS.md](apps/api/AGENTS.md
   behind the same seam. Every tenant table keeps `tenant_id` in every mode,
   so a single-tenant project becomes multi-tenant by a switch, not a data
   migration.
+- **A dedicated customer runs the same app with one tenant** (`TENANCY=single`,
+  row-level security on, `tenant_id` kept). A tenant moves to its own server
+  with `tenant:export`/`tenant:import` ([moving-a-tenant](docs/moving-a-tenant.md));
+  the copies of its accounts are independent from then on. Schema- and
+  database-per-tenant wait until a customer needs them (the owner,
+  2026-11-19).
 - **Features come from a generator**, a Nest schematics collection (`nest g`).
 - **No sample feature ships.** `src/features` starts empty: a new project
   has nothing to delete first. The generator carries its own templates and
