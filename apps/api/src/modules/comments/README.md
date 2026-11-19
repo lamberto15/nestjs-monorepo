@@ -26,7 +26,7 @@ is the 404 of a missing record. Errors: 400 `comment_reply_too_deep`,
 
 ## Mentions and notifications
 
-`@ada@example.com` or `@user:<id>` in the body: only active members of the
+`@ada@example.com` or `@user:<id>` in the body (the first 20): only active members of the
 tenant who may read the record are kept in `mentions` (anyone else is dropped
 silently, so a mention never tells who exists) and get `comment.mentioned`. A
 reply tells the thread's author (`comment.replied`); the record's watchers
@@ -37,6 +37,8 @@ carries `authorName` and `mentionNames` (a member who left keeps their name).
 After each write `record.commented` (`{ subject, recordId, commentId, action }`)
 goes over realtime to the watchers and the author who may read the record.
 Audit: `comment.added|edited|removed|resolved|reopened` (never the text).
+A person's comments are in their data export (`comments`); when their account
+is deleted they stay as "[deleted]" by `anonymous`, and mentions of them go.
 
 ## What it adds to the record
 
@@ -45,4 +47,6 @@ deleted with the record when it is deleted for good (`purged`). Table
 `comments` (`comments.tables.ts`); no variables. Needs QueuesModule, the
 notifications' and realtime's requirements, and the record's module.
 
-Remove: delete this folder and the `forRecord()` imports of the features.
+Add-on: `pnpm feature:add --addons comments` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `comments.addon.js`): threads, mentions and replies on a record.
+
+Remove: `pnpm module:remove comments` ([removing-a-module](../../../../../docs/removing-a-module.md)).

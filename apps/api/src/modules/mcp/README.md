@@ -133,5 +133,6 @@ export class InvoiceTools {
 No resources or prompts: nothing here is content a client loads as it is,
 and tools cover lookups. Not here: per-principal tool lists, stdio.
 
-Remove: delete this folder, its line in `app.module.ts` and the
-`McpModule.forRecord()` imports.
+Add-on: `pnpm feature:add --addons mcp` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `mcp.addon.js`): tools for AI agents (MCP): list, get, create, update, delete.
+
+Remove: `pnpm module:remove mcp` ([removing-a-module](../../../../../docs/removing-a-module.md)).

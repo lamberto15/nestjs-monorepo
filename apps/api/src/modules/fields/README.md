@@ -42,4 +42,4 @@ through the tables.
 
 ## Remove
 
-Delete this folder (records import it).
+`pnpm module:remove fields` ([removing-a-module](../../../../../docs/removing-a-module.md)).

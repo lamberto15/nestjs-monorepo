@@ -10,7 +10,11 @@ minutes, never extended, a recent sign-in), `GET` their grants, `DELETE
 the tenant. The domain event `tenancy.break-glass-started`
 (`break-glass.events.ts`), published in the tenant, names its
 administrators: modules/notifications tells them
-(`security.break-glass-started`, mailed at once, mandatory).
+(`security.break-glass-started`, mailed at once, mandatory). Opening one is
+refused with 403 `break_glass_not_allowed` (impersonating, or through a
+grant), `break_glass_disabled`, or 409 `break_glass_own_tenant`,
+`tenant_inactive`, `break_glass_active` (one already running there). Grants
+are kept in `break_glass_grants`, a tenant table.
 
 ## Reading through a grant
 
@@ -42,5 +46,4 @@ The tenant's sign-in policy `allowBreakGlass: false` (iam/auth-policy,
 at their next request.
 
 Needs AuthModule, AccessModule, AuditModule, SharedOutboxModule. Tests:
-`break-glass.e2e-spec.ts`. Remove: delete this folder and its line in
-app.module.ts; a request naming a grant is then refused.
+`break-glass.e2e-spec.ts`. Remove: `pnpm module:remove break-glass` ([removing-a-module](../../../../../docs/removing-a-module.md)). A request naming a grant is then refused.

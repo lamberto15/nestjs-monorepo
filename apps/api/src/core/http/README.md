@@ -9,6 +9,8 @@ says how a route uses them.
   errors never show their internals. A module whose errors aren't
   `HttpException`s maps them in its own folder:
   `ProblemDetailsFilter.map(MyError, (error) => new ConflictException(…))`.
+  A busy pool or a cancelled statement is a 503 `database_busy` /
+  `database_timeout` with Retry-After (`infrastructure-errors.ts`).
 - **Validation**: `@Body({ schema })`, `@Query({ schema })`,
   `@Param('id', { schema })` with Zod, through Nest's
   `StandardSchemaValidationPipe` (global).
@@ -25,16 +27,23 @@ says how a route uses them.
   IP literal's address; also a schema's check) and `guardedLookup()` (a
   socket's `lookup` that refuses private, loopback, link-local and metadata
   addresses at connect time). Web push uses both (modules/notifications).
-- **OpenAPI**: `setupOpenApi(app)` serves `/api` and `/api-json`.
+- `@AllowInMaintenance()` (`maintenance.ts`): a route that keeps answering
+  while modules/mode has the deployment read only or in maintenance.
+- `@Feature({ name: schema })` (`feature.ts`) on a provider implementing
+  `FeatureSwitch` is one key of `GET /v1/features` (modules/features);
+  `switchFeature()` makes an on/off one.
+- **OpenAPI**: `setupOpenApi(app)` serves `/api`, `/api-json` and `/api-yaml`.
 
 ## Variables
 
-| Variable       | Default | Meaning                                                                   |
-| -------------- | ------- | ------------------------------------------------------------------------- |
-| `CORS_ORIGINS` | none    | Browser apps on other origins, comma-separated: CORS and CSRF trust.      |
-| `CURSOR_KEYS`  | none    | Keys sealing list cursors, newest first; unset, one kept in the database. |
-| `OPENAPI`      | `on`    | `off` serves no `/api`.                                                   |
-| `NODE_ENV`     | none    | `production` keeps CSP's `upgrade-insecure-requests`.                     |
+| Variable       | Default                 | Meaning                                                                              |
+| -------------- | ----------------------- | ------------------------------------------------------------------------------------ |
+| `APP_URL`      | `http://localhost:3000` | This API's public origin, for the links it hands out (signed file URLs, mails).      |
+| `WEB_URL`      | APP_URL                 | The web app's base URL: mail links open its pages, OIDC and SSO sign-ins land on it. |
+| `CORS_ORIGINS` | none                    | Browser apps on other origins, comma-separated: CORS and CSRF trust.                 |
+| `CURSOR_KEYS`  | none                    | Keys sealing list cursors, newest first; unset, one kept in the database.            |
+| `OPENAPI`      | `on`                    | `off` serves no `/api`.                                                              |
+| `NODE_ENV`     | none                    | `production` keeps CSP's `upgrade-insecure-requests`.                                |
 
 ## Removing it
 

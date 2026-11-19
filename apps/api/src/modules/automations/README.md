@@ -96,5 +96,6 @@ without `apply`: the most recently changed records you may read (or
 
 Tables: `automation_rules`, `automation_runs` (tenant tables). No variables.
 
-Remove: delete this folder and its line in `app.module.ts`, and the
-`AutomationsModule.forRecord()` imports of the features.
+Add-on: `pnpm feature:add --addons automations` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `automations.addon.js`): tenants' rules on a record's changes.
+
+Remove: `pnpm module:remove automations` ([removing-a-module](../../../../../docs/removing-a-module.md)).

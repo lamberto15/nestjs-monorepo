@@ -25,7 +25,7 @@ export const MAILS = defineQuota({ key: 'mail.perDay', label: 'mails a day', kin
 
 An API client's daily request quota is `modules/usage`. No variables.
 
-Remove: delete this folder, its line in `app.module.ts`, and the `forFeature` imports and calls of the modules that use it.
+Remove: `pnpm module:remove quotas` ([removing-a-module](../../../../../docs/removing-a-module.md)).
 
 ## Metrics
 

@@ -88,6 +88,9 @@ repository.
 - [x] forms
 - [x] mcp: tools for AI agents at `POST /v1/mcp` (new: the earlier template
       had none)
+- [x] tenant-move: a tenant from a shared server to its own
+      (`tenant:export`, `tenant:import`, `tenant:moved`;
+      [docs/moving-a-tenant.md](docs/moving-a-tenant.md))
 
 ## Features (`apps/api/src/features`)
 
@@ -108,11 +111,11 @@ repository.
       message rules, migration lint, setup, the demo seed
 - [x] the docs pages
 - [x] CI (one workflow, the image, Dependabot: `docs/ci.md`)
-- [x] the browser tests (`apps/web-e2e`, 38 tests): on the API serving the
+- [x] the browser tests (`apps/web-e2e`): on the API serving the
       built web app, a database of their own; CI job `web-e2e`
 - [x] the image builds (`docker build`) and serves the page and the API
 
-## Decided by the owner on 2026-11-18, to do
+## Decided by the owner on 2026-11-18
 
 - [x] Break-glass reads every GET an administrator may read (16 routes now
       answer 403: their read checks a non-read action); writes stay refused.
@@ -150,7 +153,7 @@ repository.
 - Release Please, the commit-message workflow, CONTRIBUTING, SECURITY and
   CODE_OF_CONDUCT (the owner, 2026-11-18): the local commitlint hook stays.
 - `feature:sync`: a feature is changed by editing its files and running
-  `pnpm db:generate`. `feature:remove` and `capability:remove` became one
+  `pnpm --filter api db:generate`. `feature:remove` and `capability:remove` became one
   command, `pnpm module:remove` (the owner, 2026-11-19;
   [docs/removing-a-module.md](docs/removing-a-module.md)): a dry run by
   default, refused while anything uses the module.
@@ -186,8 +189,8 @@ repository.
   template wrote each one twice (a CASL form and an SQL form).
 - A module registers its permissions in its own imports
   (`AccessModule.forFeature()`); there is no list in a root module.
-- No action may be named `manage` (CASL reads it as every action):
-  `Approval.manage` and `Ops.manage` get another name when ported.
+- No action may be named `manage` (CASL reads it as every action); the
+  renamed permissions are listed below.
 - `PATCH /access/users/:id` announces a deactivation as an event; sessions
   end on the member's next request.
 - A route asks for bot protection with `@Captcha()`, metadata that the
@@ -248,10 +251,6 @@ repository.
   a watcher gets one `record.bulk-changed` per run, linking to
   `/<path>?bulkRun=<id>` (every record list takes `bulkRun`), instead of a
   summary past 20 changes in one transaction.
-- Permissions renamed, none called `manage`: `DataQuality.read|scan|resolve`,
-  `Approval.read|abandon|cancel|managePolicies`, `Automation.configure`,
-  `Branding.update`, `ConfigBundle.export|apply`, `Access.testIntegrations`
-  (ops diagnostics), `Access.managePlatformAuthPolicy`.
 - Webhook scope (`/v1/access/clients/{clientId}/webhook-scope`) asks for
   `Webhooks.manageEndpoints` and authority over the client (was
   `Access.manageClients`).
@@ -294,9 +293,10 @@ repository.
   `discardJobs`, `testIntegrations` (were `Ops.view`, `Ops.manage`);
   `Setting.read`, `Setting.update` and `Branding.update` (were
   `Access.manageSettings`); `Webhooks.manageEndpoints` and `manageSenders`;
-  `MailSuppression.read`, `create`, `delete`; `ConfigBundle.export`;
-  `DataQuality.scan`, `resolve`; `Approval.abandon`;
-  `AutomationRule.configure`.
+  `MailSuppression.read`, `create`, `delete`; `ConfigBundle.export`, `apply`;
+  `DataQuality.read`, `scan`, `resolve`; `Approval.read`, `abandon`,
+  `cancel`, `managePolicies`; `AutomationRule.configure`;
+  `Access.managePlatformAuthPolicy`. None is called `manage`.
 - Ops: outbox stats are flat on `GET /v1/ops/outbox`; dead letters are
   `GET /v1/ops/dead-letters` with `POST …/retry` and `…/discard`; a queue's
   failed jobs are `GET /v1/ops/queues/{name}/jobs?state=failed`; the backlog

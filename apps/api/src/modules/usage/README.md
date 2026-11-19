@@ -24,6 +24,6 @@ are not, nor requests refused before the handler).
   counted, and is answered past the quota) and before `SharedHttpClientModule`.
 
 Variables (`usage.config.ts`): USAGE (`off`: no metering, no routes, no roll-up, quotas stored but not
-enforced), USAGE_RETENTION_DAYS. Tenant limits are `modules/quotas`.
+enforced; default `on`), USAGE_RETENTION_DAYS (400). Tenant limits are `modules/quotas`.
 
-Remove: delete this folder and its line in `app.module.ts`.
+Remove: `pnpm module:remove usage` ([removing-a-module](../../../../../docs/removing-a-module.md)).

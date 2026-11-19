@@ -68,12 +68,14 @@ async push({ noteId, watcherKeys }: NoteCommented) {
 ## Events that end sockets
 
 `@OnEvent` listeners (realtime.listeners.ts), emitted by the owner after
-the change commits: `auth.session-ended`, `auth.token-session-ended`,
-`access.member-deactivated` (exist; `access.abilities-changed` is the
-gateway's own, a re-check of this instance's impersonation sockets), and `access.user-deactivated`
-`{ userId }`, `access.client-revoked` `{ clientId, tenantId }`,
-`access.keys-revoked` `{ keyIds }`, `tenancy.tenant-deactivated`
-`{ tenantId }`.
+the change commits: `auth.session-ended` `{ sessionId }`,
+`auth.token-session-ended` `{ sid }` (iam/auth), `access.member-deactivated`
+`{ userId, tenantId }` (iam/access), `access.client-revoked`
+`{ clientId, tenantId }` and `access.keys-revoked` `{ keyIds }`
+(iam/api-clients), `tenancy.tenant-deactivated` `{ tenantId }`
+(iam/tenants), and `access.user-deactivated` `{ userId }`, which no module
+emits yet. `access.abilities-changed` (iam/access, on every instance) is the
+gateway's own: a re-check of this instance's impersonation sockets.
 
 ## Wiring
 
@@ -82,5 +84,4 @@ without it serves no gateway). No environment variables. Messages are not
 rate limited (the limit is HTTP's); a message handler that queries tenant
 data needs `ClsInterceptor` for its context.
 
-Remove: delete this folder and its line in `app.module.ts` (and
-`setupRealtime`, and the modules that push).
+Remove: `pnpm module:remove realtime` ([removing-a-module](../../../../../docs/removing-a-module.md)). It refuses while `setupRealtime` and the modules that push use it.

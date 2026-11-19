@@ -3,7 +3,7 @@
 A customer that wants a server of its own (a "dedicated" deployment) runs
 the same app there, usually with `TENANCY=single`. Row-level security and
 every `tenant_id` stay, so its tenant moves as it is: same ids, same rows.
-The move is four commands of the operator CLI, never a copy by hand. What
+The move is three commands of the operator CLI, never a copy by hand. What
 moves and how the archive is protected:
 [modules/tenant-move](../apps/api/src/modules/tenant-move/README.md).
 
@@ -19,7 +19,7 @@ moves and how the archive is protected:
   `keys:generate`), its disk (local or S3) and its `.env`. Platform rows the
   tenant points at (a quota plan) must exist on the target.
 - The source's **worker drained** for that tenant
-  (`backlog:count outbox --tenant <slug>`): queued jobs and outbox messages
+  (`backlog:count --tenant <slug>`): queued jobs and outbox messages
   do not move.
 
 ## The steps
@@ -77,7 +77,7 @@ still belongs to another tenant is never deleted.
   address; the import refuses rather than merge two copies.
 - **Drain jobs, the outbox and workflows first.** Queued jobs, outbox
   messages, running workflows and Redis state do not move: check
-  `backlog:count outbox --tenant <slug>` and let the worker finish before
+  `backlog:count --tenant <slug>` and let the worker finish before
   exporting.
 
 ## Aborting

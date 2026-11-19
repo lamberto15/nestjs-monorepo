@@ -9,4 +9,6 @@ Human-readable numbers (`INV-2026-00042`): gapless per tenant, next to the UUID 
 - **Variable:** `SEQUENCES_TIMEZONE` (the zone of year, month and day in numbers; default UTC).
 - **Tables:** `sequences`, `naming_series` (tenant tables).
 
-Remove: delete this folder and its line in `app.module.ts`.
+Add-on: `pnpm feature:add --addons sequences` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `sequences.addon.js`): a human-readable number on each record.
+
+Remove: `pnpm module:remove sequences` ([removing-a-module](../../../../../docs/removing-a-module.md)).

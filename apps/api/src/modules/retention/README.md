@@ -68,7 +68,8 @@ A hold placed while a batch's transaction runs applies from the next batch.
 ## Not covered
 
 Audit entries, revisions, exports and stored files are not reached by rules
-yet. The audit log has its own retention (`AUDIT_RETENTION_DAYS`). Recently
+yet. The audit log and the revisions have their own
+(`AUDIT_RETENTION_DAYS`, `REVISIONS_RETENTION_DAYS`). Recently
 opened records and similar per-person history have fixed lifetimes of their
 own.
 
@@ -77,6 +78,6 @@ own.
 `retention.e2e-spec.ts`, `retention.rules.spec.ts`; fixture
 `test/fixtures/retention/retention-items.ts`.
 
-Remove: delete this folder and its line in `app.module.ts`, and the
-`RetentionModule.forFeature()` / `@RecordPurge()` declarations of the
-modules that made them. Needs iam/holds (`notHeld`).
+Add-on: `pnpm feature:add --addons retention` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `retention.addon.js`): records purged after the days a tenant sets.
+
+Remove: `pnpm module:remove retention` ([removing-a-module](../../../../../docs/removing-a-module.md)).

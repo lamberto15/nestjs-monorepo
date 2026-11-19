@@ -16,6 +16,4 @@ is stored beyond the log.
 
 ## Remove
 
-Delete this folder and its line in `app.module.ts`. The web app's reports
-then fail silently (its `fetch` ignores a failure); nothing else depends on
-this module.
+`pnpm module:remove client-errors` ([removing-a-module](../../../../../docs/removing-a-module.md)). The web app's reports then fail silently (its `fetch` ignores a failure).

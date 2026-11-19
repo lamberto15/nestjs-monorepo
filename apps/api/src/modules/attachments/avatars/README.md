@@ -14,9 +14,11 @@ person's, not a tenant's), its key in `user_avatars`; the change and its audit
 entry (`account.avatar-changed`, `account.avatar-removed`) commit together.
 PNG, JPEG, WebP, GIF by their bytes (415), at most AVATAR_MAX_MB (413). Stored
 as uploaded. `AvatarsService.urlOf(userId)` and `avatarUrl()` give the
-`/v1/people/<id>/avatar?v=…` path a module that lists people shows.
+`/v1/people/<id>/avatar?v=…` path a module that lists people shows; it is
+`avatarUrl` in `GET /v1/auth/me` and in the access API's users.
 
-With the account (iam/personal-data) the row goes; its files go with
+The picture's address is in the person's export (`avatar`). With the account
+(iam/personal-data) the row goes; its files go with
 everything under `accounts/<id>/` (modules/storage).
 
 Variable (`avatars.config.ts`): AVATAR_MAX_MB (2).

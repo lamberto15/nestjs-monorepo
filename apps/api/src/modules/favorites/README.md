@@ -28,7 +28,9 @@ A `view` (a saved view, modules/views) is pinned only if the caller sees it
 (`ViewsService.get`, a 404 otherwise), and leaves the list when they stop
 seeing it or it is deleted; `subject` is the list page it opens on.
 
-Left out of the old template: the entry in the account data export and erasure (no
-personal-data registry yet).
+A person's favorites are in their account data export (`favorites`) and
+deleted with their account.
 
 Tests: `favorites.e2e-spec.ts`, on the fixture's test items.
+
+Add-on: `pnpm feature:add --addons favorites` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `favorites.addon.js`): people pin records they open often.

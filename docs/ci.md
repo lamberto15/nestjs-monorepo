@@ -16,20 +16,19 @@ image"); deploying it is the deployment's own.
 
 - **Migrations check.** `drizzle-kit check`, then `db:generate` (the app's and
   the test fixtures') must write nothing: a table changed without its migration
-  fails with the diff. Fix: `pnpm --filter api db:generate` and commit.
-- **No raw SQL.** `node tools/ci/raw-sql.mjs` counts, per file of
-  `apps/api/src`, the forms that bypass Drizzle's query builder (`.execute(sql\`…\`)`,
-`sql.raw()`, the driver's `pool/client.query()`). A file may hold only what
-`tools/ci/raw-sql.allow.json`grants it, with the reason (advisory locks,`set_config`, system catalogs, roles and grants: what Drizzle has no API for);
-a new file or a higher count fails, and so does a lower one until the list is
-lowered. `sql` fragments inside a builder query are not counted.
-- **Dead code (knip).** `pnpm knip` (`knip.jsonc`) fails on an unused file,
-  export or dependency. The config lists only what knip cannot find (the
-  `dist` entries, worker threads, generated code) with the reason.
-- **Coverage.** `pnpm --filter api test:cov` gates the API's unit tests at the
-  thresholds of `apps/api/vitest.config.ts`, a little under the measured levels:
-  raise them when a change lifts the numbers, never lower. The e2e config
-  reports coverage with `--coverage` and has no threshold.
+  fails with the diff. Fix: `pnpm --filter api db:generate` (or
+  `db:generate:fixtures`) and commit.
+- **No raw SQL.** `node tools/ci/raw-sql.mjs` (`pnpm raw-sql`) counts, per file
+  of `apps/api/src`, the forms that bypass Drizzle's query builder
+  (`.execute(sql\`…\`)`, `sql.raw()`, the driver's `pool/client.query()`). A
+  file may hold only what `tools/ci/raw-sql.allow.json` grants it, with the
+  reason (advisory locks, `set_config`, system catalogs, roles and grants:
+  what Drizzle has no API for); a new file or a higher count fails, and so
+  does a lower one until the list is lowered. `sql` fragments inside a
+  builder query are not counted.
+- **Dead code and coverage.** `pnpm knip` and the API's unit coverage
+  thresholds (`pnpm --filter api test:cov`):
+  [development, "Static checks" and "Coverage"](development.md#static-checks).
 - **Typed client.** `pnpm client:check` regenerates `packages/api-client`
   from the API's routes on the checkout as it is, before the generated
   feature adds its own, and fails when git sees a difference. Fix: `pnpm
@@ -54,14 +53,6 @@ lowered. `sql` fragments inside a builder query are not counted.
   push) fails, to be linted by hand with `--base`. Changing a merged
   migration and a `squawk-ignore` comment fail either way. Its tests need Docker with a working
   bind mount: where one is not available they fail locally and run in CI.
-- **Hooks.** `lefthook.yml` (installed by `pnpm install`): Prettier, oxlint and
-  the raw-SQL check on staged files; `commitlint.config.js` checks Conventional
-  Commits. Skip once with `git commit --no-verify`.
-- **Environment and demo data.** `pnpm run setup` writes `apps/api/.env` from
-  `env.example` with generated keys (`--web-push` adds a VAPID pair, `--check`
-  verifies an existing file; `tools/setup`). `pnpm db:seed:demo` fills a
-  development database (apps/api/src/demo); `pnpm db:mark-dev` marks a database
-  as one.
 - **Service images** are read from `compose.dev.yaml` by the `images` job, so
   CI and development run the same PostgreSQL and Redis. The e2e harness needs a
   role that may create databases and roles: the services' superuser `app`
@@ -73,20 +64,11 @@ lowered. `sql` fragments inside a builder query are not counted.
 
 ## The image
 
-`docker build -t app .` at the root builds the API and the web app: a build
-stage (pnpm `fetch`, frozen-lockfile install, both builds, `pnpm deploy
---prod`) and a final stage with production dependencies only, running as `node`. Base images
-are pinned by digest. One image, three commands:
-
-```bash
-docker run app                    # node dist/main (the default)
-docker run app node dist/worker   # the worker (no HTTP: turn the HEALTHCHECK off)
-docker run app node dist/migrate  # the migrations, once per deploy
-```
-
-`/app/.data` is the only writable path (local files, the mail directory).
-The web app's build is in `/app/web` (`WEB_ROOT`), served by the API from its
-own origin (`apps/api/src/core/web`): one image, one origin.
+The `Dockerfile` has a build stage (pnpm `fetch`, an offline frozen-lockfile
+install, both builds, `pnpm deploy --prod`) and a final stage with production
+dependencies only, running as `node`. Base images are pinned by digest. How
+to run it, its three commands and what it needs:
+[deployment](deployment.md#the-image).
 
 ## Publishing the image
 

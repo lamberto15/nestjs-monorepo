@@ -8,4 +8,6 @@ Dependent dropdowns: pick a unit, then one of its members. The choices come from
 - **On a record:** `ChoicesModule.forRecord(DECLARATION, SET)` (the set's fields are the record's field names) refuses a create, and an update that touches a set field, unless every value is a choice the writer could pick for its parents' values, those stored with the record included (400, one error per field). The system principal is not held to it.
 - **Elsewhere:** inject `ChoicesService` and call `assertValid(principal, set, values)`.
 
-Remove: delete this folder and its line in `app.module.ts`.
+Add-on: `pnpm feature:add --addons choices` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `choices.addon.js`): a field chosen from a provider (its first enum field).
+
+Remove: `pnpm module:remove choices` ([removing-a-module](../../../../../docs/removing-a-module.md)).

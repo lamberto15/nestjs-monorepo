@@ -20,4 +20,4 @@ export class MentionInbox implements InboxSource {
 }
 ```
 
-Remove: delete this folder and its line in `app.module.ts`.
+Remove: `pnpm module:remove inbox` ([removing-a-module](../../../../../docs/removing-a-module.md)).

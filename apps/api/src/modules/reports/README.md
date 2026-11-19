@@ -8,7 +8,8 @@ list export.
 
 - `GET/POST /v1/reports`, `GET/PATCH/DELETE /v1/reports/{id}`, and
   `POST /v1/reports/{id}/run` (202). Each principal sees only their own;
-  another's is a 404. An owner has at most 20 active reports.
+  another's is a 404. An owner has at most 20 active reports, each with at most 20
+  recipients.
 - The `exporter` is a record exportable through
   `DataTransferModule.forRecord()`. Its filters and sort are checked as the
   export route checks them.

@@ -2,9 +2,10 @@
 
 Moving one tenant from a shared server to a server of its own, which runs
 the same app (usually `TENANCY=single`; row-level security and `tenant_id`
-stay). No routes: the operator CLI drives it (`tenant:freeze`,
-`tenant:export`, `tenant:import`, `tenant:moved`, `tenant:thaw`,
-`account:erase`;
+stay). No routes: the operator CLI drives it (`tenant:freeze <tenant>`,
+`tenant:export <tenant> --out <dir>`, `tenant:import <archive> [--key-file]`,
+`tenant:moved <tenant> [--erase-accounts]`, `tenant:thaw <tenant>`,
+`account:erase <email>`;
 [src/cli](../../cli/README.md)). The walk-through for an operator is
 [docs/moving-a-tenant.md](../../../../../docs/moving-a-tenant.md).
 
@@ -115,6 +116,4 @@ erase, accounts deleted only when asked and never one in another tenant).
 
 ## Remove
 
-Delete this folder, its lines in `src/cli/cli.module.ts`,
-`src/cli/tenant-move.commands.ts`, and `AccountDeletionJob` from
-personal-data's exports.
+`pnpm module:remove tenant-move` ([removing-a-module](../../../../../docs/removing-a-module.md)). It refuses while `src/cli/tenant-move.commands.ts` uses it: delete that file and its line in `src/cli/cli.module.ts` first.

@@ -41,23 +41,27 @@ merge; the survivor cannot end up referring to itself (422 `merge_self_reference
 
 In one transaction: the references (the record's `ref` fields, in the bin too)
 are repointed; the duplicate is deleted and the survivor updated through the
-record's store (their hooks, audit entries, events); `<item>.merged` is
-audited with what moved.
+record's store (their hooks, audit entries, events); each add-on's
+`merged({ from, to, by })` hook moves what it keeps about the duplicate
+(`store.merged()`); `<item>.merged` is audited with what moved.
 
 ## How other add-ons take part
 
-The merge cannot import the add-ons (tags, comments, attachments, watchers…) and
-the records contract has no merge hook. It publishes the domain event
-`<item>.merged` `{ subject, id (survivor), duplicateId, by }` in the
-transaction (`mergeEvents(record).merged`, core/outbox). An add-on that keeps
-rows by (subject, record id) subscribes, with no import of this module, and
-moves the duplicate's rows to the survivor after the commit:
+A record's add-on (tags, comments, attachments, watchers, favorites) moves its
+rows in the merge's transaction with the `merged({ from, to, by })` hook of
+`RecordHooks` (modules/records). A module that is not one of the record's
+add-ons listens to the domain event `<item>.merged`
+`{ subject, id (survivor), duplicateId, by }`, published in the transaction
+(`mergeEvents(record).merged`, core/outbox) and delivered after the commit,
+with no import of this module:
 
 ```ts
-@OnDomainEvent(defineEvent<{ subject: string; id: string; duplicateId: string }>('invoice.merged'), { consumer: 'tags-merge' })
+@OnDomainEvent(defineEvent<{ subject: string; id: string; duplicateId: string }>('invoice.merged'), { consumer: 'reports-merge' })
 async merged({ id, duplicateId }) { /* update … set recordId = id where recordId = duplicateId */ }
 ```
 
 The event has its own key, so it is not queued behind the record's other events.
 
-Remove: delete this folder and the `MergeModule.forRecord()` imports.
+Add-on: `pnpm feature:add --addons merge` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `merge.addon.js`): find duplicates and merge them (needs the recycle bin).
+
+Remove: `pnpm module:remove merge` ([removing-a-module](../../../../../docs/removing-a-module.md)).

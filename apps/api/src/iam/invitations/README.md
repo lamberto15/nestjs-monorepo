@@ -38,4 +38,4 @@ person (no sign-in needed for a new address).
   `BreachedPasswordsService` (iam/account), found at run time.
 
 Variables (invitations.config.ts): `INVITATION_TTL_HOURS`; it reads
-`WEB_URL` from core/http and `SERVICE_NAME` from core/observability. Remove: delete this folder and its line in `app.module.ts`.
+`WEB_URL` from core/http and `SERVICE_NAME` from core/observability. Remove: `pnpm module:remove invitations` ([removing-a-module](../../../../../docs/removing-a-module.md)).

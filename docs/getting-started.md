@@ -51,7 +51,7 @@ There is no rename command. What carries the template's name:
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The root package             | `package.json` (`"name": "nestjs-monorepo"`), the title of `README.md`                                                                      | Yes.                                                                                                                                                                                           |
 | The development services     | `compose.dev.yaml` (`name: nestjs-monorepo-dev`)                                                                                            | Yes, if another copy of the template runs on the same machine: the same name shares the containers and volumes. Both also bind ports 5432 and 6379.                                            |
-| The workspace scope          | `@nestjs-monorepo/*`: the `name` of `apps/web`, `apps/web-e2e`, `packages/ui`, `packages/api-client`, and every import of them (about 340 files, `pnpm-lock.yaml`, `turbo.json`, `Dockerfile`, `.github/workflows/ci.yml`, the generator's web templates) | Optional: the packages are private and never published. To change it, replace the string in every tracked file, run `pnpm install && pnpm build && pnpm test`, and commit (`pnpm client:check` compares the client with what is committed).                                  |
+| The workspace scope          | `@nestjs-monorepo/*`: the `name` of `apps/web`, `apps/web-e2e`, `packages/ui`, `packages/api-client`, and every import of them (`pnpm-lock.yaml`, `turbo.json`, `Dockerfile`, `.github/workflows/ci.yml`, the generator's web templates) | Optional: the packages are private and never published. To change it, replace the string in every tracked file, run `pnpm install && pnpm build && pnpm test`, and commit (`pnpm client:check` compares the client with what is committed).                                  |
 | The name people see          | `apps/web/src/locales/en/common.json` (`app.name`), `apps/web/index.html` (`<title>`), `apps/web/vite.config.ts` (the PWA manifest's `name`, `short_name`, `description`, `theme_color`) | Yes.                                                                                                                                                                                           |
 | The API's name               | `API_TITLE` in `apps/api/src/core/http/openapi.ts` (`My API`; then `pnpm client:generate`); `MAIL_FROM` and `SERVICE_NAME` in the environment (authenticator apps and passkeys show `SERVICE_NAME`) | Yes.                                                                                                                                                                                           |
 | The image                    | `.github/workflows/publish.yml` publishes `ghcr.io/<owner>/<repo>`, taken from the repository                                                | Nothing to edit.                                                                                                                                                                               |
@@ -90,10 +90,9 @@ Wrote …/apps/api/.env.
 ok: every REQUIRED variable is set.
 ```
 
-`pnpm dev` builds the shared packages (the typed client, the components)
-first, then starts both apps. `WEB_URL` points the links in mails (address
-verification, password reset, invitations) at the web app, which `pnpm dev`
-serves on its own port. Details of each command: [development](development.md).
+`pnpm dev` builds the shared packages first and starts both apps; `WEB_URL`
+sends the links in mails to the web app's port. Both are explained in
+[development, "Setup"](development.md#setup).
 
 Worth adding to `apps/api/.env` before the first start: `ADMIN_EMAIL` and
 `ADMIN_PASSWORD` (below).
@@ -270,7 +269,7 @@ pnpm client:generate                                                     # the t
 ```
 
 Read the migration: it creates the table with its row-level security
-policies. The generated tests pass as generated (`Tests 7 passed` here).
+policies. The generated tests pass as generated.
 Restart `pnpm dev`: the API serves `/v1/customers` and the web app has the
 pages. A create takes an `Idempotency-Key` header
 (`IDEMPOTENCY=required`, the default; the web app sends one):

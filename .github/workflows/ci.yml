@@ -153,7 +153,7 @@ jobs:
           pnpm --filter api db:generate
           pnpm --filter api db:generate:fixtures
           if [ -n "$(git status --porcelain -- apps/api)" ]; then
-            echo '::error::The tables changed without a migration: run pnpm db:generate (and db:generate:fixtures) and commit what it writes.'
+            echo '::error::The tables changed without a migration: run pnpm db:generate (and pnpm --filter api db:generate:fixtures) and commit what it writes.'
             git status --porcelain -- apps/api
             git diff -- apps/api
             exit 1
@@ -298,7 +298,6 @@ jobs:
           exit-code: '1'
           cache-dir: ${{ runner.temp }}/trivy
 
-  # The one check to require in the branch protection rules.
   # The browser tests (apps/web-e2e): the built API serving the built web
   # app, on the development services (compose.dev.yaml, whose database is
   # marked for the demo seed) and the runner's own Google Chrome
@@ -322,6 +321,7 @@ jobs:
       - run: pnpm services:up
       - run: pnpm test:e2e:web
 
+  # The one check to require in the branch protection rules.
   ci:
     if: ${{ always() }}
     needs: [verify, e2e, web-e2e, security, image]

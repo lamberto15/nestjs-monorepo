@@ -27,5 +27,4 @@ Key ids only, never a key.
 `schedule()`, `runNow()`); the CLI's `keys:status` and `keys:reencrypt` use it.
 Needs EncryptionModule, QueuesModule and SharedLocksModule.
 
-Remove: delete this folder and its line in `app.module.ts`; the hourly
-re-encryption then no longer runs.
+Remove: `pnpm module:remove encryption-admin` ([removing-a-module](../../../../../docs/removing-a-module.md)). The hourly re-encryption then no longer runs.

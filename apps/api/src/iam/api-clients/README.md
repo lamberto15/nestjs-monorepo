@@ -33,7 +33,7 @@ last-used tracking) is iam/auth's; the tables are auth's (`api_clients`,
   endpoints that subscribe to it, and to no other client: every client holds
   `ApiKey.read` of its own keys only (`api-clients.permissions.ts`).
 
-Remove: delete this folder and its line in `app.module.ts`.
+Remove: `pnpm module:remove api-clients` ([removing-a-module](../../../../../docs/removing-a-module.md)).
 
 Not here: a daily request quota and webhook endpoint counts (usage and
 webhooks modules).

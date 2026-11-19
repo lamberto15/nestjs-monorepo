@@ -60,5 +60,4 @@ Queues are found by discovery: whichever module registered one with
 changes); the operator CLI (`src/cli`) uses it. The operator CLI also uses `OpsBacklog` and `OpsDiagnostics`. Needs QueuesModule,
 SharedOutboxModule and SharedWorkflowsModule.
 
-Remove: delete this folder and its line in `app.module.ts` (and the CLI's
-queue and dead-letter commands).
+Remove: `pnpm module:remove ops` ([removing-a-module](../../../../../docs/removing-a-module.md)). It refuses while the CLI's queue and dead-letter commands use it.

@@ -65,7 +65,7 @@ DELETE /v1/custom-fields/{id}                     deactivates: values kept
 
 Reading takes `read` on the subject (or managing them); changing,
 `Access.manageCustomFields` (users only, never while impersonating);
-`include=counts` too. Keys are slugs, never reused. A type change is a 409
+`include=counts` too. Keys are slugs, never reused (409 `custom_field_exists`). A type change is a 409
 `custom_field_in_use` while records hold values, except text → longText
 and email/url → text or longText; so is removing a choice records hold. At
 most 100 active fields per subject (409 `custom_field_limit`). Audited:
@@ -88,6 +88,8 @@ holding values, JSONB with a GIN index), both tenant tables. Values live
 here rather than in a column of each record's table, so a record takes
 custom fields with one import and no migration of its own.
 
+Add-on: `pnpm feature:add --addons custom-fields` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `custom-fields.addon.js`): fields administrators add at runtime.
+
 ## Remove
 
-Delete this folder and the `forRecord()` imports of the features using it.
+`pnpm module:remove custom-fields` ([removing-a-module](../../../../../docs/removing-a-module.md)).

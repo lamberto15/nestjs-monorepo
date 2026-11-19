@@ -15,6 +15,9 @@ and makes the setting refuse a new value (use it when the API cannot be reached)
 Both refusals are problem documents with `Retry-After: 30`. A route that must
 keep working carries `@AllowInMaintenance()` (`core/http/maintenance.ts`):
 health, signing in, the operators' routes, `GET /v1/features` (it carries `mode`).
+A route whose calls are decided one by one carries `@ReadOnlyPerCall()`
+(`mode.guard.ts`): in read-only mode the request passes and each MCP tool call
+runs only when its tool declares `readOnlyHint: true` (modules/mcp).
 Where workers run (`APP_ROLE` worker or all) a restricted mode pauses this
 process's queue workers (running jobs finish) and stops the `@Cron` jobs; `normal`
 resumes both. Metric `app_mode{mode}`. Not covered: WebSocket messages and running jobs.
@@ -26,4 +29,4 @@ Locked out of ending it? `DELETE /v1/settings/platform.mode/platform` as an oper
 | ---------- | ------- | ---------------------------------------------- |
 | `APP_MODE` | unset   | Forces `normal`, `read-only` or `maintenance`. |
 
-Remove: delete the folder and its line in `app.module.ts`.
+Remove: `pnpm module:remove mode` ([removing-a-module](../../../../../docs/removing-a-module.md)).

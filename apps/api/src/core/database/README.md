@@ -9,9 +9,13 @@ follow the call (nestjs-cls, `@nestjs-cls/transactional`).
   service, joins the transaction. `@InjectDrizzle()` is the database outside
   any transaction (health checks, what must outlive a rollback).
 - **Tables:** `uuidPk()`, `at()` and `...timestamps()` (`columns.ts`).
+  `secretColumns(table, [columns])` (`secret-columns.ts`), next to the table,
+  names the columns holding a credential or its hash: no copy of the data
+  (a tenant's export) takes them.
 - **Errors:** `databaseErrorKind(error)` (`database-errors.ts`):
   `unique_violation`, `foreign_key_violation`, `pool_exhausted`,
-  `statement_timeout`, or undefined.
+  `statement_timeout`, `read_only` (a frozen tenant or a break-glass read,
+  core/tenancy), or undefined.
 - **Migrations:** change a `*.tables.ts`, `pnpm db:generate`, commit
   `drizzle/`. Applied as the owner at start when MIGRATE_ON_START is on (the
   default outside production), else once per deploy with `node dist/migrate`;
@@ -42,9 +46,10 @@ compose.dev.yaml's superuser and the maintenance role to
 roles. Every URL must name DATABASE_URL's server and database.
 
 Variables (`database.config.ts`): DATABASE_URL, DATABASE_OWNER_URL,
-DATABASE_MAINTENANCE_URL, DATABASE_POOL_MAX,
-DATABASE_POOL_TIMEOUT_MS, DATABASE_STATEMENT_TIMEOUT_MS,
-DATABASE_IDLE_TX_TIMEOUT_MS, DATABASE_APPLICATION_NAME, MIGRATE_ON_START.
+DATABASE_MAINTENANCE_URL, DATABASE_POOL_MAX (10),
+DATABASE_POOL_TIMEOUT_MS (5000), DATABASE_STATEMENT_TIMEOUT_MS (30000),
+DATABASE_IDLE_TX_TIMEOUT_MS (60000), DATABASE_APPLICATION_NAME (`api`),
+MIGRATE_ON_START.
 
 Tests: `database.e2e-spec.ts`, `migrations.e2e-spec.ts`, on the e2e harness
 in `test/` (a template database per run, a copy per file, every app

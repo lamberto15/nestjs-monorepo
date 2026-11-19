@@ -1,8 +1,10 @@
 # core/secrets
 
 Secrets the app makes for itself and every instance must share (the access
-tokens' signing key when `JWT_SECRET` is unset). `app_secrets` holds one
-row per name.
+tokens' signing key when `JWT_SECRET` is unset; likewise IDEMPOTENCY_KEYS,
+CURSOR_KEYS, STORAGE_SIGNING_KEYS and the web-push keys when unset, and the
+unsubscribe, deletion-cancel and passkey-decoy keys). `SecretsModule` is
+global: inject `Secrets`. `app_secrets` holds one row per name.
 
 ```ts
 const key = await secrets.loadOrCreate('jwt-signing-key', () =>

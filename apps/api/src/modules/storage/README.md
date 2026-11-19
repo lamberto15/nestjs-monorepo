@@ -30,5 +30,4 @@ are the standard AWS_* variables or the instance role.
 
 ## Remove
 
-Delete this folder and its line in `app.module.ts`; modules that store files
-go with it. Needs SharedOutboxModule (StoredFilesModule imports it).
+`pnpm module:remove storage` ([removing-a-module](../../../../../docs/removing-a-module.md)).

@@ -39,6 +39,8 @@ imports: [ComputedFieldsModule.forRecord(INVOICE, INVOICE_COMPUTED)],
 
 No routes, tables or variables.
 
+Add-on: `pnpm feature:add --addons computed-fields` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `computed-fields.addon.js`): values derived by an expression on every read.
+
 ## Remove
 
-Delete this folder and the `forRecord()` imports of the features using it.
+`pnpm module:remove computed-fields` ([removing-a-module](../../../../../docs/removing-a-module.md)).

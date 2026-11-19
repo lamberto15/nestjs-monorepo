@@ -15,4 +15,4 @@ What the app's own code uses is backend-neutral (the OpenTelemetry API), so it w
 - **`traceCorrelation()`**: the active trace id on log lines.
 - **Refused uploads:** a backend that turns telemetry away (401, 403, 429) leaves the app blind and running. It is counted in `telemetry_rejected_total{target,status}` (`core/metrics`): Observe's through its log lines, Nestrix's through its `export.onFailure`.
 - **Also read:** `SERVICE_NAME`, `GIT_SHA` (the release), `NODE_ENV`.
-- **Remove:** delete this folder and its line in `app.module.ts`, the import of `instrument.ts` and the `instrument` option in `main.ts`, `worker.ts` and `cli.ts`, `jobTelemetry()` in `core/queues`, and the two calls in `core/http` and `core/logging`.
+- **Remove:** delete this folder and its line in `app.module.ts`, the import of `instrument.ts` in `main.ts`, `worker.ts` and `cli.ts` and the `instrument` option in `main.ts` and `worker.ts`, and `jobTelemetry()` in `core/queues`.

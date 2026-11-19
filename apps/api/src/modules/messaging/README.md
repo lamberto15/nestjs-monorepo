@@ -9,4 +9,4 @@ modules/notifications'.
 - **STOP and START**: `POST /v1/webhooks/sms/twilio` (public, `X-Twilio-Signature` HMAC-SHA1 over the URL and fields) opts every user with that number out, or back in.
 - **Metrics**: `sms_sent_total`, `sms_spend_minor_total`, `sms_blocked_total{reason}` (alert on it rising). A nightly job removes stale devices (`MESSAGING_DEVICE_RETENTION_DAYS`) and old counters.
 
-Remove: delete this folder and its line in `app.module.ts`.
+Remove: `pnpm module:remove messaging` ([removing-a-module](../../../../../docs/removing-a-module.md)).

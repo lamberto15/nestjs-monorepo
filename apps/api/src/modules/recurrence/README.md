@@ -6,7 +6,7 @@ creates a record, as the schedule's owner, at every occurrence of an RRULE
 `COUNT` or `UNTIL`) at a time of day in a time zone, optionally moved into a
 business calendar's working time (modules/calendars). Routes under
 `/v1/record-schedules` (each principal sees only their own; preview, pause,
-resume, end; at most 20 active per owner).
+resume, end; at most 20 active per owner, 1000 records per schedule).
 
 - **A feature declares what can be scheduled** in its own imports:
   `RecurrenceModule.forFeature({ name, subject, schema, create })`. The owner
@@ -21,4 +21,6 @@ resume, end; at most 20 active per owner).
   10 per pass; the third failure in a row skips the occurrence; an owner who is
   inactive or lost the permission ends the schedule.
 
-No variables. Remove: delete this folder and its line in `app.module.ts`.
+Add-on: `pnpm feature:add --addons recurrence` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `recurrence.addon.js`): records created on a schedule.
+
+No variables. Remove: `pnpm module:remove recurrence` ([removing-a-module](../../../../../docs/removing-a-module.md)).

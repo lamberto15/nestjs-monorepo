@@ -34,7 +34,7 @@ pnpm feature:add invoices --fields "title:string,amount:money,dueOn:date?,status
 | Option                              | Does                                                                                                                                   |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `<name>`                            | Plural, kebab-case: `invoices`, `invoice-lines`. `--singular` when it can't be derived (`people`: `person`).                           |
-| `--fields`                          | `name:type`, comma-separated. Types (modules/fields): `string`, `text`, `markdown` (text to the API; the web pages edit it with the Markdown editor and show it rendered), `int`, `decimal`, `money`, `bool`, `date`, `datetime`, `enum(a | b)`, `json`, `ref(<feature>)`. `?`optional,`!unique` unique per tenant. String and text fields are searchable. |
+| `--fields`                          | `name:type`, comma-separated. Types (modules/fields): `string`, `text`, `markdown` (text to the API; the web pages edit it with the Markdown editor and show it rendered), `int`, `decimal`, `money`, `bool`, `date`, `datetime`, `enum(a\|b)`, `json`, `ref(<feature>)`. `?` optional, `!unique` unique per tenant. String and text fields are searchable. |
 | `--addons`                          | Comma-separated, or `all` (below).                                                                                                     |
 | `--soft-delete`                     | A recycle bin (default on; `--soft-delete=false`).                                                                                     |
 | `--unit`                            | Records carry their creator's organizational unit; unit leads read their units'.                                                       |
@@ -61,8 +61,9 @@ chosen: `custom-fields` (the form's inputs of the active custom fields, sent
 as `custom`; their values on the detail page), `merge` (the form warns of
 likely duplicates of the title), `recents` (the detail page records the
 visit) and `sequences` (a create form's numbering picker when there is more
-than one series); the test has a case for each. CI proves the pages by generating a
-feature, type-checking the app and running their test (`verify`). Then:
+than one series); the test has a case for each. CI proves the pages by
+generating a feature, type-checking the app and running their test
+(`verify`). Then:
 
 ```bash
 pnpm --filter api db:generate --name invoices   # the table's migration
@@ -97,7 +98,7 @@ are.
 ## Change or remove one
 
 Change a field, the recycle bin or the units in `<item>.record.ts`, then run
-`drizzle-kit generate`; take or drop an add-on by its line in the module (and
+`pnpm --filter api db:generate`; take or drop an add-on by its line in the module (and
 its pieces in the schemas or table). Remove a feature with
 `pnpm module:remove features/<name>` (a dry run; `--apply` deletes its folder,
 its line in `src/app.module.ts` and its web pages, then writes the migration,
@@ -114,9 +115,9 @@ the client and the route tree: [removing-a-module.md](removing-a-module.md)).
   `test/fixtures/generated-feature.options.json` and checks it equals the
   files on disk; its own e2e spec boots it with all its add-ons.
   `pnpm module:remove` regenerates it when it removes an add-on. After a
-  change to the schematic, regenerate it with those options (from
-  `apps/api`, delete the folder first) and its migration
-  (`--config test/fixtures/drizzle.config.ts --name generated-feature`):
+  change to the schematic, regenerate it from `apps/api` with those options
+  (delete the folder first), then its migration
+  (`pnpm --filter api db:generate:fixtures`):
 
   ```bash
   pnpm feature:add generated-items test/fixtures/generated-feature --flat --skip-import --unit --addons all --fields "title:string,body:text?,status:enum(draft|done),amount:money?,dueOn:date?,code:string!unique"

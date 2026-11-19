@@ -87,8 +87,11 @@ sibling) module implements it.
 | `@HostTenantResolver()`                 | `iam/auth/host-tenant.ts`                           | The tenant of a custom domain.                       |
 | `@BreakGlassGrantSource()`              | `iam/auth/break-glass-session.ts`                   | The grant a break-glass read uses.                   |
 | `@ReauthenticationMethods()`            | `iam/auth/recent-authentication.ts`                 | Other ways to re-authenticate.                       |
+| `@ImpersonationRules()`                 | `iam/auth/impersonation.ts`                         | Who may act as whom.                                 |
 | `@UnitDirectory()`                      | `iam/access/unit-directory.ts`                      | Organizational units for access rules.               |
 | `@ScimMembers()`                        | `iam/access/scim-members.ts`                        | Which members SCIM manages.                          |
+| `@MemberAvatars()`                      | `iam/access/member-avatars.ts`                      | The members' pictures.                               |
+| `@ClientQuota()`                        | `iam/api-clients/client-quota.ts`                   | A new API client's daily quota.                      |
 | `@ScimUnits()`                          | `iam/organization/scim-units.ts`                    | Which units SCIM manages.                            |
 | `@AccessRecordFinder(subject)`          | `iam/access/access-record-finder.ts`                | The record behind an access explanation.             |
 | `@ActorNameSource()`                    | `iam/audit/actor-names.ts`                          | Names for audit actors.                              |
@@ -198,8 +201,9 @@ Order matters, so it is written down once, in `app.module.ts`.
    routes marked `@IdempotentRoute()`: a replayed response is neither metered nor
    retried), then usage metering (`UsageModule`: an API client over its daily
    quota gets 429), and the retries of outbound calls innermost
-   (`SharedHttpClientModule`). The language (`I18nModule`) and the request
-   context are the only two set outside idempotency.
+   (`SharedHttpClientModule`). Only the language (`I18nModule`), the trace
+   (`NestrixInterceptor`) and the request context sit outside idempotency
+   ([pitfalls](pitfalls.md#permissions-and-the-request-pipeline)).
 4. **Pipe and handler**: Zod validation (`StandardSchemaValidationPipe`, global),
    then the controller, which does HTTP only, and the service, which owns the
    logic and its queries.

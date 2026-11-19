@@ -34,6 +34,7 @@
     "setup": "node tools/setup/setup.mjs",
     "knip": "knip",
     "raw-sql": "node tools/ci/raw-sql.mjs",
+    "db:generate": "pnpm --filter api db:generate",
     "db:seed:demo": "pnpm --filter api db:seed:demo",
     "db:mark-dev": "docker compose -f compose.dev.yaml exec -T postgres psql -v ON_ERROR_STOP=1 -U app -d app < tools/dev/10-dev-database.sql",
     "test:e2e:web": "turbo run test:browser --env-mode=loose --"

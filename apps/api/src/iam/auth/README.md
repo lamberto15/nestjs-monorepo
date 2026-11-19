@@ -36,7 +36,9 @@ await app.inject({ method: 'GET', url: '/v1/notes', headers });
 Events (`auth.events.ts`, @nestjs/event-emitter, `emitAsync`):
 `auth.signed-in`, `auth.sign-in-failed`, `auth.session-ended`,
 `auth.token-session-ended`, `auth.client-ip-denied`. iam/audit listens;
-auth never imports it.
+auth never imports it. `auth.password-verified` (in process, the
+password's SHA-1, never the password): iam/account re-checks it against
+breaches.
 
 Discovery decorators (DiscoveryService, put on one provider of yours):
 
@@ -97,9 +99,9 @@ principal, enters the user's tenant, or a break-glass grant's read only), `MfaEn
 
 ## Variables
 
-`auth.config.ts`: `SESSION_IDLE_MINUTES`, `SESSION_MAX_HOURS`,
-`SESSION_COOKIE_SECURE`, `JWT_SECRET` (unset: a key kept in core/secrets),
-`API_CLIENTS`, `IMPERSONATION`, `REAUTHENTICATION_MAX_AGE_MINUTES`,
+`auth.config.ts`: `SESSION_IDLE_MINUTES` (120), `SESSION_MAX_HOURS` (12),
+`SESSION_COOKIE_SECURE` (on), `JWT_SECRET` (unset: a key kept in core/secrets),
+`API_CLIENTS` (on), `IMPERSONATION` (off), `REAUTHENTICATION_MAX_AGE_MINUTES` (10),
 `OPERATOR_TENANT` (the operators' tenant slug; unset with TENANCY=multi
 means nobody is an operator).
 

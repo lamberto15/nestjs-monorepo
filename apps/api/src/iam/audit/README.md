@@ -22,7 +22,8 @@ for the account itself acting through a mailed link (no session).
 Events from iam/auth (`auth.events.ts`), `@OnEvent` with
 `suppressErrors: false`: `auth.signed-in` (account entry, and
 `member.signed-in` in the tenant), `auth.sign-in-failed` (account entry,
-and `member.sign-in-failed` in each of the account's tenants),
+and `member.sign-in-failed` in the account's first tenant, not waited
+for),
 `auth.client-ip-denied` (`client.ip-denied` in the client's tenant).
 
 `AuditService.page(query, where)`: a page of the log; the routes are in iam/audit-log.

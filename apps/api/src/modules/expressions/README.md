@@ -52,4 +52,4 @@ No variables, no routes, no tables.
 
 ## Remove
 
-Delete this folder (computed fields and automation conditions import it).
+`pnpm module:remove expressions` ([removing-a-module](../../../../../docs/removing-a-module.md)).

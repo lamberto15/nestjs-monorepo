@@ -8,4 +8,4 @@ Saved views: a list's filters, sort and columns kept under a name, for every lis
 - **Use:** list `ViewsModule` in `app.module.ts`. No record opts in: every list the lists module describes takes views.
 - **Tables:** `saved_views`. Audit: `view.created|updated|deleted`.
 
-Remove: delete this folder and its line in `app.module.ts`.
+Remove: `pnpm module:remove views` ([removing-a-module](../../../../../docs/removing-a-module.md)).

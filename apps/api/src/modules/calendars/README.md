@@ -17,5 +17,4 @@ under `/v1/calendars` (anyone signed in reads and computes deadlines;
 - A calendar a recurring schedule follows can't be deleted (409): the
   schedule's foreign key restricts.
 
-No variables. Remove: delete this folder and its line in `app.module.ts`
-(and modules/recurrence, which follows calendars).
+No variables. Remove: `pnpm module:remove calendars` ([removing-a-module](../../../../../docs/removing-a-module.md)).

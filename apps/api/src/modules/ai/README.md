@@ -31,7 +31,7 @@ fails `disabled` at once, the record unread and nothing sent), reads the
 record as they may read it (field-level access applied), asks the model with the task's
 Zod schema and validates the answer itself. The requester hears `ai.ready`
 or `ai.failed` over realtime. Audited: `ai.requested`, `ai.completed`,
-`ai.failed`. `ai_runs` is a usage record: no prompt, no output.
+`ai.failed`. `ai_runs` is a usage record: no prompt, no output; a person's runs are in their data export (`ai`) and stay, asked by nobody, when their account is deleted. `GET /v1/features` reports `ai` (whether a key is set).
 
 ## Quota and cache
 
@@ -49,5 +49,6 @@ AI_MAX_OUTPUT_TOKENS, AI_ATTEMPTS, AI_CACHE_TTL_SECONDS.
 Prompts and completions are declared to log redaction. A task is added in
 `ai.tasks.ts` with its version, tier, prompt and schema.
 
-Remove: delete this folder and its line in `app.module.ts`, and the
-`AiModule.forRecord()` imports.
+Add-on: `pnpm feature:add --addons ai` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `ai.addon.js`): summarize or classify a record with a language model.
+
+Remove: `pnpm module:remove ai` ([removing-a-module](../../../../../docs/removing-a-module.md)).

@@ -119,7 +119,10 @@ from the transaction that wrote its rows.
   workflow payloads.
 - `WORKFLOWS_WORKER=off` keeps a worker from running steps. Operators see and
   retry workflows at `/v1/ops/workflows`.
-- A nightly job removes finished instances (`WORKFLOWS_RETENTION_DAYS`).
+- A nightly job removes finished instances (`WORKFLOWS_RETENTION_DAYS`). How
+  long an erased tenant's or account's data stays in workflows, queues and
+  dead letters:
+  [iam/personal-data](../apps/api/src/iam/personal-data/README.md#how-long-erased-data-lingers).
 
 Example: `apps/api/src/modules/approvals/approval.workflow.ts`, started in
 `approvals.service.ts`.
@@ -152,8 +155,9 @@ retries over hours (10 attempts, exponential backoff)
 - **Branding.** [modules/branding](../apps/api/src/modules/branding/README.md) marks
   `@MailBrand()`, so templates read `{{ brand.name }}`, the colour and the logo
   of the tenant.
-- Operators can inspect and discard the mail backlog with
-  `pnpm ops backlog:count|discard|retry mail --global`.
+- Operators count the mail backlog with `pnpm ops backlog:count --global`,
+  and discard or retry it with `pnpm ops backlog:discard mail --global` or
+  `backlog:retry mail --global`.
 
 ## Adding to a module
 

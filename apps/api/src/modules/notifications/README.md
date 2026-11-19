@@ -45,6 +45,12 @@ without `notifications.<type>.{label,title,body}` in the English catalog stops
 the app at start. `collapse: true` makes every notification of the type
 collapse on the type. The system principal is never notified.
 
+The module's own types: iam/account's security alerts (`security.*`:
+mandatory, urgent, email not offered since iam/account mails each one) and
+an operator's break-glass grant to the tenant's administrators
+(`security.break-glass-started`). A notification to an API client goes to
+its webhook as `notification.created` (modules/webhooks).
+
 ## Delivery (notifications.delivery.ts)
 
 The recipient as they are now (nothing for a deactivated user or one who left
@@ -76,7 +82,7 @@ except mandatory types.
 found by the subject's `@AccessRecordFinder`), `GET /subscriptions`,
 `DELETE /subscriptions/{subject}/{recordId}`.
 
-A record is watchable with `NotificationsModule.forRecord(RECORD)` in the feature's imports: `POST|DELETE /<path>/{id}/watch` (whoever may read it; a record they may not read is a 404), `?include=watching`, the creator watching from the start, and the watchers told (`record.changed`, daily mail by default) when someone else updates it; a record's repeated changes collapse into one notification, counted up. A bulk run's changes are one `record.bulk-changed` per run and watcher, counted up, whose link opens the record list filtered to what the run changed (`?bulkRun=<id>`). A purge forgets the watchers.
+A record is watchable with `NotificationsModule.forRecord(RECORD)` in the feature's imports: `POST|DELETE /<path>/{id}/watch` (whoever may read it; a record they may not read is a 404), `?include=watching`, the creator watching from the start, and the watchers told (`record.changed`, daily mail by default) when someone else updates it; a record's repeated changes collapse into one notification, counted up. A bulk run's changes are one `record.bulk-changed` per run and watcher, counted up, whose link opens the record list filtered to what the run changed (`?bulkRun=<id>`). A purge forgets the watchers; a merge moves the duplicate's to the survivor.
 
 ## Variables (notifications.config.ts)
 
@@ -87,5 +93,6 @@ WEB_PUSH_PRIVATE_KEY (else made once and kept in `core/secrets`),
 WEB_PUSH_DEVICE_RETENTION_DAYS. Outside production `POST /notifications/test`
 sends the caller a `notification.test` notification.
 
-Remove: delete this folder and its line in `app.module.ts` (and the modules
-that call `notify()`).
+Add-on: `pnpm feature:add --addons notifications` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `notifications.addon.js`): watching a record, and its watchers told of changes.
+
+Remove: `pnpm module:remove notifications` ([removing-a-module](../../../../../docs/removing-a-module.md)).

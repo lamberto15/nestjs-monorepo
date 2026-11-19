@@ -55,4 +55,6 @@ is not recomputed.
 
 Variable: `BULK_SYNC_LIMIT` (bulk.config.ts).
 
-Remove: delete this folder and the `BulkModule.forRecord()` imports.
+Add-on: `pnpm feature:add --addons bulk` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `bulk.addon.js`): delete, restore or change many at once.
+
+Remove: `pnpm module:remove bulk` ([removing-a-module](../../../../../docs/removing-a-module.md)).

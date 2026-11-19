@@ -14,12 +14,16 @@ it before whatever depends on it). `socket.io-client` is a peer dependency,
 needed only for `createRealtime()`.
 
 An app of this repository uses it through the workspace, unpublished:
-`"@nestjs-monorepo/api-client": "workspace:*"` in its package.json
-.
+`"@nestjs-monorepo/api-client": "workspace:*"` in its package.json.
 
 ## Keeping it current
 
-`openapi.json` and `src/schema.ts` are generated and committed: the contract.
+`openapi.json`, `src/schema.ts` and `src/realtime-events.ts` are generated and
+committed: the contract. From the root, `pnpm client:generate` builds the API,
+dumps its document into `openapi.json` (`pnpm openapi:dump`) and generates the
+rest; `pnpm client:check` runs it and fails when `packages/api-client` then
+differs from what is committed (`git diff --exit-code`). The package's own
+script, without the API:
 
 ```bash
 pnpm --filter @nestjs-monorepo/api-client generate                        # openapi.json -> src/schema.ts, src/realtime-events.ts
@@ -55,6 +59,7 @@ React Native needs a `randomUUID` polyfill or `idempotencyKey: () => …`.
 import {
   createApiClient,
   createRealtime,
+  etagOf,
   isApiError,
   unwrap,
 } from '@nestjs-monorepo/api-client';
@@ -206,10 +211,11 @@ function that removes it.
 | `ai.failed`                  | `{ id, subject, recordId, error }`                                                                                               |
 | `record.commented`           | `{ subject, recordId, commentId, action }`: a comment on a record you watch was added, edited or removed                         |
 | `record.attachments.changed` | `{ subject, recordId, attachmentId, action }`: a file on a record you watch was added or removed                                 |
+| `record.presence`            | `{ subject, recordId }`: someone started or stopped viewing or editing a record you view (`GET /v1/presence/{subject}/{recordId}`)
 
 `await realtime.whoami()` says who the connection acts as. A feature that
-pushes a new event (`Realtime.toPrincipal()`) declares it in the API's
-manifest (`apps/api/src/platform/realtime/realtime-events.ts`, or the
-feature's `realtimeEvents`); `pnpm client:generate` writes
-`src/realtime-events.ts`, and `RealtimeEvents` in `src/realtime.ts` follows
-it.
+pushes a new event (`Realtime.toPrincipal()`) defines it next to its code
+with `defineRealtimeEvent()` (apps/api/src/modules/realtime/realtime.events.ts),
+which puts it in the OpenAPI document (`x-realtime-events`);
+`pnpm client:generate` writes `src/realtime-events.ts`, and `RealtimeEvents`
+in `src/realtime.ts` follows it.

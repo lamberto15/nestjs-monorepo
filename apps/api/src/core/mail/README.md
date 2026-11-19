@@ -30,12 +30,12 @@ export class PasswordResetMail implements Mailable<{ link: string }> {
 - Template names are global (`password-reset`, not per module): two folders holding the same
   name stop the boot with both file paths. Prefix with the module (`account-welcome`) to be safe.
 - Texts (subjects, strings in the context) come from the module's `i18n/` catalog, not the template.
-- A new template file needs a restart (the file list is read at boot); edits to one do not.
+- A new template file needs a restart (the file list is read at boot); edits to one show at once in development (production caches the files).
 - `MAIL_TEMPLATE_ROOTS` adds directories to scan (tests use it for `test/fixtures/mail`).
 - `MAIL_DELIVERY` = `all` | `essential` | `off`: the ceiling. A withheld mail is logged, counted in
   `mail_withheld_total{reason}` (`policy`, `budget`) and not queued.
 - **Hooks**: core never imports the module that knows; that module marks its provider with a discovery
-  decorator and core finds it (none in the app: the default applies).
+  decorator and core finds it (without one, the default applies).
   - `@MailDeliveryPolicy()` (mail-delivery.ts, `MailDelivery`): `mode()` (stricter than `MAIL_DELIVERY`, never looser)
     and `consume({ essential })` (the tenant's daily budget; false withholds). An unreadable policy leaves the ceiling alone.
     Provided by modules/deliverability.
@@ -46,3 +46,5 @@ export class PasswordResetMail implements Mailable<{ link: string }> {
   - `@MailSuppressionList()` (mail-suppression.ts): asked by the worker before each send. Provided by modules/deliverability.
 
 - **Metrics:** `mail_sent_total` (the transport accepted it, on the workers) and `mail_suppressed_total{reason}` (recipients the suppression list kept out), next to `mail_withheld_total`.
+
+Variables (`mail.config.ts`): MAIL_TRANSPORT (`file` default, writing `.eml` files to MAIL_DIRECTORY; `log`, `smtp` with SMTP_URL, `resend`, `postmark` or `sendgrid` with MAIL_API_KEY, `ses` with AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, SES_ENDPOINT; `memory` for tests), MAIL_FROM, MAIL_DELIVERY, MAIL_TEMPLATE_ROOTS.

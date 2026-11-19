@@ -43,4 +43,6 @@ No seed role holds `DataQuality.*`: administrators give them in a role.
 
 Tables: `data_quality_findings`, `data_quality_scans` (tenant tables). No environment variables.
 
-Remove: delete this folder, its line in `app.module.ts` and each `forRecord()` import.
+Add-on: `pnpm feature:add --addons data-quality` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `data-quality.addon.js`): scans for missing values, duplicates and broken rules.
+
+Remove: `pnpm module:remove data-quality` ([removing-a-module](../../../../../docs/removing-a-module.md)).

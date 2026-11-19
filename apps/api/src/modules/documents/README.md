@@ -35,7 +35,9 @@ token and its own file key, so a job run twice issues one PDF. Transient
 failures are retried (`DOCUMENTS_RENDER_ATTEMPTS`); a refused page or an
 inactive requester fails at once. A record deleted for good takes its
 documents with it, and their files once the purge commits (modules/storage's
-`StoredFiles`).
+`StoredFiles`). A person's documents are in their data export (`documents`) and stay
+with their records, asked for by nobody, when their account is deleted.
+`GET /v1/features` reports `documents` (whether GOTENBERG_URL is set).
 
 ## Variables (`documents.config.ts`)
 
@@ -58,5 +60,6 @@ loads nothing but itself and runs no script), `--api-disable-download-from`,
 `--webhook-disable`, and an `--api-timeout` longer than
 `GOTENBERG_TIMEOUT_MS`. No published port, and a network with no way out.
 
-Remove: delete this folder and its line in `app.module.ts`, and the
-`DocumentsModule.forRecord()` imports.
+Add-on: `pnpm feature:add --addons documents` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `documents.addon.js`): a record's PDF, from templates/<item>.html.
+
+Remove: `pnpm module:remove documents` ([removing-a-module](../../../../../docs/removing-a-module.md)).

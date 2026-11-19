@@ -17,8 +17,9 @@ pnpm dev                  # the API (http://localhost:3000) and the web app
 ```
 
 - `pnpm run setup`, not `pnpm setup`: `pnpm setup` is pnpm's own command. The
-  script (`tools/setup`) copies `apps/api/env.example` to `apps/api/.env` (mode 600) and generates the key lists. It is safe to repeat: an existing file keeps
-  its values. `--check` verifies a file, `--rotate` puts a new key in front of
+  script (`tools/setup`) copies `apps/api/env.example` to `apps/api/.env`
+  (mode 600) and generates the key lists. It is safe to repeat: an existing
+  file keeps its values. `--check` verifies a file, `--rotate` puts a new key in front of
   each key list, `--dry-run` says what it would do, `--web-push <subject>` adds a
   VAPID key pair.
 - Without it, `cp apps/api/env.example apps/api/.env` and fill the lines marked

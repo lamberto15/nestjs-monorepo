@@ -12,7 +12,7 @@ filters by them. A record add-on (records README, "Writing an add-on").
 | `POST /v1/tags`            | `Access.manageTags`: `{ subject, name, color?, description? }`; 409 `tag_taken` (a name is unique per subject, any case); 400 for a subject that takes no tags |
 | `PATCH /v1/tags/{id}`      | `Access.manageTags`: rename, recolour (`#rrggbb`), describe; null clears                                                                                       |
 | `DELETE /v1/tags/{id}`     | `Access.manageTags`: every record loses the tag                                                                                                                |
-| `PUT /v1/<path>/{id}/tags` | Whoever may update the record: `{ tagIds }` replaces its set; answers `{ items }`; 400 names each id (`tagIds.1`) that is not a tag of the subject             |
+| `PUT /v1/<path>/{id}/tags` | Whoever may update the record: `{ tagIds }` (at most 50) replaces its set; answers `{ items }`; 400 names each id (`tagIds.1`) that is not a tag of the subject             |
 
 Tag changes are audited (`tag.created|updated|deleted`); a record's set as
 `tags.changed` (from, to, added, removed), only when it changed.
@@ -37,3 +37,5 @@ has), declared here with `@AutomationAction`, so the automations never import
 tags. Only subjects that take tags have it.
 
 Tests: `tags.e2e-spec.ts`, on the fixture's test items.
+
+Add-on: `pnpm feature:add --addons tags` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `tags.addon.js`): labels set per record, `?tag=` on the list.

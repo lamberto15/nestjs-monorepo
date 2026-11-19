@@ -25,7 +25,9 @@ nothing on the record; it lets the subject be noted and removes its entries
 when records are deleted for good. `RecentsRetentionJob` deletes old entries
 every night at 03:40 UTC, on one instance.
 
-Left out of the old template: the entry in the account data export and
-erasure (no personal-data registry yet).
+A person's entries are in their account data export and deleted with the
+account (`RecentsPersonalData`, section `recents`, iam/personal-data).
 
 Tests: `recents.e2e-spec.ts`, on the fixture's test items.
+
+Add-on: `pnpm feature:add --addons recents` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `recents.addon.js`): the records a person opened lately.

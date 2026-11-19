@@ -2,7 +2,7 @@
 
 `GET /v1/search?q=`: one search box over every registered record
 (modules/records) that declares `.searchable()` fields, best matches first
-across them. `subject=` narrows it to one kind.
+across them. `subject=` narrows it to one kind; `limit=` (1-50, default 20).
 
 - Only records the caller may read (`access.sqlFilter`), never the recycle bin.
 - Field-level permissions: a field the caller may read on no record, or on
@@ -15,4 +15,5 @@ across them. `subject=` narrows it to one kind.
   (`search.source.ts`) implementing `search(principal, q, { limit })`: merged
   with the records' hits by score, asked only when `?subject=` is absent or
   names its subject. Attachments adds `Attachment` hits (files' text).
-- Ranking reads every row it ranks: at most the newest `RANK_CAP` matches are ranked.
+- Ranking reads every row it ranks: at most the newest `RANK_CAP` (1000,
+  modules/records/full-text.ts) matches are ranked.

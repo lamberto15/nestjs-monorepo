@@ -7,12 +7,15 @@ menus, sorts, column pickers and views from it.
 - Sources: every record registered with `RecordsModule.forFeature()` (its
   list with the add-ons' filters), plus the access API's `User` list and the audit pages' `Audit` and `SignIn` lists (whoever holds `Access.readAudit`).
 - Who: whoever may read the subject on some record (`ListPolicy`); for `User`,
-  whoever may open the access API. An unknown subject is a 404 before any
+  whoever may open the access API; for `Audit` and `SignIn`, whoever holds
+  `Access.readAudit`. An unknown subject is a 404 before any
   permission check.
 - Field-level permissions: a field the caller may read on no record is left
   out; one they may read on some records only has no operators and is not
   sortable (and `search` is false when `q` reads one).
 - `capabilities`: a map from each add-on's `capability` to its `available()`.
   Add-ons' `describe()` keys are merged at the top level. `views` come from the
-  record's declaration (checked at startup), `related` is empty until
-  record relations are ported.
+  record's declaration (checked at startup), `related` lists the records
+  whose `ref` field points at this subject (`record-relations.ts`) that the
+  caller may read and filter by that field. `recycleBin` is true with
+  `softDelete` for whoever may `restore` the subject.

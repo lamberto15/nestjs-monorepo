@@ -4,7 +4,8 @@ Who is viewing or editing a record now: advisory, never a lock (the record's
 ETag still guards saves).
 
 - `PUT /v1/presence/{subject}/{recordId}` `{ mode: 'viewing' | 'editing' }`
-  beats (every 15 s; an entry lives 45 s) and answers with the list;
+  beats (every 15 s; an entry lives 45 s) and answers with the list (at most
+  25);
   `GET` lists; `DELETE` leaves. `subject` is the permission subject
   (`Note`).
 - State is one Redis hash per tenant and record (principal key to name, mode
@@ -17,5 +18,4 @@ ETag still guards saves).
   `{ subject, recordId }` (ids only) to those on the record, through
   `modules/realtime`; the page fetches the list.
 
-No tables, no variables. Remove: delete this folder and its line in
-`app.module.ts`.
+No tables, no variables. Remove: `pnpm module:remove presence` ([removing-a-module](../../../../../docs/removing-a-module.md)).

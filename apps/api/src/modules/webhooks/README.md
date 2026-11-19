@@ -33,6 +33,8 @@ retried by the worker.
   and which secrets signed it, never a secret). Finished deliveries older than
   WEBHOOKS_DELIVERY_RETENTION_DAYS (30) go every night at 03:35 UTC.
 - A deleted API client's endpoints are deleted (`access.client-revoked`).
+- Built in: `security.api-key-rotated` (iam/api-clients' event, relayed in
+  `webhooks.security.ts`) goes to the rotated client only.
 
 ### Which records' events a client receives
 
@@ -140,3 +142,5 @@ The app must be created with `rawBody: true` for incoming signatures.
 ## Metrics
 
 `webhook_delivery_lag_seconds` on a worker's `/metrics`: how long the most overdue outgoing delivery has waited (0 when none). Shared state: aggregate with max().
+
+Add-on: `pnpm feature:add --addons webhooks` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `webhooks.addon.js`): a record's changes as webhooks for API clients.

@@ -124,5 +124,4 @@ Forms have no file field.
 
 None.
 
-Remove: delete this folder and its line in `app.module.ts`, then a migration
-dropping its tables.
+Remove: `pnpm module:remove forms` ([removing-a-module](../../../../../docs/removing-a-module.md)).

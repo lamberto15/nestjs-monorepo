@@ -8,7 +8,8 @@ as background jobs on the `data-transfers` queue.
 A record is exportable and importable when its feature module imports
 `DataTransferModule.forRecord(DECLARATION)`. Its name in the routes is the
 record's path (`test-items`). That brings `DataTransferModule` along (the
-routes under `/v1/data`, the queue and its processor). Needs QueuesModule,
+routes under `/v1/data`, the queue and its processor; `GET /v1/data` lists
+what the caller may export and import). Needs QueuesModule,
 StorageModule and SharedOutboxModule in the app.
 
 ## Exports
@@ -88,8 +89,12 @@ kept with the job.
 transfers, in this tenant. A finished transfer is kept for 7 days
 (`TRANSFER_KEPT_MS`, transfer-retention.ts: the jobs, `expiresAt`, the links
 and the files all go by it). When a
-transfer ends, `transferFinished` is published (data-transfer.events.ts).
-Scheduled reports subscribe to it.
+transfer ends, `transferFinished` (`data.transfer-finished`) is published
+(data-transfer.events.ts). Scheduled reports subscribe to it. Whoever started
+it hears `data.progress`, `data.export-ready`, `data.import-finished` or
+`data.failed` over realtime. Audited: `data.export-started` or
+`data.import-started`, then `data.exported`, `data.imported` or
+`data.import-checked` (a dry run); saved mappings `importMapping.created|deleted`.
 
 The links (`url`, `errorsUrl`) are signed in one place, each time a
 transfer is read, and only:
@@ -132,3 +137,5 @@ otherwise (retry at `/v1/ops/queues`). If it cannot be queued, the file is
 deleted and the export fails: ask again. A new request is a new export with a
 file and an expiry of its own. Users only, never while impersonating. Needs
 QueuesModule, StorageModule and PersonalDataModule.
+
+Add-on: `pnpm feature:add --addons data-transfer` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `data-transfer.addon.js`): exports to and imports from CSV or Excel.

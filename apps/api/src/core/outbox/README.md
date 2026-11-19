@@ -8,7 +8,7 @@
 - **Retention:** `OutboxRetentionJob` (04:20 UTC, one instance) deletes dead letters older than OUTBOX_DEAD_LETTER_RETENTION_DAYS and inbox records older than OUTBOX_INBOX_RETENTION_DAYS (which must not be shorter).
 - **Schema:** the package keeps its tables in `nest_outbox`. The app's role may not create tables, so they come from the migration `background-stores` (run as the owner); the store only checks them at start. After upgrading the package, add a migration for its new schema version: `pnpm exec nest-outbox sql --from <n> --statement-breakpoints` into a `drizzle-kit generate --custom` migration.
 
-Variables (`outbox.config.ts`): OUTBOX_RELAY, OUTBOX_RELAY_BATCH_SIZE, OUTBOX_RELAY_CONCURRENCY, OUTBOX_DEAD_LETTER_RETENTION_DAYS, OUTBOX_INBOX_RETENTION_DAYS.
+Variables (`outbox.config.ts`): OUTBOX_RELAY (`on`; `off` in tests and a worker kept for heavy queues), OUTBOX_RELAY_BATCH_SIZE (100), OUTBOX_RELAY_CONCURRENCY (10), OUTBOX_DEAD_LETTER_RETENTION_DAYS (14), OUTBOX_INBOX_RETENTION_DAYS (30).
 
 Remove: delete this folder and its line in `app.module.ts` (and the modules that publish or subscribe).
 

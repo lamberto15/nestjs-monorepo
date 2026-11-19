@@ -40,4 +40,4 @@ Money: the library features import (no database, no route), and the exchange rat
 
 ## Remove
 
-Delete this folder and its line in `app.module.ts`; expressions and fields import the library.
+`pnpm module:remove money` ([removing-a-module](../../../../../docs/removing-a-module.md)).

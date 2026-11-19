@@ -12,7 +12,7 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
 
 ## Writing a feature
 
-1. **`<item>.record.ts`**: `defineRecord({ subject, path, noun, table, softDelete, recycleBinDays, unit, clientAccess, grants, idempotency, views, fields })`.
+1. **`<item>.record.ts`**: `defineRecord({ subject, path, noun, table, softDelete, recycleBinDays, unit, clientAccess, grants, idempotency, apiTag, views, fields })`.
    Fields come from `field.*` (modules/fields): `.searchable()`, `.unique()`,
    `.optional()`, `.readOnly()` (set by the service only; a body's value is
    dropped, as unknown keys are). A reference:

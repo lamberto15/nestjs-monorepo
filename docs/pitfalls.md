@@ -65,11 +65,12 @@ what to do.
   it and the retries of outbound calls innermost. A replay passes through no other
   interceptor, so it is neither metered nor held to a quota. A module with a
   global guard or interceptor goes where its comment in `app.module.ts` says, and
-  a module that imports `AccessModule` goes after `AuthModule`. The boot warning
-  "IdempotencyInterceptor runs inside" I18nInterceptor, NestrixInterceptor and
-  Object (in either order) is expected: the language, the trace and nestjs-cls's pass-through.
-  Another name in it means a global interceptor got in front of idempotency;
-  `src/app.module.e2e-spec.ts` boots every module and fails then.
+  a module that imports `AccessModule` goes after `AuthModule`. At boot,
+  `@nestjs/idempotency` warns that its interceptor runs inside others. Three
+  are expected there, in any order: `I18nInterceptor` (the language),
+  `NestrixInterceptor` (the trace) and `Object` (nestjs-cls's pass-through).
+  Another name in the warning means a global interceptor got in front of
+  idempotency; `src/app.module.e2e-spec.ts` boots every module and fails then.
 - **Global guards and interceptors also run on non-HTTP contexts.** Each tool
   call of the MCP endpoint (`POST /v1/mcp`) goes through them again with context
   type `'mcp'`, and sockets use `'ws'`. Code that reads the request must check
@@ -172,5 +173,5 @@ what to do.
   element is hidden): a file's first test took 2 s and its last 35 s. The
   root route now also checks `import.meta.env.MODE !== 'test'`; the suite
   runs in about a minute. When tests get slower one after another, take a CPU
-  profile (`vitest run --pool=forks --no-file-parallelism
---execArgv=--cpu-prof`) before blaming the machine.
+  profile (`vitest run --pool=forks --no-file-parallelism --execArgv=--cpu-prof`)
+  before blaming the machine.

@@ -14,6 +14,7 @@ documents show for the tenant.
   stripped of metadata by `modules/images`. One row per variant in
   `branding_logos`; a new upload replaces the file. A replaced or removed
   file is deleted once the change commits (modules/storage's `StoredFiles`).
+  Audited: `branding.logo-changed`, `branding.logo-removed`.
 - **The operators' lock** (`branding.locked`, platform scope only): while on,
   the values and logos answer 409 `branding_locked`, on `/v1/branding` and on
   the settings API. Operators may also enforce values at the platform scope.

@@ -56,6 +56,23 @@ export class NotePolicy {
   instance, Redis pub/sub). Abilities are cached for a minute at most,
   never past a grant's end or a unit membership's start or end.
 
+## Routes
+
+Under `/v1/access` (reading: `AccessPolicy.open`, any permission of access
+administration): `GET catalog`; `GET|POST roles`, `GET|PATCH|DELETE
+roles/:id` (`Access.manageRoles` to change); `GET users`, `GET|PATCH
+users/:id` (`Access.manageUsers` to change); `GET users/:id/explanation`
+(why a member may or may not: `manageRoles` or `manageUsers`); `GET principals` (users
+and API clients as principal keys).
+
+## First start
+
+`AccessSeeder`, on a deployment's first start: the first tenant
+(ADMIN_TENANT_NAME, `Operators`) with Administrator and the declared seed
+roles, and its administrator from ADMIN_EMAIL and ADMIN_PASSWORD (generated
+and logged once when unset). ADMIN_ONBOARDING (on): a placeholder address or
+a generated password must be replaced at the first sign-in.
+
 ## The system principal
 
 Work without a user runs through `SystemContext.run(JOB, work, { tenantId })`

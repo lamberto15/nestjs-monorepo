@@ -28,8 +28,9 @@ static page while the app is down (a deploy, an outage) is the host's: the
 load balancer or proxy in front serves it; `APP_MODE=maintenance` covers a
 running app.
 
-Set `GIT_SHA` (the release the observability backends report) and
-`SERVICE_NAME` when you run it.
+The image carries `GIT_SHA`, its commit, which the observability backends
+report as the release (`publish.yml` sets it; a local build leaves it empty).
+Set `SERVICE_NAME` when you run it.
 
 ## Services
 
@@ -176,8 +177,8 @@ Run several API instances and several workers freely. What they share:
   ([modules/realtime](../apps/api/src/modules/realtime/README.md)). The
   session cookie needs no stickiness: sessions are in the database.
 
-Behind a proxy, the client address comes from `X-Forwarded-For`, trusted only
-from loopback and private networks.
+Behind a proxy, the client address comes from `X-Forwarded-For`
+([API conventions, "Rate limits"](api-conventions.md#rate-limits)).
 
 ## The operator CLI
 
@@ -207,6 +208,6 @@ This repository bundles no operations. The host brings:
 - **Monitoring and alerting** on the `/metrics` scrape, the readiness probe
   and the observability backend. The outbox backlog (`GET /v1/ops/outbox`,
   `lagMs`) is the number to alert on.
-- **Deploying and releasing**: building and publishing the image, running
-  `node dist/migrate` before each release, and rolling the instances.
+- **Deploying and releasing**: pulling the image `publish.yml` published,
+  running `node dist/migrate` before each release, and rolling the instances.
 - **Secrets storage**: the values of the variables above.
