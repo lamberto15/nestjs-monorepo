@@ -79,6 +79,14 @@ export const recordNameQuery = (subject: string) => (id: string) =>
     meta: { errorToast: false },
   });
 
+/**
+ * One record's title, for a link that names it (a generated feature's
+ * record-link.ts): its id when it has none the user may read.
+ * @public
+ */
+export const recordTitle = async (subject: string, id: string) =>
+  (await askerOf(subject)(id)) ?? id;
+
 /** The titles of these ids of `subject`'s records: the id itself until known. */
 export function useRecordNames(
   subject: string,

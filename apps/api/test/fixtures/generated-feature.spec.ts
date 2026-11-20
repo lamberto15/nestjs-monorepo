@@ -71,6 +71,8 @@ describe('the feature schematic', () => {
         'features/invoices/invoice-form.tsx',
         'features/invoices/invoices.test.tsx',
         'features/invoices/nav.ts',
+        'features/invoices/record-form.tsx',
+        'features/invoices/record-link.ts',
         'features/invoices/use-invoice-delete.tsx',
         'locales/en/invoices.json',
         'routes/_app/invoices/$id/edit.tsx',

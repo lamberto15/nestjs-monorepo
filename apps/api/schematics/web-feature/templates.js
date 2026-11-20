@@ -54,7 +54,63 @@ export function webPaths(t) {
     new: `routes/_app/${t.plural}/new.tsx`,
     detail: `routes/_app/${t.plural}/$id/index.tsx`,
     edit: `routes/_app/${t.plural}/$id/edit.tsx`,
+    recordForm: `features/${t.plural}/record-form.tsx`,
+    recordLink: `features/${t.plural}/record-link.ts`,
   };
+}
+
+/** The feature's form for a parent's page (components/records/record-forms.ts): a create with the parent filled in, or an edit. */
+export function recordForm({ t }) {
+  const S = t.Singular;
+  const item = t.singularCamel;
+  return lines(
+    `import { Skeleton } from '@nestjs-monorepo/ui/components/skeleton';`,
+    `import { useQuery } from '@tanstack/react-query';`,
+    `import { useTranslation } from 'react-i18next';`,
+    `import type { RecordForm } from '@/components/records/record-forms';`,
+    `import { ${item}Query } from './api';`,
+    `import { ${S}Form } from './${t.singular}-form';`,
+    `import { use${S}Delete } from './use-${t.singular}-delete';`,
+    '',
+    `/** An edit in place: the ${t.noun} read once, sent back with its ETag. */`,
+    `function Edit${S}(props: { id: string; onDone: (saved?: { id: string }) => void }) {`,
+    `  const { t } = useTranslation('records');`,
+    '  const query = useQuery({',
+    `    ...${item}Query(props.id),`,
+    '    refetchOnWindowFocus: false,',
+    '    refetchOnReconnect: false,',
+    '  });',
+    '  if (query.isPending) return <Skeleton className="h-32 w-full" aria-busy />;',
+    "  if (query.isError) return <p role=\"alert\" className=\"text-sm text-destructive\">{t('related.error')}</p>;",
+    `  return <${S}Form record={query.data.${item}} etag={query.data.etag} onDone={props.onDone} />;`,
+    '}',
+    '',
+    'const form: RecordForm = {',
+    `  subject: '${S}',`,
+    '  Form: ({ id, parent, onDone }) =>',
+    `    id ? <Edit${S} id={id} onDone={onDone} /> : <${S}Form parent={parent} onDone={onDone} />,`,
+    `  useDelete: use${S}Delete,`,
+    '};',
+    '',
+    'export default form;',
+  );
+}
+
+/** Where ${'a'} record opens and what it is called (features/watching/record-links.ts). */
+export function recordLink({ t }) {
+  const S = t.Singular;
+  return lines(
+    `import type { RecordLink } from '@/features/watching/record-links';`,
+    `import { recordTitle } from '@/lib/record-names';`,
+    '',
+    'const link: RecordLink = {',
+    `  subject: '${S}',`,
+    `  path: (id) => \`/${t.plural}/\${id}\`,`,
+    `  title: (id) => recordTitle('${S}', id),`,
+    '};',
+    '',
+    'export default link;',
+  );
 }
 
 /** Whether the records have a `number` column: the sequences add-on, but not for a `!numbered` field of their own. */
@@ -627,8 +683,17 @@ export function form({ t, fields, addons }) {
     `  * form of the fields in ${t.singular}.record.ts. An edit sends only what changed.`,
     '  * A field added to the record is added here by hand (`pnpm feature:sync` leaves',
     '  * the web files alone).',
+    '  *',
+    "  * In a dialog (a parent's page, record-form.tsx): `parent` fills that",
+    '  * reference and hides its input, and `onDone` takes the place of the page',
+    '  * after a save (with the record) and of the Cancel link.',
     '  */',
-    `export function ${S}Form(props: { record?: ${S}; etag?: string }) {`,
+    `export function ${S}Form(props: {`,
+    `  record?: ${S};`,
+    '  etag?: string;',
+    '  parent?: { field: string; id: string };',
+    '  onDone?: (saved?: { id: string }) => void;',
+    '}) {',
     '  const { record, etag } = props;',
     `  const { t } = useTranslation('${t.plural}');`,
     '  const navigate = useNavigate();',
@@ -708,8 +773,11 @@ export function form({ t, fields, addons }) {
       '      // Only a new record, and only when the user had a choice.',
       '      if (series.length > 1 && seriesId) body.namingSeriesId = seriesId;',
     ],
+    "      // In a parent's dialog: the reference to it, whose input is hidden.",
+    '      if (!record && props.parent) (body as Record<string, unknown>)[props.parent.field] = props.parent.id;',
     '      if (record && Object.keys(body).length === 0) {',
     '        // Nothing changed: no request, no new version.',
+    '        if (props.onDone) return props.onDone();',
     `        await navigate({ to: '/${t.plural}/$id', params: { id: record.id }, ignoreBlocker: true });`,
     '        return;',
     '      }',
@@ -717,6 +785,7 @@ export function form({ t, fields, addons }) {
     '        const saved = await save.mutateAsync(body);',
     '        await invalidate();',
     `        toast.success(record ? t('form.saved') : t('form.created'));`,
+    '        if (props.onDone) return props.onDone(saved);',
     "        // Saved: the record's page, past the unsaved-changes guard.",
     `        await navigate({ to: '/${t.plural}/$id', params: { id: saved.id }, ignoreBlocker: true });`,
     '      } catch (caught) {',
@@ -761,7 +830,13 @@ export function form({ t, fields, addons }) {
     '      <FormAlert message={error} />',
     '      <FieldGroup>',
     ...fields.map((f, i) => [
-      control(t, f, i === first),
+      f.type === 'ref'
+        ? [
+            `        {props.parent?.field !== '${f.name}' && (`,
+            control(t, f, i === first),
+            '        )}',
+          ]
+        : control(t, f, i === first),
       f === title &&
         duplicates && [
           '        {/* Likely duplicates of what is typed: a hint, never a block. */}',
@@ -789,19 +864,25 @@ export function form({ t, fields, addons }) {
     '        <form.AppForm>',
     `          <form.SubmitButton>{record ? t('form.save') : t('form.create')}</form.SubmitButton>`,
     '        </form.AppForm>',
-    '        <Button',
-    '          variant="outline"',
-    '          nativeButton={false}',
-    '          render={',
-    '            record ? (',
-    `              <Link to="/${t.plural}/$id" params={{ id: record.id }} />`,
-    '            ) : (',
-    `              <Link to="/${t.plural}" />`,
-    '            )',
-    '          }',
-    '        >',
-    `          {t('form.cancel')}`,
-    '        </Button>',
+    '        {props.onDone ? (',
+    '          <Button type="button" variant="outline" onClick={() => props.onDone?.()}>',
+    `            {t('form.cancel')}`,
+    '          </Button>',
+    '        ) : (',
+    '          <Button',
+    '            variant="outline"',
+    '            nativeButton={false}',
+    '            render={',
+    '              record ? (',
+    `                <Link to="/${t.plural}/$id" params={{ id: record.id }} />`,
+    '              ) : (',
+    `                <Link to="/${t.plural}" />`,
+    '              )',
+    '            }',
+    '          >',
+    `            {t('form.cancel')}`,
+    '          </Button>',
+    '        )}',
     '      </div>',
     '    </form>',
     '  );',

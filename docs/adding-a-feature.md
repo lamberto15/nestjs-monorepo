@@ -71,6 +71,23 @@ pnpm --filter api test:e2e src/features/invoices/invoices.e2e-spec.ts
 pnpm client:generate        # the typed client the web pages use
 ```
 
+### A child table
+
+A feature with a reference to another is that one's child: the lines of an
+invoice (`pnpm feature:add invoice-lines --fields "item:string,qty:int,price:money,invoiceId:ref(invoices)?"`).
+The parent's page lists its children in the Related tab as a table, with the
+child's own fields; the child's `record-form.tsx` (generated) lets that table
+add a child with the parent filled in, change one and delete one, in a dialog,
+each through the child's own routes and permissions (Add for whoever may
+create, a row's buttons for whoever may change or delete it). Its
+`record-link.ts` opens a child's own page from its title. Take the
+reference's `.optional()` off once both features exist: a line always has its
+invoice. A hand-written feature joins by writing the two files
+(`components/records/record-forms.ts`, `features/watching/record-links.ts`).
+A parent with live children can't be deleted (409 `record_referenced`)
+until they are. The parent and its children are saved one at a time: what must hold for an
+invoice and all its lines together is a check of the parent's service.
+
 The business logic goes where the generated files say "Business logic": the
 service (checks before a write), a `@RecordExtension()` provider of the
 feature for what must hold on every write (records README, step 7), the

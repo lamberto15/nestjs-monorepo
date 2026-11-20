@@ -22,7 +22,13 @@
     "heading": "{{subject}} ({{field}})",
     "empty": "None yet.",
     "error": "The related records could not be loaded.",
-    "more": "The newest {{shown}} of {{total}}."
+    "more": "The newest {{shown}} of {{total}}.",
+    "name": "Name",
+    "actions": "Actions",
+    "add": "Add",
+    "edit": "Change",
+    "editOne": "Change {{name}}",
+    "deleteOne": "Delete {{name}}"
   },
   "picker": {
     "placeholder": "Search by name…",

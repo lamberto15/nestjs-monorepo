@@ -133,6 +133,9 @@ function webFiles(c) {
     [at(paths.new)]: web.newPage(c),
     [at(paths.detail)]: web.detailPage(c),
     [at(paths.edit)]: web.editPage(c),
+    // A parent's page adds and changes its records in place (RelatedPanel), and links to them.
+    [at(paths.recordForm)]: web.recordForm(c),
+    [at(paths.recordLink)]: web.recordLink(c),
     // English only for now (AGENTS.md): the app loads every locales/en/*.json.
     [at('locales/en/' + c.t.plural + '.json')]:
       JSON.stringify(web.texts(c), null, 2) + '\n',
