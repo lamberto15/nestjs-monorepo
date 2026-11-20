@@ -200,19 +200,24 @@ describe('the feature schematic', () => {
     const tree = await runner.runSchematic(
       'feature',
       {
-        name: 'cases',
+        name: 'tickets',
         fields: 'title:string,assigneeId:user?',
         skipImport: true,
       },
       empty(),
     );
-    expect(tree.readContent('/src/features/cases/case.record.ts')).toContain(
-      'assigneeId: field.user().optional()',
-    );
+    expect(
+      tree.readContent('/src/features/tickets/ticket.record.ts'),
+    ).toContain('assigneeId: field.user().optional()');
   });
 
   it.each([
-    [{ name: 'cases', fields: 'title:string,assigneeId:user' }, 'is optional'],
+    [
+      { name: 'tickets', fields: 'title:string,assigneeId:user' },
+      'is optional',
+    ],
+    // `case`: no variable of the generated code may take it.
+    [{ name: 'cases', fields: 'title:string' }, 'JavaScript keyword'],
     [
       { name: 'stages', fields: 'code:string!unique(productId)' },
       'no other field',

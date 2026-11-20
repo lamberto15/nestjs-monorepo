@@ -22,6 +22,13 @@ const camel = (kebab) =>
     .join('');
 const pascal = (kebab) => kebab.split('-').map(capital).join('');
 
+/** JavaScript's reserved words: no variable takes one. */
+const KEYWORDS = new Set(
+  'await break case catch class const continue debugger default delete do else enum export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield'.split(
+    ' ',
+  ),
+);
+
 /** Names the template's own routes and modules already take. */
 const RESERVED = new Set([
   'access',
@@ -76,6 +83,14 @@ export function names(plural, singularOverride) {
   }
   if (!KEBAB.test(singular)) {
     throw new Error(`--singular "${singular}": lowercase words joined by "-".`);
+  }
+  // Their camelCase names are variables of the generated code (`const case = …`).
+  for (const name of [camel(plural), camel(singular)]) {
+    if (KEYWORDS.has(name)) {
+      throw new Error(
+        `"${plural}": "${name}" is a JavaScript keyword the generated code can't name a variable; choose another name (tickets, issues).`,
+      );
+    }
   }
   const words = singular.split('-').join(' ');
   return {
