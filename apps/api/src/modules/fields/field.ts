@@ -348,7 +348,7 @@ export const field = {
    * table, not a record's (`field.ref(() => notes, 'Note')`).
    */
   /**
-   * A member of the tenant (an assigned agent), held as the owner is, by
+   * A member of the tenant (an assignee), held as the owner is, by
    * their key (`user:<id>`). A write takes an active member only (422
    * `person_not_found`); lists name them and filter by them (`ref:
    * 'principal'`), exports write their name, imports take their email,

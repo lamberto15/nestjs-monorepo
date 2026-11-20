@@ -84,9 +84,9 @@ What every record gets from the engine, in the write's transaction:
   `related` in GET /v1/lists/{subject};
 - titles (`RecordTitles`): a record is called by its first string field,
   after its parent's title when it has a parent: the reference one of its
-  fields is `unique({ within })` (`recordParentField()`). Two "Home loan"
-  products of two banks read "QWERT · Home loan" and "ASDF · Home loan",
-  their statuses "QWERT · Home loan · PTP". Pickers, list cells, filter chips
+  fields is `unique({ within })` (`recordParentField()`). Two "Standard plan"
+  products of two companies read "Acme · Standard plan" and "Globex · Standard plan",
+  their statuses "Acme · Standard plan · Open". Pickers, list cells, filter chips
   (GET /v1/lists/{subject}/options) and `?include=` show the same title; a
   search matches the record's own title; a parent the caller may not read
   is left out of it;

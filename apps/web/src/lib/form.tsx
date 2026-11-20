@@ -426,7 +426,7 @@ function SelectField(props: {
 }
 
 /**
- * A member of the tenant (a `user` field, an assigned agent): PersonPicker,
+ * A member of the tenant (a `user` field, an assignee): PersonPicker,
  * searching the people by name; the value is their key (`user:<id>`), ''
  * for none. Its input starts with the current person's name, once known.
  */

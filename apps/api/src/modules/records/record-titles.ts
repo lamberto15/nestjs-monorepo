@@ -13,7 +13,7 @@ import {
 } from './record-relations.js';
 import { Records } from './records.service.js';
 
-/** Between a parent's title and its record's: `QWERT · Home loan · PTP`. */
+/** Between a parent's title and its record's: `Acme · Standard plan · Open`. */
 export const TITLE_SEPARATOR = ' · ';
 
 /** Parents named above a record at most: a declaration that refers in a ring still ends. */
@@ -23,8 +23,8 @@ const MAX_PARENTS = 4;
  * What a record is called where people pick or read it: its title field
  * (relationTitle()), after its parent's title when it has a parent
  * (recordParentField(): the reference a field is unique within). Siblings
- * of the same name under different parents then read apart: "Home loan"
- * of two banks is "QWERT · Home loan" and "ASDF · Home loan". The one
+ * of the same name under different parents then read apart: "Standard plan"
+ * of two companies is "Acme · Standard plan" and "Globex · Standard plan". The one
  * definition the options route (pickers, cells, filter chips) and
  * `?include=` share.
  */

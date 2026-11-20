@@ -1,0 +1,39 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "1e05684b-1a65-498b-ba26-5133ea566476",
+  "prevIds": [
+    "fc2a1050-8828-4eed-967a-abf33d4516b0"
+  ],
+  "footprints": [
+    {
+      "statementType": "rename_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "test_stages",
+        "agent_id"
+      ],
+      "writes": [
+        "s|col|public.test_stages.agent_id",
+        "n|col|public.test_stages.agent_id",
+        "s|col|public.test_stages.assignee_id",
+        "n|col|public.test_stages.assignee_id"
+      ],
+      "reads": [
+        "n|tbl|public.test_stages",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "rename",
+      "key": "columns\u0000[\"public\",\"test_stages\",\"agent_id\"]",
+      "set": {
+        "name": "assignee_id"
+      }
+    }
+  ]
+}

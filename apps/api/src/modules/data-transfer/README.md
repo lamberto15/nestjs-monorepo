@@ -30,7 +30,7 @@ The columns are:
   record's key (`recordKey()`): the first field of it unique on its own (a
   code, a number), or, for a record whose code is unique within its parent
   only (`unique({ within: 'productId' })`), a path of keys, the parent's
-  first: `QWERT/HL/PTP` (the status PTP of the product HL of the bank QWERT).
+  first: `ACME/STD/OPEN` (the status OPEN of the product STD of the company ACME).
   Else, and when the caller may not read that record or one of its parents,
   or a part holds a `/`, as its id.
 - what the add-ons show (`tags`, `number`);
@@ -55,8 +55,8 @@ has a frozen header and date cells.
 A reference's cell takes its record's key or its id: a key is looked up
 once per import among the live records the caller may read, and one none of
 them holds is that row's error (`No customer whose code is "X".`), as one
-they may not read. A path (`QWERT/HL/PTP`) is looked up a part at a time,
-each within the one before it; the code alone (`PTP`) names no record that
+they may not read. A path (`ACME/STD/OPEN`) is looked up a part at a time,
+each within the one before it; the code alone (`OPEN`) names no record that
 has a parent. A `user` field's cell takes a member's email (any case),
 their name when no other active member has it, or their key; anything else
 is that row's error, so an export, which writes names, is imported back as

@@ -488,9 +488,9 @@ describe('data transfer (e2e)', () => {
   it("takes a person field by a member's email or name, writes their name, and refuses one who is no member", async () => {
     const suffix = randomUUID().slice(0, 6);
     const { headers } = team.admin;
-    const agent = await member(app, team.tenantId, [], {
-      email: `agent-${suffix}@acme.dev`,
-      name: `Agent ${suffix}`,
+    const assignee = await member(app, team.tenantId, [], {
+      email: `assignee-${suffix}@acme.dev`,
+      name: `Assignee ${suffix}`,
     });
     const item = `A-${suffix}`;
     await createTestItem(app, headers, { title: item, code: item });
@@ -512,19 +512,19 @@ describe('data transfer (e2e)', () => {
       return { result: done.result!, report };
     };
     const { result, report } = await run(
-      `itemId,code,agentId\n` +
-        `${item},BY-EMAIL,AGENT-${suffix}@ACME.DEV\n` +
-        `${item},BY-NAME,Agent ${suffix}\n` +
-        `${item},BY-KEY,user:${agent.id}\n` +
+      `itemId,code,assigneeId\n` +
+        `${item},BY-EMAIL,ASSIGNEE-${suffix}@ACME.DEV\n` +
+        `${item},BY-NAME,Assignee ${suffix}\n` +
+        `${item},BY-KEY,user:${assignee.id}\n` +
         `${item},NOBODY,nobody-${suffix}@acme.dev\n` +
         `${item},STRANGER,user:${randomUUID()}\n`,
     );
     expect(result).toMatchObject({ rows: 5, imported: 3, failed: 2 });
     expect(report).toContain(
-      `4,agentId,"No member whose email or name is ""nobody-${suffix}@acme.dev""`,
+      `4,assigneeId,"No member whose email or name is ""nobody-${suffix}@acme.dev""`,
     );
     // A key that is no member's: the record's own write refuses it.
-    expect(report).toMatch(/5,agentId,.*is no member of this tenant/);
+    expect(report).toMatch(/5,assigneeId,.*is no member of this tenant/);
 
     const started = await app.inject({
       method: 'POST',
@@ -546,13 +546,15 @@ describe('data transfer (e2e)', () => {
     const described = (await get('/v1/lists/TestStage', headers)).json<{
       fields: { name: string; ref?: string }[];
     }>();
-    expect(described.fields.find((f) => f.name === 'agentId')).toMatchObject({
-      ref: 'principal',
-    });
-    expect(mine.map((row) => row[at('agentId')])).toEqual([
-      `Agent ${suffix}`,
-      `Agent ${suffix}`,
-      `Agent ${suffix}`,
+    expect(described.fields.find((f) => f.name === 'assigneeId')).toMatchObject(
+      {
+        ref: 'principal',
+      },
+    );
+    expect(mine.map((row) => row[at('assigneeId')])).toEqual([
+      `Assignee ${suffix}`,
+      `Assignee ${suffix}`,
+      `Assignee ${suffix}`,
     ]);
   });
 

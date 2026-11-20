@@ -1,0 +1,1 @@
+ALTER TABLE "test_stages" RENAME COLUMN "agent_id" TO "assignee_id";

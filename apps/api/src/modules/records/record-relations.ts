@@ -142,7 +142,7 @@ export const recordKeyField = (declaration: RecordDeclaration) =>
       !(field as AnyField).options.uniqueWithin,
   )?.[0] ?? null;
 
-/** Between the keys of a path: `QWERT/HL/PTP`. */
+/** Between the keys of a path: `ACME/STD/OPEN`. */
 export const KEY_SEPARATOR = '/';
 
 /** Parents a key path names above a record at most: a ring of references still ends. */
@@ -151,8 +151,8 @@ const MAX_KEY_PARENTS = 4;
 /**
  * How files name a record: its key field (recordKeyField()), or, for a
  * record whose code is unique within its parent only (recordParentField()),
- * that code after its parent's key, a path: `QWERT/HL/PTP` is the status
- * PTP of the product HL of the bank QWERT.
+ * that code after its parent's key, a path: `ACME/STD/OPEN` is the status
+ * OPEN of the product STD of the company ACME.
  */
 export interface RecordKey {
   declaration: RecordDeclaration;
@@ -162,7 +162,7 @@ export interface RecordKey {
   int: boolean;
   /** The parent reference and its record's key, for a path. */
   parent?: { field: string; key: RecordKey };
-  /** What people call it: `code`, or a path's `bank code/product code/code`. */
+  /** What people call it: `code`, or a path's `company code/product code/code`. */
   label: string;
 }
 
@@ -207,7 +207,7 @@ export function recordKey(
   };
 }
 
-/** A key's parts with their nouns: `bank code/product code`. */
+/** A key's parts with their nouns: `company code/product code`. */
 const named = (key: RecordKey): string =>
   `${key.parent ? `${named(key.parent.key)}${KEY_SEPARATOR}` : ''}${key.declaration.noun} ${key.field}`;
 

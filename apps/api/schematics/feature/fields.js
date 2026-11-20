@@ -40,7 +40,7 @@ export const TYPES = [
   'user',
 ];
 
-/** One field from `name:type`, `name:type?`, `agentId:user?` (a member of the tenant), `name:type!unique`, `name:type!unique(otherId)`, `name:string!numbered`, `name:enum(a|b)`, `nameId:ref(other-feature)?`. */
+/** One field from `name:type`, `name:type?`, `assigneeId:user?` (a member of the tenant), `name:type!unique`, `name:type!unique(otherId)`, `name:string!numbered`, `name:enum(a|b)`, `nameId:ref(other-feature)?`. */
 export function parseField(spec) {
   const match =
     /^([^:]+):([a-z]+)(?:\(([^)]*)\))?(\?)?(?:!(unique|numbered)(?:\(([^)]*)\))?)?$/.exec(

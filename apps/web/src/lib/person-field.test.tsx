@@ -6,7 +6,7 @@ import { peopleHandler } from '@/test/people';
 import { renderComponent } from '@/test/render-component';
 import { server } from '@/test/server';
 
-// A `user` field (an assigned agent): its value is a member's key, shown by
+// A `user` field (an assignee): its value is a member's key, shown by
 // their name, picked by searching the people.
 
 const ANA = '0190a6a0-7c1e-7000-8000-00000000000a';
@@ -14,15 +14,15 @@ const BEN = '0190a6a0-7c1e-7000-8000-00000000000b';
 
 function Form(props: { value: string; onValue: (value: string) => void }) {
   const form = useAppForm({
-    defaultValues: { agentId: props.value },
+    defaultValues: { assigneeId: props.value },
     listeners: {
-      onChange: ({ formApi }) => props.onValue(formApi.state.values.agentId),
+      onChange: ({ formApi }) => props.onValue(formApi.state.values.assigneeId),
     },
   });
   return (
     <form>
-      <form.AppField name="agentId">
-        {(f) => <f.PersonField label="Agent" />}
+      <form.AppField name="assigneeId">
+        {(f) => <f.PersonField label="Assignee" />}
       </form.AppField>
     </form>
   );
@@ -40,7 +40,7 @@ describe('PersonField', () => {
     await renderComponent(
       <Form value={`user:${ANA}`} onValue={(value) => values.push(value)} />,
     );
-    const agent = () => screen.getByRole('combobox', { name: 'Agent' });
+    const agent = () => screen.getByRole('combobox', { name: 'Assignee' });
     // The input starts again once the name is known: look it up each time.
     await waitFor(() => expect(agent()).toHaveValue('Ana Cruz'));
     const input = agent();

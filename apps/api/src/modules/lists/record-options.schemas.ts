@@ -74,6 +74,6 @@ export const recordOptionSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "What it is called: its first text field, after its parent's title when it has one (`Acme · Home loan`); null when it has none or you may not read it (name it by its id then). The same `title` as a reference's `?include=`.",
+      "What it is called: its first text field, after its parent's title when it has one (`Acme · Standard plan`); null when it has none or you may not read it (name it by its id then). The same `title` as a reference's `?include=`.",
     ),
 });
