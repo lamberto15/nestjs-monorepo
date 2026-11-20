@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineSettings, setting } from './settings.types.js';
+import { setting } from './settings.types.js';
 
 /**
  * The web dashboard's layout: each person's own (a preference the dashboard
@@ -18,5 +18,3 @@ export const DASHBOARD_LAYOUT = setting({
   default: { hidden: [], order: [] },
   scopes: ['user'],
 });
-
-export const DASHBOARD_SETTINGS = defineSettings([DASHBOARD_LAYOUT]);

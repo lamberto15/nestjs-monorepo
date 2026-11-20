@@ -7,7 +7,9 @@ import { OrganizationModule } from '../../iam/organization/organization.module.j
 import { FlagGuard } from './flag.guard.js';
 import { SettingsCache } from './settings.cache.js';
 import { SettingsCatalog, SettingsRegistration } from './settings.catalog.js';
-import { DASHBOARD_SETTINGS } from './dashboard.setting.js';
+import { DASHBOARD_LAYOUT } from './dashboard.setting.js';
+import { MONEY_CURRENCY } from './money.setting.js';
+import { defineSettings } from './settings.types.js';
 import { SettingsController } from './settings.controller.js';
 import { SETTING_PERMISSIONS } from './settings.permissions.js';
 import { SettingsPolicy } from './settings.policy.js';
@@ -34,10 +36,12 @@ import { SettingsPersonalData } from './settings.personal-data.js';
   ],
   controllers: [SettingsController],
   providers: [
-    // Declared here: the web dashboard is not a module of its own.
+    // Declared here: neither the web dashboard nor money is a module of its own.
     {
       provide: SettingsRegistration,
-      useValue: new SettingsRegistration(DASHBOARD_SETTINGS),
+      useValue: new SettingsRegistration(
+        defineSettings([DASHBOARD_LAYOUT, MONEY_CURRENCY]),
+      ),
     },
     SettingsCache,
     SettingsCatalog,

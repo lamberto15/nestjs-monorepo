@@ -49,6 +49,14 @@ const rich = await this.settings.enabled(NOTE_RICH_TEXT, user);  // for this pri
   `true` is the strict side. In a workflow, read a setting inside a step so a
   replay sees the value the instance started with.
 
+## Its own settings
+
+Two settings belong to nothing that is a module of its own, so they are
+declared here: `dashboard.layout` (each person's dashboard, a preference)
+and `money.currency` (the currency a new amount starts in, `EUR` by
+default, for the tenant or a unit; the web forms' money inputs begin with
+it, `apps/web/src/lib/currency.ts`).
+
 ## Precedence
 
 For a principal: the operators' **enforced** platform value, their own value,

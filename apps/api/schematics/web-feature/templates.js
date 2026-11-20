@@ -524,6 +524,7 @@ export function form({ t, fields, addons }) {
   const has = (...types) => fields.some((f) => types.includes(f.type));
   const custom = addons.includes('custom-fields');
   const numbered = addons.includes('sequences');
+  const money = fields.filter((f) => f.type === 'money');
   const title = titleField(fields);
   const duplicates = addons.includes('merge') && title;
   const inputs = fields.flatMap((f) =>
@@ -579,6 +580,7 @@ export function form({ t, fields, addons }) {
       `import { CustomFieldInputs } from '@/components/records/custom-field-inputs';`,
     duplicates &&
       `import { DuplicatesWarning } from '@/features/merge/duplicates-warning';`,
+    money.length > 0 && `import { useCurrencyDefault } from '@/lib/currency';`,
     custom &&
       `import { customFieldsQuery, type CustomField } from '@/lib/custom-fields';`,
     custom &&
@@ -739,6 +741,10 @@ export function form({ t, fields, addons }) {
           `  useUnsavedChangesGuard(form, ${outside.join(' || ')});`,
         ]
       : '  useUnsavedChangesGuard(form);',
+    money.length > 0 && [
+      "  // A new record's amounts start in the tenant's currency (the money.currency setting).",
+      `  useCurrencyDefault(form, [${money.map((f) => `'${f.name}Currency'`).join(', ')}], !record);`,
+    ],
     '',
     '  return (',
     '    <form',
@@ -1407,6 +1413,9 @@ export function test({ t, fields, softDelete, addons }) {
       `    http.get('/v1/custom-fields', () => HttpResponse.json({ items: [] })),`,
     on('sequences') &&
       `    http.get('/v1/naming-series', () => HttpResponse.json({ items: [], nextCursor: null })),`,
+    // A new amount's currency: the tenant's setting.
+    fields.some((f) => f.type === 'money') &&
+      `    http.get('/v1/settings/money.currency', () => HttpResponse.json({ key: 'money.currency', value: 'EUR' })),`,
     // A reference's picker and its name: the records of its subject.
     fields.some((f) => f.type === 'ref') &&
       `    http.get('/v1/lists/:subject/options', () => HttpResponse.json({ items: [] })),`,
@@ -1452,7 +1461,8 @@ export function test({ t, fields, softDelete, addons }) {
           `  it('shows ${label(f.name).toLowerCase()} in its column: the list asks for ${f.name}', async () => {`,
           '    const calls = useApi(ALL);',
           `    await renderApp('/${t.plural}');`,
-          `    expect(await screen.findByText('19.99 EUR')).toBeVisible();`,
+          // Every money column shows the sample amount: one of them is enough here.
+          `    expect((await screen.findAllByText('19.99 EUR'))[0]).toBeVisible();`,
           `    expect(calls.listed.at(-1)?.searchParams.get('fields')?.split(',')).toContain('${f.name}');`,
           '  });',
           '',
