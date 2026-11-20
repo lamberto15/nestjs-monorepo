@@ -311,4 +311,21 @@ describe('numbered records (e2e)', () => {
     expect(await reference(c.id)).toBe('A01-B02-C03-002');
     expect(await reference(other.id)).toBe('A01-B02-C04-001');
   });
+
+  // modules/lists: a related panel lists its records at GET /v1/<path>.
+  it('offers no related panel for records with no list route of their own', async () => {
+    const { admin } = await recordsTenant(app);
+    const list = await app.inject({
+      method: 'GET',
+      url: '/v1/lists/TestItem',
+      headers: admin.headers,
+    });
+    expect(list.statusCode, list.body).toBe(200);
+    const related = list
+      .json<{ related: { subject: string }[] }>()
+      .related.map((r) => r.subject);
+    // Referenced items refer to test items, but have only POST /v1/referenced-items.
+    expect(related).toContain('TestItem');
+    expect(related).not.toContain('ReferencedItem');
+  });
 });

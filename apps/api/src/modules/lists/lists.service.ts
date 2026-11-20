@@ -2,7 +2,10 @@ import {
   Injectable,
   NotFoundException,
   type OnModuleInit,
+  RequestMethod,
 } from '@nestjs/common';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { DiscoveryService, MetadataScanner } from '@nestjs/core';
 import { fieldsRead, type List } from '../../core/http/list-query.js';
 import { AccessPolicy } from '../../iam/access/access.policy.js';
 import { USER_LIST } from '../../iam/access/access.lists.js';
@@ -48,7 +51,12 @@ export class ListsService implements OnModuleInit {
     private readonly access: AccessService,
     private readonly accessPolicy: AccessPolicy,
     private readonly auditPolicy: AuditPolicy,
+    private readonly discovery: DiscoveryService,
+    private readonly scanner: MetadataScanner,
   ) {}
+
+  /** The paths with a list route (`GET /v1/<path>`): what a related panel can call. */
+  private listed = new Set<string>();
 
   /** A record's views must name fields of its list: a mistake fails at startup. */
   onModuleInit() {
@@ -56,6 +64,41 @@ export class ListsService implements OnModuleInit {
       const { subject, views } = record.declaration;
       if (views) checkListViews(subject, record.list, views);
     }
+    this.listed = this.listRoutes();
+  }
+
+  /**
+   * The controllers' paths that answer `GET /<path>` itself: a record
+   * reached only through another's routes (`/v1/accounts/:id/notes`) has
+   * none, so no panel lists it.
+   */
+  private listRoutes() {
+    const found = new Set<string>();
+    for (const wrapper of this.discovery.getControllers()) {
+      const { instance, metatype } = wrapper;
+      if (!instance || !metatype) continue;
+      const base = Reflect.getMetadata(PATH_METADATA, metatype) as
+        string | string[] | undefined;
+      const prototype = Object.getPrototypeOf(instance) as object;
+      const listsItself = this.scanner
+        .getAllMethodNames(prototype)
+        .some((name) => {
+          const handler = (prototype as Record<string, unknown>)[name];
+          if (typeof handler !== 'function') return false;
+          const method = Reflect.getMetadata(METHOD_METADATA, handler) as
+            RequestMethod | undefined;
+          const path = Reflect.getMetadata(PATH_METADATA, handler) as
+            string | string[] | undefined;
+          return (
+            method === RequestMethod.GET &&
+            [path ?? '/'].flat().some((p) => trim(p) === '')
+          );
+        });
+      if (listsItself) {
+        for (const p of [base ?? '/'].flat()) found.add(trim(p));
+      }
+    }
+    return found;
   }
 
   /** The subject's list, or a 404: before any permission is checked. */
@@ -164,7 +207,12 @@ export class ListsService implements OnModuleInit {
     const related: ListMetadata['related'] = [];
     for (const relation of relationsTo(subject)) {
       const from = relation.from.subject;
-      if (!this.records.find(from) || !(await this.mayRead(principal, from))) {
+      if (
+        !this.records.find(from) ||
+        // The panel lists them at `GET /v1/<path>`: none without that route.
+        !this.listed.has(relation.from.path) ||
+        !(await this.mayRead(principal, from))
+      ) {
         continue;
       }
       const [denied, conditional] = await Promise.all([
@@ -189,3 +237,6 @@ export class ListsService implements OnModuleInit {
     return related;
   }
 }
+
+/** `/invoices/` → `invoices`. */
+const trim = (path: string) => path.replace(/^\/+|\/+$/g, '');

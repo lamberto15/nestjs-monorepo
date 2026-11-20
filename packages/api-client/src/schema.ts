@@ -24263,7 +24263,7 @@ export interface operations {
                         capabilities: {
                             [key: string]: boolean;
                         };
-                        /** @description The records that refer to this subject's (a `ref` field of theirs), which the caller may list and filter by that field: a record's related panels. */
+                        /** @description The records that refer to this subject's (a `ref` field of theirs), which the caller may list and filter by that field, at a list route of their own (`GET /v1/<path>`; a record reached only through another's routes is left out): a record's related panels. */
                         related: {
                             /**
                              * @description The referring records: their own list is GET /v1/lists/{subject}.
