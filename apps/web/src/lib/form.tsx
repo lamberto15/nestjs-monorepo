@@ -487,6 +487,11 @@ function RecordField(props: {
   filter?: RecordFilter;
   description?: ReactNode;
   placeholder?: string;
+  /**
+   * Shown greyed out, not picked from: a picker that waits for another
+   * field (a substatus until its status is chosen: `disabled={!statusId}`).
+   */
+  disabled?: boolean;
 }) {
   const field = useFieldContext<string>();
   const invalid = useInvalid();
@@ -498,7 +503,11 @@ function RecordField(props: {
   } = useDescribedBy(Boolean(props.description), invalid);
   const formRef = useFormElementRef();
   return (
-    <Field ref={formRef} data-invalid={invalid}>
+    <Field
+      ref={formRef}
+      data-invalid={invalid}
+      data-disabled={props.disabled || undefined}
+    >
       <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
       <RecordPicker
         id={id}
@@ -513,6 +522,7 @@ function RecordField(props: {
         placeholder={props.placeholder}
         invalid={invalid}
         describedBy={describedBy}
+        disabled={props.disabled}
       />
       {props.description && (
         <FieldDescription id={descriptionId}>

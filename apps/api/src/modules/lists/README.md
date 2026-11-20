@@ -16,7 +16,8 @@ permission-checked as its list route does it: `?productId=<id>` offers one
 product's statuses, for a picker that depends on another field. `sort`,
 `cursor`, `page`, `count`, `fields` and `deleted` are refused (400). In the web
 app: `<field.RecordField subject="ProductStatus" filter={{ productId }} />`
-(an empty value is no filter); clearing the dependent field when its parent
+(an empty value is no filter); `disabled={!productId}` shows it greyed out
+until the parent is chosen. Clearing the dependent field when its parent
 changes is the form's to do.
 
 - Sources: every record registered with `RecordsModule.forFeature()` (its
