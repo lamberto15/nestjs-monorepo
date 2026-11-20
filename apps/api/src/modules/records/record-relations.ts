@@ -113,6 +113,23 @@ export const relationTitle = (declaration: RecordDeclaration) =>
   )?.[0] ?? null;
 
 /**
+ * A record's parent: the reference field another of its fields is unique
+ * within (`code: field.string().unique({ within: 'productId' })` makes
+ * `productId` the parent), or null. Its title goes before the record's
+ * (RecordTitles), and its key before the record's in files.
+ */
+export const recordParentField = (declaration: RecordDeclaration) => {
+  const within = Object.values(declaration.fields)
+    .map((field) => (field as AnyField).options.uniqueWithin)
+    .find(
+      (name): name is string =>
+        typeof name === 'string' &&
+        (declaration.fields[name] as AnyField | undefined)?.kind === 'ref',
+    );
+  return within ?? null;
+};
+
+/**
  * The field people name a record by in files (its key): its first unique
  * string or int field that is unique on its own (not `unique({ within })`),
  * a code or a number; null without one, and files keep its id.

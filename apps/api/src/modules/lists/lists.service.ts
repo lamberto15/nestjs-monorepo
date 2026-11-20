@@ -22,6 +22,7 @@ import { AuditPolicy } from '../../iam/audit-log/audit.policy.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { relationsTo, relationTitle } from '../records/record-relations.js';
+import { RecordTitles } from '../records/record-titles.js';
 import {
   type RecordRegistration,
   Records,
@@ -57,6 +58,7 @@ interface ListSource {
 export class ListsService implements OnModuleInit {
   constructor(
     private readonly records: Records,
+    private readonly titles: RecordTitles,
     private readonly access: AccessService,
     private readonly accessPolicy: AccessPolicy,
     private readonly auditPolicy: AuditPolicy,
@@ -67,7 +69,8 @@ export class ListsService implements OnModuleInit {
 
   /**
    * A record's options for a picker (GET /v1/lists/{subject}/options): its
-   * id and title (relationTitle(), the same as a reference's `?include=`),
+   * id and title (RecordTitles: its title field after its parent's, the
+   * same as a reference's `?include=`),
    * among the live records the caller may read. `q` searches the title,
    * `id` names these; a title they may not read on every record is null.
    * Any other parameter is a filter of the record's own list, checked as
@@ -89,19 +92,12 @@ export class ListsService implements OnModuleInit {
     }
     const table = record.feature.table as unknown as PgTable &
       Record<string, AnyPgColumn>;
-    const named = relationTitle(record.declaration);
-    const [denied, conditional] = await Promise.all([
-      this.access.deniedFields(principal, 'read', subject),
-      this.access.conditionalFields(principal, 'read', subject),
-    ]);
-    const title =
-      named && !denied.includes(named) && !conditional.includes(named)
-        ? table[named]
-        : undefined;
+    const named = await this.titles.titleField(principal, subject);
+    const title = named ? table[named] : undefined;
     // Without a readable title a search has nothing to match.
     if (q && !title) return [];
     const rows = (await this.db
-      .select({ id: table.id!, ...(title && { title }) })
+      .select({ id: table.id! })
       .from(table)
       .where(
         and(
@@ -113,10 +109,16 @@ export class ListsService implements OnModuleInit {
         ),
       )
       .orderBy(...(title ? [asc(title)] : []), desc(table.id!))
-      .limit(id ? id.length : limit)) as { id: string; title?: unknown }[];
+      .limit(id ? id.length : limit)) as { id: string }[];
+    // Each named after its parent's title, when it has a parent (RecordTitles).
+    const titles = await this.titles.of(
+      principal,
+      subject,
+      rows.map((row) => row.id),
+    );
     return rows.map((row) => ({
       id: row.id,
-      title: typeof row.title === 'string' ? row.title : null,
+      title: titles.get(row.id) ?? null,
     }));
   }
 

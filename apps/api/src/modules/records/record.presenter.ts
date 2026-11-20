@@ -1,10 +1,6 @@
 import { Inject, Injectable, type PipeTransform } from '@nestjs/common';
 import { AuthorizationService } from '@nestjs/authorization';
-import { TransactionHost } from '@nestjs-cls/transactional';
-import { and, inArray } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
-import type { DatabaseTransactions } from '../../core/database/database.js';
 import { untagged } from '../../core/http/etag.js';
 import type { List, ListQuery } from '../../core/http/list-query.js';
 import { validationException } from '../../core/http/problem-details.filter.js';
@@ -12,12 +8,9 @@ import { AccessService } from '../../iam/access/access.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { type RecordDeclaration, recordView } from './record.js';
 import { RECORD } from './record-extension.js';
-import {
-  includeNameOf,
-  relationsFrom,
-  relationTitle,
-} from './record-relations.js';
+import { includeNameOf, relationsFrom } from './record-relations.js';
 import { RecordFeature, Records } from './records.service.js';
+import { RecordTitles } from './record-titles.js';
 
 /** What a request asked to include (`?include=can,watching`): the names. */
 export type RecordInclude = readonly string[];
@@ -97,12 +90,8 @@ export class RecordPresenter {
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly authorization: AuthorizationService,
-    private readonly txHost: TransactionHost<DatabaseTransactions>,
+    private readonly titles: RecordTitles,
   ) {}
-
-  private get db() {
-    return this.txHost.tx;
-  }
 
   private get declaration() {
     return this.feature.declaration;
@@ -230,29 +219,9 @@ export class RecordPresenter {
     ];
     const found = new Map<string, { id: string; title: string | null }>();
     if (subject && ids.length > 0 && !denied.includes(relation.field)) {
-      const target = relation.targetTable();
-      const declaration = this.records.find(subject)?.declaration;
-      const title = declaration ? relationTitle(declaration) : null;
-      const readable = await this.db
-        .select({
-          id: target.id,
-          ...(title && { title: target[title]! }),
-        })
-        .from(target as unknown as PgTable)
-        .where(
-          and(
-            inArray(target.id, ids),
-            await this.access.sqlFilter(user, subject, 'read', {
-              deleted: false,
-            }),
-          ),
-        );
-      for (const row of readable as { id: string; title?: string | null }[]) {
-        found.set(row.id, {
-          id: row.id,
-          title: row.title ?? null,
-        });
-      }
+      // The titles pickers show (RecordTitles), of the live ones the caller may read.
+      const titles = await this.titles.of(user, subject, ids);
+      for (const [id, title] of titles) found.set(id, { id, title });
     }
     return new Map<string, unknown>(
       rows.map((row) => [

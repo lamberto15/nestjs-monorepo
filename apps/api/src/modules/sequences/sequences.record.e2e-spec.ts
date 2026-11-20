@@ -341,6 +341,58 @@ describe('numbered records (e2e)', () => {
     }
   });
 
+  it("names a record after its parent's title, the one its field is unique within", async () => {
+    const { admin } = await recordsTenant(app);
+    const { headers } = admin;
+    const acme = await createTestItem(app, headers, { title: 'Acme' });
+    const globex = await createTestItem(app, headers, { title: 'Globex' });
+    const post = async (payload: Record<string, unknown>) => {
+      const created = await app.inject({
+        method: 'POST',
+        url: '/v1/referenced-items',
+        headers,
+        payload,
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      return created.json<{ id: string }>().id;
+    };
+    const ofAcme = await post({
+      itemId: acme.id,
+      reference: 'HL-1',
+      label: 'a',
+    });
+    const ofGlobex = await post({
+      itemId: globex.id,
+      reference: 'HL-2',
+      label: 'a',
+    });
+    const alone = await post({ reference: 'HL-SOLO' });
+    const options = await app.inject({
+      method: 'GET',
+      url: `/v1/lists/ReferencedItem/options?id=${ofAcme},${ofGlobex},${alone}`,
+      headers,
+    });
+    expect(options.statusCode, options.body).toBe(200);
+    const titles = new Map(
+      options
+        .json<{ items: { id: string; title: string }[] }>()
+        .items.map((item) => [item.id, item.title]),
+    );
+    // Each after its parent; one with no parent is its own title.
+    expect(titles.get(ofAcme)).toBe('Acme · HL-1');
+    expect(titles.get(ofGlobex)).toBe('Globex · HL-2');
+    expect(titles.get(alone)).toBe('HL-SOLO');
+    // A search still matches the record's own title.
+    const found = await app.inject({
+      method: 'GET',
+      url: `/v1/lists/ReferencedItem/options?q=hl&itemId=${globex.id}`,
+      headers,
+    });
+    expect(found.json<{ items: { title: string }[] }>().items).toEqual([
+      { id: ofGlobex, title: 'Globex · HL-2' },
+    ]);
+  });
+
   it('offers no related panel for records with no list route of their own', async () => {
     const { admin } = await recordsTenant(app);
     const list = await app.inject({

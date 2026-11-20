@@ -6,7 +6,7 @@ menus, sorts, column pickers and views from it.
 
 `GET /v1/lists/{subject}/options`: a record's ids and titles, for a
 reference's picker, filter and cells (any record, its title the first string
-field, as `?include=` gives it). `q` searches the titles (`ilike`), `id=` (20
+field after its parent's, as `?include=` gives it: records README, titles). `q` searches the titles (`ilike`), `id=` (20
 at most) names the ids a page holds; only live records the caller may read,
 and no title for one who may not read the title field everywhere. A subject
 that is not a record is a 404.

@@ -14,6 +14,7 @@ import { defineQuota, type StockQuota } from '../quotas/quota.js';
 import { QuotasModule } from '../quotas/quotas.module.js';
 import { recordKey } from './record.js';
 import { RecordPurgeBridge } from './record-purge.bridge.js';
+import { RecordTitles } from './record-titles.js';
 import { recordsConfig } from './records.config.js';
 import { RecycleBinPurgeJob } from './recycle-bin.job.js';
 import type { List } from '../../core/http/list-query.js';
@@ -45,9 +46,13 @@ import {
  * with `RecordsModule.forFeature()` in its own imports.
  */
 @Module({
-  imports: [DiscoveryModule, ConfigModule.forFeature(recordsConfig)],
-  providers: [Records, RecycleBinPurgeJob, RecordPurgeBridge],
-  exports: [Records],
+  imports: [
+    DiscoveryModule,
+    AccessModule,
+    ConfigModule.forFeature(recordsConfig),
+  ],
+  providers: [Records, RecordTitles, RecycleBinPurgeJob, RecordPurgeBridge],
+  exports: [Records, RecordTitles],
 })
 export class RecordsModule {
   /**

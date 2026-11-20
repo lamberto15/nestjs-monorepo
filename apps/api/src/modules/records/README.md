@@ -82,6 +82,14 @@ What every record gets from the engine, in the write's transaction:
   reference is in the bin), optional references emptied when their record
   is purged; `?include=parent` (`{ id, title }`, null when unreadable);
   `related` in GET /v1/lists/{subject};
+- titles (`RecordTitles`): a record is called by its first string field,
+  after its parent's title when it has a parent: the reference one of its
+  fields is `unique({ within })` (`recordParentField()`). Two "Home loan"
+  products of two banks read "QWERT · Home loan" and "ASDF · Home loan",
+  their statuses "QWERT · Home loan · PTP". Pickers, list cells, filter chips
+  (GET /v1/lists/{subject}/options) and `?include=` show the same title; a
+  search matches the record's own title; a parent the caller may not read
+  is left out of it;
 - the recycle bin's purge (`RecycleBinPurgeJob`, 03:45 UTC): records deleted
   longer ago than `recycleBinDays` (default SOFT_DELETE_RETENTION_DAYS, 30)
   go for good, never held ones.

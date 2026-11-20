@@ -3947,7 +3947,7 @@ export interface paths {
         };
         /**
          * A record's options for a picker: ids and titles
-         * @description With `q` (or nothing): the live records whose title contains `q`, by title. Any other parameter is a filter of the subject's list, as GET /v1/lists/{subject} describes them and its own route takes them (`?productId=<id>`: the records of one parent, for a picker that depends on another). With `id=<id>,<id>`: the titles of these, for the names behind ids a page holds (a reference's cell, a filter's chips); an id you may not read is left out. Each item is an id and a title, nothing else. The title is the record's first text field, as a reference's `?include=` gives it. For anyone who may read the subject: only the records you may read.
+         * @description With `q` (or nothing): the live records whose title contains `q`, by title. Any other parameter is a filter of the subject's list, as GET /v1/lists/{subject} describes them and its own route takes them (`?productId=<id>`: the records of one parent, for a picker that depends on another). With `id=<id>,<id>`: the titles of these, for the names behind ids a page holds (a reference's cell, a filter's chips); an id you may not read is left out. Each item is an id and a title, nothing else. The title is the record's first text field, after its parent's title when one of its fields is unique within a reference (`Acme · Home loan`), as a reference's `?include=` gives it; `q` matches the record's own. For anyone who may read the subject: only the records you may read.
          */
         get: operations["ListsController_options_v1"];
         put?: never;
@@ -24414,7 +24414,7 @@ export interface operations {
                         items: {
                             /** Format: uuid */
                             id: string;
-                            /** @description What it is called: its first text field, null when it has none or you may not read it (name it by its id then). The same `title` as a reference's `?include=`. */
+                            /** @description What it is called: its first text field, after its parent's title when it has one (`Acme · Home loan`); null when it has none or you may not read it (name it by its id then). The same `title` as a reference's `?include=`. */
                             title: string | null;
                         }[];
                     };

@@ -25,7 +25,8 @@ export const invoices = tenantTable(
   `date`, `datetime`, `enum`, `json`, `ref`. Modifiers: `optional()` (null),
   `default(v)`, `unique()` (per tenant; `unique({ within: 'productId' })` per
   value of another field, records with none of it not compared: make that
-  field required when every record must be checked), `searchable()`, `readOnly()` (set by the
+  field required when every record must be checked; that field becomes the
+  record's parent, whose title goes before its own: records README), `searchable()`, `readOnly()` (set by the
   service, never by a body), `onDelete()` (a reference's rule). Text fields are
   bounded under the request body limit (`core/http/body-limit.ts`).
 - **Derived** (`fields.ts`): `fieldColumns`, `fieldExtras` (unique indexes, a
