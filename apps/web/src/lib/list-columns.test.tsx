@@ -90,8 +90,8 @@ describe('refColumns', () => {
 
   it('adds a column per ref field with a source, filter-only when not selectable', () => {
     const columns = refColumns<Record<string, unknown>>(description, refs, t);
-    // A record's subject (Invoice) has no source here.
-    expect(columns.map((c) => c.id)).toEqual(['tag', 'ownerId']);
+    // A record's subject (Invoice) too: its records, named by title.
+    expect(columns.map((c) => c.id)).toEqual(['tag', 'ownerId', 'invoiceId']);
     expect(columns[0]).toMatchObject({
       id: 'tag',
       enableHiding: false,

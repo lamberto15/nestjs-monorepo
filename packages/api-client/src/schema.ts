@@ -3938,6 +3938,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/lists/{subject}/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A record's options for a picker: ids and titles
+         * @description With `q` (or nothing): the live records whose title contains `q`, by title. With `id=<id>,<id>`: the titles of these, for the names behind ids a page holds (a reference's cell, a filter's chips); an id you may not read is left out. Each item is an id and a title, nothing else. The title is the record's first text field, as a reference's `?include=` gives it. For anyone who may read the subject: only the records you may read.
+         */
+        get: operations["ListsController_options_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/search": {
         parameters: {
             query?: never;
@@ -24343,6 +24363,70 @@ export interface operations {
                 content?: never;
             };
             /** @description No list of that subject (not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ListsController_options_v1: {
+        parameters: {
+            query?: {
+                /** @description Part of the title, any case (`%` and `_` are themselves). Absent: the first by title. Not with `id`. */
+                q?: string;
+                /** @description Ids to name instead of a search, comma-separated, 20 at most. One you may not read, or no record has, is left out (no error). Not with `q`; `limit` doesn't apply. */
+                id?: string;
+                limit?: number;
+                lang?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The kind of record, as permissions name it (`Customer`). */
+                subject: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @description What it is called: its first text field, null when it has none or you may not read it (name it by its id then). The same `title` as a reference's `?include=`. */
+                            title: string | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description `q` empty or longer than 100 characters, `limit` over 20, an `id` that is no uuid, more than 20 ids, or `q` with `id` (validation_failed). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid API key or session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description You may not read the subject. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No record of that subject (not_found). */
             404: {
                 headers: {
                     [name: string]: unknown;

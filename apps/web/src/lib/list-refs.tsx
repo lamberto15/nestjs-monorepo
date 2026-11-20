@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import type { FilterOption, OptionSearch } from '@/lib/data-table-types';
 import type { ListField } from '@/lib/list-query';
 import { usePeopleNames } from '@/lib/people';
+import { recordSearch } from '@/lib/record-names';
 import { meQuery } from '@/lib/session';
 // capability:tags begin
 import { tagOptions, useTags } from '@/features/tags/tags';
@@ -24,8 +25,8 @@ import { tagOptions, useTags } from '@/features/tags/tags';
  *   filter's chips, a column's cells) come from the lookup by key, batched
  *   (lib/people.ts).
  *
- * Any other `ref` (a record's subject) has no source: its filter stays the
- * field's own (a text box taking the id).
+ * - a record's subject (`Customer`): its records, searched by title as one
+ *   types, named by id (GET /v1/lists/{subject}/options, lib/record-names.ts).
  */
 export interface RefSource {
   /** The values to pick from (tag, unit), or those known by name (principal). */
@@ -111,15 +112,13 @@ export function unitOptions(units: readonly Unit[]): FilterOption[] {
   return options;
 }
 
-/** The ref kinds a list's fields point at that have a source here. */
+/** Whether a ref names a record's subject (`Customer`), not one of REF_KINDS. */
+export const isRecordRef = (ref: string) =>
+  !(REF_KINDS as readonly string[]).includes(ref);
+
+/** The ref kinds a list's fields point at: each has a source here (a record's subject too). */
 export function refKinds(fields: readonly ListField[]): Set<string> {
-  return new Set(
-    fields.flatMap((field) =>
-      field.ref && (REF_KINDS as readonly string[]).includes(field.ref)
-        ? [field.ref]
-        : [],
-    ),
-  );
+  return new Set(fields.flatMap((field) => (field.ref ? [field.ref] : [])));
 }
 
 /**
@@ -148,6 +147,11 @@ export function useListRefs(list: {
     // capability:tags end
     if (kinds.has('unit')) {
       sources.unit = { options: unitOptions(units.data ?? []) };
+    }
+    for (const kind of kinds) {
+      if (isRecordRef(kind)) {
+        sources[kind] = { options: [], search: recordSearch(kind) };
+      }
     }
     if (kinds.has('principal')) {
       sources.principal = {

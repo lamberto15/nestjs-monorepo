@@ -50,14 +50,15 @@ describe.each([
     'record',
     () =>
       server.use(
-        http.get('/v1/test-items', () => HttpResponse.json({ items: [] })),
+        http.get('/v1/lists/TestItem/options', () =>
+          HttpResponse.json({ items: [] }),
+        ),
       ),
     (describedBy: string | undefined) => (
       <RecordPicker
         id="picker"
         label="Member"
-        path="test-items"
-        title="title"
+        subject="TestItem"
         value=""
         onChange={() => undefined}
         invalid
@@ -97,17 +98,17 @@ describe.each([
 });
 
 describe('the record picker', () => {
-  it("searches the target's list as one types, a bounded page, and picks a record by its id", async () => {
+  it("searches the subject's records by title as one types, a bounded page, and picks one by its id", async () => {
     const asked: URLSearchParams[] = [];
     server.use(
-      http.get('/v1/test-items', ({ request }) => {
+      http.get('/v1/lists/TestItem/options', ({ request }) => {
         const query = new URL(request.url).searchParams;
         asked.push(query);
         return HttpResponse.json({
           items: query.get('q')
             ? [
                 { id: 'p1', title: 'Parent plan' },
-                { id: 'p2', title: null, number: 'TI-2026-00002' },
+                { id: 'p2', title: null },
               ]
             : [],
         });
@@ -118,8 +119,7 @@ describe('the record picker', () => {
       <RecordPicker
         id="parent"
         label="Parent"
-        path="test-items"
-        title="title"
+        subject="TestItem"
         value=""
         onChange={onChange}
       />,
@@ -128,10 +128,8 @@ describe('the record picker', () => {
     // Dice UI takes the text a frame later: typed at once, not key by key.
     await userEvent.click(input);
     fireEvent.change(input, { target: { value: 'Par' } });
-    // No title: its number.
-    expect(
-      await screen.findByRole('option', { name: 'TI-2026-00002' }),
-    ).toBeVisible();
+    // No title: its id.
+    expect(await screen.findByRole('option', { name: 'p2' })).toBeVisible();
     await userEvent.click(screen.getByRole('option', { name: 'Parent plan' }));
     expect(onChange).toHaveBeenCalledWith('p1');
     await waitFor(() =>
@@ -142,20 +140,48 @@ describe('the record picker', () => {
     const searched = asked.filter((query) => query.has('q')).at(-1);
     expect(searched?.get('q')).toBe('Par');
     expect(searched?.get('limit')).toBe('20');
-    // Before any term: the newest, without `q` (the list refuses an empty one).
+    // Before any term: the first by title, without `q` (the route refuses an empty one).
     expect(asked[0]?.has('q')).toBe(false);
   });
 
-  it('says when nothing the user may read matches', async () => {
+  it("shows the current record's title, named by its id", async () => {
+    const id = '0190a6a0-0000-7000-8000-000000000001';
     server.use(
-      http.get('/v1/test-items', () => HttpResponse.json({ items: [] })),
+      http.get('/v1/lists/TestItem/options', ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        return HttpResponse.json({
+          items:
+            query.get('id') === id ? [{ id, title: 'Current parent' }] : [],
+        });
+      }),
     );
     await renderComponent(
       <RecordPicker
         id="parent"
         label="Parent"
-        path="test-items"
-        title="title"
+        subject="TestItem"
+        value={id}
+        onChange={() => undefined}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Parent' })).toHaveValue(
+        'Current parent',
+      ),
+    );
+  });
+
+  it('says when nothing the user may read matches', async () => {
+    server.use(
+      http.get('/v1/lists/TestItem/options', () =>
+        HttpResponse.json({ items: [] }),
+      ),
+    );
+    await renderComponent(
+      <RecordPicker
+        id="parent"
+        label="Parent"
+        subject="TestItem"
         value=""
         onChange={() => undefined}
       />,

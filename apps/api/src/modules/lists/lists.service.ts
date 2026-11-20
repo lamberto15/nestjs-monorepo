@@ -6,7 +6,15 @@ import {
 } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { DiscoveryService, MetadataScanner } from '@nestjs/core';
-import { fieldsRead, type List } from '../../core/http/list-query.js';
+import { InjectTransaction } from '@nestjs-cls/transactional';
+import { and, asc, desc, ilike, inArray, isNull } from 'drizzle-orm';
+import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
+import type { Database } from '../../core/database/database.js';
+import {
+  escapeLike,
+  fieldsRead,
+  type List,
+} from '../../core/http/list-query.js';
 import { AccessPolicy } from '../../iam/access/access.policy.js';
 import { USER_LIST } from '../../iam/access/access.lists.js';
 import { AUDIT_LIST, SIGN_IN_LIST } from '../../iam/audit-log/audit.lists.js';
@@ -19,6 +27,7 @@ import {
   Records,
 } from '../records/records.service.js';
 import { checkListViews, listMetadata, listViews } from './list-metadata.js';
+import type { RecordOptionsQuery } from './record-options.schemas.js';
 import type {
   ListField,
   ListMetadata,
@@ -53,7 +62,53 @@ export class ListsService implements OnModuleInit {
     private readonly auditPolicy: AuditPolicy,
     private readonly discovery: DiscoveryService,
     private readonly scanner: MetadataScanner,
+    @InjectTransaction() private readonly db: Database,
   ) {}
+
+  /**
+   * A record's options for a picker (GET /v1/lists/{subject}/options): its
+   * id and title (relationTitle(), the same as a reference's `?include=`),
+   * among the live records the caller may read. `q` searches the title,
+   * `id` names these; a title they may not read on every record is null.
+   */
+  async options(
+    principal: Principal,
+    subject: string,
+    { q, id, limit }: RecordOptionsQuery,
+  ) {
+    const record = this.records.find(subject);
+    if (!record) throw new NotFoundException(`${subject} is no record.`);
+    const table = record.feature.table as unknown as PgTable &
+      Record<string, AnyPgColumn>;
+    const named = relationTitle(record.declaration);
+    const [denied, conditional] = await Promise.all([
+      this.access.deniedFields(principal, 'read', subject),
+      this.access.conditionalFields(principal, 'read', subject),
+    ]);
+    const title =
+      named && !denied.includes(named) && !conditional.includes(named)
+        ? table[named]
+        : undefined;
+    // Without a readable title a search has nothing to match.
+    if (q && !title) return [];
+    const rows = (await this.db
+      .select({ id: table.id!, ...(title && { title }) })
+      .from(table)
+      .where(
+        and(
+          id ? inArray(table.id!, id) : undefined,
+          q && title ? ilike(title, `%${escapeLike(q)}%`) : undefined,
+          table.deletedAt ? isNull(table.deletedAt) : undefined,
+          await this.access.sqlFilter(principal, subject, 'read'),
+        ),
+      )
+      .orderBy(...(title ? [asc(title)] : []), desc(table.id!))
+      .limit(id ? id.length : limit)) as { id: string; title?: unknown }[];
+    return rows.map((row) => ({
+      id: row.id,
+      title: typeof row.title === 'string' ? row.title : null,
+    }));
+  }
 
   /** The paths with a list route (`GET /v1/<path>`): what a related panel can call. */
   private listed = new Set<string>();

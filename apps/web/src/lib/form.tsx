@@ -25,6 +25,7 @@ import {
 import { Spinner } from '@nestjs-monorepo/ui/components/spinner';
 import { Textarea } from '@nestjs-monorepo/ui/components/textarea';
 import { LazyMarkdownEditor } from '@/components/markdown/lazy';
+import { RecordPicker } from '@/components/records/record-picker';
 import { focusFirstInvalid, rememberFormElement } from '@/lib/form-focus';
 import { useWritesPaused } from '@/lib/mode';
 import { meQuery, sessionIdentity, type Me } from '@/lib/session';
@@ -310,6 +311,53 @@ function SelectField(props: {
 }
 
 /**
+ * A reference to a record (a `ref` field): RecordPicker, searching the
+ * target subject's records by title; the value is the picked record's id,
+ * '' for none.
+ */
+function RecordField(props: {
+  label: string;
+  /** The target's subject (`Customer`), as the field's `ref` names it. */
+  subject: string;
+  description?: ReactNode;
+  placeholder?: string;
+}) {
+  const field = useFieldContext<string>();
+  const invalid = useInvalid();
+  const {
+    controlId: id,
+    descriptionId,
+    errorId,
+    describedBy,
+  } = useDescribedBy(Boolean(props.description), invalid);
+  const formRef = useFormElementRef();
+  return (
+    <Field ref={formRef} data-invalid={invalid}>
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+      <RecordPicker
+        id={id}
+        label={props.label}
+        subject={props.subject}
+        value={field.state.value}
+        onChange={(value) => {
+          field.handleChange(value);
+          field.handleBlur();
+        }}
+        placeholder={props.placeholder}
+        invalid={invalid}
+        describedBy={describedBy}
+      />
+      {props.description && (
+        <FieldDescription id={descriptionId}>
+          {props.description}
+        </FieldDescription>
+      )}
+      {invalid && <FieldError id={errorId} errors={field.state.meta.errors} />}
+    </Field>
+  );
+}
+
+/**
  * The submit button: disabled and spinning while the form submits, and
  * disabled while the API refuses writes (read-only or maintenance mode, the
  * banner says why) unless the form's route stays open in both
@@ -348,6 +396,7 @@ const formHooks = createFormHook({
     MarkdownField,
     CodeField,
     SelectField,
+    RecordField,
   },
   formComponents: { SubmitButton },
 });

@@ -10,6 +10,7 @@
 // Bulk actions, import, watching, favorites and the rest are added by hand.
 import { ADDONS } from '../feature/addons.js';
 import { titleField } from '../feature/fields.js';
+import { names } from '../feature/names.js';
 
 /** `dueOn` → `Due on`; `widgetId` → `Widget`: a field's label. */
 export const label = (name) => {
@@ -389,6 +390,10 @@ function check(f, key) {
   }
 }
 
+/** The subject a reference field points at (`customers` → `Customer`), as its `ref` names it. */
+const refSubject = (t, f) =>
+  f.ref === t.plural ? t.Singular : names(f.ref).Singular;
+
 /** The statement that puts a field's form value(s) in the request body. */
 function assign(f, S) {
   const v = `value.${f.name}`;
@@ -428,6 +433,12 @@ function control(t, f, first) {
     return wrap(name, `<field.MarkdownField label={t('fields.${name}')} />`);
   }
   switch (f.type) {
+    case 'ref':
+      // A picker of the target's records by title (GET /v1/lists/{subject}/options).
+      return wrap(
+        name,
+        `<field.RecordField label={t('fields.${name}')} subject="${refSubject(t, f)}" />`,
+      );
     case 'text':
     case 'json':
       return wrap(
@@ -671,14 +682,15 @@ export function form({ t, fields, addons }) {
       '      }',
     ],
     '      const before = initialValues(record);',
+    // On create, what differs from the empty form (and every required field); on an edit, what changed.
     '      const changed = (...keys: (keyof typeof value)[]) =>',
-    '        !record || keys.some((key) => value[key] !== before[key]);',
+    '        keys.some((key) => value[key] !== before[key]);',
     numbered
       ? `      const body: ${S}Changes & Pick<${S}Create, 'namingSeriesId'> = {};`
       : `      const body: ${S}Changes = {};`,
     ...fields.map(
       (f) =>
-        `      if (changed(${keysOf(f).map(quote).join(', ')})) { ${assign(f, S)} }`,
+        `      if (${f.optional ? '' : '!record || '}changed(${keysOf(f).map(quote).join(', ')})) { ${assign(f, S)} }`,
     ),
     custom && [
       '      // On create, what differs from the defaults; on an edit, only what changed.',
@@ -1110,6 +1122,9 @@ function detail(t, f) {
       return shown(
         `<Badge variant="outline">{t(${tpl(`enums.${f.name}.@{${r}}`)})}</Badge>`,
       );
+    case 'ref':
+      // Its title, as a picker shows it; the id until known.
+      return shown(`<RecordName subject="${refSubject(t, f)}" value={${r}} />`);
     default:
       return r;
   }
@@ -1139,6 +1154,8 @@ export function detailPage({ t, fields, softDelete, addons }) {
     `import { useTranslation } from 'react-i18next';`,
     fields.some((f) => f.markdown) &&
       `import { MarkdownText } from '@/components/markdown/lazy';`,
+    fields.some((f) => f.type === 'ref') &&
+      `import { RecordName } from '@/components/person-name';`,
     `import { Page, PageHeader } from '@/components/page-header';`,
     custom &&
       `import { CustomFieldValues } from '@/components/records/custom-field-values';`,
@@ -1388,6 +1405,9 @@ export function test({ t, fields, softDelete, addons }) {
       `    http.get('/v1/custom-fields', () => HttpResponse.json({ items: [] })),`,
     on('sequences') &&
       `    http.get('/v1/naming-series', () => HttpResponse.json({ items: [], nextCursor: null })),`,
+    // A reference's picker and its name: the records of its subject.
+    fields.some((f) => f.type === 'ref') &&
+      `    http.get('/v1/lists/:subject/options', () => HttpResponse.json({ items: [] })),`,
     on('merge') && [
       `    http.post('${route}/duplicates', () => HttpResponse.json({ items: [] })),`,
       `    http.get('${route}/:id/duplicates', () => HttpResponse.json({ items: [] })),`,

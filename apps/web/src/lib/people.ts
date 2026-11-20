@@ -65,7 +65,7 @@ type Waiter<T> = {
 /** The wait for more keys before asking: one render's effects all land within it. */
 const BATCH_DELAY_MS = 5;
 
-function createBatcher<T>(
+export function createBatcher<T>(
   size: number,
   load: (keys: string[]) => Promise<Map<string, T>>,
 ) {
@@ -169,7 +169,8 @@ export interface Names {
   pending: boolean;
 }
 
-function useNames(
+/** The names of some keys, each a query of its own (a request per batch): the people's, the units', the records'. */
+export function useNames(
   keys: readonly (string | null | undefined)[],
   valid: RegExp,
   options: (key: string) => ReturnType<typeof personNameQuery>,

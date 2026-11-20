@@ -1,7 +1,14 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { AuthorizationService, Can } from '@nestjs/authorization';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCookieAuth,
   ApiForbiddenResponse,
@@ -14,7 +21,13 @@ import {
 } from '@nestjs/swagger';
 import type { Principal } from '../../iam/auth/principal.js';
 import { ListPolicy } from './list.policy.js';
+import { listSchema } from '../../core/http/pagination.js';
 import { listMetadataSchema } from './list-metadata.schemas.js';
+import {
+  type RecordOptionsQuery,
+  recordOptionSchema,
+  recordOptionsQuerySchema,
+} from './record-options.schemas.js';
 import { ListsService } from './lists.service.js';
 
 /**
@@ -57,5 +70,38 @@ export class ListsController {
     this.lists.source(subject);
     await this.authorization.authorize(ListPolicy, 'read', user, subject);
     return this.lists.describe(user, subject);
+  }
+
+  @Get(':subject/options')
+  @Can.Anyone() // Checked below, on the subject; the rows by the caller's read conditions.
+  @ApiOperation({
+    summary: "A record's options for a picker: ids and titles",
+    description:
+      "With `q` (or nothing): the live records whose title contains `q`, by title. With `id=<id>,<id>`: the titles of these, for the names behind ids a page holds (a reference's cell, a filter's chips); an id you may not read is left out. Each item is an id and a title, nothing else. The title is the record's first text field, as a reference's `?include=` gives it. For anyone who may read the subject: only the records you may read.",
+  })
+  @ApiParam({
+    name: 'subject',
+    schema: { type: 'string', example: 'Customer' },
+    description: 'The kind of record, as permissions name it (`Customer`).',
+  })
+  @ApiOkResponse({ standardSchema: listSchema(recordOptionSchema) })
+  @ApiBadRequestResponse({
+    description:
+      '`q` empty or longer than 100 characters, `limit` over 20, an `id` that is no uuid, more than 20 ids, or `q` with `id` (validation_failed).',
+  })
+  @ApiForbiddenResponse({ description: 'You may not read the subject.' })
+  @ApiNotFoundResponse({
+    description: 'No record of that subject (not_found).',
+  })
+  async options(
+    @CurrentUser() user: Principal,
+    @Param('subject') subject: string,
+    @Query({ schema: recordOptionsQuerySchema }) query: RecordOptionsQuery,
+  ) {
+    if (!this.lists.source(subject).record) {
+      throw new NotFoundException(`${subject} is no record.`);
+    }
+    await this.authorization.authorize(ListPolicy, 'read', user, subject);
+    return { items: await this.lists.options(user, subject, query) };
   }
 }

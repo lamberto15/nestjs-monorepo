@@ -4,6 +4,13 @@
 declaration its list route validates with. A generic table builds its filter
 menus, sorts, column pickers and views from it.
 
+`GET /v1/lists/{subject}/options`: a record's ids and titles, for a
+reference's picker, filter and cells (any record, its title the first string
+field, as `?include=` gives it). `q` searches the titles (`ilike`), `id=` (20
+at most) names the ids a page holds; only live records the caller may read,
+and no title for one who may not read the title field everywhere. A subject
+that is not a record is a 404.
+
 - Sources: every record registered with `RecordsModule.forFeature()` (its
   list with the add-ons' filters), plus the access API's `User` list and the audit pages' `Audit` and `SignIn` lists (whoever holds `Access.readAudit`).
 - Who: whoever may read the subject on some record (`ListPolicy`); for `User`,

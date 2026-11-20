@@ -674,6 +674,48 @@ describe('records: test items (e2e)', () => {
   });
 
   describe('lists and search', () => {
+    it('gives pickers ids and titles: searched or named, only what the caller may read', async () => {
+      const mine = await create(editor.headers, { title: 'Picker Alpha' });
+      const theirs = await create(other.headers, { title: 'Picker Alphabet' });
+      const options = async (headers: Headers, query: string) => {
+        const response = await call(
+          'GET',
+          `/v1/lists/TestItem/options?${query}`,
+          headers,
+        );
+        expect(response.statusCode, response.body).toBe(200);
+        return response.json<{ items: { id: string; title: string }[] }>()
+          .items;
+      };
+      // Editors read their own; the viewer every one.
+      expect(await options(editor.headers, 'q=picker%20alp')).toEqual([
+        { id: mine.id, title: 'Picker Alpha' },
+      ]);
+      expect(
+        (await options(viewer.headers, 'q=picker%20alp')).map((o) => o.title),
+      ).toEqual(['Picker Alpha', 'Picker Alphabet']);
+      // By id: the names behind ids a page holds; one not readable is left out.
+      expect(
+        await options(editor.headers, `id=${theirs.id},${mine.id}`),
+      ).toEqual([{ id: mine.id, title: 'Picker Alpha' }]);
+      expect(
+        (await call('GET', '/v1/lists/TestItem/options', nobody.headers))
+          .statusCode,
+      ).toBe(403);
+      expect(
+        (await call('GET', '/v1/lists/User/options', admin.headers)).statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await call(
+            'GET',
+            `/v1/lists/TestItem/options?q=a&id=${mine.id}`,
+            admin.headers,
+          )
+        ).statusCode,
+      ).toBe(400);
+    });
+
     it('answers a list description to who may read the subject; an unknown subject is a 404', async () => {
       expect(
         (await call('GET', '/v1/lists/TestItem', nobody.headers)).statusCode,

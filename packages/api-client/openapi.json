@@ -32458,6 +32458,135 @@
         ]
       }
     },
+    "/v1/lists/{subject}/options": {
+      "get": {
+        "description": "With `q` (or nothing): the live records whose title contains `q`, by title. With `id=<id>,<id>`: the titles of these, for the names behind ids a page holds (a reference's cell, a filter's chips); an id you may not read is left out. Each item is an id and a title, nothing else. The title is the record's first text field, as a reference's `?include=` gives it. For anyone who may read the subject: only the records you may read.",
+        "operationId": "ListsController_options_v1",
+        "parameters": [
+          {
+            "name": "subject",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "example": "Customer"
+            },
+            "description": "The kind of record, as permissions name it (`Customer`)."
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Part of the title, any case (`%` and `_` are themselves). Absent: the first by title. Not with `id`.",
+            "schema": {
+              "description": "Part of the title, any case (`%` and `_` are themselves). Absent: the first by title. Not with `id`.",
+              "example": "acme",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "id",
+            "required": false,
+            "in": "query",
+            "description": "Ids to name instead of a search, comma-separated, 20 at most. One you may not read, or no record has, is left out (no error). Not with `q`; `limit` doesn't apply.",
+            "schema": {
+              "description": "Ids to name instead of a search, comma-separated, 20 at most. One you may not read, or no record has, is left out (no error). Not with `q`; `limit` doesn't apply.",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          {
+            "name": "lang",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 35
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "title": {
+                            "nullable": true,
+                            "description": "What it is called: its first text field, null when it has none or you may not read it (name it by its id then). The same `title` as a reference's `?include=`.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`q` empty or longer than 100 characters, `limit` over 20, an `id` that is no uuid, more than 20 ids, or `q` with `id` (validation_failed)."
+          },
+          "401": {
+            "description": "No valid API key or session."
+          },
+          "403": {
+            "description": "You may not read the subject."
+          },
+          "404": {
+            "description": "No record of that subject (not_found)."
+          }
+        },
+        "security": [
+          {
+            "user-session": []
+          },
+          {
+            "user-token": []
+          },
+          {
+            "api-key": []
+          }
+        ],
+        "summary": "A record's options for a picker: ids and titles",
+        "tags": [
+          "lists"
+        ]
+      }
+    },
     "/v1/search": {
       "get": {
         "description": "Words match anywhere; \"quoted words\" as a phrase; -word excludes; or between words. Best matches first, across kinds; snippets mark the matches with <b>…</b>.",

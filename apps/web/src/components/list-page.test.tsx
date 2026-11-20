@@ -454,6 +454,8 @@ describe('ListPage', () => {
   const respond = (list: unknown, extra: Record<string, unknown> = {}) =>
     mocks.fetch.mockImplementation(async (request?: Request) => {
       const url = request?.url ?? '';
+      // A reference's records, as its filter searches them.
+      if (url.includes('/options')) return json(extra.options ?? { items: [] });
       if (url.includes('/v1/lists/')) return json(list);
       // capability:tags begin
       if (url.includes('/v1/tags')) return json(extra.tags);
@@ -650,6 +652,90 @@ describe('ListPage', () => {
     expect(
       screen.getByRole('button', { name: /Owner filter value/i }),
     ).toHaveTextContent('Ada Lovelace');
+  });
+
+  it("filters each field by its own type's control, not a text box", async () => {
+    stubLayout();
+    const typed = {
+      ...description,
+      fields: [
+        ...description.fields,
+        ...(
+          [
+            ['dueOn', 'date', ['eq', 'lt', 'gt']],
+            ['quantity', 'number', ['eq', 'gt']],
+            ['paid', 'boolean', ['eq']],
+          ] as const
+        ).map(([name, type, operators]) => ({
+          name,
+          type,
+          operators,
+          sortable: true,
+          custom: false,
+        })),
+        {
+          name: 'parentId',
+          type: 'uuid',
+          operators: ['eq', 'in'],
+          sortable: false,
+          custom: false,
+          ref: 'TestItem',
+        },
+      ],
+      select: [...description.select, 'dueOn', 'quantity', 'paid', 'parentId'],
+    };
+    const PARENT = '0199a3f2-0000-7000-8000-0000000000b1';
+    respond(typed, {
+      options: { items: [{ id: PARENT, title: 'Spring plan' }] },
+    });
+    await renderList('', 'en', {
+      columns: [
+        ...columns,
+        ...['dueOn', 'quantity', 'paid'].map((id) => ({
+          id,
+          accessorKey: id,
+          meta: { label: id },
+          header: id,
+        })),
+      ] as ListColumn<Row>[],
+    });
+    expect(await screen.findByText('First')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add filter' }),
+    );
+    const pick = async (from: string, to: string) => {
+      await userEvent.click(screen.getByRole('button', { name: from }));
+      await userEvent.click(await screen.findByRole('option', { name: to }));
+    };
+    await pick('Title', 'dueOn');
+    expect(
+      await screen.findByRole('button', { name: /dueOn date filter/i }),
+    ).toBeInTheDocument();
+    await pick('dueOn', 'quantity');
+    expect(
+      await screen.findByRole('spinbutton', { name: /quantity filter value/i }),
+    ).toBeInTheDocument();
+    await pick('quantity', 'paid');
+    expect(
+      await screen.findByRole('combobox', { name: /paid boolean filter/i }),
+    ).toBeInTheDocument();
+    // A reference to a record: its records, by title, not an id typed in.
+    await pick('paid', 'Parent');
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Parent filter value/i }),
+    );
+    await userEvent.click(
+      await screen.findByText('Spring plan', { selector: '[cmdk-item] *' }),
+    );
+    await waitFor(() => {
+      const last = urls()
+        .filter((url) => url.pathname === PATH)
+        .at(-1);
+      expect(JSON.parse(last?.searchParams.get('filter') ?? 'null')).toEqual({
+        and: [{ field: 'parentId', op: 'in', value: [PARENT] }],
+      });
+    });
   });
 
   const NORTH = '0199a3f2-0000-7000-8000-0000000000a1';

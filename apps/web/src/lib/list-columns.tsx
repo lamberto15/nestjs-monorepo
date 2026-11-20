@@ -1,11 +1,11 @@
 import { Fragment } from 'react';
 import type { HeaderContext, RowData } from '@tanstack/react-table';
 import type { TFunction } from 'i18next';
-import { PersonName, UnitName } from '@/components/person-name';
+import { PersonName, RecordName, UnitName } from '@/components/person-name';
 import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header';
 import type { DataTableFeatures } from '@/lib/data-table-features';
 import type { ListColumn, ListDescription, ListField } from '@/lib/list-query';
-import { refKinds, type RefSources } from '@/lib/list-refs';
+import { isRecordRef, refKinds, type RefSources } from '@/lib/list-refs';
 
 /**
  * Columns the list's own metadata asks for, so a page built on ListPage gets
@@ -122,8 +122,16 @@ export function refColumns<TData extends RowData>(
       }
       // People and units are named by the lookups (batched for the whole
       // page, lib/people.ts); tags by the list's own options.
-      const lookup = field.ref === 'principal' || field.ref === 'unit';
-      const Name = field.ref === 'unit' ? UnitName : PersonName;
+      const ref = field.ref as string;
+      const record = isRecordRef(ref);
+      const lookup = ref === 'principal' || ref === 'unit' || record;
+      const Name = record
+        ? ({ value }: { value: string }) => (
+            <RecordName subject={ref} value={value} />
+          )
+        : ref === 'unit'
+          ? UnitName
+          : PersonName;
       const names = new Map(
         (refs[field.ref as string]?.options ?? []).map((o) => [
           o.value,
