@@ -70,6 +70,13 @@ from the template (`pnpm create nestjs-monorepo`), not the template. There:
   one origin. No Caddy; HTTPS and certificates are the host's job.
 - **Everything is on by default:** `app.module.ts` lists every module; an
   adopter deletes what they don't want.
+- **The template stays generic** (the owner, 2026-11-20). Every request,
+  feedback from a project made from it included, is weighed first: would
+  most projects use it, or only that one? Only the first goes in, written in
+  general terms (a company, an invoice), never one project's names, data or
+  rules. What one project alone needs, it builds on the template's extension
+  points; when none fits, the template gets the extension point, not that
+  project's feature.
 - **Routes stay as they were** in the earlier template, so the web app, the
   typed client and the e2e tests carry over, except where a route was
   awkward: those are redesigned, and each change is listed in PORTING.md.
