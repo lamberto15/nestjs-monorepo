@@ -122,6 +122,37 @@ describe('fields', () => {
     expect(code(true).where).toBeDefined();
   });
 
+  it('keeps a value unique within another field: the index leads with the tenant, then that field', () => {
+    const scoped = {
+      groupId: field.string().optional(),
+      code: field.string().unique({ within: 'groupId' }),
+    };
+    const t = tenantTable(
+      't_scoped',
+      { id: uuidPk(), ...fieldColumns(scoped) },
+      (table) => fieldExtras('t_scoped', table, scoped),
+    );
+    const code = getTableConfig(t).indexes.find(
+      (i) => i.config.name === 't_scoped_code_idx',
+    )!.config;
+    expect(code.unique).toBe(true);
+    expect(code.columns.map((c) => (c as { name: string }).name)).toEqual([
+      'tenant_id',
+      'group_id',
+      'code',
+    ]);
+    const lone = { code: field.string().unique({ within: 'groupId' }) };
+    expect(() =>
+      getTableConfig(
+        tenantTable(
+          't_lone',
+          { id: uuidPk(), ...fieldColumns(lone) },
+          (table) => fieldExtras('t_lone', table, lone),
+        ),
+      ),
+    ).toThrow('names no other field');
+  });
+
   it('types the row and the insert exactly', () => {
     type Row = typeof invoices.$inferSelect;
     type Insert = typeof invoices.$inferInsert;

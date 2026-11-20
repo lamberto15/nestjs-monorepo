@@ -101,6 +101,8 @@ export class Field<
       readOnly: RO;
       defaultValue?: unknown;
       unique?: boolean;
+      /** Unique among the records with the same value of this other field (`unique({ within })`). */
+      uniqueWithin?: string;
       searchable?: boolean;
       values?: readonly string[];
       ref?: () => Referenced;
@@ -128,11 +130,18 @@ export class Field<
     });
   }
 
-  /** Unique per tenant (a unique index on the tenant and the column): a duplicate is a 409. */
-  unique(): Field<K, C, I, O, Opt, Def, RO> {
+  /**
+   * Unique per tenant (a unique index on the tenant and the column): a
+   * duplicate is a 409. `within` names another field of the record: unique
+   * among the records with the same value of it (a code unique within its
+   * product: `unique({ within: 'productId' })`); records with none of it
+   * are not compared.
+   */
+  unique(options: { within?: string } = {}): Field<K, C, I, O, Opt, Def, RO> {
     return new Field(this.kind, this.makeColumn, this.input, this.output, {
       ...this.options,
       unique: true,
+      ...(options.within !== undefined && { uniqueWithin: options.within }),
     });
   }
 

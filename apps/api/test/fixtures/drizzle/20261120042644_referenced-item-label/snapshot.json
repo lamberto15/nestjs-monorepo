@@ -1,0 +1,107 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "65dfad0d-de6d-4397-9e3f-07a11894a1c0",
+  "prevIds": [
+    "e7039e86-e4ca-4f06-83b5-3a563aad7ec7"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "test_referenced_items",
+        "label"
+      ],
+      "writes": [
+        "s|col|public.test_referenced_items.label",
+        "n|col|public.test_referenced_items.label",
+        "e|col|public.test_referenced_items.label"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "test_referenced_items",
+        "test_referenced_items_label_idx"
+      ],
+      "writes": [
+        "s|idx|public.test_referenced_items_label_idx",
+        "n|idx|public.test_referenced_items_label_idx",
+        "e|idx|public.test_referenced_items_label_idx",
+        "n|rel|public.test_referenced_items_label_idx"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "n|col|public.test_referenced_items.tenant_id",
+        "n|col|public.test_referenced_items.item_id",
+        "n|col|public.test_referenced_items.label"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "label",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_label_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "item_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "label",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    }
+  ]
+}

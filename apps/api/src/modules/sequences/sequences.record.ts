@@ -320,20 +320,29 @@ export class FieldNumberingExtension implements RecordHooks {
         values: input,
         resolve: referencedValues(this.txHost, this.record, input),
       });
-      if (!(await this.taken(formatted))) return { [this.field]: formatted };
+      if (!(await this.taken(formatted, values))) {
+        return { [this.field]: formatted };
+      }
     }
   }
 
-  /** Whether a record of the tenant holds the value: a live one, as its unique index counts. */
-  private async taken(value: string) {
+  /**
+   * Whether a record of the tenant holds the value: a live one, as its
+   * unique index counts (among those of the same `within`, with one).
+   */
+  private async taken(value: string, values: Record<string, unknown>) {
     const table = recordTableOf(this.record) as unknown as PgTable &
       Record<string, AnyPgColumn>;
+    const within = this.record.fields[this.field]!.options.uniqueWithin;
+    // None of it: the index compares no such records.
+    if (within && values[within] == null) return false;
     const [row] = await this.db
       .select({ id: table.id! })
       .from(table)
       .where(
         and(
           eq(table[this.field]!, value),
+          within ? eq(table[within]!, values[within]) : undefined,
           this.record.softDelete ? isNull(table.deletedAt!) : undefined,
         ),
       )

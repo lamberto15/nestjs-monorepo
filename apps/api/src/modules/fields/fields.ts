@@ -122,10 +122,19 @@ export function fieldExtras(
   for (const [name, f] of Object.entries(fields)) {
     const column = `${tableName}_${columnName(name)}`;
     if (f.options.unique) {
-      const unique = uniqueIndex(`${column}_idx`).on(
-        table.tenantId!,
-        table[name]!,
-      );
+      const within = f.options.uniqueWithin;
+      if (within !== undefined && (within === name || !fields[within])) {
+        throw new Error(
+          `${tableName}.${name}: unique({ within: '${within}' }) names no other field of the record.`,
+        );
+      }
+      const unique = within
+        ? uniqueIndex(`${column}_idx`).on(
+            table.tenantId!,
+            table[within]!,
+            table[name]!,
+          )
+        : uniqueIndex(`${column}_idx`).on(table.tenantId!, table[name]!);
       // A record in the recycle bin keeps its row but not its value: only
       // live rows are unique (docs/adding-a-feature.md, soft delete).
       extras.push(softDelete ? unique.where(sql`deleted_at is null`) : unique);

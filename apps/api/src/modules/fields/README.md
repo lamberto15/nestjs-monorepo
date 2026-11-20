@@ -23,7 +23,8 @@ export const invoices = tenantTable(
 - **Types** (`field.ts`): `string`, `text`, `int`, `decimal` (a string end to
   end), `money` (two columns, `{ amount, currency }` in the API), `bool`,
   `date`, `datetime`, `enum`, `json`, `ref`. Modifiers: `optional()` (null),
-  `default(v)`, `unique()` (per tenant), `searchable()`, `readOnly()` (set by the
+  `default(v)`, `unique()` (per tenant; `unique({ within: 'productId' })` per
+  value of another field, records with none of it not compared), `searchable()`, `readOnly()` (set by the
   service, never by a body), `onDelete()` (a reference's rule). Text fields are
   bounded under the request body limit (`core/http/body-limit.ts`).
 - **Derived** (`fields.ts`): `fieldColumns`, `fieldExtras` (unique indexes, a

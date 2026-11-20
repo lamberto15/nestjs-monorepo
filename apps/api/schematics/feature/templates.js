@@ -60,7 +60,11 @@ function builder(c, f) {
         : 'field.' + f.type + '()';
   return [
     call,
-    f.unique ? '.unique()' : '',
+    f.unique
+      ? f.within
+        ? ".unique({ within: '" + f.within + "' })"
+        : '.unique()'
+      : '',
     f.optional ? '.optional()' : '',
     f.type === 'string' || f.type === 'text' ? '.searchable()' : '',
   ].join('');

@@ -67,11 +67,17 @@ export function exportColumns(
 export const importSchema = (declaration: RecordDeclaration): z.ZodObject =>
   fieldSchemas(declaration.fields).create as unknown as z.ZodObject;
 
-/** The columns a matched import may find a record by: its id, and its unique fields. */
+/**
+ * The columns a matched import may find a record by: its id, and its unique
+ * fields (not one unique only within another field: alone it finds several).
+ */
 export const matchKeys = (declaration: RecordDeclaration) => [
   'id',
   ...Object.entries(declaration.fields)
-    .filter(([, f]) => f.options.unique && !f.options.readOnly)
+    .filter(
+      ([, f]) =>
+        f.options.unique && !f.options.uniqueWithin && !f.options.readOnly,
+    )
     .map(([name]) => name),
 ];
 

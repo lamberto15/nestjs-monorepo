@@ -313,6 +313,34 @@ describe('numbered records (e2e)', () => {
   });
 
   // modules/lists: a related panel lists its records at GET /v1/<path>.
+  it('keeps a value unique within the record it refers to, not across the tenant', async () => {
+    const { admin } = await recordsTenant(app);
+    const { headers } = admin;
+    const acme = await createTestItem(app, headers, { title: 'Acme' });
+    const globex = await createTestItem(app, headers, { title: 'Globex' });
+    const post = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/referenced-items',
+        headers,
+        payload,
+      });
+    expect((await post({ itemId: acme.id, label: 'OPEN' })).statusCode).toBe(
+      201,
+    );
+    // The same label under another item: its own.
+    expect((await post({ itemId: globex.id, label: 'OPEN' })).statusCode).toBe(
+      201,
+    );
+    const again = await post({ itemId: acme.id, label: 'OPEN' });
+    expect(again.statusCode).toBe(409);
+    expect(again.json().code).toBe('referencedItem_taken');
+    // With no item, none to be unique within: not compared.
+    for (let i = 0; i < 2; i++) {
+      expect((await post({ label: 'OPEN' })).statusCode).toBe(201);
+    }
+  });
+
   it('offers no related panel for records with no list route of their own', async () => {
     const { admin } = await recordsTenant(app);
     const list = await app.inject({

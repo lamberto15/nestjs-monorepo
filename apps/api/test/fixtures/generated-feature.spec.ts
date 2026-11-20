@@ -157,7 +157,31 @@ describe('the feature schematic', () => {
     ).toContain('team.admin.headers');
   });
 
+  it('keeps a field unique within another: `!unique(<field>)`', async () => {
+    const tree = await runner.runSchematic(
+      'feature',
+      {
+        name: 'stages',
+        fields:
+          'name:string,productId:ref(products)?,code:string!unique(productId)',
+        skipImport: true,
+      },
+      empty(),
+    );
+    expect(tree.readContent('/src/features/stages/stage.record.ts')).toContain(
+      "code: field.string().unique({ within: 'productId' })",
+    );
+  });
+
   it.each([
+    [
+      { name: 'stages', fields: 'code:string!unique(productId)' },
+      'no other field',
+    ],
+    [
+      { name: 'stages', fields: 'code:string!numbered(productId)' },
+      'only !unique takes',
+    ],
     [{ name: 'Invoices', fields: 'title:string' }, 'plural, lowercase'],
     [{ name: 'invoices', fields: '' }, 'at least one field'],
     [{ name: 'invoices', fields: 'title:strin' }, 'not a type'],
