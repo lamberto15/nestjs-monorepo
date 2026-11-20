@@ -23,10 +23,7 @@ import { PersonName, RecordName, UnitName } from '@/components/person-name';
 import { recordLinkOf } from '@/features/watching/record-links';
 import { useMe } from '@/lib/features';
 import { customValue, fieldLabel } from '@/lib/list-columns';
-import {
-  type ListDescription,
-  useListDescription,
-} from '@/lib/list-query';
+import { type ListDescription, useListDescription } from '@/lib/list-query';
 import { isRecordRef } from '@/lib/list-refs';
 import { useRecordCan } from '@/lib/records';
 import { type RecordForm, recordFormOf } from '../record-forms';
@@ -36,8 +33,6 @@ import { listRelated, panelKeys, RELATED_LIMIT } from './api';
 type Related = ListDescription['related'][number];
 type Row = Record<string, unknown>;
 
-/** Columns a child table shows besides its title: the first few of its own fields. */
-const MAX_COLUMNS = 4;
 /** What every record has, which a child table does not repeat. */
 const COMMON = new Set([
   'id',
@@ -252,8 +247,9 @@ type Column = {
 
 /**
  * The child's own fields a table shows: those its list may answer
- * (`select`), not the reference to this parent, the title (the first
- * column), nor what every record has. A long text is cut to its cell.
+ * (`select`), every one, not the reference to this parent, the title (the
+ * first column), nor what every record has. A wide table scrolls sideways;
+ * a long text is cut to its cell.
  */
 function childColumns(
   description: ListDescription | undefined,
@@ -283,8 +279,7 @@ function childColumns(
           ...(f.ref && { ref: f.ref }),
         },
       ];
-    })
-    .slice(0, MAX_COLUMNS);
+    });
 }
 
 /** A cell: a reference by name, an amount with its currency, else as a list shows it. */
@@ -298,11 +293,7 @@ function Value({ column, value }: { column: Column; value: unknown }) {
       return <RecordName subject={column.ref} value={value} />;
     }
   }
-  if (
-    typeof value === 'object' &&
-    'amount' in value &&
-    'currency' in value
-  ) {
+  if (typeof value === 'object' && 'amount' in value && 'currency' in value) {
     const money = value as { amount: string; currency: string };
     return <>{`${money.amount} ${money.currency}`}</>;
   }

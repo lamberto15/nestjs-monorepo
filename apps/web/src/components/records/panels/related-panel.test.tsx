@@ -60,6 +60,9 @@ function useLinesApi() {
           'item',
           'qty',
           'price',
+          'unit',
+          'discount',
+          'note',
           'orderId',
           'ownerId',
           'createdAt',
@@ -83,6 +86,27 @@ function useLinesApi() {
             name: 'priceCurrency',
             type: 'string',
             operators: ['eq'],
+            sortable: false,
+            custom: false,
+          },
+          {
+            name: 'unit',
+            type: 'string',
+            operators: ['eq'],
+            sortable: true,
+            custom: false,
+          },
+          {
+            name: 'discount',
+            type: 'number',
+            operators: ['gt'],
+            sortable: true,
+            custom: false,
+          },
+          {
+            name: 'note',
+            type: 'string',
+            operators: ['contains'],
             sortable: false,
             custom: false,
           },
@@ -149,6 +173,12 @@ describe('a child table', () => {
     expect(
       within(table).getByRole('columnheader', { name: 'Qty' }),
     ).toBeVisible();
+    // Every field of the line is a column: none cut off.
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).toEqual(['Name', 'Qty', 'Price', 'Unit', 'Discount', 'Note', 'Actions']);
 
     await userEvent.click(screen.getByRole('button', { name: 'Add' }));
     expect(forms.opened.at(-1)).toEqual({

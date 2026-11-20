@@ -75,8 +75,8 @@ pnpm client:generate        # the typed client the web pages use
 
 A feature with a reference to another is that one's child: the lines of an
 invoice (`pnpm feature:add invoice-lines --fields "item:string,qty:int,price:money,invoiceId:ref(invoices)?"`).
-The parent's page lists its children in the Related tab as a table, with the
-child's own fields; the child's `record-form.tsx` (generated) lets that table
+The parent's page lists its children in the Related tab as a table, with
+every one of the child's own fields (a wide one scrolls sideways); the child's `record-form.tsx` (generated) lets that table
 add a child with the parent filled in, change one and delete one, in a dialog,
 each through the child's own routes and permissions (Add for whoever may
 create, a row's buttons for whoever may change or delete it). Its
