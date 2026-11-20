@@ -27,6 +27,7 @@ import { AccessService } from '../../iam/access/access.service.js';
 import { Realtime } from '../realtime/realtime.service.js';
 import { PeopleModule } from '../people/people.module.js';
 import { StorageModule } from '../storage/storage.module.js';
+import { TestStagesModule } from '../../../test/fixtures/stages/test-stages.module.js';
 import { DataTransferModule } from './data-transfer.module.js';
 import {
   dataExportReady,
@@ -106,6 +107,8 @@ describe('data transfer (e2e)', () => {
       // Names the owners in exports (@ActorNameSource()).
       PeopleModule,
       testItemsModule({ imports: [DataTransferModule.forRecord(TEST_ITEM)] }),
+      // Codes unique within their test item: files name them by a path.
+      TestStagesModule,
     );
     team = await recordsTenant(app);
   });
@@ -174,20 +177,16 @@ describe('data transfer (e2e)', () => {
         columns: { name: string }[];
       }[];
     }>();
-    expect(catalog.exports).toEqual([
-      expect.objectContaining({ name: 'test-items', subject: 'TestItem' }),
-    ]);
-    expect(catalog.exports[0]!.columns).toEqual(
+    // The test stages are there too (one test below).
+    const items = catalog.exports.find((e) => e.name === 'test-items');
+    expect(items).toMatchObject({ name: 'test-items', subject: 'TestItem' });
+    expect(items!.columns).toEqual(
       expect.arrayContaining(['id', 'title', 'status', 'owner', 'createdAt']),
     );
-    expect(catalog.imports[0]).toMatchObject({
-      name: 'test-items',
-      matchKeys: ['id', 'code'],
-    });
+    const imports = catalog.imports.find((i) => i.name === 'test-items');
+    expect(imports).toMatchObject({ matchKeys: ['id', 'code'] });
     // A read-only field is no import column.
-    expect(catalog.imports[0]!.columns.map((c) => c.name)).not.toContain(
-      'words',
-    );
+    expect(imports!.columns.map((c) => c.name)).not.toContain('words');
 
     const none = (await get('/v1/data', team.nobody.headers)).json<{
       exports: unknown[];
@@ -428,6 +427,62 @@ describe('data transfer (e2e)', () => {
       `3,parentId,"No test item whose code is ""NOPE-${suffix}""."`,
     );
     expect(report).toContain(`4,parentId,`);
+  });
+
+  it("names a record whose code is unique within its parent by a path of keys: the parent's, then its own", async () => {
+    const suffix = randomUUID().slice(0, 6);
+    const { headers } = team.admin;
+    for (const code of [`P-${suffix}`, `Q-${suffix}`]) {
+      await createTestItem(app, headers, { title: code, code });
+    }
+    const stages = async (csv: string) =>
+      (
+        await settled(
+          (await importOf(csv, { name: 'test-stages' }, headers)).json<{
+            id: string;
+          }>().id,
+          headers,
+        )
+      ).result!;
+    // The same code under two items: each item's own.
+    expect(
+      await stages(`itemId,code\nP-${suffix},OPEN\nQ-${suffix},OPEN\n`),
+    ).toMatchObject({ imported: 2, failed: 0 });
+    const done = await stages(
+      `itemId,code,nextId\n` +
+        `P-${suffix},DONE,P-${suffix}/OPEN\n` +
+        `P-${suffix},LATE,Q-${suffix}/NOPE\n` +
+        // The code alone names no stage: there are two OPEN.
+        `P-${suffix},SOON,OPEN\n`,
+    );
+    expect(done).toMatchObject({ rows: 3, imported: 1, failed: 2 });
+    const report = (
+      await app.inject({ method: 'GET', url: local(done.errorsUrl!) })
+    ).body;
+    expect(report).toContain(
+      `2,nextId,"No test stage whose test item code/code is ""Q-${suffix}/NOPE""."`,
+    );
+    expect(report).toContain(`3,nextId,`);
+
+    const started = await app.inject({
+      method: 'POST',
+      url: '/v1/data/exports',
+      headers,
+      payload: { name: 'test-stages', format: 'csv' },
+    });
+    expect(started.statusCode, started.body).toBe(202);
+    const csv = await settled(started.json<{ id: string }>().id, headers);
+    const [header, ...rows] = (
+      await app.inject({ method: 'GET', url: local(csv.result!.url!) })
+    ).body
+      .replace(/^\u{feff}/u, '')
+      .trim()
+      .split('\r\n')
+      .map((line) => line.split(','));
+    const at = (name: string) => header!.indexOf(name);
+    const written = rows.find((row) => row[at('code')] === 'DONE')!;
+    expect(written[at('itemId')]).toBe(`P-${suffix}`);
+    expect(written[at('nextId')]).toBe(`P-${suffix}/OPEN`);
   });
 
   it('names the owner and the unit in an export, not their ids', async () => {

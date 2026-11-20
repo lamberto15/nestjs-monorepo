@@ -142,6 +142,75 @@ export const recordKeyField = (declaration: RecordDeclaration) =>
       !(field as AnyField).options.uniqueWithin,
   )?.[0] ?? null;
 
+/** Between the keys of a path: `QWERT/HL/PTP`. */
+export const KEY_SEPARATOR = '/';
+
+/** Parents a key path names above a record at most: a ring of references still ends. */
+const MAX_KEY_PARENTS = 4;
+
+/**
+ * How files name a record: its key field (recordKeyField()), or, for a
+ * record whose code is unique within its parent only (recordParentField()),
+ * that code after its parent's key, a path: `QWERT/HL/PTP` is the status
+ * PTP of the product HL of the bank QWERT.
+ */
+export interface RecordKey {
+  declaration: RecordDeclaration;
+  table: Record<string, AnyPgColumn>;
+  /** The record's own part of the key. */
+  field: string;
+  int: boolean;
+  /** The parent reference and its record's key, for a path. */
+  parent?: { field: string; key: RecordKey };
+  /** What people call it: `code`, or a path's `bank code/product code/code`. */
+  label: string;
+}
+
+/** A record's key in files (RecordKey), or null: files keep its id. */
+export function recordKey(
+  declaration: RecordDeclaration,
+  depth = 0,
+): RecordKey | null {
+  const table = TABLES.get(declaration) as
+    Record<string, AnyPgColumn> | undefined;
+  if (!table) return null;
+  const kind = (name: string) =>
+    (declaration.fields[name] as AnyField | undefined)?.kind;
+  const own = recordKeyField(declaration);
+  if (own) {
+    return {
+      declaration,
+      table,
+      field: own,
+      int: kind(own) === 'int',
+      label: own,
+    };
+  }
+  const parentField = recordParentField(declaration);
+  if (!parentField || depth >= MAX_KEY_PARENTS) return null;
+  const field = Object.entries(declaration.fields).find(
+    ([, f]) =>
+      ['string', 'int'].includes((f as AnyField).kind) &&
+      (f as AnyField).options.uniqueWithin === parentField,
+  )?.[0];
+  const target = (declaration.fields[parentField] as AnyField).options.ref?.();
+  const parent = target && declarationOfTable(target);
+  const parentKey = parent && recordKey(parent, depth + 1);
+  if (!field || !parentKey) return null;
+  return {
+    declaration,
+    table,
+    field,
+    int: kind(field) === 'int',
+    parent: { field: parentField, key: parentKey },
+    label: `${named(parentKey)}${KEY_SEPARATOR}${field}`,
+  };
+}
+
+/** A key's parts with their nouns: `bank code/product code`. */
+const named = (key: RecordKey): string =>
+  `${key.parent ? `${named(key.parent.key)}${KEY_SEPARATOR}` : ''}${key.declaration.noun} ${key.field}`;
+
 /**
  * Empties the optional references to these records of `subject`, live or
  * in the recycle bin, just before they are deleted for good, in the

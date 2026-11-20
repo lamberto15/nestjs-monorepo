@@ -27,9 +27,12 @@ The columns are:
 
 - the id and every field. Money is written as `12.50 EUR`. Date-times are
   in the reader's zone, named in the header. A reference is written as its
-  record's key, the first field of it unique on its own (a code, a number:
-  `recordKeyField()`), else as its id, and as its id when the caller may not
-  read that record.
+  record's key (`recordKey()`): the first field of it unique on its own (a
+  code, a number), or, for a record whose code is unique within its parent
+  only (`unique({ within: 'productId' })`), a path of keys, the parent's
+  first: `QWERT/HL/PTP` (the status PTP of the product HL of the bank QWERT).
+  Else, and when the caller may not read that record or one of its parents,
+  or a part holds a `/`, as its id.
 - what the add-ons show (`tags`, `number`);
 - the tenant's custom fields, one column each, `custom.<key>` (multiple choices comma-separated);
 - the owner by name (`@ActorNameSource()`, modules/people; its key without
@@ -52,7 +55,9 @@ has a frozen header and date cells.
 A reference's cell takes its record's key or its id: a key is looked up
 once per import among the live records the caller may read, and one none of
 them holds is that row's error (`No customer whose code is "X".`), as one
-they may not read. An export is imported back as it is.
+they may not read. A path (`QWERT/HL/PTP`) is looked up a part at a time,
+each within the one before it; the code alone (`PTP`) names no record that
+has a parent. An export is imported back as it is.
 
 A file may have `custom.<key>` columns: they are put in the row's `custom` and checked by the record's own write (a bad value is that row's error); a dry run, which writes nothing, checks them the same way (the add-on's `importCheck()`).
 

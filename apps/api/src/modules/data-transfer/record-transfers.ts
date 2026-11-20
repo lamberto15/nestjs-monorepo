@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { List, ListQuery } from '../../core/http/list-query.js';
 import { cursorValues } from '../../core/http/list-sort.js';
@@ -29,7 +29,9 @@ import {
 } from '../records/record.js';
 import {
   declarationOfTable,
-  recordKeyField,
+  KEY_SEPARATOR,
+  type RecordKey,
+  recordKey,
 } from '../records/record-relations.js';
 import { assertWritableFields } from '../records/record.routes.js';
 import {
@@ -239,24 +241,104 @@ export class RecordTransfers implements OnModuleInit {
         ),
       ];
       if (!ids.length) continue;
-      const found = await this.txHost.tx
-        .select({ id: ref.table.id!, key: ref.key })
-        .from(ref.table as unknown as PgTable)
-        .where(
-          and(
-            inArray(ref.table.id!, ids),
-            await this.access.sqlFilter(principal, ref.subject, 'read'),
-          ),
-        );
-      const keys = new Map(
-        found.flatMap((row) => (row.key == null ? [] : [[row.id, row.key]])),
-      );
+      const keys = await this.keysOf(principal, ref.key, ids);
       for (const row of page) {
         const key = keys.get(row[ref.field] as string);
         if (key !== undefined) row[ref.field] = key;
       }
     }
     return page;
+  }
+
+  /**
+   * The keys of these ids (recordKey()), among the records the principal
+   * may read: a path's parents too, one query a level. An id left out
+   * (unreadable, no key, a parent unreadable or none, a part holding the
+   * separator) keeps its id in the file.
+   */
+  private async keysOf(
+    principal: Principal,
+    key: RecordKey,
+    ids: readonly string[],
+  ): Promise<Map<string, string | number>> {
+    const { table, parent } = key;
+    const rows = (await this.txHost.tx
+      .select({
+        id: table.id!,
+        key: table[key.field]!,
+        ...(parent && { parent: table[parent.field]! }),
+      })
+      .from(table as unknown as PgTable)
+      .where(
+        and(
+          inArray(table.id!, [...new Set(ids)]),
+          await this.access.sqlFilter(
+            principal,
+            key.declaration.subject,
+            'read',
+          ),
+        ),
+      )) as { id: string; key: string | number | null; parent?: unknown }[];
+    const parents = parent
+      ? await this.keysOf(
+          principal,
+          parent.key,
+          rows.flatMap((row) =>
+            typeof row.parent === 'string' ? [row.parent] : [],
+          ),
+        )
+      : undefined;
+    const keys = new Map<string, string | number>();
+    for (const row of rows) {
+      if (row.key == null) continue;
+      if (!parents) {
+        keys.set(row.id, row.key);
+        continue;
+      }
+      const above = parents.get(row.parent as string);
+      const own = String(row.key);
+      if (above === undefined || own.includes(KEY_SEPARATOR)) continue;
+      keys.set(row.id, `${String(above)}${KEY_SEPARATOR}${own}`);
+    }
+    return keys;
+  }
+
+  /**
+   * The id of the live record the principal may read whose key is
+   * `value` (a path's parts, the parent's first), or null.
+   */
+  private async idOf(
+    principal: Principal,
+    key: RecordKey,
+    parts: readonly string[],
+  ): Promise<string | null> {
+    const depth = (k: RecordKey): number =>
+      k.parent ? depth(k.parent.key) + 1 : 0;
+    if (parts.length !== depth(key) + 1) return null;
+    const own = parts[parts.length - 1]!;
+    const { table, parent } = key;
+    const parentId = parent
+      ? await this.idOf(principal, parent.key, parts.slice(0, -1))
+      : undefined;
+    if (parentId === null) return null;
+    if (key.int && !/^-?\d+$/.test(own)) return null;
+    const [row] = await this.txHost.tx
+      .select({ id: table.id! })
+      .from(table as unknown as PgTable)
+      .where(
+        and(
+          eq(table[key.field]!, key.int ? Number(own) : own),
+          parent ? eq(table[parent.field]!, parentId!) : undefined,
+          table.deletedAt ? isNull(table.deletedAt) : undefined,
+          await this.access.sqlFilter(
+            principal,
+            key.declaration.subject,
+            'read',
+          ),
+        ),
+      )
+      .limit(1);
+    return (row?.id as string | undefined) ?? null;
   }
 
   /**
@@ -335,25 +417,15 @@ export class RecordTransfers implements OnModuleInit {
         const keys = known.get(ref.field) ?? new Map<string, string | null>();
         known.set(ref.field, keys);
         if (!keys.has(value)) {
-          const [row] = await this.txHost.tx
-            .select({ id: ref.table.id! })
-            .from(ref.table as unknown as PgTable)
-            .where(
-              and(
-                eq(ref.key, ref.int ? Number(value) : value),
-                ref.table.deletedAt ? isNull(ref.table.deletedAt) : undefined,
-                await this.access.sqlFilter(principal, ref.subject, 'read'),
-              ),
-            )
-            .limit(1);
-          keys.set(value, (row?.id as string | undefined) ?? null);
+          const parts = ref.key.parent ? value.split(KEY_SEPARATOR) : [value];
+          keys.set(value, await this.idOf(principal, ref.key, parts));
         }
         const id = keys.get(value);
         if (id) body[ref.field] = id;
         else
           issues.push({
             path: ref.field,
-            message: `No ${ref.noun} whose ${ref.keyName} is "${value}".`,
+            message: `No ${ref.noun} whose ${ref.key.label} is "${value}".`,
           });
       }
       return issues;
@@ -388,7 +460,7 @@ export class RecordTransfers implements OnModuleInit {
           return ref
             ? {
                 ...column,
-                description: `The ${ref.noun}'s ${ref.keyName}, or its id.`,
+                description: `The ${ref.noun}'s ${ref.key.label}, or its id.`,
               }
             : column;
         }),
@@ -539,27 +611,14 @@ export class RecordTransfers implements OnModuleInit {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type KeyedTable = Record<string, AnyPgColumn>;
-
-/** The record's reference fields to records with a key (recordKeyField()): what files name by it. */
+/** The record's reference fields to records with a key (recordKey()): what files name by it. */
 function references(declaration: RecordDeclaration) {
   return Object.entries(declaration.fields).flatMap(([field, f]) => {
     const target = (f as AnyField).options.ref?.();
     const to = target && declarationOfTable(target);
-    const keyName = to && recordKeyField(to);
-    if (!to || !keyName) return [];
-    const table = target as unknown as KeyedTable;
-    return [
-      {
-        field,
-        subject: to.subject,
-        noun: to.noun,
-        keyName,
-        key: table[keyName]!,
-        int: to.fields[keyName]!.kind === 'int',
-        table,
-      },
-    ];
+    const key = to && recordKey(to);
+    if (!to || !key) return [];
+    return [{ field, noun: to.noun, key }];
   });
 }
 
