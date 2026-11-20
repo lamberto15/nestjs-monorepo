@@ -81,6 +81,8 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+# The API's development build (apps/api/tsconfig.dev.json)
+dist-dev
 .output
 
 # NitroJS
