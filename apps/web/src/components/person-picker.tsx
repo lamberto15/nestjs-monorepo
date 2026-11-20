@@ -33,6 +33,8 @@ export function PersonPicker(props: {
   const [term, setTerm] = useState('');
   const found = useQuery({
     ...peopleQuery(term),
+    // Disabled: nothing to offer, nothing asked.
+    enabled: !props.disabled,
     placeholderData: keepPreviousData,
     retry: false,
     meta: { errorToast: false },

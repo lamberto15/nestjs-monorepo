@@ -62,6 +62,10 @@ describe('RecordField', () => {
     await waitFor(() => expect(substatus()).toBeEnabled());
     await userEvent.click(substatus());
     expect(await screen.findByRole('option', { name: /Called/ })).toBeVisible();
-    expect(asked.at(-1)?.get('statusId')).toBe(OPEN);
+    // It never searched while it waited: no request for every status's substatuses.
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.map((query) => query.get('statusId'))).toEqual(
+      asked.map(() => OPEN),
+    );
   });
 });

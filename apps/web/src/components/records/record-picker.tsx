@@ -53,6 +53,8 @@ export function RecordPicker(props: {
   const [term, setTerm] = useState('');
   const found = useQuery({
     ...recordSearchQuery(props.subject, term, props.filter),
+    // Disabled (waiting for another field): nothing to offer, nothing asked.
+    enabled: !props.disabled,
     placeholderData: keepPreviousData,
   });
   const names = useRecordNames(props.subject, [props.value]);
