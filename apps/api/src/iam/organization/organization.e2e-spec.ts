@@ -17,11 +17,7 @@ import { definePermissions } from '../access/permissions.js';
 import { auditLog } from '../audit/audit.tables.js';
 import type { Principal } from '../auth/principal.js';
 import { organizationalUnits } from './organization.tables.js';
-import {
-  inMyUnits,
-  inMyUnitsAndBelow,
-  inUnitsILeadAndBelow,
-} from './unit-conditions.js';
+import { UNIT_CONDITION_KEYS, unitConditions } from './unit-conditions.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
@@ -37,16 +33,8 @@ vi.hoisted(() => {
       definePermissions({
         subjects: {
           TestUnit: {
-            actions: {
-              read: ['inMyUnits', 'inMyUnitsAndBelow', 'inUnitsILeadAndBelow'],
-            },
-            conditions: {
-              inMyUnits: inMyUnits(organizationalUnits.id),
-              inMyUnitsAndBelow: inMyUnitsAndBelow(organizationalUnits.id),
-              inUnitsILeadAndBelow: inUnitsILeadAndBelow(
-                organizationalUnits.id,
-              ),
-            },
+            actions: { read: [...UNIT_CONDITION_KEYS] },
+            conditions: unitConditions(organizationalUnits.id),
           },
         },
       }),
@@ -163,6 +151,13 @@ describe('organizational units (e2e)', () => {
     expect(await memberOf('inMyUnitsAndBelow', northEast)).toEqual([
       'North East',
     ]);
+    // Up the tree: what a parent holds reaches its teams' members, never a sibling's.
+    expect(await memberOf('inMyUnitsAndAbove', northEast)).toEqual([
+      'North',
+      'North East',
+      'Sales',
+    ]);
+    expect(await memberOf('inMyUnitsAndAbove', sales)).toEqual(['Sales']);
   });
 
   it('grants inUnitsILeadAndBelow to leads only, until their membership ends; previews a change without making it', async () => {
@@ -211,6 +206,7 @@ describe('organizational units (e2e)', () => {
           name: 'Test User',
           email: promoted.email,
           andBelow: { gains: [], loses: [] },
+          andAbove: { gains: [], loses: [] },
           ledAndBelow: {
             gains: expect.arrayContaining([north, northEast]),
             loses: [],
@@ -402,6 +398,13 @@ describe('organizational units (e2e)', () => {
       userId: southLead.id,
       role: 'lead',
     });
+    // A member below the moved unit: what is above them changes too.
+    const eastMember = await member(app, tenantId, [
+      await readingWith(admin.headers, 'inMyUnitsAndAbove'),
+    ]);
+    await call('POST', `${URL}/${northEast}/members`, admin.headers, {
+      userId: eastMember.id,
+    });
     const impact = (status: number) =>
       call('POST', `${URL}/${north}/impact`, admin.headers, {
         parentId: south,
@@ -429,6 +432,16 @@ describe('organizational units (e2e)', () => {
       },
     });
     expect(await reach(tenantId, southLead.id)).toEqual(['South']);
+    expect(
+      previewed.changes.find(
+        (change: { userId: string }) => change.userId === eastMember.id,
+      ),
+    ).toMatchObject({ andAbove: { gains: [south], loses: [] } });
+    expect(await reach(tenantId, eastMember.id)).toEqual([
+      'North',
+      'North East',
+      'Sales',
+    ]);
     expect(
       (
         await call('PATCH', `${URL}/${north}`, admin.headers, {

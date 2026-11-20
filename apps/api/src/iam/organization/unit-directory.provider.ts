@@ -55,7 +55,7 @@ export class OrganizationUnitDirectory implements Directory {
     };
   }
 
-  /** A user's units, those and below, and those they lead and below, at `now`. */
+  /** A user's units, those and below, those and above, and those they lead and below, at `now`. */
   async unitContext(userId: string, now = new Date()): Promise<AccessContext> {
     const ids = async (options: UnitsOfOptions) =>
       (
@@ -68,8 +68,14 @@ export class OrganizationUnitDirectory implements Directory {
       ).map((row) => row.id);
     const directUnitIds = await ids({});
     const unitIdsAndBelow = await ids({ below: true });
+    const unitIdsAndAbove = await ids({ above: true });
     const ledUnitIdsAndBelow = await ids({ below: true, role: 'lead' });
-    return { directUnitIds, unitIdsAndBelow, ledUnitIdsAndBelow };
+    return {
+      directUnitIds,
+      unitIdsAndBelow,
+      unitIdsAndAbove,
+      ledUnitIdsAndBelow,
+    };
   }
 
   async unitIdsOf(userIds: readonly string[]) {

@@ -261,7 +261,8 @@ export class OrganizationService implements OnModuleInit {
    * What a change of the unit would change, without making it: the change
    * runs (its checks, its 404s and 409s) in a transaction rolled back. Only
    * the members of the units above it, before and after, can gain or lose
-   * reach: a move takes the units under it along.
+   * reach below (a move takes the units under it along), and the members
+   * of it and the units under it reach above (`inMyUnitsAndAbove`).
    */
   previewUpdate(actor: UserPrincipal, id: string, changes: UnitChanges) {
     const member = organizationalUnitMemberships;
@@ -275,6 +276,9 @@ export class OrganizationService implements OnModuleInit {
               currentMembership(),
               or(
                 inArray(member.unitId, this.tree.ancestors(id)),
+                changes.parentId !== undefined
+                  ? inArray(member.unitId, this.tree.descendants(id))
+                  : undefined,
                 changes.parentId
                   ? inArray(
                       member.unitId,
@@ -567,8 +571,8 @@ export class OrganizationService implements OnModuleInit {
   }
 
   /**
-   * Who gains or loses reach under `inMyUnitsAndBelow` and
-   * `inUnitsILeadAndBelow` if `apply` ran: each user's units are read as
+   * Who gains or loses reach under `inMyUnitsAndBelow`,
+   * `inMyUnitsAndAbove` and `inUnitsILeadAndBelow` if `apply` ran: each user's units are read as
    * the unit conditions read them, before and after `apply`, in one
    * transaction that is then rolled back, so nothing changes and nothing
    * is audited. The first IMPACT_USERS_LIMIT users only (`truncated`).
@@ -606,12 +610,16 @@ export class OrganizationService implements OnModuleInit {
             before[i]!.unitIdsAndBelow,
             after[i]!.unitIdsAndBelow,
           );
+          const andAbove = diff(
+            before[i]!.unitIdsAndAbove,
+            after[i]!.unitIdsAndAbove,
+          );
           const ledAndBelow = diff(
             before[i]!.ledUnitIdsAndBelow,
             after[i]!.ledUnitIdsAndBelow,
           );
           const person = people.find((row) => row.id === id);
-          return [andBelow, ledAndBelow].some(
+          return [andBelow, andAbove, ledAndBelow].some(
             (change) => change.gains.length || change.loses.length,
           )
             ? [
@@ -620,6 +628,7 @@ export class OrganizationService implements OnModuleInit {
                   name: person?.name ?? '',
                   email: person?.email ?? '',
                   andBelow,
+                  andAbove,
                   ledAndBelow,
                 },
               ]

@@ -34,8 +34,37 @@ export const inMyUnitsAndBelow = unitCondition(
   (context) => context.unitIdsAndBelow,
 );
 
+/**
+ * The user's units and every unit above them: what a parent unit holds
+ * (a pool, a catalog, a queue kept at "Sales") reaches the members of
+ * "Sales / North / Team 1" too.
+ */
+export const inMyUnitsAndAbove = unitCondition(
+  'inMyUnitsAndAbove',
+  (context) => context.unitIdsAndAbove,
+);
+
 /** The units the user currently leads and every unit below them. */
 export const inUnitsILeadAndBelow = unitCondition(
   'inUnitsILeadAndBelow',
   (context) => context.ledUnitIdsAndBelow,
 );
+
+/**
+ * Every unit condition on one column, by its key: a record with a unit
+ * offers them all (recordPermissions(), its `share` action).
+ */
+export const unitConditions = (column: AnyPgColumn) => ({
+  inMyUnits: inMyUnits(column),
+  inMyUnitsAndBelow: inMyUnitsAndBelow(column),
+  inMyUnitsAndAbove: inMyUnitsAndAbove(column),
+  inUnitsILeadAndBelow: inUnitsILeadAndBelow(column),
+});
+
+/** The keys of unitConditions(), for an action's list of conditions. */
+export const UNIT_CONDITION_KEYS = [
+  'inMyUnits',
+  'inMyUnitsAndBelow',
+  'inMyUnitsAndAbove',
+  'inUnitsILeadAndBelow',
+] as const;

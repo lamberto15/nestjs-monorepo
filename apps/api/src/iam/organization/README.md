@@ -7,7 +7,9 @@ history), and the routes under `/v1/access/organizational-units`
 
 - **Unit conditions** for a subject whose rows carry a unit:
   `inMyUnits(column)`, `inMyUnitsAndBelow(column)`,
-  `inUnitsILeadAndBelow(column)` (`unit-conditions.ts`). They read the
+  `inMyUnitsAndAbove(column)` (what a parent unit holds reaches the members
+  of the units below it), `inUnitsILeadAndBelow(column)`, or all of them
+  with `unitConditions(column)` (`unit-conditions.ts`). They read the
   units loaded with the principal's permissions; API clients and system
   jobs have none.
 - **What access reads** of the units comes from `OrganizationUnitDirectory`

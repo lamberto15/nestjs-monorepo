@@ -106,6 +106,14 @@ export class UnitTree {
       .where(eq(this.closure.descendantId, id));
   }
 
+  /** The ids at or below this unit, as a subquery: `inArray(column, tree.descendants(id))`. */
+  descendants(id: string) {
+    return subquery
+      .select({ id: this.closure.descendantId })
+      .from(this.closure)
+      .where(eq(this.closure.ancestorId, id));
+  }
+
   /**
    * One change of the tree at a time, until the transaction ends. An
    * advisory lock: Drizzle has no API for it.

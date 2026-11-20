@@ -8,9 +8,8 @@ import {
   type SystemJobDefinition,
 } from '../../iam/access/permissions.js';
 import {
-  inMyUnits,
-  inMyUnitsAndBelow,
-  inUnitsILeadAndBelow,
+  UNIT_CONDITION_KEYS,
+  unitConditions,
 } from '../../iam/organization/unit-conditions.js';
 import type { RecordDeclaration } from './record.js';
 
@@ -41,7 +40,7 @@ export const recordActions = (declaration: RecordDeclaration) => [
 /**
  * A record's permissions (definePermissions, iam/access), from its
  * declaration: the condition `mine` (and with units `inMyUnits`,
- * `inMyUnitsAndBelow`, `inUnitsILeadAndBelow`), each written once as column
+ * `inMyUnitsAndBelow`, `inMyUnitsAndAbove`, `inUnitsILeadAndBelow`), each written once as column
  * and value; the actions read, create, update, delete (and restore with a
  * recycle bin); the recycle bin's `deletedAt`; with `clientAccess: 'own'`
  * an API client's own records; the seed roles' grants (`grants`). Register
@@ -62,9 +61,7 @@ export function recordPermissions(
     unitId?: AnyPgColumn;
     deletedAt?: AnyPgColumn;
   };
-  const read = declaration.unit
-    ? ['mine', 'inMyUnits', 'inMyUnitsAndBelow', 'inUnitsILeadAndBelow']
-    : ['mine'];
+  const read = declaration.unit ? ['mine', ...UNIT_CONDITION_KEYS] : ['mine'];
   const own = (action: string): PermissionInput => ({
     subject,
     action,
@@ -84,11 +81,7 @@ export function recordPermissions(
         },
         conditions: {
           mine: createdBy(t.ownerId),
-          ...(declaration.unit && {
-            inMyUnits: inMyUnits(t.unitId!),
-            inMyUnitsAndBelow: inMyUnitsAndBelow(t.unitId!),
-            inUnitsILeadAndBelow: inUnitsILeadAndBelow(t.unitId!),
-          }),
+          ...(declaration.unit && unitConditions(t.unitId!)),
           ...options.conditions,
         },
         ...(options.fields && { fields: options.fields }),

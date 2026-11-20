@@ -17,6 +17,10 @@
         "label": "In my units and below",
         "description": "Only records of the units I belong to, and of the units below them."
       },
+      "inMyUnitsAndAbove": {
+        "label": "In my units and above",
+        "description": "Only records of the units I belong to, and of the units above them."
+      },
       "inUnitsILeadAndBelow": {
         "label": "In units I lead and below",
         "description": "Only records of the units I lead, and of the units below them."

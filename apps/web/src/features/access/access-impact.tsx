@@ -4,8 +4,8 @@ import type { AccessImpact, Unit } from '@/features/access/api';
 /**
  * What a preview says (`POST …/impact`, docs/permissions.md "Organization
  * structure"), for a confirmation: each person whose reach would change,
- * with the units they would gain or lose under "my units and below" and
- * "units I lead and below", one line each.
+ * with the units they would gain or lose under "my units and below", "my
+ * units and above" and "units I lead and below", one line each.
  */
 export function ImpactSummary(props: {
   impact: AccessImpact;
@@ -21,6 +21,7 @@ export function ImpactSummary(props: {
     const parts = (
       [
         ['andBelow', change.andBelow],
+        ['andAbove', change.andAbove],
         ['ledAndBelow', change.ledAndBelow],
       ] as const
     ).flatMap(([reach, { gains, loses }]) => [

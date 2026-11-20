@@ -201,10 +201,11 @@ export const explanationSchema = z.object({
     .object({
       direct: z.array(z.uuid()),
       andBelow: z.array(z.uuid()),
+      andAbove: z.array(z.uuid()),
       ledAndBelow: z.array(z.uuid()),
     })
     .describe(
-      'Their current units, as `inMyUnits`, `inMyUnitsAndBelow` and `inUnitsILeadAndBelow` read them.',
+      'Their current units, as `inMyUnits`, `inMyUnitsAndBelow`, `inMyUnitsAndAbove` and `inUnitsILeadAndBelow` read them.',
     ),
   actions: z.array(
     z.object({

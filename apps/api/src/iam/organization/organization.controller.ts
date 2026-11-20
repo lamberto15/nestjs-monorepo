@@ -119,6 +119,9 @@ const impactSchema = z.object({
         andBelow: reachChangeSchema.describe(
           'What `inMyUnitsAndBelow` would reach.',
         ),
+        andAbove: reachChangeSchema.describe(
+          'What `inMyUnitsAndAbove` would reach.',
+        ),
         ledAndBelow: reachChangeSchema.describe(
           'What `inUnitsILeadAndBelow` would reach.',
         ),

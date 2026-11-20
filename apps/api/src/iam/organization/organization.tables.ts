@@ -28,7 +28,7 @@ export type UnitRole = (typeof UNIT_ROLES)[number];
  * The organization structure of a tenant: one tree of units (divisions,
  * departments, teams, in any order, at any depth). Users belong to units;
  * records can carry the unit that owns them, and the unit conditions
- * (`inMyUnits`, `inMyUnitsAndBelow`, `inUnitsILeadAndBelow`) grant what is
+ * (`inMyUnits`, `inMyUnitsAndBelow`, `inMyUnitsAndAbove`, `inUnitsILeadAndBelow`) grant what is
  * in them. A unit's name is unique among its siblings, ignoring case.
  */
 export const organizationalUnits = tenantTable(

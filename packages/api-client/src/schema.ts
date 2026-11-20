@@ -9262,10 +9262,11 @@ export interface operations {
                             /** @description An ended grant: it counts for nothing. */
                             expired: boolean;
                         }[];
-                        /** @description Their current units, as `inMyUnits`, `inMyUnitsAndBelow` and `inUnitsILeadAndBelow` read them. */
+                        /** @description Their current units, as `inMyUnits`, `inMyUnitsAndBelow`, `inMyUnitsAndAbove` and `inUnitsILeadAndBelow` read them. */
                         units: {
                             direct: string[];
                             andBelow: string[];
+                            andAbove: string[];
                             ledAndBelow: string[];
                         };
                         actions: {
@@ -9839,6 +9840,13 @@ export interface operations {
                                 /** @description Units they reach now and would not. */
                                 loses: string[];
                             };
+                            /** @description What `inMyUnitsAndAbove` would reach. */
+                            andAbove: {
+                                /** @description Units they would reach and do not now. */
+                                gains: string[];
+                                /** @description Units they reach now and would not. */
+                                loses: string[];
+                            };
                             /** @description What `inUnitsILeadAndBelow` would reach. */
                             ledAndBelow: {
                                 /** @description Units they would reach and do not now. */
@@ -10124,6 +10132,13 @@ export interface operations {
                             email: string;
                             /** @description What `inMyUnitsAndBelow` would reach. */
                             andBelow: {
+                                /** @description Units they would reach and do not now. */
+                                gains: string[];
+                                /** @description Units they reach now and would not. */
+                                loses: string[];
+                            };
+                            /** @description What `inMyUnitsAndAbove` would reach. */
+                            andAbove: {
                                 /** @description Units they would reach and do not now. */
                                 gains: string[];
                                 /** @description Units they reach now and would not. */

@@ -107,7 +107,7 @@ with just the permissions their `defineSystemJob()` declares.
 
 A tenant's tree of divisions, departments and teams, with dated memberships:
 [iam/organization](../apps/api/src/iam/organization/README.md), `/v1/access/organizational-units`.
-The unit conditions (`inMyUnits`, `inMyUnitsAndBelow`,
+The unit conditions (`inMyUnits`, `inMyUnitsAndBelow`, `inMyUnitsAndAbove`,
 `inUnitsILeadAndBelow`) let a permission apply to records of the caller's
 units. Units the identity provider manages through SCIM cannot be changed by
 hand. [modules/people](../apps/api/src/modules/people/README.md) lists people and units for

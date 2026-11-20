@@ -129,6 +129,7 @@ export class ExplanationService implements OnModuleInit {
       units: {
         direct: explanation.context.directUnitIds,
         andBelow: explanation.context.unitIdsAndBelow,
+        andAbove: explanation.context.unitIdsAndAbove,
         ledAndBelow: explanation.context.ledUnitIdsAndBelow,
       },
       actions: explanation.actions.map((action) => ({

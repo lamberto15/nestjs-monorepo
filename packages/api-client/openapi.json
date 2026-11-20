@@ -2504,6 +2504,14 @@
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                           }
                         },
+                        "andAbove": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          }
+                        },
                         "ledAndBelow": {
                           "type": "array",
                           "items": {
@@ -2516,10 +2524,11 @@
                       "required": [
                         "direct",
                         "andBelow",
+                        "andAbove",
                         "ledAndBelow"
                       ],
                       "additionalProperties": false,
-                      "description": "Their current units, as `inMyUnits`, `inMyUnitsAndBelow` and `inUnitsILeadAndBelow` read them."
+                      "description": "Their current units, as `inMyUnits`, `inMyUnitsAndBelow`, `inMyUnitsAndAbove` and `inUnitsILeadAndBelow` read them."
                     },
                     "actions": {
                       "type": "array",
@@ -3776,6 +3785,35 @@
                             "additionalProperties": false,
                             "description": "What `inMyUnitsAndBelow` would reach."
                           },
+                          "andAbove": {
+                            "type": "object",
+                            "properties": {
+                              "gains": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "description": "Units they would reach and do not now."
+                              },
+                              "loses": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "description": "Units they reach now and would not."
+                              }
+                            },
+                            "required": [
+                              "gains",
+                              "loses"
+                            ],
+                            "additionalProperties": false,
+                            "description": "What `inMyUnitsAndAbove` would reach."
+                          },
                           "ledAndBelow": {
                             "type": "object",
                             "properties": {
@@ -3811,6 +3849,7 @@
                           "name",
                           "email",
                           "andBelow",
+                          "andAbove",
                           "ledAndBelow"
                         ],
                         "additionalProperties": false
@@ -4386,6 +4425,35 @@
                             "additionalProperties": false,
                             "description": "What `inMyUnitsAndBelow` would reach."
                           },
+                          "andAbove": {
+                            "type": "object",
+                            "properties": {
+                              "gains": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "description": "Units they would reach and do not now."
+                              },
+                              "loses": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "description": "Units they reach now and would not."
+                              }
+                            },
+                            "required": [
+                              "gains",
+                              "loses"
+                            ],
+                            "additionalProperties": false,
+                            "description": "What `inMyUnitsAndAbove` would reach."
+                          },
                           "ledAndBelow": {
                             "type": "object",
                             "properties": {
@@ -4421,6 +4489,7 @@
                           "name",
                           "email",
                           "andBelow",
+                          "andAbove",
                           "ledAndBelow"
                         ],
                         "additionalProperties": false

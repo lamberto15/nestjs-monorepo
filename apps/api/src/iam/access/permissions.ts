@@ -22,6 +22,8 @@ export interface AccessContext {
   directUnitIds: readonly string[];
   /** Those, and every unit below them. */
   unitIdsAndBelow: readonly string[];
+  /** Those, and every unit above them (their parent, its parent, up to the top). */
+  unitIdsAndAbove: readonly string[];
   /** The units it currently leads, and every unit below them. */
   ledUnitIdsAndBelow: readonly string[];
 }
@@ -30,6 +32,7 @@ export interface AccessContext {
 export const NO_UNITS: AccessContext = Object.freeze({
   directUnitIds: [],
   unitIdsAndBelow: [],
+  unitIdsAndAbove: [],
   ledUnitIdsAndBelow: [],
 });
 

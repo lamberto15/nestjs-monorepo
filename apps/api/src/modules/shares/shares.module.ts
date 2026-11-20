@@ -28,6 +28,7 @@ import { httpConfig } from '../../core/http/http.config.js';
 import { MailModule } from '../../core/mail/mail.module.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { definePermissions } from '../../iam/access/permissions.js';
+import { UNIT_CONDITION_KEYS } from '../../iam/organization/unit-conditions.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
 import { AttachmentsModule } from '../attachments/attachments.module.js';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
@@ -87,7 +88,7 @@ const sharePermissions = (record: RecordDeclaration) =>
       [record.subject]: {
         actions: {
           [SHARE_ACTION]: record.unit
-            ? ['mine', 'inMyUnits', 'inMyUnitsAndBelow', 'inUnitsILeadAndBelow']
+            ? ['mine', ...UNIT_CONDITION_KEYS]
             : ['mine'],
         },
       },

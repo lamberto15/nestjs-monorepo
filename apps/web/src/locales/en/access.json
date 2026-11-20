@@ -334,6 +334,10 @@
         "gains": "gains {{units}} (my units and below)",
         "loses": "loses {{units}} (my units and below)"
       },
+      "andAbove": {
+        "gains": "gains {{units}} (my units and above)",
+        "loses": "loses {{units}} (my units and above)"
+      },
       "ledAndBelow": {
         "gains": "gains {{units}} (units I lead and below)",
         "loses": "loses {{units}} (units I lead and below)"

@@ -120,6 +120,7 @@ describe('conditions: one declaration, two forms (e2e)', () => {
       context = {
         directUnitIds: [parentA!.id],
         unitIdsAndBelow: [parentA!.id, parentB!.id],
+        unitIdsAndAbove: [parentA!.id],
         ledUnitIdsAndBelow: [],
       };
       return db().select().from(tenantItems);

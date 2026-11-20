@@ -6,9 +6,13 @@ import {
   type UnitRole,
 } from './organization.tables.js';
 
-/** Which of a user's units: `below` adds every unit under them, `role` keeps those they hold that role in. */
+/**
+ * Which of a user's units: `below` adds every unit under them, `above`
+ * every unit over them (not both), `role` keeps those they hold that role in.
+ */
 export interface UnitsOfOptions {
   below?: boolean;
+  above?: boolean;
   role?: UnitRole;
 }
 
@@ -48,10 +52,18 @@ export function unitIdsOf(
     currentMembership(at),
     options.role ? eq(member.role, options.role) : undefined,
   );
+  const tree = organizationalUnitClosure;
+  if (options.above) {
+    // Their units and each one over them: the closure holds a unit as its own ancestor.
+    return subquery
+      .select({ id: tree.ancestorId })
+      .from(tree)
+      .innerJoin(member, eq(member.unitId, tree.descendantId))
+      .where(current);
+  }
   if (!options.below) {
     return subquery.select({ id: member.unitId }).from(member).where(current);
   }
-  const tree = organizationalUnitClosure;
   return subquery
     .select({ id: tree.descendantId })
     .from(tree)
