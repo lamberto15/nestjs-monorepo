@@ -13,7 +13,14 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { compare, parseEnv, setValue, valueOf } from './envfile.mjs';
-import { DEV_WEB_URL, KEY_LISTS, plan, run } from './setup.mjs';
+import {
+  DEV_WEB_URL,
+  devServices,
+  KEY_LISTS,
+  plan,
+  run,
+  withValues,
+} from './setup.mjs';
 
 const REPO = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -189,6 +196,73 @@ test('the real template: setup in a sandbox ends with a passing check', () => {
     const io = quiet();
     assert.equal(run(['--root', root], io), 0, io.lines.join('\n'));
     assert.ok(!io.lines.some((l) => l.startsWith('WARNING')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('--dev-ports: a second project gets its own compose project and ports, and its API points at them', () => {
+  const root = sandbox(real);
+  try {
+    writeFileSync(path.join(root, '.env'), 'NESTRIX_ADMIN_PASSWORD=mine\n');
+    const io = quiet();
+    assert.equal(
+      run(['--root', root, '--dev-ports', '1'], io),
+      0,
+      io.lines.join('\n'),
+    );
+    const compose = readFileSync(path.join(root, '.env'), 'utf8');
+    // What was there stays; compose.dev.yaml's variables are added.
+    assert.match(compose, /^NESTRIX_ADMIN_PASSWORD=mine$/m);
+    assert.match(compose, /^COMPOSE_PROJECT_NAME=setup-test-[a-z0-9]+-dev$/m);
+    assert.match(compose, /^POSTGRES_PORT=5433$/m);
+    assert.match(compose, /^REDIS_PORT=6380$/m);
+    const api = readFileSync(path.join(root, 'apps/api/.env'), 'utf8');
+    assert.equal(
+      valueOf(api, 'DATABASE_URL'),
+      'postgres://app_runtime:app_runtime@127.0.0.1:5433/app',
+    );
+    assert.equal(valueOf(api, 'REDIS_URL'), 'redis://127.0.0.1:6380');
+    // Back to the defaults: the same files, today's ports.
+    assert.equal(run(['--root', root, '--dev-ports', '0'], quiet()), 0);
+    assert.match(
+      readFileSync(path.join(root, '.env'), 'utf8'),
+      /^POSTGRES_PORT=5432$/m,
+    );
+    assert.equal(
+      valueOf(
+        readFileSync(path.join(root, 'apps/api/.env'), 'utf8'),
+        'DATABASE_URL',
+      ),
+      'postgres://app_runtime:app_runtime@127.0.0.1:5432/app',
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('--dev-ports keeps the rest of a URL already set, and refuses a slot that is no number', () => {
+  const root = sandbox(real);
+  try {
+    writeFileSync(
+      path.join(root, 'apps/api/.env'),
+      'DATABASE_URL=postgres://me:secret@127.0.0.1:5432/crm\n',
+    );
+    assert.equal(run(['--root', root, '--dev-ports', '2'], quiet()), 0);
+    assert.equal(
+      valueOf(
+        readFileSync(path.join(root, 'apps/api/.env'), 'utf8'),
+        'DATABASE_URL',
+      ),
+      'postgres://me:secret@127.0.0.1:5434/crm',
+    );
+    assert.throws(() => devServices(Number('x'), 'a'), /a number from 0/);
+    assert.equal(
+      devServices(0, 'Two Words').compose.COMPOSE_PROJECT_NAME,
+      'two-words-dev',
+    );
+    assert.equal(withValues('', { A: '1' }), 'A=1\n');
+    assert.equal(withValues('A=1\nB=2\n', { A: '3' }), 'A=3\nB=2\n');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -10,6 +10,9 @@
 //   pnpm run setup --check                 # writes nothing: checks the file
 //   pnpm run setup --dry-run               # says what it would do
 //   pnpm run setup --root <dir>            # a copy of the repository (tests use a temp directory)
+//   pnpm run setup --dev-ports 1           # a second project on this machine: its services
+//                                          # on ports of their own (.env at the root, for
+//                                          # compose.dev.yaml) and apps/api/.env pointing at them
 //
 // Secrets are never printed. The other variables are the template's own
 // optional lines: uncomment and set them by hand (docs: each module's README).
@@ -104,6 +107,69 @@ export function plan(
   return { text, generated, defaults, warnings };
 }
 
+/**
+ * compose.dev.yaml's host ports, today's values by default. `--dev-ports n`
+ * moves each up by n (5433, 6380…), so another project's services can run
+ * beside this one's.
+ */
+export const DEV_PORTS = {
+  POSTGRES_PORT: 5432,
+  REDIS_PORT: 6379,
+  GOTENBERG_PORT: 3100,
+  GARAGE_PORT: 3900,
+  NESTRIX_PORT: 4318,
+};
+
+/**
+ * The development services of the n-th project on a machine (0: the
+ * defaults): the root `.env` docker compose reads (its project name, so
+ * containers and volumes are its own, and the host ports) and the API's
+ * URLs of them. `name` is the repository folder's.
+ */
+export function devServices(slot, name) {
+  if (!Number.isInteger(slot) || slot < 0 || slot > 99) {
+    throw new Error('--dev-ports: a number from 0 (the defaults) to 99.');
+  }
+  const ports = Object.fromEntries(
+    Object.entries(DEV_PORTS).map(([key, port]) => [key, port + slot]),
+  );
+  const project =
+    `${name}-dev`
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^[^a-z0-9]+/, '') || 'app-dev';
+  return {
+    compose: { COMPOSE_PROJECT_NAME: project, ...ports },
+    api: {
+      DATABASE_URL: `postgres://app_runtime:app_runtime@127.0.0.1:${ports.POSTGRES_PORT}/app`,
+      REDIS_URL: `redis://127.0.0.1:${ports.REDIS_PORT}`,
+    },
+  };
+}
+
+/** `current` (a URL) on `wanted`'s port; `wanted` when there is none. */
+function onPort(current, wanted) {
+  if (current === undefined) return wanted;
+  try {
+    const url = new URL(current);
+    url.port = new URL(wanted).port;
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return wanted;
+  }
+}
+
+/** `text` (an env file, maybe empty) with each of `values` set: its line replaced, else added. */
+export function withValues(text, values) {
+  const lines = text === '' ? [] : text.replace(/\n$/, '').split('\n');
+  for (const [key, value] of Object.entries(values)) {
+    const at = lines.findIndex((line) => line.startsWith(`${key}=`));
+    if (at === -1) lines.push(`${key}=${value}`);
+    else lines[at] = `${key}=${value}`;
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 /** Runs the command; returns the exit code. `io` is for tests. */
 export function run(argv, io = {}) {
   const out = io.out ?? ((line) => console.log(line));
@@ -116,12 +182,13 @@ export function run(argv, io = {}) {
       check: { type: 'boolean', default: false },
       'dry-run': { type: 'boolean', default: false },
       'web-push': { type: 'string' },
+      'dev-ports': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help) {
     out(
-      'pnpm run setup [--web-push <mailto:… | https://…>] [--rotate] [--check] [--dry-run] [--root <dir>]',
+      'pnpm run setup [--dev-ports <n>] [--web-push <mailto:… | https://…>] [--rotate] [--check] [--dry-run] [--root <dir>]',
     );
     return 0;
   }
@@ -133,15 +200,42 @@ export function run(argv, io = {}) {
     return 1;
   }
   const template = readFileSync(templatePath, 'utf8');
+  const services =
+    values['dev-ports'] === undefined
+      ? null
+      : devServices(Number(values['dev-ports']), path.basename(root));
 
   if (!values.check) {
     const existed = existsSync(filePath);
     const before = existed ? readFileSync(filePath, 'utf8') : template;
-    const { text, generated, defaults, warnings } = plan(before, {
+    const planned = plan(before, {
       rotate: values.rotate,
       webPush: values['web-push'],
       vapid: io.vapid,
     });
+    const { generated, defaults, warnings } = planned;
+    let { text } = planned;
+    if (services) {
+      // The URLs of this project's services: its own ports, the rest of
+      // a URL already set kept (its role, its database).
+      for (const [key, value] of Object.entries(services.api)) {
+        const next = setValue(text, key, onPort(valueOf(text, key), value));
+        if (next !== null) text = next;
+      }
+      const composePath = path.join(root, '.env');
+      const composeBefore = existsSync(composePath)
+        ? readFileSync(composePath, 'utf8')
+        : '';
+      const composeText = withValues(composeBefore, services.compose);
+      const { COMPOSE_PROJECT_NAME, POSTGRES_PORT, REDIS_PORT } =
+        services.compose;
+      out(
+        `Development services: project ${COMPOSE_PROJECT_NAME}, PostgreSQL on ${POSTGRES_PORT}, Redis on ${REDIS_PORT} (${composePath}).`,
+      );
+      if (!values['dry-run'] && composeText !== composeBefore) {
+        writeFileSync(composePath, composeText);
+      }
+    }
     for (const w of warnings) err(`WARNING: ${w}`);
     out(
       existed

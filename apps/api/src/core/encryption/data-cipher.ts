@@ -108,7 +108,10 @@ export class DecryptionError extends Error {
     binding: Binding,
   ) {
     super(
-      `An encrypted value of ${binding.table}.${binding.column} did not open: ${reason.replace('_', ' ')}.`,
+      `An encrypted value of ${binding.table}.${binding.column} did not open: ${reason.replace('_', ' ')}.` +
+        (reason === 'unknown_key'
+          ? ' It was written under a key DATA_ENCRYPTION_KEYS no longer holds, or by another deployment with keys of its own on the same database (two projects sharing the development PostgreSQL: docs/development.md, "Two projects on one machine").'
+          : ''),
     );
     this.name = 'DecryptionError';
   }

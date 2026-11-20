@@ -3,6 +3,8 @@
 # STORAGE_DRIVER=s3: one node's layout, a fixed key and the bucket. Safe to
 # run again. Development values only: never a deployment's.
 set -eu
+# This project's ports (pnpm run setup --dev-ports), as docker compose reads them.
+[ -f .env ] && . ./.env
 
 garage() {
   docker compose -f compose.dev.yaml --profile storage exec -T garage /garage "$@"
@@ -27,7 +29,7 @@ Garage is ready. To use it (apps/api/.env.development):
   STORAGE_DRIVER=s3
   S3_BUCKET=$BUCKET
   S3_REGION=garage
-  S3_ENDPOINT=http://127.0.0.1:3900
+  S3_ENDPOINT=http://127.0.0.1:${GARAGE_PORT:-3900}
   S3_FORCE_PATH_STYLE=on
   AWS_ACCESS_KEY_ID=$KEY_ID
   AWS_SECRET_ACCESS_KEY=$KEY_SECRET

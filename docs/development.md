@@ -21,7 +21,8 @@ pnpm dev                  # the API (http://localhost:3000) and the web app
   (mode 600) and generates the key lists. It is safe to repeat: an existing
   file keeps its values. `--check` verifies a file, `--rotate` puts a new key in front of
   each key list, `--dry-run` says what it would do, `--web-push <subject>` adds a
-  VAPID key pair.
+  VAPID key pair, `--dev-ports <n>` gives the project
+  services of its own (below, "Two projects on one machine").
 - Without it, `cp apps/api/env.example apps/api/.env` and fill the lines marked
   `Required.`. **Agents never write `.env` files**: the owner runs the setup or
   copies the template.
@@ -39,6 +40,34 @@ pnpm dev                  # the API (http://localhost:3000) and the web app
 - `pnpm run setup` sets `WEB_URL=http://localhost:5173`: in development the
   API serves no web app, and the links in mails open the web app's pages.
 - `pnpm services:down` stops the services. Every module's variables are in its README.
+
+### Two projects on one machine
+
+Each project made from the template starts the same services on the same
+ports (5432, 6379) by default. A second project started beside the first
+would connect to the first one's database: its API writes `app_secrets`
+under its own `DATA_ENCRYPTION_KEYS`, and the other project's API then
+fails ("did not open: unknown key"). Give the second project its own
+services, from its folder, before its first `services:up`:
+
+```bash
+pnpm run setup --dev-ports 1   # PostgreSQL on 5433, Redis on 6380, Gotenberg 3101, Garage 3901, Nestrix 4319
+pnpm services:up               # its own containers and volumes
+```
+
+`--dev-ports <n>` moves each port up by `n` (0: the defaults; a third project
+takes 2). It writes `.env` at the repository's root, which `docker compose`
+reads for `compose.dev.yaml` (`COMPOSE_PROJECT_NAME`, from the folder's name,
+so containers and volumes are the project's own, and `POSTGRES_PORT`,
+`REDIS_PORT`, `GOTENBERG_PORT`, `GARAGE_PORT`, `NESTRIX_PORT`), and points
+`DATABASE_URL` and `REDIS_URL` in `apps/api/.env` at them, the rest of a URL
+already set kept. The API's owner and maintenance roles follow `DATABASE_URL`'s
+port. Set `GOTENBERG_URL`, `S3_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` to
+the moved port when you use those services. A project already on the shared
+services moves by running the setup, then `pnpm services:up`: its data starts
+empty (its old data is in the other project's database). The two `pnpm dev`s
+still share the API's port 3000 and Vite's 5173: run one at a time, or set
+`PORT`, `APP_URL` and `WEB_URL` for the second (and `API_URL` for its Vite).
 
 ## Commands
 

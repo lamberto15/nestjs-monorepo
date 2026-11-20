@@ -81,6 +81,13 @@ describe('DataCipher', () => {
     );
   });
 
+  it('says what an unknown key may mean: keys rotated out, or another deployment on the same database', () => {
+    const stored = new DataCipher([key()]).encrypt('secret', binding);
+    expect(() => new DataCipher([key()]).decrypt(stored, binding)).toThrow(
+      /another deployment with keys of its own on the same database/,
+    );
+  });
+
   it('opens values under every key, writes with the first', () => {
     const old = key();
     const before = new DataCipher([old]);
