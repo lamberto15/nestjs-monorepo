@@ -447,9 +447,13 @@ function check(f, key) {
   }
 }
 
-/** The subject a reference field points at (`customers` → `Customer`), as its `ref` names it. */
+/**
+ * The subject a reference field points at: the target's own (`subject` of
+ * its `*.record.ts`, read by the schematic: `product-statuses` →
+ * `ProductStatus`), else derived from its folder (`customers` → `Customer`).
+ */
 const refSubject = (t, f) =>
-  f.ref === t.plural ? t.Singular : names(f.ref).Singular;
+  f.ref === t.plural ? t.Singular : (f.subject ?? names(f.ref).Singular);
 
 /** The statement that puts a field's form value(s) in the request body. */
 function assign(f, S) {

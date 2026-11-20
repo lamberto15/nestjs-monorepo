@@ -62,6 +62,8 @@ export function context(options) {
     t,
     fields,
     addons,
+    // The features' folder: a reference's target is its sibling there.
+    base,
     dir,
     sourceRoot,
     webRoot,
@@ -171,10 +173,27 @@ async function addToAppModule(tree, c, logger) {
   return appModule;
 }
 
+/**
+ * The subject of the feature a reference points at, from its own
+ * declaration (`<base>/<ref>/*.record.ts`, `subject: 'ProductStatus'`): a
+ * plural's singular is not always its folder's (`statuses`). Null when the
+ * target isn't there yet: the templates then derive it from the name.
+ */
+function targetSubject(tree, c, f) {
+  const folder = tree.getDir(posix.join(c.base, f.ref));
+  const record = folder.subfiles.find((name) => name.endsWith('.record.ts'));
+  if (!record) return null;
+  const text = tree.read(posix.join(folder.path, record))?.toString('utf8');
+  return /\bsubject:\s*'([A-Za-z0-9]+)'/.exec(text ?? '')?.[1] ?? null;
+}
+
 /** The schematic's factory (collection.json). */
 export function feature(options) {
   return async (tree, schematic) => {
     const c = context(options);
+    for (const f of c.fields) {
+      if (f.ref && f.ref !== c.t.plural) f.subject = targetSubject(tree, c, f);
+    }
     const all = files(c);
     for (const path of Object.keys(all)) {
       if (tree.exists(path)) throw new Error(path + ' exists already.');

@@ -175,6 +175,27 @@ describe('the feature schematic', () => {
     );
   });
 
+  it("names a reference's subject as its target declares it, not by guessing from the plural", async () => {
+    const tree = empty();
+    tree.create(
+      '/src/features/product-statuses/product-status.record.ts',
+      "export const PRODUCT_STATUS = defineRecord({ subject: 'ProductStatus', path: 'product-statuses' });\n",
+    );
+    const result = await runner.runSchematic(
+      'feature',
+      {
+        name: 'tickets',
+        fields: 'title:string,statusId:ref(product-statuses)?',
+        skipImport: true,
+        webRoot: 'web',
+      },
+      tree,
+    );
+    const form = result.readContent('/web/features/tickets/ticket-form.tsx');
+    expect(form).toContain('subject="ProductStatus"');
+    expect(form).not.toContain('ProductStatuse');
+  });
+
   it('declares a member of the tenant: `<name>:user?`', async () => {
     const tree = await runner.runSchematic(
       'feature',
