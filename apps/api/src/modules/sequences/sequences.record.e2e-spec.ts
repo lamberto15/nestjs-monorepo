@@ -129,4 +129,23 @@ describe('numbered records (e2e)', () => {
     const next = await post({ region: 'EU' });
     expect(next.json().reference).toBe('EU-001');
   });
+
+  it('skips a number a record already holds, typed in ahead of the series', async () => {
+    const { admin } = await recordsTenant(app);
+    const post = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/referenced-items',
+        headers: admin.headers,
+        payload,
+      });
+    expect((await post({})).json().reference).toBe(`REF-${year}-0001`);
+    // Typed in: the numbers the series gives next.
+    for (const reference of [`REF-${year}-0002`, `REF-${year}-0003`]) {
+      expect((await post({ reference })).statusCode).toBe(201);
+    }
+    const next = await post({});
+    expect(next.statusCode, next.body).toBe(201);
+    expect(next.json().reference).toBe(`REF-${year}-0004`);
+  });
 });

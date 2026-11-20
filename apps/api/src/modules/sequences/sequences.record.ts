@@ -1,13 +1,18 @@
+import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Inject, Injectable } from '@nestjs/common';
-import { text } from 'drizzle-orm/pg-core';
+import { and, eq, isNull } from 'drizzle-orm';
+import { type AnyPgColumn, type PgTable, text } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
+import type { Database } from '../../core/database/database.js';
 import type { FilterField } from '../../core/http/list-query.js';
+import type { AnyField } from '../fields/field.js';
 import type { RecordDeclaration, RecordTable } from '../records/record.js';
 import {
   InjectRecord,
   RecordExtension,
   type RecordHooks,
 } from '../records/record-extension.js';
+import { recordTableOf } from '../records/record-relations.js';
 import type {
   NumberedSubject,
   NumberingFieldKind,
@@ -120,10 +125,32 @@ export class NumberingExtension implements RecordHooks {
 export const NUMBERED_FIELD = Symbol('NUMBERED_FIELD');
 
 /**
+ * The field `forRecord(…, { field })` numbers must be an optional, unique
+ * text field of the record: a create may leave it empty for the series to
+ * fill, and a number names one record (as Frappe's series name a document
+ * by its primary key); its unique index serves the check for taken ones.
+ */
+export function assertNumberedField(record: RecordDeclaration, field: string) {
+  const f = record.fields[field] as AnyField | undefined;
+  if (
+    f?.kind !== 'string' ||
+    !f.options.optional ||
+    !f.options.unique ||
+    f.options.readOnly
+  ) {
+    throw new Error(
+      `${record.subject}: SequencesModule.forRecord numbers "${field}", which must be an optional, unique, writable string field of it.`,
+    );
+  }
+}
+
+/**
  * A record's own field from a naming series (`forRecord(…, { field })`): a
  * new record whose field is empty takes the next number, in the create's
- * transaction (no gap on a rollback); a value given is kept. The pattern
- * may print the record's other fields.
+ * transaction (no gap on a rollback); a value given is kept. A number a
+ * record already holds (typed in) is skipped, so a value typed in never
+ * blocks the series. Frappe fails the insert there instead, until the
+ * counter is moved by hand. The pattern may print the record's other fields.
  */
 @RecordExtension()
 @Injectable()
@@ -132,6 +159,7 @@ export class FieldNumberingExtension implements RecordHooks {
     @InjectRecord() readonly record: RecordDeclaration,
     @Inject(NUMBERED_FIELD) private readonly field: string,
     private readonly series: NamingSeriesService,
+    @InjectTransaction() private readonly db: Database,
   ) {}
 
   async creating({
@@ -142,10 +170,30 @@ export class FieldNumberingExtension implements RecordHooks {
     values: Record<string, unknown>;
   }) {
     if (values[this.field]) return;
-    const { formatted } = await this.series.next(this.record.subject, {
-      seriesId: input.namingSeriesId as string | undefined,
-      values: input,
-    });
-    return { [this.field]: formatted };
+    // Each take moves the counter on, so this ends: past the records holding the numbers ahead.
+    for (;;) {
+      const { formatted } = await this.series.next(this.record.subject, {
+        seriesId: input.namingSeriesId as string | undefined,
+        values: input,
+      });
+      if (!(await this.taken(formatted))) return { [this.field]: formatted };
+    }
+  }
+
+  /** Whether a record of the tenant holds the value: a live one, as its unique index counts. */
+  private async taken(value: string) {
+    const table = recordTableOf(this.record) as unknown as PgTable &
+      Record<string, AnyPgColumn>;
+    const [row] = await this.db
+      .select({ id: table.id! })
+      .from(table)
+      .where(
+        and(
+          eq(table[this.field]!, value),
+          this.record.softDelete ? isNull(table.deletedAt!) : undefined,
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
   }
 }

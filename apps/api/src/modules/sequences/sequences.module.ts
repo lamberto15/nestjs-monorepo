@@ -21,6 +21,7 @@ import { RECORD } from '../records/record-extension.js';
 import { RecordsModule } from '../records/records.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import {
+  assertNumberedField,
   FieldNumberingExtension,
   NUMBERED_FIELD,
   type NumberFormat,
@@ -106,6 +107,7 @@ export class SequencesModule {
     format?: NumberFormat,
     { field }: { field?: string } = {},
   ): DynamicModule {
+    if (field) assertNumberedField(record, field);
     return {
       module: NumberedRecordModule,
       imports: [
