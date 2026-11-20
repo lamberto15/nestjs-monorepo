@@ -7,7 +7,7 @@ import {
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { DiscoveryService, MetadataScanner } from '@nestjs/core';
 import { InjectTransaction } from '@nestjs-cls/transactional';
-import { and, asc, desc, ilike, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, ilike, inArray, isNull, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { Database } from '../../core/database/database.js';
 import {
@@ -70,14 +70,23 @@ export class ListsService implements OnModuleInit {
    * id and title (relationTitle(), the same as a reference's `?include=`),
    * among the live records the caller may read. `q` searches the title,
    * `id` names these; a title they may not read on every record is null.
+   * Any other parameter is a filter of the record's own list, checked as
+   * that list checks it (`?productId=<id>`: a product's statuses only).
    */
   async options(
     principal: Principal,
     subject: string,
-    { q, id, limit }: RecordOptionsQuery,
+    { q, id, limit, lang: _lang, ...filters }: RecordOptionsQuery,
   ) {
     const record = this.records.find(subject);
     if (!record) throw new NotFoundException(`${subject} is no record.`);
+    let filtered: SQL | undefined;
+    if (Object.keys(filters).length) {
+      const list = await record.listFor(principal);
+      const query = list.parse(filters);
+      await this.access.assertQueryFields(principal, subject, query);
+      filtered = list.where(query);
+    }
     const table = record.feature.table as unknown as PgTable &
       Record<string, AnyPgColumn>;
     const named = relationTitle(record.declaration);
@@ -98,6 +107,7 @@ export class ListsService implements OnModuleInit {
         and(
           id ? inArray(table.id!, id) : undefined,
           q && title ? ilike(title, `%${escapeLike(q)}%`) : undefined,
+          filtered,
           table.deletedAt ? isNull(table.deletedAt) : undefined,
           await this.access.sqlFilter(principal, subject, 'read'),
         ),

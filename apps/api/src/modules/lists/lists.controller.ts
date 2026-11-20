@@ -77,7 +77,7 @@ export class ListsController {
   @ApiOperation({
     summary: "A record's options for a picker: ids and titles",
     description:
-      "With `q` (or nothing): the live records whose title contains `q`, by title. With `id=<id>,<id>`: the titles of these, for the names behind ids a page holds (a reference's cell, a filter's chips); an id you may not read is left out. Each item is an id and a title, nothing else. The title is the record's first text field, as a reference's `?include=` gives it. For anyone who may read the subject: only the records you may read.",
+      "With `q` (or nothing): the live records whose title contains `q`, by title. Any other parameter is a filter of the subject's list, as GET /v1/lists/{subject} describes them and its own route takes them (`?productId=<id>`: the records of one parent, for a picker that depends on another). With `id=<id>,<id>`: the titles of these, for the names behind ids a page holds (a reference's cell, a filter's chips); an id you may not read is left out. Each item is an id and a title, nothing else. The title is the record's first text field, as a reference's `?include=` gives it. For anyone who may read the subject: only the records you may read.",
   })
   @ApiParam({
     name: 'subject',
@@ -87,9 +87,12 @@ export class ListsController {
   @ApiOkResponse({ standardSchema: listSchema(recordOptionSchema) })
   @ApiBadRequestResponse({
     description:
-      '`q` empty or longer than 100 characters, `limit` over 20, an `id` that is no uuid, more than 20 ids, or `q` with `id` (validation_failed).',
+      '`q` empty or longer than 100 characters, `limit` over 20, an `id` that is no uuid, more than 20 ids, `q` with `id`, a filter the list does not declare or a value it refuses, or `sort`, `cursor`, `page`, `count`, `fields` or `deleted` (validation_failed).',
   })
-  @ApiForbiddenResponse({ description: 'You may not read the subject.' })
+  @ApiForbiddenResponse({
+    description:
+      'You may not read the subject, or a filter uses a field you may not read (field_forbidden).',
+  })
   @ApiNotFoundResponse({
     description: 'No record of that subject (not_found).',
   })

@@ -192,4 +192,35 @@ describe('the record picker', () => {
     fireEvent.change(input, { target: { value: 'zz' } });
     expect(await screen.findByText('No match you may read.')).toBeVisible();
   });
+
+  it('offers only the records its filter keeps', async () => {
+    const asked: URLSearchParams[] = [];
+    server.use(
+      http.get('/v1/lists/TestItem/options', ({ request }) => {
+        asked.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [] });
+      }),
+    );
+    await renderComponent(
+      <RecordPicker
+        id="parent"
+        label="Parent"
+        subject="TestItem"
+        filter={{ status: 'done', ownerId: null }}
+        value=""
+        onChange={() => undefined}
+      />,
+    );
+    const input = screen.getByRole('combobox', { name: 'Parent' });
+    await userEvent.click(input);
+    fireEvent.change(input, { target: { value: 'ab' } });
+    await waitFor(() =>
+      expect(asked.some((q) => q.get('q') === 'ab')).toBe(true),
+    );
+    for (const query of asked) {
+      expect(query.get('status')).toBe('done');
+      // An empty value is no filter.
+      expect(query.has('ownerId')).toBe(false);
+    }
+  });
 });

@@ -698,6 +698,36 @@ describe('records: test items (e2e)', () => {
       expect(
         await options(editor.headers, `id=${theirs.id},${mine.id}`),
       ).toEqual([{ id: mine.id, title: 'Picker Alpha' }]);
+      // The list's own filters narrow them: a picker that depends on another.
+      const done = await create(editor.headers, {
+        title: 'Picker Alpine',
+        status: 'done',
+      });
+      expect(
+        await options(editor.headers, 'q=picker%20alp&status=done'),
+      ).toEqual([{ id: done.id, title: 'Picker Alpine' }]);
+      expect(
+        (await options(editor.headers, 'status.in=draft&q=picker%20alp')).map(
+          (o) => o.id,
+        ),
+      ).toEqual([mine.id]);
+      for (const query of [
+        'nope=1',
+        'status=gone',
+        'sort=title',
+        'deleted=true',
+      ]) {
+        expect(
+          (
+            await call(
+              'GET',
+              `/v1/lists/TestItem/options?${query}`,
+              editor.headers,
+            )
+          ).statusCode,
+          query,
+        ).toBe(400);
+      }
       expect(
         (await call('GET', '/v1/lists/TestItem/options', nobody.headers))
           .statusCode,

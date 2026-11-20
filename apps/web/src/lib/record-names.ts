@@ -28,13 +28,29 @@ export interface RecordOption {
   title: string | null;
 }
 
+/**
+ * Filters of the subject's own list, as its route takes them
+ * (`{ productId }`: one product's statuses): a picker that depends on
+ * another field. An empty value is left out.
+ */
+export type RecordFilter = Record<string, string | null | undefined>;
+
+const sent = (filter: RecordFilter = {}) =>
+  Object.fromEntries(
+    Object.entries(filter)
+      .filter((entry): entry is [string, string] => Boolean(entry[1]))
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+
 const options = (
   subject: string,
   query: { q?: string; id?: string; limit?: number },
+  filter: RecordFilter = {},
 ) =>
   unwrap(
     api.GET('/v1/lists/{subject}/options', {
-      params: { path: { subject }, query },
+      // The filters are the list's own parameters (any name the list declares).
+      params: { path: { subject }, query: { ...sent(filter), ...query } },
     }),
   ).then(({ items }) => items as RecordOption[]);
 
@@ -71,19 +87,25 @@ export function useRecordNames(
   return useNames(ids, UUID, recordNameQuery(subject));
 }
 
-/** The records whose title holds `term`, by title (the first ones for none). */
-const search = (subject: string, term: string) => {
+/** The records whose title holds `term`, by title (the first ones for none), among those `filter` keeps. */
+const search = (subject: string, term: string, filter?: RecordFilter) => {
   const q = term.trim().slice(0, MAX_TERM);
+  const kept = sent(filter);
   return {
-    queryKey: [...recordsKey, subject, 'search', q] as const,
-    queryFn: () => options(subject, q ? { q, limit: BATCH } : { limit: BATCH }),
+    queryKey: [...recordsKey, subject, 'search', q, kept] as const,
+    queryFn: () =>
+      options(subject, q ? { q, limit: BATCH } : { limit: BATCH }, kept),
   };
 };
 
 /** `subject`'s records found for `term`, for a picker of its own (RecordPicker). */
-export const recordSearchQuery = (subject: string, term: string) =>
+export const recordSearchQuery = (
+  subject: string,
+  term: string,
+  filter?: RecordFilter,
+) =>
   queryOptions({
-    ...search(subject, term),
+    ...search(subject, term, filter),
     staleTime: 30_000,
     retry: false,
     meta: { errorToast: false },

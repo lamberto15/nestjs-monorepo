@@ -11,6 +11,14 @@ at most) names the ids a page holds; only live records the caller may read,
 and no title for one who may not read the title field everywhere. A subject
 that is not a record is a 404.
 
+Any other parameter is a filter of the record's own list, validated and
+permission-checked as its list route does it: `?productId=<id>` offers one
+product's statuses, for a picker that depends on another field. `sort`,
+`cursor`, `page`, `count`, `fields` and `deleted` are refused (400). In the web
+app: `<field.RecordField subject="ProductStatus" filter={{ productId }} />`
+(an empty value is no filter); clearing the dependent field when its parent
+changes is the form's to do.
+
 - Sources: every record registered with `RecordsModule.forFeature()` (its
   list with the add-ons' filters), plus the access API's `User` list and the audit pages' `Audit` and `SignIn` lists (whoever holds `Access.readAudit`).
 - Who: whoever may read the subject on some record (`ListPolicy`); for `User`,

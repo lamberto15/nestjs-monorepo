@@ -38,6 +38,7 @@ import {
 import { Textarea } from '@nestjs-monorepo/ui/components/textarea';
 import { LazyMarkdownEditor } from '@/components/markdown/lazy';
 import { RecordPicker } from '@/components/records/record-picker';
+import type { RecordFilter } from '@/lib/record-names';
 import { focusFirstInvalid, rememberFormElement } from '@/lib/form-focus';
 import { useWritesPaused } from '@/lib/mode';
 import { meQuery, sessionIdentity, type Me } from '@/lib/session';
@@ -431,6 +432,8 @@ function RecordField(props: {
   label: string;
   /** The target's subject (`Customer`), as the field's `ref` names it. */
   subject: string;
+  /** Only the records these filters of the target's list keep: `{ productId }` (RecordPicker). */
+  filter?: RecordFilter;
   description?: ReactNode;
   placeholder?: string;
 }) {
@@ -450,6 +453,7 @@ function RecordField(props: {
         id={id}
         label={props.label}
         subject={props.subject}
+        filter={props.filter}
         value={field.state.value}
         onChange={(value) => {
           field.handleChange(value);

@@ -2,7 +2,11 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SearchCombobox } from '@/components/search-combobox';
-import { recordSearchQuery, useRecordNames } from '@/lib/record-names';
+import {
+  type RecordFilter,
+  recordSearchQuery,
+  useRecordNames,
+} from '@/lib/record-names';
 
 /** A record as a picker names it: its title field, its number, else its id. */
 export function recordName(
@@ -29,6 +33,12 @@ export function RecordPicker(props: {
   label: string;
   /** The target's subject (`TestItem`), as its reference field names it. */
   subject: string;
+  /**
+   * Only the records these filters of the subject's list keep
+   * (`{ productId }`: the chosen product's statuses). It narrows what is
+   * offered; a value picked before stays until the caller clears it.
+   */
+  filter?: RecordFilter;
   value: string;
   onChange: (id: string) => void;
   /** What the input shows for the current value before any search: else its title, once known. */
@@ -42,7 +52,7 @@ export function RecordPicker(props: {
   const { t } = useTranslation('records');
   const [term, setTerm] = useState('');
   const found = useQuery({
-    ...recordSearchQuery(props.subject, term),
+    ...recordSearchQuery(props.subject, term, props.filter),
     placeholderData: keepPreviousData,
   });
   const names = useRecordNames(props.subject, [props.value]);

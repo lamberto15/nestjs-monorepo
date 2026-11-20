@@ -11,9 +11,20 @@ const commaList = z.string().transform((value) =>
     .filter(Boolean),
 );
 
-/** The query of GET /v1/lists/{subject}/options. */
+/**
+ * A list's query parameters that are no filter: the options route answers
+ * live records, by title, one batch, so a page, an order, a field pick or
+ * the recycle bin has no meaning there.
+ */
+const NOT_FILTERS = ['cursor', 'page', 'count', 'sort', 'fields', 'deleted'];
+
+/**
+ * The query of GET /v1/lists/{subject}/options: its own parameters, and
+ * any other is a filter of the record's list (`?productId=<id>`,
+ * `?status.in=a,b`), validated by that list (ListsService.options).
+ */
 export const recordOptionsQuerySchema = z
-  .object({
+  .looseObject({
     q: z
       .string()
       .trim()
@@ -33,8 +44,17 @@ export const recordOptionsQuerySchema = z
     limit: z.coerce.number().int().min(1).max(MAX_OPTIONS).default(10),
     lang: z.string().max(35).optional(),
   })
-  .strict()
   .superRefine((query, ctx) => {
+    for (const key of NOT_FILTERS) {
+      if (key in query) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `\`${key}\` is no filter: the options are the first live records by title`,
+          input: query[key],
+        });
+      }
+    }
     if (query.q !== undefined && query.id !== undefined) {
       ctx.addIssue({
         code: 'custom',
