@@ -84,19 +84,34 @@ export async function allPages<T>(
 export const RELATED_LIMIT = 10;
 
 /**
- * The newest records that refer to one, with how many there are: their
+ * A page of the records that refer to one, newest first, with how many
+ * there are and the cursor of the next (`cursor`, as a list pages): their
  * own list filtered by the reference (`related` of GET /v1/lists/{subject}),
  * which shows only those the user may read.
  */
-export const listRelated = (path: string, field: string, id: string) =>
+export const listRelated = (
+  path: string,
+  field: string,
+  id: string,
+  cursor?: string,
+) =>
   unwrap(
     client.GET(`/v1/${path}`, {
       params: {
         path: {},
-        query: { [field]: id, limit: RELATED_LIMIT, count: 'true' },
+        query: {
+          [field]: id,
+          limit: RELATED_LIMIT,
+          count: 'true',
+          ...(cursor && { cursor }),
+        },
       },
     }) as Promise<{
-      data?: { items: Record<string, unknown>[]; total?: number | null };
+      data?: {
+        items: Record<string, unknown>[];
+        nextCursor?: string | null;
+        total?: number | null;
+      };
       response: Response;
     }>,
   );

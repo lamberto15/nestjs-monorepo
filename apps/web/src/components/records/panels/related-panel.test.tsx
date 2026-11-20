@@ -13,6 +13,20 @@ const ORDER = '0190a6a0-7c1e-7000-8000-0000000000aa';
 const forms = vi.hoisted(() => ({
   opened: [] as { id?: string; parent?: { field: string; id: string } }[],
   asked: [] as string[],
+  // The parent's own rule for adding (a log saved through its action).
+  mayAdd: true,
+}));
+
+vi.mock('@/features/watching/record-links', () => ({
+  recordLinkOf: (subject: string) =>
+    subject === 'OrderLine'
+      ? {
+          subject,
+          path: (id: string) => `/order-lines/${id}`,
+          list: '/order-lines',
+          title: async (id: string) => id,
+        }
+      : undefined,
 }));
 
 vi.mock('../record-forms', () => ({
@@ -37,7 +51,14 @@ vi.mock('../record-forms', () => ({
             dialog: null,
           }),
         }
-      : undefined,
+      : subject === 'Visit'
+        ? {
+            subject,
+            Form: () => null,
+            // Never deleted, added through the parent's own rule.
+            useCanAdd: () => forms.mayAdd,
+          }
+        : undefined,
 }));
 
 const RELATED = {
@@ -150,6 +171,86 @@ function useLinesApi() {
 }
 
 describe('a child table', () => {
+  it('pages through many, and opens them all in their own list', async () => {
+    const asked: URLSearchParams[] = [];
+    useLinesApi();
+    server.use(
+      http.get('/v1/order-lines', ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        asked.push(query);
+        const second = query.get('cursor') === 'p2';
+        return HttpResponse.json({
+          items: Array.from({ length: second ? 5 : 10 }, (_, i) => ({
+            id: `l${second ? 11 + i : 1 + i}`,
+            item: `Line ${second ? 11 + i : 1 + i}`,
+            orderId: ORDER,
+          })),
+          nextCursor: second ? null : 'p2',
+          total: 15,
+        });
+      }),
+    );
+    await renderComponent(
+      <RelatedPanel base="/v1/orders/{id}" id={ORDER} related={RELATED} />,
+      { can: ['OrderLine.read'] },
+    );
+    expect(await screen.findByText('1–10 of 15')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('11–15 of 15')).toBeVisible();
+    expect(screen.getByText('Line 15')).toBeVisible();
+    expect(asked.at(-1)?.get('cursor')).toBe('p2');
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(await screen.findByText('1–10 of 15')).toBeVisible();
+    // A link styled as a button.
+    expect(
+      screen.getByText('Open all').closest('a')?.getAttribute('href'),
+    ).toBe(`/order-lines?orderId=${ORDER}`);
+  });
+
+  it("adds by the feature's own rule, and offers no delete for what is never deleted", async () => {
+    server.use(
+      http.get('/v1/lists/Visit', () =>
+        HttpResponse.json({
+          subject: 'Visit',
+          select: ['id', 'note'],
+          fields: [],
+        }),
+      ),
+      http.get('/v1/visits', () =>
+        HttpResponse.json({
+          items: [{ id: 'v1', note: 'Called' }],
+          nextCursor: null,
+          total: 1,
+        }),
+      ),
+    );
+    const related = {
+      ...RELATED,
+      subject: 'Visit',
+      path: 'visits',
+      title: 'note',
+    };
+    // No Visit.create: the feature's rule says yes.
+    const view = await renderComponent(
+      <RelatedPanel base="/v1/orders/{id}" id={ORDER} related={related} />,
+      { can: ['Visit.read', 'Visit.delete'] },
+    );
+    expect(await screen.findByText('Called')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Delete Called' })).toBeNull();
+    view.unmount();
+    forms.mayAdd = false;
+    await renderComponent(
+      <RelatedPanel base="/v1/orders/{id}" id={ORDER} related={related} />,
+      { can: ['Visit.read', 'Visit.create'] },
+    );
+    expect(await screen.findByText('Called')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+    forms.mayAdd = true;
+  });
+
   it('shows the lines with their own fields, and adds one with the parent filled in', async () => {
     const listed = useLinesApi();
     await renderComponent(

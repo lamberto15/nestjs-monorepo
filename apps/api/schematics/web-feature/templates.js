@@ -106,6 +106,7 @@ export function recordLink({ t }) {
     'const link: RecordLink = {',
     `  subject: '${S}',`,
     `  path: (id) => \`/${t.plural}/\${id}\`,`,
+    `  list: '/${t.plural}',`,
     `  title: (id) => recordTitle('${S}', id),`,
     '};',
     '',
@@ -924,6 +925,8 @@ export function listPage({ t, fields, softDelete, addons }) {
   const item = t.singularCamel;
   const title = titleField(fields);
   const withBadge = fields.some((f) => f.type === 'enum');
+  // Its parents: ?<ref>=<id> narrows the list to one (a parent's "Open all").
+  const refs = fields.filter((f) => f.type === 'ref');
   const columns = fields.filter(
     (f) => !['text', 'json', 'ref', 'user'].includes(f.type),
   );
@@ -941,6 +944,8 @@ export function listPage({ t, fields, softDelete, addons }) {
     `import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header';`,
     `import { ListPage } from '@/components/list-page';`,
     `import { BulkRunChip, useBulkRun } from '@/components/records/bulk-run-filter';`,
+    refs.length > 0 &&
+      `import { ListScopeChip, useListScope } from '@/components/records/list-scope';`,
     softDelete &&
       `import { RecycleBinToggle, useRecycleBin } from '@/components/records/recycle-bin';`,
     softDelete
@@ -958,12 +963,19 @@ export function listPage({ t, fields, softDelete, addons }) {
     '',
     `type ${S} = paths['/v1/${t.plural}']['get']['responses'][200]['content']['application/json']['items'][number];`,
     '',
+    refs.length > 0 && [
+      '/** The references that narrow the list to one parent, and their subjects. */',
+      `const SCOPE = { ${refs.map((f) => `${f.name}: '${refSubject(t, f)}'`).join(', ')} };`,
+      '',
+    ],
     `function ${t.Plural}() {`,
     `  const { t } = useTranslation('${t.plural}');`,
     '  const date = useDateTimeFormat();',
     softDelete && '  const bin = useRecycleBin();',
     "  // `?bulkRun=<id>`: what a bulk run changed (its notification's link).",
     '  const run = useBulkRun();',
+    refs.length > 0 &&
+      `  const scope = useListScope(SCOPE);`,
     `  const canOf = useRecordCan('${S}');`,
     '  // While the API refuses writes (read-only, maintenance) the actions that write stay in sight but off.',
     '  const paused = useWritesPaused();',
@@ -1058,8 +1070,8 @@ export function listPage({ t, fields, softDelete, addons }) {
       : `        title={t('title')}`,
     '        columns={columns}',
     softDelete
-      ? `        query={{ ...(bin.deleted ? ${P}_BIN_QUERY : ${P}_LIST_QUERY), ...run.query }}`
-      : `        query={{ ...${P}_LIST_QUERY, ...run.query }}`,
+      ? `        query={{ ...(bin.deleted ? ${P}_BIN_QUERY : ${P}_LIST_QUERY), ...run.query${refs.length ? ', ...scope.query' : ''} }}`
+      : `        query={{ ...${P}_LIST_QUERY, ...run.query${refs.length ? ', ...scope.query' : ''} }}`,
     softDelete &&
       "        // The bin's records are gone from the detail route (404); the bin is not exported.",
     softDelete
@@ -1070,6 +1082,8 @@ export function listPage({ t, fields, softDelete, addons }) {
     '        toolbarActions={',
     '          <>',
     '            {run.id && <BulkRunChip onClear={run.clear} />}',
+    refs.length > 0 &&
+      '            <ListScopeChip scoped={scope.scoped} onClear={scope.clear} />',
     softDelete && [
       `            <Can permission="${S}.restore">`,
       `              <RecycleBinToggle label={t('bin.label')} pressed={bin.deleted} onToggle={bin.toggle} />`,

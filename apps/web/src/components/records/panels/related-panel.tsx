@@ -14,9 +14,19 @@ import {
   TableHeader,
   TableRow,
 } from '@nestjs-monorepo/ui/components/table';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+} from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PersonName, RecordName, UnitName } from '@/components/person-name';
@@ -25,7 +35,7 @@ import { useMe } from '@/lib/features';
 import { customValue, fieldLabel } from '@/lib/list-columns';
 import { type ListDescription, useListDescription } from '@/lib/list-query';
 import { isRecordRef } from '@/lib/list-refs';
-import { useRecordCan } from '@/lib/records';
+import { recordKeys, useRecordCan } from '@/lib/records';
 import { type RecordForm, recordFormOf } from '../record-forms';
 import { recordName } from '../record-picker';
 import { listRelated, panelKeys, RELATED_LIMIT } from './api';
@@ -47,13 +57,15 @@ const COMMON = new Set([
 
 /**
  * The records that refer to this one through one relation (a `ref` field of
- * theirs: docs/adding-a-feature.md, "Relationships"), as a table: the newest
- * RELATED_LIMIT, read from their own list filtered by the reference, so the
- * API shows only those the user may read. A title opens the record's page
- * when its feature registers one (`record-link.ts`). When the feature
- * registers its form (`record-form.tsx`), the table is where they are
- * added, changed and deleted, in place (the lines of an invoice): each
- * through the record's own routes and permissions.
+ * theirs: docs/adding-a-feature.md, "A child table"), as a table: newest
+ * first, RELATED_LIMIT a page, read from their own list filtered by the
+ * reference, so the API shows only those the user may read, and however
+ * many there are. A title opens the record's page, and "Open all" their
+ * list narrowed to this parent (search, sort, export), when their feature
+ * registers them (`record-link.ts`). When the feature registers its form
+ * (`record-form.tsx`), the table is where they are added, changed and
+ * deleted, in place (the lines of an invoice): each through the record's
+ * own routes and permissions.
  */
 export function RelatedPanel(props: {
   base: string;
@@ -63,21 +75,36 @@ export function RelatedPanel(props: {
   const { t } = useTranslation('records');
   const { path, field, title, subject } = props.related;
   const queryClient = useQueryClient();
+  // The cursors of the pages shown so far: the last is this page's.
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const cursor = cursors.at(-1);
   const page = useQuery({
-    queryKey: panelKeys.related(props.base, props.id, path, field),
-    queryFn: () => listRelated(path, field, props.id),
+    queryKey: [...panelKeys.related(props.base, props.id, path, field), cursor],
+    queryFn: () => listRelated(path, field, props.id, cursor),
+    placeholderData: keepPreviousData,
   });
   const description = useListDescription(subject);
   const form = recordFormOf(subject);
   const link = recordLinkOf(subject);
   const heading = `related-${path}-${field}`;
   const columns = childColumns(description.data, field, title);
-  const canCreate = useMe()?.can?.[`${subject}.create`] === true;
   const [editing, setEditing] = useState<{ id?: string } | null>(null);
   const refresh = () =>
     queryClient.invalidateQueries({
       queryKey: panelKeys.related(props.base, props.id, path, field),
     });
+  /** After an add or a change: from the first page, and the parent read again (its own values may follow its children's). */
+  const saved = () => {
+    setCursors([undefined]);
+    void refresh();
+    void queryClient.invalidateQueries({
+      queryKey: recordKeys.detail(
+        props.base.replace(/\/\{id\}$/, ''),
+        props.id,
+      ),
+    });
+  };
+  const first = (cursors.length - 1) * RELATED_LIMIT;
 
   return (
     <section aria-labelledby={heading} className="flex flex-col gap-2">
@@ -85,12 +112,25 @@ export function RelatedPanel(props: {
         <h3 id={heading} className="text-sm font-medium">
           {t('related.heading', { subject, field })}
         </h3>
-        {form && canCreate && (
-          <Button size="sm" variant="outline" onClick={() => setEditing({})}>
-            <PlusIcon aria-hidden />
-            {t('related.add')}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {link?.list && (
+            <Button
+              size="sm"
+              variant="ghost"
+              nativeButton={false}
+              render={<Link to={link.list} search={{ [field]: props.id }} />}
+            >
+              {t('related.openAll')}
+            </Button>
+          )}
+          {form && (
+            <AddButton
+              form={form}
+              parent={{ subject: props.related.subject, field, id: props.id }}
+              onAdd={() => setEditing({})}
+            />
+          )}
+        </div>
       </div>
       {page.isPending ? (
         <Skeleton className="h-16 w-full" aria-busy />
@@ -158,13 +198,36 @@ export function RelatedPanel(props: {
               </TableBody>
             </Table>
           </div>
-          {(page.data.total ?? 0) > RELATED_LIMIT && (
-            <p className="text-sm text-muted-foreground">
-              {t('related.more', {
-                shown: page.data.items.length,
-                total: page.data.total ?? 0,
-              })}
-            </p>
+          {(cursors.length > 1 || page.data.nextCursor) && (
+            <div className="flex items-center justify-end gap-2 text-sm text-muted-foreground">
+              <span>
+                {t('related.range', {
+                  from: first + 1,
+                  to: first + page.data.items.length,
+                  total: page.data.total ?? first + page.data.items.length,
+                })}
+              </span>
+              <Button
+                size="icon-sm"
+                variant="outline"
+                aria-label={t('related.previous')}
+                disabled={cursors.length === 1}
+                onClick={() => setCursors((c) => c.slice(0, -1))}
+              >
+                <ChevronLeftIcon aria-hidden />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="outline"
+                aria-label={t('related.next')}
+                disabled={!page.data.nextCursor || page.isPlaceholderData}
+                onClick={() =>
+                  setCursors((c) => [...c, page.data.nextCursor ?? undefined])
+                }
+              >
+                <ChevronRightIcon aria-hidden />
+              </Button>
+            </div>
           )}
         </>
       )}
@@ -183,9 +246,9 @@ export function RelatedPanel(props: {
               <form.Form
                 id={editing.id}
                 parent={editing.id ? undefined : { field, id: props.id }}
-                onDone={(saved) => {
+                onDone={(record) => {
                   setEditing(null);
-                  if (saved) void refresh();
+                  if (record) saved();
                 }}
               />
             )}
@@ -194,6 +257,32 @@ export function RelatedPanel(props: {
       )}
     </section>
   );
+}
+
+/** Add, for whoever may: the feature's own rule (`useCanAdd`), else the role's `<Subject>.create`. */
+function AddButton(props: {
+  form: RecordForm;
+  parent: { subject: string; field: string; id: string };
+  onAdd: () => void;
+}) {
+  const { t } = useTranslation('records');
+  const useCanAdd = props.form.useCanAdd ?? useCanCreate;
+  if (!useCanAdd(props.parent)) return null;
+  return (
+    <Button size="sm" variant="outline" onClick={props.onAdd}>
+      <PlusIcon aria-hidden />
+      {t('related.add')}
+    </Button>
+  );
+}
+
+function useCanCreate(parent: { subject: string }) {
+  return useMe()?.can?.[`${parent.subject}.create`] === true;
+}
+
+/** No delete: a feature whose records are never deleted (a log). */
+function useNoDelete() {
+  return null;
 }
 
 /** A row's change and delete, when the user may (the row's `can`, else the role's). */
@@ -209,7 +298,7 @@ function RowActions(props: {
   const can = useRecordCan(props.subject)(
     props.item as { can?: Record<string, boolean> },
   );
-  const { useDelete } = props.form;
+  const useDelete = props.form.useDelete ?? useNoDelete;
   const remove = useDelete({ onDeleted: props.onDeleted });
   return (
     <div className="flex justify-end gap-1">
@@ -223,7 +312,7 @@ function RowActions(props: {
           <PencilIcon aria-hidden />
         </Button>
       )}
-      {can.delete && (
+      {remove && can.delete && (
         <Button
           size="icon-sm"
           variant="ghost"
@@ -233,7 +322,7 @@ function RowActions(props: {
           <Trash2Icon aria-hidden />
         </Button>
       )}
-      {remove.dialog}
+      {remove?.dialog}
     </div>
   );
 }

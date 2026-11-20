@@ -75,18 +75,35 @@ pnpm client:generate        # the typed client the web pages use
 
 A feature with a reference to another is that one's child: the lines of an
 invoice (`pnpm feature:add invoice-lines --fields "item:string,qty:int,price:money,invoiceId:ref(invoices)?"`).
-The parent's page lists its children in the Related tab as a table, with
-every one of the child's own fields (a wide one scrolls sideways); the child's `record-form.tsx` (generated) lets that table
-add a child with the parent filled in, change one and delete one, in a dialog,
-each through the child's own routes and permissions (Add for whoever may
-create, a row's buttons for whoever may change or delete it). Its
-`record-link.ts` opens a child's own page from its title. Take the
-reference's `.optional()` off once both features exist: a line always has its
-invoice. A hand-written feature joins by writing the two files
-(`components/records/record-forms.ts`, `features/watching/record-links.ts`).
+Take the reference's `.optional()` off once both features exist: a line
+always has its invoice.
+
+- **The parent's page lists its children** in the Related tab as a table,
+  with every one of the child's own fields (a wide one scrolls sideways),
+  newest first, 10 a page with Previous and Next, however many there are.
+- **"Open all"** opens the child's own list narrowed to the parent
+  (`/invoice-lines?invoiceId=<id>`: a generated list takes each of its
+  references this way), to search, sort, filter and export them. A title
+  opens the child's own page.
+- **Add, change and delete in place:** the child's `record-form.tsx`
+  (generated) opens its form in a dialog, the parent filled in, and its
+  delete. Each goes through the child's own routes and permissions: Add for
+  whoever may create one, a row's buttons for whoever may change or delete
+  it. After a save the parent's page is read again, as it may show what its
+  children changed.
+- **A child saved another way** (a log, an activity: added through the
+  parent's own route, never changed or deleted) writes its
+  `record-form.tsx` by hand: its own `Form`, `useCanAdd` for who may add
+  one, and no `useDelete` (no delete button). What the parent keeps of its
+  latest child (a status, the last activity's date) is the parent's: its
+  service sets it in the same transaction.
+- **A hand-written feature** joins by writing the two files
+  (`components/records/record-forms.ts`, `features/watching/record-links.ts`).
+
 A parent with live children can't be deleted (409 `record_referenced`)
-until they are. The parent and its children are saved one at a time: what must hold for an
-invoice and all its lines together is a check of the parent's service.
+until they are. The parent and its children are saved one at a time: what
+must hold for an invoice and all its lines together is a check of the
+parent's service.
 
 The business logic goes where the generated files say "Business logic": the
 service (checks before a write), a `@RecordExtension()` provider of the

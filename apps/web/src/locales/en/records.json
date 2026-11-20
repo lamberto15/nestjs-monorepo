@@ -22,13 +22,16 @@
     "heading": "{{subject}} ({{field}})",
     "empty": "None yet.",
     "error": "The related records could not be loaded.",
-    "more": "The newest {{shown}} of {{total}}.",
     "name": "Name",
     "actions": "Actions",
     "add": "Add",
     "edit": "Change",
     "editOne": "Change {{name}}",
-    "deleteOne": "Delete {{name}}"
+    "deleteOne": "Delete {{name}}",
+    "range": "{{from}}–{{to}} of {{total}}",
+    "previous": "Previous",
+    "next": "Next",
+    "openAll": "Open all"
   },
   "picker": {
     "placeholder": "Search by name…",
@@ -38,6 +41,10 @@
   },
   "bulkRun": {
     "showing": "Changed by a bulk edit",
+    "clear": "Show all"
+  },
+  "scope": {
+    "showing": "Only those of",
     "clear": "Show all"
   }
 }

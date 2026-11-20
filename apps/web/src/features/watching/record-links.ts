@@ -9,6 +9,11 @@ export type RecordLink = {
   subject: string;
   /** The record's page in the web app. */
   path: (id: string) => string;
+  /**
+   * The feature's list page, when it takes `?<reference>=<id>` (useListScope):
+   * a parent's child table opens it narrowed to the parent ("Open all").
+   */
+  list?: string;
   /** Its name, read from the API (the list shows it in place of the id). */
   title: (id: string) => Promise<string>;
 };

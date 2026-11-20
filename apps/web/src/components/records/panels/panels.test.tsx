@@ -1489,7 +1489,7 @@ describe('the panels on a record', () => {
     expect(await screen.findByText('Second child')).toBeVisible();
     // No title: its number.
     expect(screen.getByText('TI-2026-00001')).toBeVisible();
-    expect(screen.getByText('The newest 2 of 12.')).toBeVisible();
+    expect(screen.getByText('1–2 of 12')).toBeVisible();
     expect(asked[0]?.get('parentId')).toBe(ID);
     expect(asked[0]?.get('limit')).toBe('10');
   });
