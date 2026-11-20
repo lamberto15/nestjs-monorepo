@@ -678,9 +678,10 @@ const WRONG = { int: "'x'", money: "'x'", bool: "'x'", json: "'x'" };
 /** The e2e spec: the generated routes, and one check of each add-on. */
 export function e2e(c) {
   const { t } = c;
-  const sampled = c.fields.filter((f) => f.type !== 'ref');
+  const sampled = c.fields.filter((f) => !['ref', 'user'].includes(f.type));
   const changed =
-    c.fields.find((f) => f.type !== 'ref' && !f.unique) ?? sampled[0];
+    c.fields.find((f) => !['ref', 'user'].includes(f.type) && !f.unique) ??
+    sampled[0];
   const first = sampled[0];
   const boot = bootOf(c.addons);
   const env = Object.assign(

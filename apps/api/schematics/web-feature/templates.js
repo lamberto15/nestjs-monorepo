@@ -445,6 +445,9 @@ function control(t, f, first) {
         name,
         `<field.RecordField label={t('fields.${name}')} subject="${refSubject(t, f)}" />`,
       );
+    case 'user':
+      // A member of the tenant, searched by name (GET /v1/people).
+      return wrap(name, `<field.PersonField label={t('fields.${name}')} />`);
     case 'text':
     case 'json':
       return wrap(
@@ -814,6 +817,7 @@ function column(t, f) {
     case 'text':
     case 'json':
     case 'ref':
+    case 'user':
       return false;
     case 'money':
       // The list filters a money field by its currency (GET /v1/lists/<Subject>).
@@ -840,7 +844,7 @@ export function listPage({ t, fields, softDelete, addons }) {
   const title = titleField(fields);
   const withBadge = fields.some((f) => f.type === 'enum');
   const columns = fields.filter(
-    (f) => f.type !== 'text' && f.type !== 'json' && f.type !== 'ref',
+    (f) => !['text', 'json', 'ref', 'user'].includes(f.type),
   );
   return lines(
     `import type { paths } from '@nestjs-monorepo/api-client';`,
@@ -1133,6 +1137,9 @@ function detail(t, f) {
     case 'ref':
       // Its title, as a picker shows it; the id until known.
       return shown(`<RecordName subject="${refSubject(t, f)}" value={${r}} />`);
+    case 'user':
+      // Their name, as the owner's; the key until known.
+      return shown(`<PersonName value={${r}} />`);
     default:
       return r;
   }
@@ -1162,8 +1169,14 @@ export function detailPage({ t, fields, softDelete, addons }) {
     `import { useTranslation } from 'react-i18next';`,
     fields.some((f) => f.markdown) &&
       `import { MarkdownText } from '@/components/markdown/lazy';`,
-    fields.some((f) => f.type === 'ref') &&
-      `import { RecordName } from '@/components/person-name';`,
+    (fields.some((f) => f.type === 'ref') ||
+      fields.some((f) => f.type === 'user')) &&
+      `import { ${[
+        fields.some((f) => f.type === 'user') && 'PersonName',
+        fields.some((f) => f.type === 'ref') && 'RecordName',
+      ]
+        .filter(Boolean)
+        .join(', ')} } from '@/components/person-name';`,
     `import { Page, PageHeader } from '@/components/page-header';`,
     custom &&
       `import { CustomFieldValues } from '@/components/records/custom-field-values';`,
@@ -1419,6 +1432,9 @@ export function test({ t, fields, softDelete, addons }) {
     // A reference's picker and its name: the records of its subject.
     fields.some((f) => f.type === 'ref') &&
       `    http.get('/v1/lists/:subject/options', () => HttpResponse.json({ items: [] })),`,
+    // A person's picker and their name: the tenant's members.
+    fields.some((f) => f.type === 'user') &&
+      `    http.get('/v1/people', () => HttpResponse.json({ items: [], nextCursor: null })),`,
     on('merge') && [
       `    http.post('${route}/duplicates', () => HttpResponse.json({ items: [] })),`,
       `    http.get('${route}/:id/duplicates', () => HttpResponse.json({ items: [] })),`,

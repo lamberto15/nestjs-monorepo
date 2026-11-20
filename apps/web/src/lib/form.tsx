@@ -37,7 +37,9 @@ import {
 } from '@nestjs-monorepo/ui/components/popover';
 import { Textarea } from '@nestjs-monorepo/ui/components/textarea';
 import { LazyMarkdownEditor } from '@/components/markdown/lazy';
+import { PersonPicker } from '@/components/person-picker';
 import { RecordPicker } from '@/components/records/record-picker';
+import { usePeopleNames } from '@/lib/people';
 import type { RecordFilter } from '@/lib/record-names';
 import { focusFirstInvalid, rememberFormElement } from '@/lib/form-focus';
 import { useWritesPaused } from '@/lib/mode';
@@ -424,6 +426,55 @@ function SelectField(props: {
 }
 
 /**
+ * A member of the tenant (a `user` field, an assigned agent): PersonPicker,
+ * searching the people by name; the value is their key (`user:<id>`), ''
+ * for none. Its input starts with the current person's name, once known.
+ */
+function PersonField(props: {
+  label: string;
+  description?: ReactNode;
+  placeholder?: string;
+}) {
+  const field = useFieldContext<string>();
+  const invalid = useInvalid();
+  const {
+    controlId: id,
+    descriptionId,
+    errorId,
+    describedBy,
+  } = useDescribedBy(Boolean(props.description), invalid);
+  const formRef = useFormElementRef();
+  const names = usePeopleNames([field.state.value]);
+  const known = field.state.value ? names.get(field.state.value) : undefined;
+  return (
+    <Field ref={formRef} data-invalid={invalid}>
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+      <PersonPicker
+        // Again once the current person's name is known.
+        key={known === undefined ? 'unnamed' : 'named'}
+        id={id}
+        label={props.label}
+        value={field.state.value}
+        initialLabel={known}
+        onChange={(key) => {
+          field.handleChange(key);
+          field.handleBlur();
+        }}
+        placeholder={props.placeholder}
+        invalid={invalid}
+        describedBy={describedBy}
+      />
+      {props.description && (
+        <FieldDescription id={descriptionId}>
+          {props.description}
+        </FieldDescription>
+      )}
+      {invalid && <FieldError id={errorId} errors={field.state.meta.errors} />}
+    </Field>
+  );
+}
+
+/**
  * A reference to a record (a `ref` field): RecordPicker, searching the
  * target subject's records by title; the value is the picked record's id,
  * '' for none.
@@ -513,6 +564,7 @@ const formHooks = createFormHook({
     CodeField,
     SelectField,
     RecordField,
+    PersonField,
     DateField,
   },
   formComponents: { SubmitButton },

@@ -37,9 +37,10 @@ export const TYPES = [
   'enum',
   'json',
   'ref',
+  'user',
 ];
 
-/** One field from `name:type`, `name:type?`, `name:type!unique`, `name:type!unique(otherId)`, `name:string!numbered`, `name:enum(a|b)`, `nameId:ref(other-feature)?`. */
+/** One field from `name:type`, `name:type?`, `agentId:user?` (a member of the tenant), `name:type!unique`, `name:type!unique(otherId)`, `name:string!numbered`, `name:enum(a|b)`, `nameId:ref(other-feature)?`. */
 export function parseField(spec) {
   const match =
     /^([^:]+):([a-z]+)(?:\(([^)]*)\))?(\?)?(?:!(unique|numbered)(?:\(([^)]*)\))?)?$/.exec(
@@ -101,6 +102,14 @@ export function parseField(spec) {
         `--fields: "${name}:ref(${arg})" is optional (${name}:ref(${arg})?); make it required by hand once both exist.`,
       );
     field.ref = arg;
+  } else if (type === 'user') {
+    if (arg !== undefined)
+      throw new Error(`--fields: "${type}" takes no (…).`);
+    // A member of the tenant: the generated test has none to give.
+    if (!optional)
+      throw new Error(
+        `--fields: "${name}:user" is optional (${name}:user?); make it required by hand.`,
+      );
   } else if (arg !== undefined) {
     throw new Error(`--fields: "${type}" takes no (…).`);
   }

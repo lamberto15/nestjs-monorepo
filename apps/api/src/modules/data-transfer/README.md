@@ -36,7 +36,7 @@ The columns are:
 - what the add-ons show (`tags`, `number`);
 - the tenant's custom fields, one column each, `custom.<key>` (multiple choices comma-separated);
 - the owner by name (`@ActorNameSource()`, modules/people; its key without
-  it), the unit by name for a record with units (a field referring to a
+  it), and each `user` field by name too, the unit by name for a record with units (a field referring to a
   unit too), and `createdAt`.
 
 A CSV starts with a BOM, and its formula-like text is quoted. An Excel file
@@ -57,7 +57,10 @@ once per import among the live records the caller may read, and one none of
 them holds is that row's error (`No customer whose code is "X".`), as one
 they may not read. A path (`QWERT/HL/PTP`) is looked up a part at a time,
 each within the one before it; the code alone (`PTP`) names no record that
-has a parent. An export is imported back as it is.
+has a parent. A `user` field's cell takes a member's email (any case),
+their name when no other active member has it, or their key; anything else
+is that row's error, so an export, which writes names, is imported back as
+it is while names differ.
 
 A file may have `custom.<key>` columns: they are put in the row's `custom` and checked by the record's own write (a bad value is that row's error); a dry run, which writes nothing, checks them the same way (the add-on's `importCheck()`).
 

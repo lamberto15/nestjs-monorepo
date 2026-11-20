@@ -485,6 +485,77 @@ describe('data transfer (e2e)', () => {
     expect(written[at('nextId')]).toBe(`P-${suffix}/OPEN`);
   });
 
+  it("takes a person field by a member's email or name, writes their name, and refuses one who is no member", async () => {
+    const suffix = randomUUID().slice(0, 6);
+    const { headers } = team.admin;
+    const agent = await member(app, team.tenantId, [], {
+      email: `agent-${suffix}@acme.dev`,
+      name: `Agent ${suffix}`,
+    });
+    const item = `A-${suffix}`;
+    await createTestItem(app, headers, { title: item, code: item });
+    const run = async (csv: string) => {
+      const done = await settled(
+        (await importOf(csv, { name: 'test-stages' }, headers)).json<{
+          id: string;
+        }>().id,
+        headers,
+      );
+      const report = done.result!.errorsUrl
+        ? (
+            await app.inject({
+              method: 'GET',
+              url: local(done.result!.errorsUrl),
+            })
+          ).body
+        : '';
+      return { result: done.result!, report };
+    };
+    const { result, report } = await run(
+      `itemId,code,agentId\n` +
+        `${item},BY-EMAIL,AGENT-${suffix}@ACME.DEV\n` +
+        `${item},BY-NAME,Agent ${suffix}\n` +
+        `${item},BY-KEY,user:${agent.id}\n` +
+        `${item},NOBODY,nobody-${suffix}@acme.dev\n` +
+        `${item},STRANGER,user:${randomUUID()}\n`,
+    );
+    expect(result).toMatchObject({ rows: 5, imported: 3, failed: 2 });
+    expect(report).toContain(
+      `4,agentId,"No member whose email or name is ""nobody-${suffix}@acme.dev""`,
+    );
+    // A key that is no member's: the record's own write refuses it.
+    expect(report).toMatch(/5,agentId,.*is no member of this tenant/);
+
+    const started = await app.inject({
+      method: 'POST',
+      url: '/v1/data/exports',
+      headers,
+      payload: { name: 'test-stages', format: 'csv' },
+    });
+    const csv = await settled(started.json<{ id: string }>().id, headers);
+    const [header, ...rows] = (
+      await app.inject({ method: 'GET', url: local(csv.result!.url!) })
+    ).body
+      .replace(/^\u{feff}/u, '')
+      .trim()
+      .split('\r\n')
+      .map((line) => line.split(','));
+    const at = (name: string) => header!.indexOf(name);
+    const mine = rows.filter((row) => row[at('itemId')] === item);
+    // Lists name and filter it as they do the owner: a person's key.
+    const described = (await get('/v1/lists/TestStage', headers)).json<{
+      fields: { name: string; ref?: string }[];
+    }>();
+    expect(described.fields.find((f) => f.name === 'agentId')).toMatchObject({
+      ref: 'principal',
+    });
+    expect(mine.map((row) => row[at('agentId')])).toEqual([
+      `Agent ${suffix}`,
+      `Agent ${suffix}`,
+      `Agent ${suffix}`,
+    ]);
+  });
+
   it('names the owner and the unit in an export, not their ids', async () => {
     const { unitId, worker } = await unitWithLead(app, team);
     const item = await createTestItem(app, worker.headers, { title: 'Owned' });

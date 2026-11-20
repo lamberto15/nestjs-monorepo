@@ -22,7 +22,11 @@ export const invoices = tenantTable(
 
 - **Types** (`field.ts`): `string`, `text`, `int`, `decimal` (a string end to
   end), `money` (two columns, `{ amount, currency }` in the API), `bool`,
-  `date`, `datetime`, `enum`, `json`, `ref`. Modifiers: `optional()` (null),
+  `date`, `datetime`, `enum`, `json`, `ref`, `user` (a member of the tenant,
+  held by their key as the owner is, `user:<id>`: a write takes an active
+  member only, 422 `person_not_found`; lists name and filter it as the
+  owner, `ref: 'principal'`; no database key, so a member who leaves stays
+  named). Modifiers: `optional()` (null),
   `default(v)`, `unique()` (per tenant; `unique({ within: 'productId' })` per
   value of another field, records with none of it not compared: make that
   field required when every record must be checked; that field becomes the

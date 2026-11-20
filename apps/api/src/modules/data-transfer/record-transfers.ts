@@ -7,7 +7,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { List, ListQuery } from '../../core/http/list-query.js';
@@ -21,7 +21,9 @@ import {
 import { discoverOne } from '../../iam/auth/discover.js';
 import { organizationalUnits } from '../../iam/organization/organization.tables.js';
 import type { Principal } from '../../iam/auth/principal.js';
-import type { AnyField } from '../fields/field.js';
+import { type AnyField, USER_KEY } from '../fields/field.js';
+import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
+import { memberships, users } from '../../iam/auth/auth.tables.js';
 import {
   type RecordDeclaration,
   recordValues,
@@ -342,6 +344,33 @@ export class RecordTransfers implements OnModuleInit {
   }
 
   /**
+   * The key of the tenant's active member whose email is `value` (any
+   * case), else whose name is exactly it when one member alone has it:
+   * an export, which writes names, is imported back as it is. Null when
+   * none, or two, match.
+   */
+  private async memberKey(value: string): Promise<string | null> {
+    const found = await this.txHost.tx
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(
+        memberships,
+        and(
+          eq(memberships.userId, users.id),
+          eq(memberships.tenantId, requireTenantId('An import')),
+          eq(memberships.active, true),
+        ),
+      )
+      .where(
+        value.includes('@')
+          ? eq(sql`lower(${users.email})`, value.trim().toLowerCase())
+          : eq(users.name, value.trim()),
+      )
+      .limit(2);
+    return found.length === 1 ? `user:${found[0]!.id}` : null;
+  }
+
+  /**
    * A page with names for people and readers to read: the owner's name for
    * its key (`user:<id>`; the key when it has none), and each unit's name
    * for its id, the record's and a field's that refers to a unit (the
@@ -351,14 +380,20 @@ export class RecordTransfers implements OnModuleInit {
     page: Record<string, unknown>[],
     declaration: RecordDeclaration,
   ) {
+    // The owner and each `user` field: a person's key.
+    const personFields = ['ownerId', ...userFields(declaration)];
     const owners = page.flatMap((row) =>
-      typeof row.ownerId === 'string' ? [row.ownerId] : [],
+      personFields.flatMap((field) =>
+        typeof row[field] === 'string' ? [row[field] as string] : [],
+      ),
     );
     if (this.people && owners.length) {
       const names = await this.people.names(new Set(owners));
       for (const row of page) {
-        const name = names.get(row.ownerId as string);
-        if (name) row.ownerId = name;
+        for (const field of personFields) {
+          const name = names.get(row[field] as string);
+          if (name) row[field] = name;
+        }
       }
     }
     const unitFields = [
@@ -406,11 +441,26 @@ export class RecordTransfers implements OnModuleInit {
    */
   referenceReader(principal: Principal, registration: RecordRegistration) {
     const refs = references(registration.declaration);
+    const people = userFields(registration.declaration);
     const known = new Map<string, Map<string, string | null>>();
+    const members = new Map<string, string | null>();
     return async (
       body: Record<string, unknown>,
     ): Promise<{ path: string; message: string }[]> => {
       const issues: { path: string; message: string }[] = [];
+      for (const field of people) {
+        const value = body[field];
+        if (typeof value !== 'string' || USER_KEY.test(value)) continue;
+        if (!members.has(value))
+          members.set(value, await this.memberKey(value));
+        const key = members.get(value);
+        if (key) body[field] = key;
+        else
+          issues.push({
+            path: field,
+            message: `No member whose email or name is "${value}" (a name two share: give the email).`,
+          });
+      }
       for (const ref of refs) {
         const value = body[ref.field];
         if (typeof value !== 'string' || UUID.test(value)) continue;
@@ -452,10 +502,18 @@ export class RecordTransfers implements OnModuleInit {
     const keyed = new Map(
       references(registration.declaration).map((ref) => [ref.field, ref]),
     );
+    const people = new Set(userFields(registration.declaration));
     return [
       ...columns
         .filter((column) => !forbidden.includes(column.name))
         .map((column) => {
+          if (people.has(column.name)) {
+            return {
+              ...column,
+              description:
+                "A member's email, their name (when no other has it), or their key.",
+            };
+          }
           const ref = keyed.get(column.name);
           return ref
             ? {
@@ -611,6 +669,12 @@ export class RecordTransfers implements OnModuleInit {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The record's `user` fields: a person's key, named in exports, taken by email or name in imports. */
+const userFields = (declaration: RecordDeclaration) =>
+  Object.entries(declaration.fields).flatMap(([name, f]) =>
+    (f as AnyField).kind === 'user' ? [name] : [],
+  );
+
 /** The record's reference fields to records with a key (recordKey()): what files name by it. */
 function references(declaration: RecordDeclaration) {
   return Object.entries(declaration.fields).flatMap(([field, f]) => {
@@ -635,11 +699,13 @@ export function refusal(
     return undefined;
   }
   const body = error.getResponse();
-  const { errors, fields, message } = (
+  const { errors, fields, field, message } = (
     typeof body === 'object' ? body : { message: body }
   ) as {
     errors?: { path?: string | string[]; message?: string }[];
     fields?: string[];
+    /** One field (`reference_not_found`, `person_not_found`). */
+    field?: string;
     message?: string | string[];
   };
   if (Array.isArray(errors) && errors.length) {
@@ -654,8 +720,10 @@ export function refusal(
   const text = Array.isArray(message)
     ? message.join(' ')
     : (message ?? error.message);
-  if (Array.isArray(fields) && fields.length) {
-    return fields.map((field) => ({ row, path: field, message: text }));
+  const named =
+    Array.isArray(fields) && fields.length ? fields : field ? [field] : [];
+  if (named.length) {
+    return named.map((path) => ({ row, path, message: text }));
   }
   return [{ row, path: '', message: text }];
 }

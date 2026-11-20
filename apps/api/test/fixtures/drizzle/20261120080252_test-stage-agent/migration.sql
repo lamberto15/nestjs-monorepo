@@ -1,0 +1,1 @@
+ALTER TABLE "test_stages" ADD COLUMN "agent_id" text;

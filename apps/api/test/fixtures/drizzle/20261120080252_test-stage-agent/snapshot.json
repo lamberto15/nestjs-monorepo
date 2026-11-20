@@ -1,0 +1,47 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "fc2a1050-8828-4eed-967a-abf33d4516b0",
+  "prevIds": [
+    "9defd822-9005-4e2e-b409-371f0af2488b"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "test_stages",
+        "agent_id"
+      ],
+      "writes": [
+        "s|col|public.test_stages.agent_id",
+        "n|col|public.test_stages.agent_id",
+        "e|col|public.test_stages.agent_id"
+      ],
+      "reads": [
+        "n|tbl|public.test_stages",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_stages",
+        "name": "agent_id",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}

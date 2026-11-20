@@ -46,6 +46,7 @@ const ENTRIES: Record<
   }),
   json: null,
   ref: () => ({ type: 'uuid', ops: ['eq', 'in'] }),
+  user: () => ({ type: 'string', ops: ['eq', 'in'] }),
 };
 
 /** The subject a reference field's values are ids of (the `ref` of its list entry). */
@@ -77,6 +78,8 @@ export function fieldList(fields: Fields, table: Record<string, AnyPgColumn>) {
       ...(f.kind === 'enum' && { values: f.options.values }),
       // A reference's values are ids of the records it points at: clients show a picker of them.
       ...(f.kind === 'ref' && { ref: refOf(name, f) }),
+      // A person's key: clients name them and pick them as they do an owner.
+      ...(f.kind === 'user' && { ref: 'principal' }),
     };
   }
   // The list's entry types are checked where the record declares its list.

@@ -173,7 +173,19 @@ describe('the feature schematic', () => {
     );
   });
 
+  it('declares a member of the tenant: `<name>:user?`', async () => {
+    const tree = await runner.runSchematic(
+      'feature',
+      { name: 'cases', fields: 'title:string,agentId:user?', skipImport: true },
+      empty(),
+    );
+    expect(tree.readContent('/src/features/cases/case.record.ts')).toContain(
+      'agentId: field.user().optional()',
+    );
+  });
+
   it.each([
+    [{ name: 'cases', fields: 'title:string,agentId:user' }, 'is optional'],
     [
       { name: 'stages', fields: 'code:string!unique(productId)' },
       'no other field',

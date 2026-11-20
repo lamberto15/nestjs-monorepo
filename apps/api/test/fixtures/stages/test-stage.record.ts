@@ -7,7 +7,8 @@ import { TEST_ITEM } from '../test-items/test-item.record.js';
  * Test stages: a record whose code is unique within its test item only
  * (`unique({ within: 'itemId' })`), so files name one by a path of keys,
  * the item's code then its own (`P-1/OPEN`). `nextId` refers to another
- * stage: the reference such a path names.
+ * stage: the reference such a path names. `agentId` is a member of the
+ * tenant (`field.user()`): named in exports, taken by email or name.
  */
 export const TEST_STAGE = defineRecord({
   subject: 'TestStage',
@@ -20,5 +21,6 @@ export const TEST_STAGE = defineRecord({
     itemId: field.ref((): Referenced => recordTableOf(TEST_ITEM)),
     code: field.string().unique({ within: 'itemId' }),
     nextId: field.ref((): Referenced => recordTableOf(TEST_STAGE)).optional(),
+    agentId: field.user().optional(),
   },
 });

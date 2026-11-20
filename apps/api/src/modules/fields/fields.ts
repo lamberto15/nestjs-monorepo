@@ -365,6 +365,8 @@ const SAMPLES: Record<
   }),
   // A reference's record is another feature's: tests leave it empty.
   ref: () => ({ sample: null, changed: null, invalid: 'not-a-uuid' }),
+  // A member is the tenant's: tests leave it empty too.
+  user: () => ({ sample: null, changed: null, invalid: 'not-a-key' }),
 };
 
 /**
@@ -383,7 +385,9 @@ export function fieldSamples(fields: Fields) {
   const [first, f] =
     entries.find(
       ([, candidate]) =>
-        candidate.kind !== 'ref' && !candidate.options.readOnly,
+        candidate.kind !== 'ref' &&
+        candidate.kind !== 'user' &&
+        !candidate.options.readOnly,
     ) ?? entries[0]!;
   const sample = SAMPLES[f.kind](f, first);
   return {

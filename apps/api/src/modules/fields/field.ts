@@ -49,7 +49,8 @@ export type FieldKind =
   | 'datetime'
   | 'enum'
   | 'json'
-  | 'ref';
+  | 'ref'
+  | 'user';
 
 /** A referenced table: its tenant and id columns (`tenantReference`). */
 export interface Referenced {
@@ -218,6 +219,10 @@ const plain = <
     ...extra,
   });
 
+/** A person's key, as an owner's (`user:<uuid>`): what a `user` field holds. */
+export const USER_KEY =
+  /^user:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** `dueOn` → `due_on`: a field's column name. */
 export const columnName = (name: string) =>
   name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -342,6 +347,24 @@ export const field = {
    * record's subject; `subject` names it when the target is a hand-written
    * table, not a record's (`field.ref(() => notes, 'Note')`).
    */
+  /**
+   * A member of the tenant (an assigned agent), held as the owner is, by
+   * their key (`user:<id>`). A write takes an active member only (422
+   * `person_not_found`); lists name them and filter by them (`ref:
+   * 'principal'`), exports write their name, imports take their email,
+   * name or key. No database key: users are not the tenant's rows, and a
+   * member who leaves stays named on the records they held.
+   */
+  user: () =>
+    plain(
+      'user',
+      (name) => text(columnName(name)),
+      z
+        .string()
+        .regex(USER_KEY, 'A member: `user:<id>`.')
+        .meta({ example: 'user:0190a6a0-7c1e-7000-8000-00000000abcd' }),
+      z.string(),
+    ),
   ref: (target: () => Referenced, subject?: string) =>
     plain('ref', (name) => uuid(columnName(name)), z.uuid(), z.uuid(), {
       ref: target,

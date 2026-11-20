@@ -20,6 +20,8 @@ import {
   toPage,
 } from '../../core/http/pagination.js';
 import { Events } from '../../core/outbox/events.js';
+import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
+import { memberships } from '../../iam/auth/auth.tables.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { PermissionCatalog } from '../../iam/access/permission-catalog.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -378,6 +380,7 @@ export class RecordStore<Row extends RecordRow = RecordRow> {
     values: Record<string, unknown>,
     before?: Row,
   ) {
+    await this.assertMembers(values, before);
     for (const relation of relationsFrom(this.declaration)) {
       const id = values[relation.field] as string | null | undefined;
       const subject = relation.target();
@@ -400,6 +403,38 @@ export class RecordStore<Row extends RecordRow = RecordRow> {
           code: 'reference_not_found',
           message: `${relation.field}: no ${subject} ${id} that you may read.`,
           field: relation.field,
+        });
+      }
+    }
+  }
+
+  /**
+   * Each `user` field a write sets or changes names an active member of
+   * the tenant: else a 422 `person_not_found` (the same for one of another
+   * tenant, one who left or none). One kept as it was stays, a member who
+   * left included.
+   */
+  private async assertMembers(values: Record<string, unknown>, before?: Row) {
+    for (const [field, f] of Object.entries(this.declaration.fields)) {
+      if (f.kind !== 'user') continue;
+      const key = values[field];
+      if (typeof key !== 'string' || before?.[field] === key) continue;
+      const [found] = await this.db
+        .select({ userId: memberships.userId })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.tenantId, requireTenantId('A person field')),
+            eq(memberships.userId, key.slice('user:'.length)),
+            eq(memberships.active, true),
+          ),
+        )
+        .limit(1);
+      if (!found) {
+        throw new UnprocessableEntityException({
+          code: 'person_not_found',
+          message: `${field}: ${key} is no member of this tenant.`,
+          field,
         });
       }
     }
