@@ -106,9 +106,16 @@ was made from, and set `template.json` to it.
 ```bash
 # template.json: "version": "0.2.0"
 git commit -am "chore(release): 0.2.0"
+git push origin main
+# wait: CI passes on that commit and publish.yml builds its image (sha-<commit>)
 git tag v0.2.0
-git push origin main v0.2.0
+git push origin v0.2.0
 ```
+
+Push the tag only once the commit's image exists: the tag's run of
+`publish.yml` does not build one, it names the commit's image with the
+version, and fails when there is none yet (`gh run rerun` it once the image
+is published).
 
 The tag runs `.github/workflows/release.yml`: it checks the tag matches
 `template.json`, publishes `create-nestjs-monorepo` at that version to npm
