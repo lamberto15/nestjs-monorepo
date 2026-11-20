@@ -797,7 +797,7 @@ function column(t, f) {
       return false;
     case 'money':
       // The list filters a money field by its currency (GET /v1/lists/<Subject>).
-      return `{ id: '${n}Currency', accessorFn: (row) => row.${n} ? ${tpl(`@{row.${n}.amount} @{row.${n}.currency}`)} : '', ...header('${n}') },`;
+      return `{ id: '${n}Currency', accessorFn: (row) => row.${n} ? ${tpl(`@{row.${n}.amount} @{row.${n}.currency}`)} : '', ...header('${n}', '${n}') },`;
     case 'bool':
       return `{ id: '${n}', accessorFn: (row) => row.${n} == null ? '' : t(row.${n} ? 'values.yes' : 'values.no'), ...header('${n}') },`;
     case 'enum':
@@ -813,6 +813,7 @@ function column(t, f) {
 }
 
 export function listPage({ t, fields, softDelete, addons }) {
+  const has = (...types) => fields.some((f) => types.includes(f.type));
   const S = t.Singular;
   const P = t.PLURAL;
   const item = t.singularCamel;
@@ -868,10 +869,13 @@ export function listPage({ t, fields, softDelete, addons }) {
     '  // Cells and headers only: whether a column filters or sorts, and how, comes',
     `  // from GET /v1/lists/${S} (see withListMeta).`,
     `  const columns = useMemo<ListColumn<${S}>[]>(() => {`,
-    '    const header = (key: string) => {',
+    has('money')
+      ? '    const header = (key: string, selects?: string) => {'
+      : '    const header = (key: string) => {',
     `      const label = t(${tpl('fields.@{key}')});`,
     '      return {',
-    '        meta: { label },',
+    // A money column filters by its currency (its id) and reads the field.
+    has('money') ? '        meta: { label, selects },' : '        meta: { label },',
     `        header: ({ column }: HeaderContext<DataTableFeatures, ${S}, unknown>) => (`,
     '          <DataTableColumnHeader column={column} label={label} />',
     '        ),',
@@ -1361,7 +1365,8 @@ export function test({ t, fields, softDelete, addons }) {
     '      HttpResponse.json({',
     `        subject: '${S}',`,
     '        fields: [],',
-    `        select: ['id'],`,
+    // What a list may select: what a visible column asks for (`fields=`).
+    `        select: ${JSON.stringify(['id', ...(numberColumn(addons, fields) ? ['number'] : []), ...fields.map((f) => f.name), 'createdAt']).replaceAll('"', "'")},`,
     '        search: false,',
     `        recycleBin: ${softDelete},`,
     `        defaultSort: '-createdAt',`,
@@ -1418,6 +1423,19 @@ export function test({ t, fields, softDelete, addons }) {
     `    expect(await screen.findByRole('button', { name: 'New ${t.noun}' })).toBeVisible();`,
     '  });',
     '',
+    ...fields
+      .filter((f) => f.type === 'money')
+      .map((f) =>
+        lines(
+          `  it('shows ${label(f.name).toLowerCase()} in its column: the list asks for ${f.name}', async () => {`,
+          '    const calls = useApi(ALL);',
+          `    await renderApp('/${t.plural}');`,
+          `    expect(await screen.findByText('19.99 EUR')).toBeVisible();`,
+          `    expect(calls.listed.at(-1)?.searchParams.get('fields')?.split(',')).toContain('${f.name}');`,
+          '  });',
+          '',
+        ),
+      ),
     '  it("offers no way to add one without the permission", async () => {',
     `    useApi(['${S}.read']);`,
     `    await renderApp('/${t.plural}');`,

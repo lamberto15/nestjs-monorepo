@@ -217,7 +217,9 @@ function ListTable<P extends ListPath>({
     };
   }, [columns, description, refs, t, i18n.language, rowActions, checkable]);
   const [fields, setFields] = useState(() =>
-    cols.flatMap((c) => (c.id && !(c.id in hidden) ? [c.id] : [])),
+    cols.flatMap((c) =>
+      c.id && !(c.id in hidden) ? [c.meta?.selects ?? c.id] : [],
+    ),
   );
   const query = useListQuery(path, description, cols, fields, {
     extra: extraQuery,
@@ -399,7 +401,7 @@ function FieldsSync<TData extends RowData>({
           ids={table
             .getAllLeafColumns()
             .filter((c) => visibility[c.id] !== false)
-            .map((c) => c.id)}
+            .map((c) => c.columnDef.meta?.selects ?? c.id)}
           onChange={onChange}
         />
       )}

@@ -14,6 +14,12 @@ import type {
 
 export interface DataTableColumnMeta {
   label?: string;
+  /**
+   * The list field the column's cells read, when it isn't its id: a money
+   * column is `totalCurrency` (it filters by the currency) and reads
+   * `total`. What a visible column asks the list for (`fields=`).
+   */
+  selects?: string;
   placeholder?: string;
   variant?: FilterVariant;
   /**
