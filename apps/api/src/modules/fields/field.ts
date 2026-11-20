@@ -135,7 +135,8 @@ export class Field<
    * duplicate is a 409. `within` names another field of the record: unique
    * among the records with the same value of it (a code unique within its
    * product: `unique({ within: 'productId' })`); records with none of it
-   * are not compared.
+   * are not compared: make `within` a required field when every record
+   * must be checked.
    */
   unique(options: { within?: string } = {}): Field<K, C, I, O, Opt, Def, RO> {
     return new Field(this.kind, this.makeColumn, this.input, this.output, {
