@@ -12,15 +12,10 @@ import { label } from './names.js';
 function pieces(c, key) {
   const out = [];
   for (const name of c.addons) {
-    const value = ADDONS[name][key];
+    const given = ADDONS[name][key];
+    const value = typeof given === 'function' ? given(c) : given;
     if (!value) continue;
-    out.push(
-      ...(typeof value === 'function'
-        ? value(c)
-        : Array.isArray(value)
-          ? value
-          : Object.keys(value)),
-    );
+    out.push(...(Array.isArray(value) ? value : Object.keys(value)));
   }
   return out;
 }
@@ -32,7 +27,9 @@ function pieceImports(c, key) {
     const addon = ADDONS[name];
     if (!addon[key]) continue;
     if (key === 'columns') {
-      for (const [n, from] of Object.entries(addon.columns))
+      const columns =
+        typeof addon.columns === 'function' ? addon.columns(c) : addon.columns;
+      for (const [n, from] of Object.entries(columns))
         entries.push([n, src(c, from)]);
       continue;
     }

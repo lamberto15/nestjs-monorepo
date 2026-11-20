@@ -41,7 +41,7 @@
     },
     "fields": {
       "type": "string",
-      "description": "name:type, comma-separated; types string, text, int, decimal, money, bool, date, datetime, enum(a|b), json, ref(<feature>); ? optional, !unique unique.",
+      "description": "name:type, comma-separated; types string, text, int, decimal, money, bool, date, datetime, enum(a|b), json, ref(<feature>); ? optional, !unique unique, !numbered filled from a naming series when left empty.",
       "x-prompt": "Its fields (name:type, comma-separated; e.g. title:string,amount:money?,status:enum(draft|sent)):"
     },
     "addons": {

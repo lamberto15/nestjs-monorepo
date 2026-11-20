@@ -56,10 +56,14 @@ export function webPaths(t) {
   };
 }
 
+/** Whether the records have a `number` column: the sequences add-on, but not for a `!numbered` field of their own. */
+const numberColumn = (addons, fields) =>
+  addons.includes('sequences') && !fields.some((f) => f.numbered);
+
 /** The English texts of locales/<lng>/<plural>.json (every locale gets them, to translate). */
 export function texts({ t, fields, softDelete, addons }) {
   const labels = {};
-  if (addons.includes('sequences')) labels.number = 'Number';
+  if (numberColumn(addons, fields)) labels.number = 'Number';
   for (const f of fields) {
     labels[f.name] = label(f.name);
     if (f.type === 'money') {
@@ -99,6 +103,14 @@ export function texts({ t, fields, softDelete, addons }) {
       created: `${Noun} created`,
       saved: `${Noun} saved`,
       conflict: `Someone else changed this ${t.noun}. Reload the page, then make your changes again.`,
+      ...Object.fromEntries(
+        fields
+          .filter((f) => f.numbered)
+          .map((f) => [
+            `${f.name}Hint`,
+            'Leave it empty to number it from its naming series.',
+          ]),
+      ),
       ...(addons.includes('sequences') && {
         numbering: 'Numbering',
         numberingHint: `Which series gives the ${t.noun} its number.`,
@@ -450,7 +462,15 @@ function control(t, f, first) {
           : f.type === 'datetime'
             ? ' placeholder="2026-01-31T09:00:00Z"'
             : '';
-      return text(name, name, placeholder + (first ? ' autoFocus' : ''));
+      // A `!numbered` field: left empty, its naming series fills it.
+      const hint = f.numbered
+        ? ` description={t('form.${name}Hint')}`
+        : '';
+      return text(
+        name,
+        name,
+        placeholder + hint + (first ? ' autoFocus' : ''),
+      );
     }
   }
 }
@@ -858,7 +878,7 @@ export function listPage({ t, fields, softDelete, addons }) {
     '      };',
     '    };',
     '    return [',
-    addons.includes('sequences') &&
+    numberColumn(addons, fields) &&
       `      { id: 'number', accessorKey: 'number', ...header('number') },`,
     ...columns.map((f) =>
       f === title
@@ -1179,7 +1199,7 @@ export function detailPage({ t, fields, softDelete, addons }) {
     '    <>',
     '      <PageHeader',
     `        title={${name}}`,
-    addons.includes('sequences') && `        description={${item}.number}`,
+    numberColumn(addons, fields) && `        description={${item}.number}`,
     '        actions={',
     '          (canUpdate || canDelete) && (',
     '            <DropdownMenu>',
@@ -1267,7 +1287,7 @@ export function test({ t, fields, softDelete, addons }) {
   const title = titleField(fields);
   const record = {
     id: '__ID__',
-    ...(addons.includes('sequences') && {
+    ...(numberColumn(addons, fields) && {
       number: `${S.slice(0, 3).toUpperCase()}-2026-00001`,
     }),
     ...Object.fromEntries(fields.map((f) => [f.name, sample(f).api])),

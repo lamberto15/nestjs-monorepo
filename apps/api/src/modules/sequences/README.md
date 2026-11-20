@@ -11,6 +11,6 @@ Human-readable numbers (`INV-2026-00042`): gapless per tenant, next to the UUID 
 - **Variable:** `SEQUENCES_TIMEZONE` (the zone of year, month and day in numbers; default UTC).
 - **Tables:** `sequences`, `naming_series` (tenant tables).
 
-Add-on: `pnpm feature:add --addons sequences` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `sequences.addon.js`): a human-readable number on each record.
+Add-on: `pnpm feature:add --addons sequences` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `sequences.addon.js`): a human-readable number on each record. A field `reference:string!numbered` in `--fields` takes the add-on in its other form: that field, filled when a create leaves it empty, and no `number` column.
 
 Remove: `pnpm module:remove sequences` ([removing-a-module](../../../../../docs/removing-a-module.md)).

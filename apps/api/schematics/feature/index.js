@@ -23,7 +23,17 @@ const clean = (path) =>
 export function context(options) {
   const t = names(options.name, options.singular);
   const fields = parseFields(options.fields);
-  const addons = parseAddons(options.addons);
+  const parsed = parseAddons(options.addons);
+  // A `!numbered` field is the sequences add-on's: taken with it.
+  const numbered = fields.some((f) => f.numbered);
+  if (numbered && !ADDONS.sequences)
+    throw new Error(
+      '--fields: !numbered needs the sequences module, which this project has removed.',
+    );
+  const addons =
+    numbered && !parsed.includes('sequences')
+      ? parseAddons([...parsed, 'sequences'])
+      : parsed;
   const sourceRoot = clean(options.sourceRoot || 'src');
   const base = clean(options.path || posix.join(sourceRoot, 'features'));
   const dir = options.flat ? base : posix.join(base, t.plural);

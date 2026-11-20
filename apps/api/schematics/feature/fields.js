@@ -1,6 +1,7 @@
 // `--fields "title:string,amount:money?,status:enum(draft|sent),code:string!unique"`:
 // the field types of modules/fields (field.ts), `?` optional, `!unique`
-// unique per tenant. `markdown` is a `text` field to the API; the web pages
+// unique per tenant, `!numbered` a string a naming series fills when a create
+// leaves it empty (optional and unique; the sequences add-on). `markdown` is a `text` field to the API; the web pages
 // edit it with the Markdown editor and show it rendered.
 
 const CAMEL = /^[a-z][a-zA-Z0-9]*$/;
@@ -38,17 +39,27 @@ export const TYPES = [
   'ref',
 ];
 
-/** One field from `name:type`, `name:type?`, `name:type!unique`, `name:enum(a|b)`, `nameId:ref(other-feature)?`. */
+/** One field from `name:type`, `name:type?`, `name:type!unique`, `name:string!numbered`, `name:enum(a|b)`, `nameId:ref(other-feature)?`. */
 export function parseField(spec) {
-  const match = /^([^:]+):([a-z]+)(?:\(([^)]*)\))?(\?)?(!unique)?$/.exec(
-    spec.trim(),
-  );
+  const match =
+    /^([^:]+):([a-z]+)(?:\(([^)]*)\))?(\?)?(?:!(unique|numbered))?$/.exec(
+      spec.trim(),
+    );
   if (!match) {
     throw new Error(
-      `--fields "${spec}": write name:type, ? for optional, !unique for unique (title:string, dueOn:date?, code:string!unique).`,
+      `--fields "${spec}": write name:type, ? for optional, !unique for unique, !numbered for a number from a naming series (title:string, dueOn:date?, code:string!unique, reference:string!numbered).`,
     );
   }
-  const [, name, type, arg, optional, unique] = match;
+  const [, name, type, arg, optional, flag] = match;
+  const unique = flag === 'unique';
+  if (flag === 'numbered') {
+    if (type !== 'string' || optional)
+      throw new Error(
+        `--fields: "${name}:${type}${optional ?? ''}!numbered": !numbered applies to a string field, which it makes optional and unique (${name}:string!numbered).`,
+      );
+    // Left empty, a naming series fills it; a value typed in is kept.
+    return { name, type, optional: true, unique: true, numbered: true };
+  }
   if (!CAMEL.test(name))
     throw new Error(`--fields: "${name}" is a camelCase name (dueOn).`);
   if (RESERVED.has(name))
@@ -112,6 +123,8 @@ export function parseFields(list) {
     throw new Error(
       '--fields: give at least one field (--fields "title:string").',
     );
+  if (fields.filter((f) => f.numbered).length > 1)
+    throw new Error('--fields: one field at most is !numbered.');
   const seen = new Set();
   for (const f of fields) {
     if (seen.has(f.name))
