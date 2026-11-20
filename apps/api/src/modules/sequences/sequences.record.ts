@@ -1,8 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { InjectTransaction } from '@nestjs-cls/transactional';
+import { Inject, Injectable } from '@nestjs/common';
 import { text } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import type { FilterField } from '../../core/http/list-query.js';
+import type { Database } from '../../core/database/database.js';
 import type { RecordDeclaration, RecordTable } from '../records/record.js';
+import {
+  referenceKeyNames,
+  referenceKeyValues,
+} from '../records/record-keys.js';
 import {
   InjectRecord,
   RecordExtension,
@@ -54,6 +60,7 @@ export type NumberFormat = NumberedSubject['declared'];
 export function numberedSubject(
   record: RecordDeclaration,
   format: NumberFormat = {},
+  field?: string,
 ): NumberedSubject {
   const words = record.subject.match(/[A-Z][a-z0-9]*/g) ?? [record.subject];
   const initials =
@@ -69,12 +76,17 @@ export function numberedSubject(
       width: 5,
       ...format,
     },
-    fields: Object.fromEntries(
-      Object.entries(record.fields).flatMap(([name, field]) => {
-        const kind = KINDS[(field as { kind: string }).kind];
-        return kind ? [[name, kind]] : [];
+    fields: Object.fromEntries([
+      ...Object.entries(record.fields).flatMap(([name, f]) => {
+        const kind = KINDS[(f as { kind: string }).kind];
+        // The numbered field itself is what the pattern makes.
+        return kind && name !== field ? [[name, kind]] : [];
       }),
-    ),
+      // A reference prints its record's key ({product}: HL), and its key's parents ({product_client}: QWERT).
+      ...(field
+        ? referenceKeyNames(record).map((name) => [name, 'text' as const])
+        : []),
+    ]),
   };
 }
 
@@ -111,5 +123,44 @@ export class NumberingExtension implements RecordHooks {
       values: input,
     });
     return { number: formatted };
+  }
+}
+
+/** The field `SequencesModule.forRecord(…, { field })` numbers. */
+export const NUMBERED_FIELD = Symbol('NUMBERED_FIELD');
+
+/**
+ * A record's key from a naming series (`forRecord(…, { field })`): a new
+ * record whose field is empty takes the next number, in the create's
+ * transaction; a value given is kept. The pattern may print the record's
+ * fields and its references' keys (`{product}`, `{product_client}`,
+ * record-keys.ts).
+ */
+@RecordExtension()
+@Injectable()
+export class FieldNumberingExtension implements RecordHooks {
+  constructor(
+    @InjectRecord() readonly record: RecordDeclaration,
+    @Inject(NUMBERED_FIELD) private readonly field: string,
+    private readonly series: NamingSeriesService,
+    @InjectTransaction() private readonly db: Database,
+  ) {}
+
+  async creating({
+    input,
+    values,
+  }: {
+    input: Record<string, unknown>;
+    values: Record<string, unknown>;
+  }) {
+    if (values[this.field]) return;
+    const { formatted } = await this.series.next(this.record.subject, {
+      seriesId: input.namingSeriesId as string | undefined,
+      values: {
+        ...input,
+        ...(await referenceKeyValues(this.db, this.record, input)),
+      },
+    });
+    return { [this.field]: formatted };
   }
 }

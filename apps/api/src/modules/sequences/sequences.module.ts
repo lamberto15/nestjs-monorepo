@@ -21,6 +21,8 @@ import { RECORD } from '../records/record-extension.js';
 import { RecordsModule } from '../records/records.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import {
+  FieldNumberingExtension,
+  NUMBERED_FIELD,
   type NumberFormat,
   NumberingExtension,
   numberedSubject,
@@ -94,20 +96,35 @@ export class SequencesModule {
    * ```ts
    * imports: [SequencesModule.forRecord(INVOICE, { prefix: 'INV' })]
    * ```
+   *
+   * With `{ field }`, the record's own field is numbered instead, when a
+   * create leaves it empty (a key people may also type: an account's
+   * `reference`); no `number` column, the pattern may print the record's
+   * references' keys (`{product}`, `{product_client}`).
    */
   static forRecord(
     record: RecordDeclaration,
     format?: NumberFormat,
+    { field }: { field?: string } = {},
   ): DynamicModule {
     return {
       module: NumberedRecordModule,
       imports: [
         RecordsModule,
         SequencesModule.forFeature({
-          subjects: [numberedSubject(record, format)],
+          subjects: [numberedSubject(record, format, field)],
         }),
       ],
-      providers: [{ provide: RECORD, useValue: record }, NumberingExtension],
+      providers: [
+        { provide: RECORD, useValue: record },
+        // `field`: the record's own field (its key) is numbered when left empty; else a `number` of its own.
+        ...(field
+          ? [
+              { provide: NUMBERED_FIELD, useValue: field },
+              FieldNumberingExtension,
+            ]
+          : [NumberingExtension]),
+      ],
     };
   }
 }

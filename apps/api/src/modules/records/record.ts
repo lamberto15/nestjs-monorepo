@@ -1,9 +1,11 @@
+import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   type AnyPgColumnBuilder,
   index,
   type PgTableExtraConfigValue,
   text,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { at, timestamps, uuidPk } from '../../core/database/columns.js';
@@ -12,7 +14,12 @@ import {
   tenantTable,
 } from '../../core/tenancy/tenant-tables.js';
 import { organizationalUnits } from '../../iam/organization/organization.tables.js';
-import { columnName, type Fields, tableHolds } from '../fields/field.js';
+import {
+  type AnyField,
+  columnName,
+  type Fields,
+  tableHolds,
+} from '../fields/field.js';
 import { relate } from './record-relations.js';
 import {
   type FieldColumns,
@@ -47,6 +54,20 @@ export interface RecordDeclaration<F extends Fields = Fields> {
   noun: string;
   /** The SQL table: `invoices`. */
   table: string;
+  /**
+   * The field people name a record by outside the app (`code`, an invoice
+   * number): exports write it instead of the id, a reference to the record
+   * is written as it, and imports find records by it. A unique field
+   * (`.unique()`), or one unique within `keyWithin`. Without one, the id
+   * (recordKeyOf()). record-keys.ts reads keys and finds records by them.
+   */
+  key?: keyof F & string;
+  /**
+   * The required reference `key` is unique within (a product's `code`
+   * within its bank, `clientId`): the table gets that unique index, and
+   * the key is written as a path of its parents' keys, `QWERT/HL`.
+   */
+  keyWithin?: keyof F & string;
   /** Deleted records go to a recycle bin (`deletedAt`), restorable. */
   softDelete: boolean;
   /**
@@ -106,6 +127,30 @@ export function defineRecord<
     throw new Error(
       `${declaration.subject}: "${declaration.path}" is no path: kebab-case (purchase-orders).`,
     );
+  }
+  if (declaration.key) {
+    const key = declaration.fields[declaration.key] as AnyField | undefined;
+    const within = declaration.keyWithin
+      ? (declaration.fields[declaration.keyWithin] as AnyField | undefined)
+      : undefined;
+    if (!key) {
+      throw new Error(
+        `${declaration.subject}: its key "${declaration.key}" is none of its fields.`,
+      );
+    }
+    if (declaration.keyWithin) {
+      if (within?.kind !== 'ref' || within.options.optional) {
+        throw new Error(
+          `${declaration.subject}: keyWithin "${declaration.keyWithin}" must be a required reference field.`,
+        );
+      }
+    } else if (!key.options.unique) {
+      throw new Error(
+        `${declaration.subject}: its key "${declaration.key}" must be a unique field (.unique()), or unique within a reference (keyWithin).`,
+      );
+    }
+  } else if (declaration.keyWithin) {
+    throw new Error(`${declaration.subject}: keyWithin needs a key.`);
   }
   for (const name of Object.keys(declaration.fields)) {
     if (RESERVED.includes(name)) {
@@ -226,6 +271,21 @@ export function recordTable<
           ? [index(`${name}_search_idx`).using('gin', t.search!)]
           : []),
         ...fieldExtras(name, t, declaration.fields, declaration.softDelete),
+        ...(declaration.key && declaration.keyWithin
+          ? [
+              // The key is unique within its parent (live rows, as a unique field's).
+              ((unique) =>
+                declaration.softDelete
+                  ? unique.where(sql`deleted_at is null`)
+                  : unique)(
+                uniqueIndex(`${name}_key_idx`).on(
+                  t.tenantId!,
+                  t[declaration.keyWithin]!,
+                  t[declaration.key]!,
+                ),
+              ),
+            ]
+          : []),
         ...(declaration.unit
           ? [
               // As a reference field's (fieldExtras): a unit-scoped list

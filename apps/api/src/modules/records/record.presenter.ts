@@ -17,6 +17,7 @@ import {
   relationsFrom,
   relationTitle,
 } from './record-relations.js';
+import { keysOf } from './record-keys.js';
 import { RecordFeature, Records } from './records.service.js';
 
 /** What a request asked to include (`?include=can,watching`): the names. */
@@ -77,7 +78,7 @@ export const includeQuery = () => ({
   required: false,
   type: String,
   description:
-    '`can`: each record says what you may do with it now (`can.update`, `can.delete`, `can.restore`), as its routes would decide. A reference field without its `Id` (`parent`) adds `{ id, title }` of the record it names, null when you may not read it. Add-ons answer more (`watching`); another value is a 400. Comma-separated. Not part of the ETag.',
+    '`can`: each record says what you may do with it now (`can.update`, `can.delete`, `can.restore`), as its routes would decide. A reference field without its `Id` (`parent`) adds `{ id, title, key }` of the record it names (`key`: what files name it by, its declared key or its id), null when you may not read it. Add-ons answer more (`watching`); another value is a 400. Comma-separated. Not part of the ETag.',
   example: 'can',
 });
 
@@ -206,7 +207,7 @@ export class RecordPresenter {
 
   /**
    * The records a page's rows refer to through `relation` (`?include=parent`),
-   * by row id: `{ id, title }` of one the caller may read, else null (as a
+   * by row id: `{ id, title, key }` of one the caller may read, else null (as a
    * field they may not read is).
    */
   private async referenced(
@@ -228,7 +229,10 @@ export class RecordPresenter {
         }),
       ),
     ];
-    const found = new Map<string, { id: string; title: string | null }>();
+    const found = new Map<
+      string,
+      { id: string; title: string | null; key: string }
+    >();
     if (subject && ids.length > 0 && !denied.includes(relation.field)) {
       const target = relation.targetTable();
       const declaration = this.records.find(subject)?.declaration;
@@ -247,10 +251,20 @@ export class RecordPresenter {
             }),
           ),
         );
-      for (const row of readable as { id: string; title?: string | null }[]) {
+      const rowsRead = readable as { id: string; title?: string | null }[];
+      // What files name it by: its key (its parents' keys first, `QWERT/HL`), else its id.
+      const keys = declaration
+        ? await keysOf(
+            this.db,
+            declaration,
+            rowsRead.map((row) => row.id),
+          )
+        : new Map<string, string>();
+      for (const row of rowsRead) {
         found.set(row.id, {
           id: row.id,
           title: row.title ?? null,
+          key: keys.get(row.id) ?? row.id,
         });
       }
     }

@@ -11,6 +11,12 @@ import { WALK_BATCH } from '../../core/http/pagination.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { recordValues, type RecordRow } from '../records/record.js';
+import {
+  includeNameOf,
+  recordKeyOf,
+  relationsFrom,
+} from '../records/record-relations.js';
+import { idOfKey } from '../records/record-keys.js';
 import { assertWritableFields } from '../records/record.routes.js';
 import {
   type RecordRegistration,
@@ -27,7 +33,13 @@ import type {
 } from './data-transfer.types.js';
 import { TransferExtension } from './data-transfer.extension.js';
 import { columnsOf } from './import-columns.js';
-import { exportColumns, importSchema, matchKeys } from './record-transfer.js';
+import {
+  exportColumns,
+  importSchema,
+  matchKeys,
+  referenceColumns,
+  referenceNames,
+} from './record-transfer.js';
 
 /** One valid row of an import, ready to write: its body, and the value it is matched by. */
 export interface ImportRow {
@@ -167,7 +179,17 @@ export class RecordTransfers {
         current,
       );
       if (items.length === 0) return;
-      yield await registration.presenter.many(principal, items);
+      // With the names of what the rows refer to (exportColumns): as the list route's `?include=`, as the caller may read them.
+      const named = await registration.presenter.page(
+        principal,
+        { items },
+        {
+          list,
+          query: { ...current, fields: undefined },
+          include: referenceNames(registration.declaration),
+        },
+      );
+      yield named.items as Record<string, unknown>[];
       if (items.length < WALK_BATCH) return;
       const last = items.at(-1)!;
       current = {
@@ -196,10 +218,108 @@ export class RecordTransfers {
     for (const source of this.sources()) {
       extra.push(...((await source.importColumns?.(registration)) ?? []));
     }
+    // A reference is filled with its record's key (`product`: HL), not its id (`productId`).
+    const references = new Map(
+      referenceColumns(registration.declaration).map((r) => [r.field, r]),
+    );
     return [
-      ...columns.filter((column) => !forbidden.includes(column.name)),
+      ...columns
+        .filter((column) => !forbidden.includes(column.name))
+        .map((column) => {
+          const reference = references.get(column.name);
+          if (!reference) return column;
+          const target = this.referencedDeclaration(
+            registration,
+            reference.field,
+          );
+          return {
+            name: reference.column,
+            type: 'text' as const,
+            required: column.required,
+            description: target
+              ? `The ${target.noun}'s ${recordKeyOf(target)}.`
+              : column.description,
+          };
+        }),
       ...extra,
     ];
+  }
+
+  /** The declaration a reference field of the record refers to. */
+  private referencedDeclaration(
+    registration: RecordRegistration,
+    field: string,
+  ) {
+    const relation = relationsFrom(registration.declaration).find(
+      (r) => r.field === field,
+    );
+    const subject = relation?.target();
+    return subject ? this.records.find(subject)?.declaration : undefined;
+  }
+
+  /**
+   * Read once per import: turns a row's reference columns (`product`: the
+   * product's key) into the fields the write takes (`productId`), among
+   * the records the principal may read, each value looked up once. A key
+   * that names none is the row's error, on its column.
+   */
+  referenceReader(principal: Principal, registration: RecordRegistration) {
+    const references = relationsFrom(registration.declaration).map(
+      (relation) => ({
+        relation,
+        column: includeNameOf(relation.field),
+        target: this.referencedDeclaration(registration, relation.field),
+      }),
+    );
+    const found = new Map<string, string | null>();
+    return async (record: Record<string, unknown>) => {
+      const errors: { path: string; message: string }[] = [];
+      for (const { relation, column, target } of references) {
+        const value = record[column];
+        delete record[column];
+        if (typeof value !== 'string' || value.trim() === '' || !target) {
+          continue;
+        }
+        const name = value.trim();
+        const key = recordKeyOf(target);
+        const cached = `${relation.field}\u0000${name}`;
+        if (!found.has(cached)) {
+          found.set(
+            cached,
+            // By its key (a path for a key within a parent), then among those the principal may read.
+            await idOfKey(this.txHost.tx, target, name)
+              .then((id) =>
+                id
+                  ? this.matched(
+                      principal,
+                      relation.targetTable(),
+                      target.subject,
+                      'id',
+                      id,
+                    )
+                  : Promise.reject(new NotFoundException()),
+              )
+              .then(
+                (row) => row.id,
+                (error: unknown) => {
+                  if (error instanceof NotFoundException) return null;
+                  throw error;
+                },
+              ),
+          );
+        }
+        const id = found.get(cached);
+        if (id) {
+          record[relation.field] = id;
+        } else {
+          errors.push({
+            path: column,
+            message: `No ${target.noun} whose ${key} is "${name}".`,
+          });
+        }
+      }
+      return errors;
+    };
   }
 
   /** Whether the principal may import into the record: create it, and with `matchOn`, update it. */
@@ -280,12 +400,18 @@ export class RecordTransfers {
       });
       return;
     }
+    // A key unique within a parent (a product's code within its bank) matches within the row's parent.
+    const within =
+      declaration.keyWithin && matchOn === declaration.key
+        ? { field: declaration.keyWithin, value: body[declaration.keyWithin] }
+        : undefined;
     const found = await this.matched(
       principal,
       feature.table,
       declaration.subject,
       matchOn,
       match!,
+      within,
     );
     await store.update(principal, found.id, recordValues(declaration, body), {
       input: body,
@@ -319,8 +445,14 @@ export class RecordTransfers {
     subject: string,
     matchOn: string,
     value: string,
+    within?: { field: string; value: unknown },
   ): Promise<RecordRow> {
     const column = table[matchOn]!;
+    if (within && typeof within.value !== 'string') {
+      throw new NotFoundException(
+        `A ${matchOn} is matched within its ${within.field.replace(/Id$/, '')}: the row names none.`,
+      );
+    }
     const db = this.txHost.tx;
     const valid = matchOn !== 'id' || UUID.test(value);
     const [row] = valid
@@ -330,6 +462,7 @@ export class RecordTransfers {
           .where(
             and(
               eq(column, value),
+              within ? eq(table[within.field]!, within.value) : undefined,
               table.deletedAt ? isNull(table.deletedAt) : undefined,
               await this.access.sqlFilter(principal, subject, 'read'),
             ),

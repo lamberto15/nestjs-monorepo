@@ -192,6 +192,35 @@ describe('data transfer (e2e)', () => {
     expect(none).toMatchObject({ exports: [], imports: [] });
   });
 
+  it("writes a reference as its record's key: the id when the record declares none", async () => {
+    const parent = await createTestItem(app, team.other.headers, {
+      title: 'Named parent',
+    });
+    const child = await createTestItem(app, team.other.headers, {
+      title: 'Named child',
+      parentId: parent.id,
+    });
+    // Another member's items, out of the other tests' counts.
+    const csv = await exportOf(
+      { format: 'csv', filters: { title: 'Named child' } },
+      team.other.headers,
+    );
+    const file = await app.inject({
+      method: 'GET',
+      url: local(csv.result!.url!),
+    });
+    const [header, row] = file.body
+      .replace(/^\u{feff}/u, '')
+      .trim()
+      .split('\r\n')
+      .map((line) => line.split(','));
+    // Test items declare no key: their id names them, in their own column and in a reference.
+    expect(header![0]).toBe('id');
+    expect(header).not.toContain('parentId');
+    expect(row![0]).toBe(child.id);
+    expect(row![header!.indexOf('parent')]).toBe(parent.id);
+  });
+
   it('exports what the list shows the caller, as CSV and Excel, to its owner only', async () => {
     await createTestItem(app, team.editor.headers, {
       title: 'Alpha',

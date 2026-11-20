@@ -48,7 +48,7 @@ import {
   TenantExport,
 } from './tenant-export.js';
 import { TRANSFER_LINK_TTL_MS } from './transfer-retention.js';
-import { bodyOf, importSchema } from './record-transfer.js';
+import { referenceColumns, bodyOf, importSchema } from './record-transfer.js';
 import { type ImportRow, RecordTransfers } from './record-transfers.js';
 
 type ExportJob = Extract<TransferJob, { kind: 'export' }>;
@@ -254,6 +254,11 @@ export class DataTransferProcessor extends TenantWorkerHost<
     // Read once: every row of a file is checked against the same fields.
     const columns = await this.transfers.importColumns(principal, registration);
     const allowed = new Set(columns.map((column) => column.name));
+    // A reference's column (`product`) fills its field (`productId`).
+    for (const { field, column } of referenceColumns(declaration)) {
+      if (allowed.has(column)) allowed.add(field);
+    }
+    const references = this.transfers.referenceReader(principal, registration);
     const schema = importSchema(declaration);
     // What add-ons put in a row's body besides its fields (custom values).
     const addOns = await this.transfers.importReader(registration);
@@ -350,6 +355,11 @@ export class DataTransferProcessor extends TenantWorkerHost<
         }
         // Each row as one POST (or PATCH) of the record: its schema, the
         // field-level permissions, then the store (its 4xx refuses the row).
+        const unknownKeys = await references(record);
+        if (unknownKeys.length) {
+          refuse(unknownKeys.map((issue) => ({ row, ...issue })));
+          continue;
+        }
         const body = bodyOf(declaration, record);
         const forbidden = Object.keys(body).filter(
           (field) => !allowed.has(field),
