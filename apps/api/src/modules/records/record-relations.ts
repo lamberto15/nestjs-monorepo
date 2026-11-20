@@ -113,6 +113,19 @@ export const relationTitle = (declaration: RecordDeclaration) =>
   )?.[0] ?? null;
 
 /**
+ * The field people name a record by in files (its key): its first unique
+ * string or int field that is unique on its own (not `unique({ within })`),
+ * a code or a number; null without one, and files keep its id.
+ */
+export const recordKeyField = (declaration: RecordDeclaration) =>
+  Object.entries(declaration.fields).find(
+    ([, field]) =>
+      ['string', 'int'].includes((field as AnyField).kind) &&
+      (field as AnyField).options.unique &&
+      !(field as AnyField).options.uniqueWithin,
+  )?.[0] ?? null;
+
+/**
  * Empties the optional references to these records of `subject`, live or
  * in the recycle bin, just before they are deleted for good, in the
  * delete's transaction (the key is `no action`: a composite key's `set

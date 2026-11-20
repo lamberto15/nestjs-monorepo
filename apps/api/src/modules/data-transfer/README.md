@@ -26,10 +26,15 @@ caller still may read the record).
 The columns are:
 
 - the id and every field. Money is written as `12.50 EUR`. Date-times are
-  in the reader's zone, named in the header.
+  in the reader's zone, named in the header. A reference is written as its
+  record's key, the first field of it unique on its own (a code, a number:
+  `recordKeyField()`), else as its id, and as its id when the caller may not
+  read that record.
 - what the add-ons show (`tags`, `number`);
 - the tenant's custom fields, one column each, `custom.<key>` (multiple choices comma-separated);
-- the owner and `createdAt`.
+- the owner by name (`@ActorNameSource()`, modules/people; its key without
+  it), the unit by name for a record with units (a field referring to a
+  unit too), and `createdAt`.
 
 A CSV starts with a BOM, and its formula-like text is quoted. An Excel file
 has a frozen header and date cells.
@@ -43,6 +48,11 @@ has a frozen header and date cells.
 - `matchOn`: the id or a unique field. A row then updates the record that
   key finds among the caller's readable ones.
 - `mapping`: JSON, file header to template column, or null to skip a column.
+
+A reference's cell takes its record's key or its id: a key is looked up
+once per import among the live records the caller may read, and one none of
+them holds is that row's error (`No customer whose code is "X".`), as one
+they may not read. An export is imported back as it is.
 
 A file may have `custom.<key>` columns: they are put in the row's `custom` and checked by the record's own write (a bad value is that row's error); a dry run, which writes nothing, checks them the same way (the add-on's `importCheck()`).
 

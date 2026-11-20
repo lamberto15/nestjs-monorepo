@@ -13,6 +13,7 @@ import { TEST_ITEM } from '../../../test/fixtures/test-items/test-item.record.js
 import { testItemsModule } from '../../../test/fixtures/test-items/test-items.module.js';
 import {
   createTestItem,
+  unitWithLead,
   type Headers,
   recordsTenant,
   testItemModules,
@@ -24,6 +25,7 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { userRoles } from '../../iam/access/access.tables.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { Realtime } from '../realtime/realtime.service.js';
+import { PeopleModule } from '../people/people.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { DataTransferModule } from './data-transfer.module.js';
 import {
@@ -101,6 +103,8 @@ describe('data transfer (e2e)', () => {
       QueuesModule,
       StorageModule,
       SharedLocksModule,
+      // Names the owners in exports (@ActorNameSource()).
+      PeopleModule,
       testItemsModule({ imports: [DataTransferModule.forRecord(TEST_ITEM)] }),
     );
     team = await recordsTenant(app);
@@ -366,6 +370,82 @@ describe('data transfer (e2e)', () => {
       team.other.headers,
     );
     expect(theirs.result).toMatchObject({ imported: 0, failed: 1 });
+  });
+
+  it("names a reference by its record's key: written in exports, taken in imports", async () => {
+    const suffix = randomUUID().slice(0, 6);
+    const parent = await createTestItem(app, team.editor.headers, {
+      title: `Parent ${suffix}`,
+      code: `P-${suffix}`,
+    });
+    const child = await createTestItem(app, team.editor.headers, {
+      title: `Child ${suffix}`,
+      parentId: parent.id,
+    });
+    await createTestItem(app, team.other.headers, {
+      title: `Theirs ${suffix}`,
+      code: `O-${suffix}`,
+    });
+
+    const csv = await exportOf({ format: 'csv' });
+    const [header, ...rows] = (
+      await app.inject({ method: 'GET', url: local(csv.result!.url!) })
+    ).body
+      .replace(/^\u{feff}/u, '')
+      .trim()
+      .split('\r\n')
+      .map((line) => line.split(','));
+    const at = header!.indexOf('parentId');
+    const written = rows.find((row) => row[0] === child.id)!;
+    expect(written[at]).toBe(`P-${suffix}`);
+
+    const done = await settled(
+      (
+        await importOf(
+          `title,parentId\n` +
+            `By key ${suffix},P-${suffix}\n` +
+            `By id ${suffix},${parent.id as string}\n` +
+            `Unknown ${suffix},NOPE-${suffix}\n` +
+            // Someone else's record is not found by its key either.
+            `Not readable ${suffix},O-${suffix}\n`,
+        )
+      ).json<{ id: string }>().id,
+    );
+    expect(done.result).toMatchObject({ rows: 4, imported: 2, failed: 2 });
+    const children = (
+      await get(`/v1/test-items?parentId=${parent.id as string}&limit=100`)
+    ).json<{ items: { title: string }[] }>();
+    expect(children.items.map((item) => item.title).sort()).toEqual([
+      `By id ${suffix}`,
+      `By key ${suffix}`,
+      `Child ${suffix}`,
+    ]);
+    const report = (
+      await app.inject({ method: 'GET', url: local(done.result!.errorsUrl!) })
+    ).body;
+    // CSV doubles the quotes.
+    expect(report).toContain(
+      `3,parentId,"No test item whose code is ""NOPE-${suffix}""."`,
+    );
+    expect(report).toContain(`4,parentId,`);
+  });
+
+  it('names the owner and the unit in an export, not their ids', async () => {
+    const { unitId, worker } = await unitWithLead(app, team);
+    const item = await createTestItem(app, worker.headers, { title: 'Owned' });
+    const csv = await exportOf({ format: 'csv' }, worker.headers);
+    const [header, ...rows] = (
+      await app.inject({ method: 'GET', url: local(csv.result!.url!) })
+    ).body
+      .replace(/^\u{feff}/u, '')
+      .trim()
+      .split('\r\n')
+      .map((line) => line.split(','));
+    const row = rows.find((cells) => cells[0] === item.id)!;
+    expect(row[header!.indexOf('owner')]).toBe('Test User');
+    // unitWithLead names its team `Team <6 characters>`.
+    expect(row[header!.indexOf('unit')]).toMatch(/^Team \S{6}$/);
+    expect(row[header!.indexOf('unit')]).not.toBe(unitId);
   });
 
   it('stops an import past the row limit, and refuses what it cannot read', async () => {

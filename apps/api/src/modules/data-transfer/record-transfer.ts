@@ -36,7 +36,7 @@ const money = (value: unknown) => {
 /**
  * The columns of an export: the id, every field (money as `12.50 EUR`,
  * date-times in the reader's zone), what the record's add-ons show
- * (`number`, `tags`), the owner and the creation time.
+ * (`number`, `tags`), the owner, the unit and the creation time.
  */
 export function exportColumns(
   registration: RecordRegistration,
@@ -58,7 +58,11 @@ export function exportColumns(
       key,
       value: (row) => shownValue(row[key]),
     })),
+    // By name (RecordTransfers.withNames()): a person's, a unit's.
     { key: 'ownerId', header: 'owner' },
+    ...(registration.declaration.unit
+      ? [{ key: 'unitId', header: 'unit' }]
+      : []),
     { key: 'createdAt', type: 'datetime' },
   ];
 }

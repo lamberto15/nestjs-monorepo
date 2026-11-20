@@ -1,16 +1,36 @@
 import { TransactionHost } from '@nestjs-cls/transactional';
 import { AuthorizationService } from '@nestjs/authorization';
-import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpException,
+  Injectable,
+  NotFoundException,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { and, eq, isNull } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { List, ListQuery } from '../../core/http/list-query.js';
 import { cursorValues } from '../../core/http/list-sort.js';
 import { WALK_BATCH } from '../../core/http/pagination.js';
 import { AccessService } from '../../iam/access/access.service.js';
+import {
+  ActorNameSource,
+  type ActorNames,
+} from '../../iam/audit/actor-names.js';
+import { discoverOne } from '../../iam/auth/discover.js';
+import { organizationalUnits } from '../../iam/organization/organization.tables.js';
 import type { Principal } from '../../iam/auth/principal.js';
-import { recordValues, type RecordRow } from '../records/record.js';
+import type { AnyField } from '../fields/field.js';
+import {
+  type RecordDeclaration,
+  recordValues,
+  type RecordRow,
+} from '../records/record.js';
+import {
+  declarationOfTable,
+  recordKeyField,
+} from '../records/record-relations.js';
 import { assertWritableFields } from '../records/record.routes.js';
 import {
   type RecordRegistration,
@@ -43,7 +63,10 @@ export interface ImportRow {
  * field-level redaction and add-ons' hooks apply.
  */
 @Injectable()
-export class RecordTransfers {
+export class RecordTransfers implements OnModuleInit {
+  /** Who names people (modules/people); without it, the owner stays a key. */
+  private people?: ActorNames;
+
   constructor(
     private readonly records: Records,
     private readonly access: AccessService,
@@ -51,6 +74,14 @@ export class RecordTransfers {
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly discovery: DiscoveryService,
   ) {}
+
+  onModuleInit() {
+    this.people = discoverOne<ActorNames>(
+      this.discovery,
+      ActorNameSource,
+      'actor names (@ActorNameSource())',
+    );
+  }
 
   /** The add-ons that bring columns of their own (`@TransferColumns()`). */
   private sources() {
@@ -167,7 +198,14 @@ export class RecordTransfers {
         current,
       );
       if (items.length === 0) return;
-      yield await registration.presenter.many(principal, items);
+      yield await this.withNames(
+        await this.withKeys(
+          principal,
+          registration.declaration,
+          await registration.presenter.many(principal, items),
+        ),
+        registration.declaration,
+      );
       if (items.length < WALK_BATCH) return;
       const last = items.at(-1)!;
       current = {
@@ -178,6 +216,148 @@ export class RecordTransfers {
           : undefined,
       };
     }
+  }
+
+  /**
+   * A page with each reference as its record's key (references()): one
+   * query per reference field. One the principal may not read keeps its
+   * id, as one with no key does.
+   */
+  private async withKeys(
+    principal: Principal,
+    declaration: RecordDeclaration,
+    page: Record<string, unknown>[],
+  ) {
+    for (const ref of references(declaration)) {
+      const ids = [
+        ...new Set(
+          page.flatMap((row) =>
+            typeof row[ref.field] === 'string'
+              ? [row[ref.field] as string]
+              : [],
+          ),
+        ),
+      ];
+      if (!ids.length) continue;
+      const found = await this.txHost.tx
+        .select({ id: ref.table.id!, key: ref.key })
+        .from(ref.table as unknown as PgTable)
+        .where(
+          and(
+            inArray(ref.table.id!, ids),
+            await this.access.sqlFilter(principal, ref.subject, 'read'),
+          ),
+        );
+      const keys = new Map(
+        found.flatMap((row) => (row.key == null ? [] : [[row.id, row.key]])),
+      );
+      for (const row of page) {
+        const key = keys.get(row[ref.field] as string);
+        if (key !== undefined) row[ref.field] = key;
+      }
+    }
+    return page;
+  }
+
+  /**
+   * A page with names for people and readers to read: the owner's name for
+   * its key (`user:<id>`; the key when it has none), and each unit's name
+   * for its id, the record's and a field's that refers to a unit (the
+   * tenant's units are no secret: any member's pickers name them).
+   */
+  private async withNames(
+    page: Record<string, unknown>[],
+    declaration: RecordDeclaration,
+  ) {
+    const owners = page.flatMap((row) =>
+      typeof row.ownerId === 'string' ? [row.ownerId] : [],
+    );
+    if (this.people && owners.length) {
+      const names = await this.people.names(new Set(owners));
+      for (const row of page) {
+        const name = names.get(row.ownerId as string);
+        if (name) row.ownerId = name;
+      }
+    }
+    const unitFields = [
+      ...(declaration.unit ? ['unitId'] : []),
+      ...Object.entries(declaration.fields).flatMap(([name, f]) =>
+        (f as AnyField).options.ref?.() === organizationalUnits ? [name] : [],
+      ),
+    ];
+    const ids = [
+      ...new Set(
+        page.flatMap((row) =>
+          unitFields.flatMap((field) =>
+            typeof row[field] === 'string' ? [row[field] as string] : [],
+          ),
+        ),
+      ),
+    ];
+    if (ids.length) {
+      const units = new Map(
+        (
+          await this.txHost.tx
+            .select({
+              id: organizationalUnits.id,
+              name: organizationalUnits.name,
+            })
+            .from(organizationalUnits)
+            .where(inArray(organizationalUnits.id, ids))
+        ).map((unit) => [unit.id, unit.name]),
+      );
+      for (const row of page) {
+        for (const field of unitFields) {
+          const name = units.get(row[field] as string);
+          if (name) row[field] = name;
+        }
+      }
+    }
+    return page;
+  }
+
+  /**
+   * Turns each reference cell that is no id into the id of the record whose
+   * key it holds, among the live ones the principal may read, once per key
+   * for the whole import. A key none of them holds is a row's error on the
+   * field, as one they may not read (a file can't probe what exists).
+   */
+  referenceReader(principal: Principal, registration: RecordRegistration) {
+    const refs = references(registration.declaration);
+    const known = new Map<string, Map<string, string | null>>();
+    return async (
+      body: Record<string, unknown>,
+    ): Promise<{ path: string; message: string }[]> => {
+      const issues: { path: string; message: string }[] = [];
+      for (const ref of refs) {
+        const value = body[ref.field];
+        if (typeof value !== 'string' || UUID.test(value)) continue;
+        const keys = known.get(ref.field) ?? new Map<string, string | null>();
+        known.set(ref.field, keys);
+        if (!keys.has(value)) {
+          const [row] = await this.txHost.tx
+            .select({ id: ref.table.id! })
+            .from(ref.table as unknown as PgTable)
+            .where(
+              and(
+                eq(ref.key, ref.int ? Number(value) : value),
+                ref.table.deletedAt ? isNull(ref.table.deletedAt) : undefined,
+                await this.access.sqlFilter(principal, ref.subject, 'read'),
+              ),
+            )
+            .limit(1);
+          keys.set(value, (row?.id as string | undefined) ?? null);
+        }
+        const id = keys.get(value);
+        if (id) body[ref.field] = id;
+        else
+          issues.push({
+            path: ref.field,
+            message: `No ${ref.noun} whose ${ref.keyName} is "${value}".`,
+          });
+      }
+      return issues;
+    };
   }
 
   /** The columns of an import the principal may fill: the record's create body, less the fields they may not set. */
@@ -196,8 +376,22 @@ export class RecordTransfers {
     for (const source of this.sources()) {
       extra.push(...((await source.importColumns?.(registration)) ?? []));
     }
+    // A reference to a record with a key takes it too (referenceReader()).
+    const keyed = new Map(
+      references(registration.declaration).map((ref) => [ref.field, ref]),
+    );
     return [
-      ...columns.filter((column) => !forbidden.includes(column.name)),
+      ...columns
+        .filter((column) => !forbidden.includes(column.name))
+        .map((column) => {
+          const ref = keyed.get(column.name);
+          return ref
+            ? {
+                ...column,
+                description: `The ${ref.noun}'s ${ref.keyName}, or its id.`,
+              }
+            : column;
+        }),
       ...extra,
     ];
   }
@@ -344,6 +538,30 @@ export class RecordTransfers {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type KeyedTable = Record<string, AnyPgColumn>;
+
+/** The record's reference fields to records with a key (recordKeyField()): what files name by it. */
+function references(declaration: RecordDeclaration) {
+  return Object.entries(declaration.fields).flatMap(([field, f]) => {
+    const target = (f as AnyField).options.ref?.();
+    const to = target && declarationOfTable(target);
+    const keyName = to && recordKeyField(to);
+    if (!to || !keyName) return [];
+    const table = target as unknown as KeyedTable;
+    return [
+      {
+        field,
+        subject: to.subject,
+        noun: to.noun,
+        keyName,
+        key: table[keyName]!,
+        int: to.fields[keyName]!.kind === 'int',
+        table,
+      },
+    ];
+  });
+}
 
 /**
  * A row's refusal, from what a write threw: a 4xx (as the route would

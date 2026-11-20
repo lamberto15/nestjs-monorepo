@@ -262,6 +262,8 @@ export class DataTransferProcessor extends TenantWorkerHost<
     const addOnIssues = dryRun
       ? await this.transfers.importCheck(registration)
       : undefined;
+    // A reference's cell may name its record by its key: the id it stands for.
+    const referenced = this.transfers.referenceReader(principal, registration);
     const dateColumns = new Set(
       columns.filter((column) => column.type === 'date').map((c) => c.name),
     );
@@ -354,6 +356,7 @@ export class DataTransferProcessor extends TenantWorkerHost<
         const forbidden = Object.keys(body).filter(
           (field) => !allowed.has(field),
         );
+        const unknown = forbidden.length ? [] : await referenced(body);
         const parsed = (matchOn ? schema.partial() : schema).safeParse(body);
         if (forbidden.length) {
           refuse(
@@ -363,6 +366,8 @@ export class DataTransferProcessor extends TenantWorkerHost<
               message: 'You may not set this field.',
             })),
           );
+        } else if (unknown.length) {
+          refuse(unknown.map((issue) => ({ row, ...issue })));
         } else if (!parsed.success) {
           refuse(
             parsed.error.issues.map((issue) => ({
