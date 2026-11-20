@@ -11,7 +11,9 @@ import { z } from '@/lib/zod';
 const required = z.string().min(1, 'Required');
 const options = [{ value: 'en', label: 'English' }];
 
-function Form(props: { field: 'text' | 'textarea' | 'code' | 'select' }) {
+function Form(props: {
+  field: 'text' | 'textarea' | 'code' | 'select' | 'date';
+}) {
   const form = useAppForm({
     defaultValues: { value: '' },
     onSubmit: () => undefined,
@@ -50,6 +52,12 @@ function Form(props: { field: 'text' | 'textarea' | 'code' | 'select' }) {
           )}
         />
       )}
+      {props.field === 'date' && (
+        <form.AppField
+          {...common}
+          children={(f) => <f.DateField label="Name" description="Hint" />}
+        />
+      )}
       <button type="submit">Send</button>
     </form>
   );
@@ -68,7 +76,23 @@ const cases = [
     'select',
     () => screen.getByRole('combobox', { name: 'Name' }),
   ],
+  ['DateField', 'date', () => screen.getByRole('textbox', { name: 'Name' })],
 ] as const;
+
+describe('DateField', () => {
+  it('takes a day typed in, or picked on its calendar, as 2026-01-31', async () => {
+    const user = userEvent.setup();
+    render(<Form field="date" />);
+    const input = screen.getByRole('textbox', { name: 'Name' });
+    await user.type(input, '2026-01-31');
+    expect(input).toHaveValue('2026-01-31');
+    // The calendar opens on the typed day's month; another day replaces it.
+    // Its label: `form.pickDate` here, with no catalog loaded.
+    await user.click(screen.getByRole('button', { name: /pick/i }));
+    await user.click(await screen.findByRole('button', { name: /January 15/ }));
+    await waitFor(() => expect(input).toHaveValue('2026-01-15'));
+  });
+});
 
 describe.each(cases)('%s', (_name, field, control) => {
   it('is described by its hint', () => {

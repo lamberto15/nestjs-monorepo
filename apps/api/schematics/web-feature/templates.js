@@ -433,6 +433,12 @@ function control(t, f, first) {
     return wrap(name, `<field.MarkdownField label={t('fields.${name}')} />`);
   }
   switch (f.type) {
+    case 'date':
+      // Typed as 2026-01-31 or picked on its calendar.
+      return wrap(
+        name,
+        `<field.DateField label={t('fields.${name}')}${first ? ' autoFocus' : ''} />`,
+      );
     case 'ref':
       // A picker of the target's records by title (GET /v1/lists/{subject}/options).
       return wrap(
@@ -468,11 +474,7 @@ function control(t, f, first) {
       );
     default: {
       const placeholder =
-        f.type === 'date'
-          ? ' placeholder="2026-01-31"'
-          : f.type === 'datetime'
-            ? ' placeholder="2026-01-31T09:00:00Z"'
-            : '';
+        f.type === 'datetime' ? ' placeholder="2026-01-31T09:00:00Z"' : '';
       // A `!numbered` field: left empty, its naming series fills it.
       const hint = f.numbered
         ? ` description={t('form.${name}Hint')}`

@@ -523,5 +523,8 @@
     "someone": "Someone",
     "anonymous": "Anonymous",
     "system": "System"
+  },
+  "form": {
+    "pickDate": "Pick a date for {{label}}"
   }
 }

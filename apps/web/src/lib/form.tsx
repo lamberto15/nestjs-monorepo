@@ -23,14 +23,33 @@ import {
   SelectValue,
 } from '@nestjs-monorepo/ui/components/select';
 import { Spinner } from '@nestjs-monorepo/ui/components/spinner';
+import { Calendar } from '@nestjs-monorepo/ui/components/calendar';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@nestjs-monorepo/ui/components/input-group';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@nestjs-monorepo/ui/components/popover';
 import { Textarea } from '@nestjs-monorepo/ui/components/textarea';
 import { LazyMarkdownEditor } from '@/components/markdown/lazy';
 import { RecordPicker } from '@/components/records/record-picker';
 import { focusFirstInvalid, rememberFormElement } from '@/lib/form-focus';
 import { useWritesPaused } from '@/lib/mode';
 import { meQuery, sessionIdentity, type Me } from '@/lib/session';
-import { CircleAlertIcon } from 'lucide-react';
-import { useCallback, useContext, useId, useRef, type ReactNode } from 'react';
+import { CalendarIcon, CircleAlertIcon } from 'lucide-react';
+import {
+  useCallback,
+  useContext,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 // TanStack Form's form composition (its "Form Composition" guide): the
 // shadcn Field markup of its TanStack Form docs, bound once, so a form is
@@ -120,6 +139,99 @@ function TextField(props: {
         aria-invalid={invalid}
         aria-describedby={describedBy}
       />
+      {props.description && (
+        <FieldDescription id={descriptionId}>
+          {props.description}
+        </FieldDescription>
+      )}
+      {invalid && <FieldError id={errorId} errors={field.state.meta.errors} />}
+    </Field>
+  );
+}
+
+/** A calendar day as the API takes it, `2026-01-31`, from a picked date (its local day). */
+const isoDay = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+/** `2026-01-31` as that local day; undefined for anything else (a half-typed one). */
+function dayOf(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return undefined;
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  return isoDay(date) === value ? date : undefined;
+}
+
+/**
+ * A calendar day (a `date` field): shadcn's "date picker with input", the
+ * day typed as `2026-01-31` or picked on the calendar its button opens.
+ * The value is that text, '' for none.
+ */
+function DateField(props: {
+  label: string;
+  description?: ReactNode;
+  autoFocus?: boolean;
+}) {
+  const { t } = useTranslation();
+  const field = useFieldContext<string>();
+  const invalid = useInvalid();
+  const [open, setOpen] = useState(false);
+  const {
+    controlId: id,
+    descriptionId,
+    errorId,
+    describedBy,
+  } = useDescribedBy(Boolean(props.description), invalid);
+  const formRef = useFormElementRef();
+  const day = dayOf(field.state.value);
+  return (
+    <Field ref={formRef} data-invalid={invalid}>
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+      <InputGroup>
+        <InputGroupInput
+          id={id}
+          name={field.name}
+          placeholder="2026-01-31"
+          inputMode="numeric"
+          autoComplete="off"
+          autoFocus={props.autoFocus}
+          value={field.state.value}
+          onBlur={field.handleBlur}
+          onChange={(event) => field.handleChange(event.target.value)}
+          aria-invalid={invalid}
+          aria-describedby={describedBy}
+        />
+        <InputGroupAddon align="inline-end">
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger
+              render={
+                <InputGroupButton
+                  size="icon-xs"
+                  aria-label={t('form.pickDate', { label: props.label })}
+                />
+              }
+            >
+              <CalendarIcon />
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                mode="single"
+                captionLayout="dropdown"
+                selected={day}
+                defaultMonth={day}
+                onSelect={(date) => {
+                  field.handleChange(date ? isoDay(date) : '');
+                  field.handleBlur();
+                  setOpen(false);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        </InputGroupAddon>
+      </InputGroup>
       {props.description && (
         <FieldDescription id={descriptionId}>
           {props.description}
@@ -397,6 +509,7 @@ const formHooks = createFormHook({
     CodeField,
     SelectField,
     RecordField,
+    DateField,
   },
   formComponents: { SubmitButton },
 });
