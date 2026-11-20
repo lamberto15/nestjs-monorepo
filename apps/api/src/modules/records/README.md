@@ -12,7 +12,7 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
 
 ## Writing a feature
 
-1. **`<item>.record.ts`**: `defineRecord({ subject, path, noun, table, key, keyWithin, softDelete, recycleBinDays, unit, clientAccess, grants, idempotency, apiTag, views, fields })`.
+1. **`<item>.record.ts`**: `defineRecord({ subject, path, noun, table, softDelete, recycleBinDays, unit, clientAccess, grants, idempotency, apiTag, views, fields })`.
    Fields come from `field.*` (modules/fields): `.searchable()`, `.unique()`,
    `.optional()`, `.readOnly()` (set by the service only; a body's value is
    dropped, as unknown keys are). A reference:
@@ -68,20 +68,6 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
    search and add-ons read. `quota: { label, default? }` limits the live
    records per tenant (modules/quotas, 422 `quota_exceeded`); off without it.
 
-### Keys
-
-`key` names the field people name a record by outside the app (a `code`,
-an account's `reference`): exports write it first instead of the id, a
-reference to the record is written as it, and imports find records by it.
-It is a `.unique()` field, or, with `keyWithin: '<ref field>'`, unique
-within that required reference (a product's code within its bank): the
-table then gets that unique index (`<table>_key_idx`), and the key is
-written as the path of its parents' keys, `QWERT/HL`. Without a key, the
-id. `?include=parent` gives the reference's `key` too. record-keys.ts:
-`keysOf()`, `idOfKey()`, and the references' keys a naming series may
-print (modules/sequences, `forRecord(…, { field })`). Example:
-`test/fixtures/keyed`.
-
 What every record gets from the engine, in the write's transaction:
 
 - audit `<item>.created|updated|deleted|restored` (an update's changes
@@ -94,7 +80,7 @@ What every record gets from the engine, in the write's transaction:
   missing, in the bin or unreadable), 409 `record_referenced` (deleting
   one live records refer to), 409 `reference_deleted` (restoring one whose
   reference is in the bin), optional references emptied when their record
-  is purged; `?include=parent` (`{ id, title, key }`, null when unreadable);
+  is purged; `?include=parent` (`{ id, title }`, null when unreadable);
   `related` in GET /v1/lists/{subject};
 - the recycle bin's purge (`RecycleBinPurgeJob`, 03:45 UTC): records deleted
   longer ago than `recycleBinDays` (default SOFT_DELETE_RETENTION_DAYS, 30)

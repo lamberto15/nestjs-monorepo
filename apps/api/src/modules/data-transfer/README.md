@@ -25,12 +25,8 @@ caller still may read the record).
 
 The columns are:
 
-- the record's key first (its declaration's `key`, else the id;
-  modules/records, "Keys"), then every field. Money is written as
-  `12.50 EUR`. Date-times are in the reader's zone, named in the header. A
-  reference (`parentId`) is a column named for it (`parent`) holding its
-  record's key, a path for a key within a parent (`S1/B1`); empty when the
-  caller may not read it.
+- the id and every field. Money is written as `12.50 EUR`. Date-times are
+  in the reader's zone, named in the header.
 - what the add-ons show (`tags`, `number`);
 - the tenant's custom fields, one column each, `custom.<key>` (multiple choices comma-separated);
 - the owner and `createdAt`.
@@ -44,14 +40,8 @@ has a frozen header and date cells.
 
 - `name` and `file`;
 - `dryRun`;
-- `matchOn`: the id, a unique field, or the key. A row then updates the
-  record that key finds among the caller's readable ones; a key unique
-  within a parent is matched within the row's parent (`code` and `shelf`).
-
-A reference column (`parent`) takes its record's key, as an export writes
-it: the row gets that record's id, and a key no readable record has is the
-row's error (`No item whose code is "X".`).
-
+- `matchOn`: the id or a unique field. A row then updates the record that
+  key finds among the caller's readable ones.
 - `mapping`: JSON, file header to template column, or null to skip a column.
 
 A file may have `custom.<key>` columns: they are put in the row's `custom` and checked by the record's own write (a bad value is that row's error); a dry run, which writes nothing, checks them the same way (the add-on's `importCheck()`).

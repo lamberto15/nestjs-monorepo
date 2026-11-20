@@ -1,0 +1,457 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "ec07d68f-ab53-4e35-98e8-2a3ecd7c6e8d",
+  "prevIds": [
+    "87c1531a-db22-4db4-b677-4a74d282a2b1"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_referenced_items"
+      ],
+      "writes": [
+        "s|tbl|public.test_referenced_items",
+        "n|tbl|public.test_referenced_items",
+        "e|tbl|public.test_referenced_items",
+        "n|rel|public.test_referenced_items",
+        "n|type|public.test_referenced_items",
+        "n|rel|public.test_referenced_items_pkey",
+        "n|rel|public.test_referenced_items_tenant_id_id_key"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "test_referenced_items",
+        "test_referenced_items_owner_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.test_referenced_items_owner_id_idx",
+        "n|idx|public.test_referenced_items_owner_id_idx",
+        "e|idx|public.test_referenced_items_owner_id_idx",
+        "n|rel|public.test_referenced_items_owner_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "n|col|public.test_referenced_items.owner_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "test_referenced_items",
+        "test_referenced_items_reference_idx"
+      ],
+      "writes": [
+        "s|idx|public.test_referenced_items_reference_idx",
+        "n|idx|public.test_referenced_items_reference_idx",
+        "e|idx|public.test_referenced_items_reference_idx",
+        "n|rel|public.test_referenced_items_reference_idx"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "n|col|public.test_referenced_items.tenant_id",
+        "n|col|public.test_referenced_items.reference"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_referenced_items"
+      ],
+      "writes": [
+        "s|fk|public.test_referenced_items.test_referenced_items_tenant_id_tenants_id_fkey",
+        "n|fk|public.test_referenced_items.test_referenced_items_tenant_id_tenants_id_fkey",
+        "e|fk|public.test_referenced_items.test_referenced_items_tenant_id_tenants_id_fkey",
+        "n|con|public.test_referenced_items.test_referenced_items_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.test_referenced_items.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_referenced_items"
+      ],
+      "writes": [
+        "s|pol|public.test_referenced_items.test_referenced_items_tenant_select",
+        "n|pol|public.test_referenced_items.test_referenced_items_tenant_select",
+        "e|pol|public.test_referenced_items.test_referenced_items_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "e|rls|public.test_referenced_items"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_referenced_items"
+      ],
+      "writes": [
+        "s|pol|public.test_referenced_items.test_referenced_items_tenant_insert",
+        "n|pol|public.test_referenced_items.test_referenced_items_tenant_insert",
+        "e|pol|public.test_referenced_items.test_referenced_items_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "e|rls|public.test_referenced_items"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_referenced_items"
+      ],
+      "writes": [
+        "s|pol|public.test_referenced_items.test_referenced_items_tenant_update",
+        "n|pol|public.test_referenced_items.test_referenced_items_tenant_update",
+        "e|pol|public.test_referenced_items.test_referenced_items_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "e|rls|public.test_referenced_items"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "test_referenced_items"
+      ],
+      "writes": [
+        "s|pol|public.test_referenced_items.test_referenced_items_tenant_delete",
+        "n|pol|public.test_referenced_items.test_referenced_items_tenant_delete",
+        "e|pol|public.test_referenced_items.test_referenced_items_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.test_referenced_items",
+        "n|sch|public",
+        "e|rls|public.test_referenced_items"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "test_referenced_items",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "owner_id",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "reference",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "region",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "created_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "updated_at",
+        "type": "timestamp(3) with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_owner_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "owner_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_reference_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "reference",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_tenant_id_id_key",
+        "nameExplicit": true,
+        "columns": [
+          "tenant_id",
+          "id"
+        ],
+        "nullsNotDistinct": false,
+        "entityType": "uniques"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"test_referenced_items\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"test_referenced_items\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"test_referenced_items\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"test_referenced_items\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "test_referenced_items",
+        "name": "test_referenced_items_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"test_referenced_items\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    }
+  ]
+}

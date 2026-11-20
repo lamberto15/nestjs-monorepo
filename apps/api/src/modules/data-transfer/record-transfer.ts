@@ -2,7 +2,6 @@ import type { z } from 'zod';
 import type { AnyField } from '../fields/field.js';
 import { fieldSchemas } from '../fields/fields.js';
 import type { RecordDeclaration } from '../records/record.js';
-import { includeNameOf, recordKeyOf } from '../records/record-relations.js';
 import type { RecordRegistration } from '../records/records.service.js';
 import type { TransferColumn } from './data-transfer.types.js';
 
@@ -42,32 +41,19 @@ const money = (value: unknown) => {
 export function exportColumns(
   registration: RecordRegistration,
 ): TransferColumn[] {
-  const { declaration } = registration;
-  const { fields } = declaration;
-  const key = recordKeyOf(declaration);
+  const { fields } = registration.declaration;
   const shows = registration.extensions.flatMap((hooks) => hooks.shows ?? []);
   return [
-    // What people name the record by: its declared key, else its id.
-    { key },
-    ...Object.entries(fields)
-      .filter(([name]) => name !== key)
-      .map(([name, f]): TransferColumn =>
-        f.kind === 'ref'
-          ? // A reference, as files name its record (`product`: the product's key), as the caller may read it.
-            {
-              key: includeNameOf(name),
-              value: (row) =>
-                (row[includeNameOf(name)] as { key?: string } | null)?.key ??
-                null,
-            }
-          : f.kind === 'money'
-            ? { key: name, value: (row) => money(row[name]) }
-            : f.kind === 'datetime'
-              ? { key: name, type: 'datetime' }
-              : f.kind === 'date'
-                ? { key: name, type: 'date' }
-                : { key: name },
-      ),
+    { key: 'id' },
+    ...Object.entries(fields).map(([name, f]): TransferColumn =>
+      f.kind === 'money'
+        ? { key: name, value: (row) => money(row[name]) }
+        : f.kind === 'datetime'
+          ? { key: name, type: 'datetime' }
+          : f.kind === 'date'
+            ? { key: name, type: 'date' }
+            : { key: name },
+    ),
     ...shows.map((key): TransferColumn => ({
       key,
       value: (row) => shownValue(row[key]),
@@ -77,33 +63,16 @@ export function exportColumns(
   ];
 }
 
-/**
- * A record's references as files name them: the field (`productId`) and
- * its column (`product`), which holds the referred record's key.
- */
-export const referenceColumns = (declaration: RecordDeclaration) =>
-  Object.entries(declaration.fields)
-    .filter(([, f]) => (f as AnyField).kind === 'ref')
-    .map(([field]) => ({ field, column: includeNameOf(field) }));
-
-/** The `?include=` an export asks for: each reference, for its key. */
-export const referenceNames = (declaration: RecordDeclaration) =>
-  referenceColumns(declaration).map(({ column }) => column);
-
 /** An import row: the record's create body (its fields, read-only ones left out). */
 export const importSchema = (declaration: RecordDeclaration): z.ZodObject =>
   fieldSchemas(declaration.fields).create as unknown as z.ZodObject;
 
 /** The columns a matched import may find a record by: its id, and its unique fields. */
 export const matchKeys = (declaration: RecordDeclaration) => [
-  ...new Set([
-    'id',
-    ...Object.entries(declaration.fields)
-      .filter(([, f]) => f.options.unique && !f.options.readOnly)
-      .map(([name]) => name),
-    // A key unique within a parent: matched within the row's parent.
-    ...(declaration.key && declaration.keyWithin ? [declaration.key] : []),
-  ]),
+  'id',
+  ...Object.entries(declaration.fields)
+    .filter(([, f]) => f.options.unique && !f.options.readOnly)
+    .map(([name]) => name),
 ];
 
 const INTEGER = /^-?\d+$/;

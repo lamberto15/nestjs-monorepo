@@ -49,10 +49,6 @@ export interface RecordRelation {
 
 const RELATIONS: RecordRelation[] = [];
 const TABLES = new WeakMap<RecordDeclaration, RecordTable>();
-const DECLARATIONS = new Map<string, RecordDeclaration>();
-
-/** A record's declaration by its subject, once its table is made (record-keys.ts follows keys up). */
-export const declarationOf = (subject: string) => DECLARATIONS.get(subject);
 
 /** A record's table by its declaration, for a `ref` field to it (`() => recordTableOf(ITEM)`). */
 export function recordTableOf(
@@ -70,7 +66,6 @@ export function recordTableOf(
 /** Registers a record's table and the relations of its `ref` fields (recordTable). */
 export function relate(declaration: RecordDeclaration, table: RecordTable) {
   TABLES.set(declaration, table);
-  DECLARATIONS.set(declaration.subject, declaration);
   for (const [field, f] of Object.entries(declaration.fields) as [
     string,
     AnyField,
@@ -105,10 +100,6 @@ export const relationsFrom = (declaration: RecordDeclaration) =>
 
 /** `parentId` → `parent`: the `?include=` name of a reference. */
 export const includeNameOf = (field: string) => field.replace(/Id$/, '');
-
-/** The field people name a record by outside the app: its declared `key`, else `id`. */
-export const recordKeyOf = (declaration: RecordDeclaration) =>
-  declaration.key ?? 'id';
 
 /** The field a client names a record by: its first string field, or null. */
 export const relationTitle = (declaration: RecordDeclaration) =>

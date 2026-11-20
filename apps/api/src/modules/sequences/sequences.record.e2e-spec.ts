@@ -1,6 +1,7 @@
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../../../test/boot.js';
 import { NumberedItemsModule } from '../../../test/fixtures/sequences/numbered-items.module.js';
+import { ReferencedItemsModule } from '../../../test/fixtures/sequences/referenced-items.module.js';
 import { recordsTenant, testItemModules } from '../../../test/records.js';
 import { dateValues } from './naming-pattern.js';
 
@@ -15,7 +16,11 @@ describe('numbered records (e2e)', () => {
   const year = dateValues(new Date(), 'UTC').YYYY;
 
   beforeAll(async () => {
-    app = await bootModules(...testItemModules(), NumberedItemsModule);
+    app = await bootModules(
+      ...testItemModules(),
+      NumberedItemsModule,
+      ReferencedItemsModule,
+    );
   });
   afterAll(async () => {
     await app?.close();
@@ -95,5 +100,33 @@ describe('numbered records (e2e)', () => {
       namingSeriesId: '0192e0a0-0000-7000-8000-000000000000',
     });
     expect(unknown.statusCode).toBe(400);
+  });
+
+  it("fills a record's own field from its series when a create leaves it empty, and keeps one typed in", async () => {
+    const { admin } = await recordsTenant(app);
+    const post = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/referenced-items',
+        headers: admin.headers,
+        payload,
+      });
+    const first = await post({});
+    expect(first.statusCode, first.body).toBe(201);
+    expect(first.json().reference).toBe(`REF-${year}-0001`);
+    expect(first.json()).not.toHaveProperty('number');
+    const typed = await post({ reference: 'MINE' });
+    expect(typed.json().reference).toBe('MINE');
+
+    // A tenant's own series, printing the record's fields.
+    const series = await app.inject({
+      method: 'POST',
+      url: '/v1/naming-series',
+      headers: admin.headers,
+      payload: { subject: 'ReferencedItem', pattern: '.{region}.-.###' },
+    });
+    expect(series.statusCode, series.body).toBe(201);
+    const next = await post({ region: 'EU' });
+    expect(next.json().reference).toBe('EU-001');
   });
 });
