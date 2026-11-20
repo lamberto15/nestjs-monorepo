@@ -46,7 +46,8 @@ export interface PatternNames {
 /** Letters, digits, `-`, `_` and `/`: a number stays one token to quote and search. */
 const TEXT = /^[A-Za-z0-9_\-/]+$/;
 const NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
-export const MAX_PATTERN_LENGTH = 60;
+/** Room for fields up a chain of references: `.{c_b_a_code}.-.{c_b_code}.-.{c_code}.-.######`. */
+export const MAX_PATTERN_LENGTH = 200;
 export const MAX_COUNTER_WIDTH = 12;
 /** The most a field's value prints: a number stays short enough to read and quote. */
 export const MAX_FIELD_VALUE_LENGTH = 40;

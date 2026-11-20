@@ -176,6 +176,8 @@ export class NamingSeriesService {
    * else the first series by priority whose conditions hold for the
    * record, else the subject's default series, else the declared format.
    * A field or variable the pattern prints with no value is a 400.
+   * `resolve`: the values of fields the body doesn't hold (a referenced
+   * record's, `{company_code}`), asked for only those a series reads.
    */
   async next(
     subject: string,
@@ -183,21 +185,34 @@ export class NamingSeriesService {
       seriesId,
       values = {},
       at = new Date(),
+      resolve,
     }: {
       seriesId?: string;
       values?: Readonly<Record<string, unknown>>;
       at?: Date;
+      resolve?: ResolveValues;
     } = {},
   ) {
     const numbered = this.numbered(subject);
+    let known = values;
+    const more = async (names: readonly string[]) =>
+      (known = await withResolved(known, names, resolve));
     const series = seriesId
       ? await this.named(subject, seriesId)
-      : await this.chosen(numbered, values);
-    const counter = await this.counter(
-      numbered,
-      series ?? { pattern: patternOf(numbered.declared), dateField: null },
-      { at, values, strict: { path: (name) => name } },
-    );
+      : await this.chosen(numbered, values, more);
+    const format = series ?? {
+      pattern: patternOf(numbered.declared),
+      dateField: null,
+    };
+    await more([
+      ...namesIn(parsePattern(format.pattern, this.names(numbered))).fields,
+      ...(format.dateField ? [format.dateField] : []),
+    ]);
+    const counter = await this.counter(numbered, format, {
+      at,
+      values: known,
+      strict: { path: (name) => name },
+    });
     const value = await this.sequences.take(counter.name, counter.key, {
       carryFrom: counter.carryFrom,
     });
@@ -559,6 +574,9 @@ export class NamingSeriesService {
   private async chosen(
     numbered: NumberedSubject,
     values: Readonly<Record<string, unknown>>,
+    more?: (
+      names: readonly string[],
+    ) => Promise<Readonly<Record<string, unknown>>>,
   ) {
     const rows = await this.db
       .select()
@@ -570,13 +588,18 @@ export class NamingSeriesService {
         asc(namingSeries.id),
       );
     const fields = numbered.fields ?? {};
+    const conditioned = rows.filter((row) => row.conditions.length > 0);
+    // The values conditions test that the body doesn't hold: read once, for all of them.
+    const known = more
+      ? await more(
+          conditioned.flatMap((row) => row.conditions.map((c) => c.field)),
+        )
+      : values;
     return (
-      rows.find(
-        (row) =>
-          row.conditions.length > 0 &&
-          row.conditions.every((condition) =>
-            holds(condition, fields[condition.field], values[condition.field]),
-          ),
+      conditioned.find((row) =>
+        row.conditions.every((condition) =>
+          holds(condition, fields[condition.field], known[condition.field]),
+        ),
       ) ?? rows.find((row) => row.isDefault)
     );
   }
@@ -847,6 +870,29 @@ export class NamingSeriesService {
   private taken(subject: string, pattern: string) {
     return `${subject} has a naming series ${pattern}.`;
   }
+}
+
+/** What `next()` asks for the fields a create body doesn't hold: their values by name. */
+export type ResolveValues = (
+  names: readonly string[],
+) => Promise<Readonly<Record<string, unknown>>>;
+
+/** `values` with those of `names` it lacks, from `resolve`. */
+async function withResolved(
+  values: Readonly<Record<string, unknown>>,
+  names: readonly string[],
+  resolve: ResolveValues | undefined,
+) {
+  const missing = [...new Set(names)].filter(
+    (name) => values[name] === undefined,
+  );
+  if (!resolve || missing.length === 0) return values;
+  // One the resolver has no value for is null: asked once.
+  return {
+    ...values,
+    ...Object.fromEntries(missing.map((name) => [name, null])),
+    ...(await resolve(missing)),
+  };
 }
 
 /** `2026-10-20`. */

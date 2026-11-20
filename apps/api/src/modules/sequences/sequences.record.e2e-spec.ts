@@ -2,7 +2,12 @@ import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../../../test/boot.js';
 import { NumberedItemsModule } from '../../../test/fixtures/sequences/numbered-items.module.js';
 import { ReferencedItemsModule } from '../../../test/fixtures/sequences/referenced-items.module.js';
-import { recordsTenant, testItemModules } from '../../../test/records.js';
+import { testItemsModule } from '../../../test/fixtures/test-items/test-items.module.js';
+import {
+  createTestItem,
+  recordsTenant,
+  testItemModules,
+} from '../../../test/records.js';
 import { dateValues } from './naming-pattern.js';
 
 vi.hoisted(() => {
@@ -20,6 +25,8 @@ describe('numbered records (e2e)', () => {
       ...testItemModules(),
       NumberedItemsModule,
       ReferencedItemsModule,
+      // The records a referenced item refers to.
+      testItemsModule(),
     );
   });
   afterAll(async () => {
@@ -102,6 +109,52 @@ describe('numbered records (e2e)', () => {
     expect(unknown.statusCode).toBe(400);
   });
 
+  it('reads up a chain of references: a pattern of A, B and C, a counter for each', async () => {
+    const { admin } = await recordsTenant(app);
+    const { headers } = admin;
+    // D → C → B → A: a referenced item, its test item, that one's parent, and its parent's.
+    const a = await createTestItem(app, headers, { title: 'A', code: 'A01' });
+    const b = await createTestItem(app, headers, {
+      title: 'B',
+      code: 'B02',
+      parentId: a.id,
+    });
+    const c = await createTestItem(app, headers, {
+      title: 'C',
+      code: 'C03',
+      parentId: b.id,
+    });
+    const other = await createTestItem(app, headers, {
+      title: 'C again',
+      code: 'C04',
+      parentId: b.id,
+    });
+    const series = await app.inject({
+      method: 'POST',
+      url: '/v1/naming-series',
+      headers,
+      payload: {
+        subject: 'ReferencedItem',
+        pattern:
+          '.{item_parent_parent_code}.-.{item_parent_code}.-.{item_code}.-.###',
+      },
+    });
+    expect(series.statusCode, series.body).toBe(201);
+    const reference = async (itemId: string) => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/referenced-items',
+        headers,
+        payload: { itemId },
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      return response.json<{ reference: string }>().reference;
+    };
+    expect(await reference(c.id)).toBe('A01-B02-C03-001');
+    expect(await reference(c.id)).toBe('A01-B02-C03-002');
+    expect(await reference(other.id)).toBe('A01-B02-C04-001');
+  });
+
   it("fills a record's own field from its series when a create leaves it empty, and keeps one typed in", async () => {
     const { admin } = await recordsTenant(app);
     const post = (payload: Record<string, unknown>) =>
@@ -147,5 +200,115 @@ describe('numbered records (e2e)', () => {
     const next = await post({});
     expect(next.statusCode, next.body).toBe(201);
     expect(next.json().reference).toBe(`REF-${year}-0004`);
+  });
+
+  it("picks and prints by a referenced record's field: a company's own series and code", async () => {
+    const { admin } = await recordsTenant(app);
+    const { headers } = admin;
+    // Test items stand for companies: their `code`.
+    const acme = await createTestItem(app, headers, {
+      title: 'Acme',
+      code: 'ACME',
+    });
+    const globex = await createTestItem(app, headers, {
+      title: 'Globex',
+      code: 'GLX',
+    });
+    const nameless = await createTestItem(app, headers, { title: 'Nameless' });
+    const series = (payload: object) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/naming-series',
+        headers,
+        payload: { subject: 'ReferencedItem', ...payload },
+      });
+    // The first series is the default: every company without its own.
+    expect((await series({ pattern: '.#####' })).statusCode).toBe(201);
+    const glx = await series({
+      pattern: '.{item_code}.-.####',
+      conditions: [{ field: 'item_code', op: 'eq', value: 'GLX' }],
+    });
+    expect(glx.statusCode, glx.body).toBe(201);
+    const post = async (payload: Record<string, unknown>) => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/referenced-items',
+        headers,
+        payload,
+      });
+      return response;
+    };
+    const reference = async (payload: Record<string, unknown>) => {
+      const response = await post(payload);
+      expect(response.statusCode, response.body).toBe(201);
+      return response.json<{ reference: string }>().reference;
+    };
+    expect(await reference({ itemId: acme.id })).toBe('00001');
+    expect(await reference({ itemId: globex.id })).toBe('GLX-0001');
+    expect(await reference({ itemId: globex.id })).toBe('GLX-0002');
+    expect(await reference({ itemId: acme.id })).toBe('00002');
+    // No company: the default.
+    expect(await reference({})).toBe('00003');
+
+    // A series printing a code the company lacks: a 400 that says so.
+    const lacking = await post({
+      itemId: nameless.id,
+      namingSeriesId: glx.json<{ id: string }>().id,
+    });
+    expect(lacking.statusCode).toBe(400);
+    expect(lacking.body).toContain('item_code');
+
+    // A referenced field that isn't one: refused when the series is saved.
+    const unknown = await series({
+      pattern: '.####',
+      conditions: [{ field: 'item_nope', op: 'eq', value: 'X' }],
+    });
+    expect(unknown.statusCode).toBe(400);
+  });
+
+  it('reads up a chain of references: a pattern of A, B and C, a counter for each', async () => {
+    const { admin } = await recordsTenant(app);
+    const { headers } = admin;
+    // D → C → B → A: a referenced item, its test item, that one's parent, and its parent's.
+    const a = await createTestItem(app, headers, { title: 'A', code: 'A01' });
+    const b = await createTestItem(app, headers, {
+      title: 'B',
+      code: 'B02',
+      parentId: a.id,
+    });
+    const c = await createTestItem(app, headers, {
+      title: 'C',
+      code: 'C03',
+      parentId: b.id,
+    });
+    const other = await createTestItem(app, headers, {
+      title: 'C again',
+      code: 'C04',
+      parentId: b.id,
+    });
+    const series = await app.inject({
+      method: 'POST',
+      url: '/v1/naming-series',
+      headers,
+      payload: {
+        subject: 'ReferencedItem',
+        pattern:
+          '.{item_parent_parent_code}.-.{item_parent_code}.-.{item_code}.-.###',
+      },
+    });
+    expect(series.statusCode, series.body).toBe(201);
+    const reference = async (itemId: string) => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/referenced-items',
+        headers,
+        payload: { itemId },
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      return response.json<{ reference: string }>().reference;
+    };
+    expect(await reference(c.id)).toBe('A01-B02-C03-001');
+    expect(await reference(c.id)).toBe('A01-B02-C03-002');
+    expect(await reference(other.id)).toBe('A01-B02-C04-001');
   });
 });

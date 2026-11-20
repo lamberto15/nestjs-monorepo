@@ -68,7 +68,7 @@ describe('naming series patterns', () => {
     expect(refused('.YYYY.###')).toThrow(/separator/);
     expect(refused('.###.MM')).toThrow(/separator/);
     expect(refused(`.${'#'.repeat(13)}`)).toThrow(/at most 12/);
-    expect(refused(`${'A'.repeat(60)}.#`)).toThrow(/1 to 60/);
+    expect(refused(`${'A'.repeat(200)}.#`)).toThrow(/1 to 200/);
     expect(refused('')).toThrow(PatternError);
   });
 

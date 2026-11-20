@@ -22720,7 +22720,7 @@ export interface operations {
                      */
                     subject: string;
                     /**
-                     * @description Parts between dots: text (`INV-`), date parts `YYYY`, `YY`, `MM`, `DD`, `JJJ` (day of the year), `WW` (ISO week), in the app time zone; variables (`FY`, `ABBR`: GET /v1/naming-series/variables); the record's own fields in braces (`{customer}`: GET /v1/naming-series/subjects); and one counter of `#` (its length the zero-padding). The counter restarts whenever what the pattern prints around it changes: each year with `YYYY`, each month with `MM`, each value of a field in it.
+                     * @description Parts between dots: text (`INV-`), date parts `YYYY`, `YY`, `MM`, `DD`, `JJJ` (day of the year), `WW` (ISO week), in the app time zone; variables (`FY`, `ABBR`: GET /v1/naming-series/variables); the record's fields and those of the records it refers to, up to 5 levels, in braces (`{customer}`, `{company_code}`: GET /v1/naming-series/subjects); and one counter of `#` (its length the zero-padding). The counter restarts whenever what the pattern prints around it changes: each year with `YYYY`, each month with `MM`, each value of a field in it.
                      * @example INV-.YYYY.-.MM.-.#####
                      */
                     pattern: string;
@@ -22860,7 +22860,7 @@ export interface operations {
                      */
                     subject: string;
                     /**
-                     * @description Parts between dots: text (`INV-`), date parts `YYYY`, `YY`, `MM`, `DD`, `JJJ` (day of the year), `WW` (ISO week), in the app time zone; variables (`FY`, `ABBR`: GET /v1/naming-series/variables); the record's own fields in braces (`{customer}`: GET /v1/naming-series/subjects); and one counter of `#` (its length the zero-padding). The counter restarts whenever what the pattern prints around it changes: each year with `YYYY`, each month with `MM`, each value of a field in it.
+                     * @description Parts between dots: text (`INV-`), date parts `YYYY`, `YY`, `MM`, `DD`, `JJJ` (day of the year), `WW` (ISO week), in the app time zone; variables (`FY`, `ABBR`: GET /v1/naming-series/variables); the record's fields and those of the records it refers to, up to 5 levels, in braces (`{customer}`, `{company_code}`: GET /v1/naming-series/subjects); and one counter of `#` (its length the zero-padding). The counter restarts whenever what the pattern prints around it changes: each year with `YYYY`, each month with `MM`, each value of a field in it.
                      * @example INV-.YYYY.-.MM.-.#####
                      */
                     pattern: string;
@@ -23001,7 +23001,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /**
-                     * @description Parts between dots: text (`INV-`), date parts `YYYY`, `YY`, `MM`, `DD`, `JJJ` (day of the year), `WW` (ISO week), in the app time zone; variables (`FY`, `ABBR`: GET /v1/naming-series/variables); the record's own fields in braces (`{customer}`: GET /v1/naming-series/subjects); and one counter of `#` (its length the zero-padding). The counter restarts whenever what the pattern prints around it changes: each year with `YYYY`, each month with `MM`, each value of a field in it.
+                     * @description Parts between dots: text (`INV-`), date parts `YYYY`, `YY`, `MM`, `DD`, `JJJ` (day of the year), `WW` (ISO week), in the app time zone; variables (`FY`, `ABBR`: GET /v1/naming-series/variables); the record's fields and those of the records it refers to, up to 5 levels, in braces (`{customer}`, `{company_code}`: GET /v1/naming-series/subjects); and one counter of `#` (its length the zero-padding). The counter restarts whenever what the pattern prints around it changes: each year with `YYYY`, each month with `MM`, each value of a field in it.
                      * @example INV-.YYYY.-.MM.-.#####
                      */
                     pattern?: string;

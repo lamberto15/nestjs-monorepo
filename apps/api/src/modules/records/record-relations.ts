@@ -49,6 +49,10 @@ export interface RecordRelation {
 
 const RELATIONS: RecordRelation[] = [];
 const TABLES = new WeakMap<RecordDeclaration, RecordTable>();
+const DECLARATIONS = new WeakMap<object, RecordDeclaration>();
+
+/** The declaration of a record's table, as a `ref` field returns it; undefined for a table that holds no record. */
+export const declarationOfTable = (table: object) => DECLARATIONS.get(table);
 
 /** A record's table by its declaration, for a `ref` field to it (`() => recordTableOf(ITEM)`). */
 export function recordTableOf(
@@ -66,6 +70,7 @@ export function recordTableOf(
 /** Registers a record's table and the relations of its `ref` fields (recordTable). */
 export function relate(declaration: RecordDeclaration, table: RecordTable) {
   TABLES.set(declaration, table);
+  DECLARATIONS.set(table, declaration);
   for (const [field, f] of Object.entries(declaration.fields) as [
     string,
     AnyField,

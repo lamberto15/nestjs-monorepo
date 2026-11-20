@@ -39,7 +39,7 @@
     "subject": "Records",
     "pattern": "Pattern",
     "patternRequired": "Give the series a pattern.",
-    "patternTooLong": "The pattern is at most 60 characters.",
+    "patternTooLong": "The pattern is at most 200 characters.",
     "patternHint": "Exactly one run of #, such as #####.",
     "patternTaken": "{{subject}} already has a series with the pattern “{{pattern}}”.",
     "previewEmpty": "Type a pattern to see the next number.",

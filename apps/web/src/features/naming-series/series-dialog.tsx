@@ -45,7 +45,7 @@ import { previewQuery, useCreateSeries, useUpdateSeries } from './api';
  * The schema's limits (`POST /v1/naming-series`). What a pattern may hold
  * (fields, variables, date parts) is the API's to judge: its 400 is shown.
  */
-const LIMITS = { pattern: 60, label: 100, conditions: 10 } as const;
+const LIMITS = { pattern: 200, label: 100, conditions: 10 } as const;
 
 /** "Date from" when the series dates its numbers from the moment of creation. */
 const CREATED = '*';

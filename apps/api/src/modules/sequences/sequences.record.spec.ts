@@ -1,6 +1,12 @@
 import { field } from '../fields/field.js';
 import { defineRecord } from '../records/record.js';
-import { assertNumberedField } from './sequences.record.js';
+import { REFERENCED_ITEM } from '../../../test/fixtures/sequences/referenced-item.record.js';
+import '../../../test/fixtures/sequences/referenced-items.tables.js';
+import {
+  assertNumberedField,
+  MAX_REFERENCE_DEPTH,
+  numberedSubject,
+} from './sequences.record.js';
 
 const RECORD = defineRecord({
   subject: 'NumberedFieldCheck',
@@ -30,4 +36,27 @@ describe('assertNumberedField', () => {
       );
     },
   );
+});
+
+describe('numberedSubject', () => {
+  const fields = numberedSubject(REFERENCED_ITEM, {}, 'reference').fields!;
+
+  it("reads the referenced records' fields, up a chain, at most MAX_REFERENCE_DEPTH levels", () => {
+    // A referenced item → its test item → that one's parent → …
+    expect(fields).toMatchObject({
+      region: 'text',
+      item_code: 'text',
+      item_parent_code: 'text',
+      item_parent_linked_publishedAt: 'datetime',
+    });
+    const deepest = `item${'_parent'.repeat(MAX_REFERENCE_DEPTH - 1)}_code`;
+    expect(fields).toHaveProperty(deepest);
+    expect(fields).not.toHaveProperty(deepest.replace('_code', '_parent_code'));
+  });
+
+  it('leaves out the numbered field and the references themselves', () => {
+    expect(fields).not.toHaveProperty('reference');
+    expect(fields).not.toHaveProperty('itemId');
+    expect(fields).not.toHaveProperty('item_parentId');
+  });
 });
