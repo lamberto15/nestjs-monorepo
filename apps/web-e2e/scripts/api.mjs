@@ -14,10 +14,11 @@
 // and marked as a development one, which the seed needs): the development
 // database keeps its data, and its secrets stay sealed with its own keys.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const api = resolve(here, '../../api');
@@ -28,16 +29,25 @@ const credentialsFile = resolve(
 );
 const webUrl = process.env.E2E_BASE_URL ?? 'http://localhost:3300';
 const database = process.env.E2E_DATABASE ?? 'app_browser_tests';
-const server = process.env.E2E_POSTGRES ?? 'postgres://app:app@127.0.0.1:5432';
+// This project's development services, on the ports `pnpm run setup
+// --dev-ports` wrote to the root .env (docs/development.md, "Two projects on
+// one machine"); without it, compose.dev.yaml's defaults.
+const rootEnv = resolve(here, '../../../.env');
+const ports = existsSync(rootEnv)
+  ? parseEnv(readFileSync(rootEnv, 'utf8'))
+  : {};
+const pg = ports.POSTGRES_PORT ?? '5432';
+const redis = ports.REDIS_PORT ?? '6379';
+const server = process.env.E2E_POSTGRES ?? `postgres://app:app@127.0.0.1:${pg}`;
 
 const env = {
   NODE_ENV: 'development',
   // Not 3000 (nor 3100, Gotenberg's): a development stack (pnpm dev) may be running on this machine.
   PORT: '3300',
-  DATABASE_URL: `postgres://app_runtime:app_runtime@127.0.0.1:5432/${database}`,
+  DATABASE_URL: `postgres://app_runtime:app_runtime@127.0.0.1:${pg}/${database}`,
   DATABASE_OWNER_URL: `${server}/${database}`,
-  DATABASE_MAINTENANCE_URL: `postgres://app_maintenance:app_maintenance@127.0.0.1:5432/${database}`,
-  REDIS_URL: 'redis://127.0.0.1:6379',
+  DATABASE_MAINTENANCE_URL: `postgres://app_maintenance:app_maintenance@127.0.0.1:${pg}/${database}`,
+  REDIS_URL: `redis://127.0.0.1:${redis}`,
   MIGRATE_ON_START: 'on',
   // The built web app, served by the API: one origin, so the __Host-sid
   // cookie works; plain http://localhost accepts Secure cookies.
@@ -56,7 +66,9 @@ const env = {
   // at boot. Fixed, not per run: the tests' database is reused, and what it
   // sealed (app_secrets) must open on the next run. Test keys of a database
   // holding demo data only, never anyone's real keys.
-  DATA_ENCRYPTION_KEYS: Buffer.alloc(32, 'browser-tests-data').toString('base64'),
+  DATA_ENCRYPTION_KEYS: Buffer.alloc(32, 'browser-tests-data').toString(
+    'base64',
+  ),
   BLIND_INDEX_KEYS: Buffer.alloc(32, 'browser-tests-index').toString('base64'),
   // The suite signs in a few times per account on a database that may be reused.
   RATE_LIMIT_MULTIPLIER: '20',

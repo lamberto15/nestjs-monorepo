@@ -6,6 +6,7 @@ import {
   migrateAll,
 } from '../src/core/database/migrations.js';
 import { FIXTURE_MIGRATIONS } from './fixtures/test-items.tables.js';
+import { devServices } from './dev-services.js';
 import { asRole, databaseUrl, onServer } from './postgres.js';
 
 declare module 'vitest' {
@@ -27,6 +28,8 @@ declare module 'vitest' {
     ownerUrl: string;
     appUrl: string;
     maintenanceUrl: string;
+    /** REDIS_URL as the run has it: its own, else this project's development Redis (dev-services.ts). */
+    redisUrl: string;
   }
 }
 
@@ -34,14 +37,15 @@ declare module 'vitest' {
  * One template database per run, migrated once as the run's owner role (the
  * app's migrations, then the test fixtures' in a migrations table of their
  * own), its roles and tenant wall made as `node dist/migrate` makes them, on
- * the development server (pnpm services:up) or TEST_DATABASE_URL's, a
- * superuser. Each test file gets a copy (setup-env.ts). The teardown drops
+ * the development server (pnpm services:up, on this project's ports:
+ * dev-services.ts) or TEST_DATABASE_URL's, a superuser. Each test file gets a copy (setup-env.ts). The teardown drops
  * the template, every copy of this run a test file left, and the run's
  * roles, so the server is left as it was found.
  */
 export default async function setup(project: TestProject) {
-  const serverUrl =
-    process.env.TEST_DATABASE_URL ?? 'postgres://app:app@127.0.0.1:5432/app';
+  const services = devServices();
+  const serverUrl = process.env.TEST_DATABASE_URL ?? services.postgresUrl;
+  project.provide('redisUrl', process.env.REDIS_URL ?? services.redisUrl);
   const prefix = `e2e_${randomUUID().slice(0, 8)}`;
   const template = `${prefix}_template`;
   const [owner, app, maintenance] = ['owner', 'app', 'maint'].map(

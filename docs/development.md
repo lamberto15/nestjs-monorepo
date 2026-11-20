@@ -62,7 +62,10 @@ so containers and volumes are the project's own, and `POSTGRES_PORT`,
 `REDIS_PORT`, `GOTENBERG_PORT`, `GARAGE_PORT`, `NESTRIX_PORT`), and points
 `DATABASE_URL` and `REDIS_URL` in `apps/api/.env` at them, the rest of a URL
 already set kept. The API's owner and maintenance roles follow `DATABASE_URL`'s
-port. Set `GOTENBERG_URL`, `S3_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` to
+port. The tests follow the same file: `pnpm test:e2e` (test/dev-services.ts)
+and the browser tests' API (apps/web-e2e/scripts/api.mjs) use its
+`POSTGRES_PORT` and `REDIS_PORT`; `TEST_DATABASE_URL` and `REDIS_URL` still
+take precedence. Set `GOTENBERG_URL`, `S3_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` to
 the moved port when you use those services. A project already on the shared
 services moves by running the setup, then `pnpm services:up`: its data starts
 empty (its old data is in the other project's database). The two `pnpm dev`s

@@ -22,6 +22,7 @@
       "cache": false,
       "passThroughEnv": [
         "TEST_DATABASE_URL",
+        "REDIS_URL",
         "TEST_LOGS",
         "S3_TEST_*",
         "AWS_ACCESS_KEY_ID",

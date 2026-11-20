@@ -20,5 +20,7 @@ Object.assign(process.env, {
     database.name,
   ),
   MIGRATE_ON_START: 'off',
+  // This project's Redis (global-setup.ts), unless a test file set its own.
+  REDIS_URL: process.env.REDIS_URL ?? inject('redisUrl'),
 });
 afterAll(() => database.drop());
