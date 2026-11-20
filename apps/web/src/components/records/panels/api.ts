@@ -96,13 +96,14 @@ export const listRelated = (
   cursor?: string,
 ) =>
   unwrap(
-    client.GET(`/v1/${path}`, {
+    // Read through this record (`through`): its route, `{id}` this record's
+    // (`test-items/{id}/notes`), which pages but counts nothing.
+    client.GET(`/v1/${path.replace('{id}', id)}`, {
       params: {
         path: {},
         query: {
-          [field]: id,
+          ...(!path.includes('{id}') && { [field]: id, count: 'true' }),
           limit: RELATED_LIMIT,
-          count: 'true',
           ...(cursor && { cursor }),
         },
       },

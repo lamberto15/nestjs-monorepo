@@ -21,7 +21,13 @@ import { AUDIT_LIST, SIGN_IN_LIST } from '../../iam/audit-log/audit.lists.js';
 import { AuditPolicy } from '../../iam/audit-log/audit.policy.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
-import { relationsTo, relationTitle } from '../records/record-relations.js';
+import {
+  declarationOfTable,
+  type RecordRelation,
+  relationsFrom,
+  relationsTo,
+  relationTitle,
+} from '../records/record-relations.js';
 import { RecordTitles } from '../records/record-titles.js';
 import {
   type RecordRegistration,
@@ -132,6 +138,28 @@ export class ListsService implements OnModuleInit {
       if (views) checkListViews(subject, record.list, views);
     }
     this.listed = this.listRoutes();
+    for (const relation of this.throughRelations()) {
+      const route = throughRoute(relation);
+      const listed = [...this.listed].some(
+        (path) => path.replace(/:[^/]+/g, ':id') === route,
+      );
+      if (!listed) {
+        throw new Error(
+          `${relation.from.subject} is read through ${relation.field} (readThrough): no GET /v1/${throughPath(relation)} route lists them.`,
+        );
+      }
+    }
+  }
+
+  /** The relations children are read through (`readThrough` of their declaration). */
+  private throughRelations() {
+    return this.records
+      .all()
+      .flatMap(({ declaration }) =>
+        relationsFrom(declaration).filter(
+          (relation) => relation.field === declaration.readThrough,
+        ),
+      );
   }
 
   /**
@@ -274,6 +302,26 @@ export class ListsService implements OnModuleInit {
     const related: ListMetadata['related'] = [];
     for (const relation of relationsTo(subject)) {
       const from = relation.from.subject;
+      const child = this.records.find(from);
+      if (child && relation.from.readThrough === relation.field) {
+        // Read through this record, by whoever may read it: at its route,
+        // described here (the reader may not read the child's own list).
+        if (!(await this.mayRead(principal, subject))) continue;
+        const metadata = listMetadata(from, child.list);
+        related.push({
+          subject: from,
+          path: throughPath(relation),
+          field: relation.field,
+          title: relationTitle(relation.from),
+          required: relation.required,
+          onDelete: relation.onDelete,
+          through: {
+            fields: metadata.fields as ListField[],
+            select: metadata.select as string[],
+          },
+        });
+        continue;
+      }
       if (
         !this.records.find(from) ||
         // The panel lists them at `GET /v1/<path>`: none without that route.
@@ -307,3 +355,11 @@ export class ListsService implements OnModuleInit {
 
 /** `/invoices/` → `invoices`. */
 const trim = (path: string) => path.replace(/^\/+|\/+$/g, '');
+
+/** `accounts/{id}/notes`: the route a child read through its parent is listed at, under /v1. */
+const throughPath = (relation: RecordRelation) =>
+  `${declarationOfTable(relation.targetTable())?.path}/{id}/${relation.from.path}`;
+
+/** The same path as a controller declares it, its parameter named `id` (`accounts/:id/notes`; the controller's may be `:accountId`). */
+const throughRoute = (relation: RecordRelation) =>
+  throughPath(relation).replace('{id}', ':id');

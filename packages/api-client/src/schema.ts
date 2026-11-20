@@ -24298,7 +24298,7 @@ export interface operations {
                         capabilities: {
                             [key: string]: boolean;
                         };
-                        /** @description The records that refer to this subject's (a `ref` field of theirs), which the caller may list and filter by that field, at a list route of their own (`GET /v1/<path>`; a record reached only through another's routes is left out): a record's related panels. */
+                        /** @description The records that refer to this subject's (a `ref` field of theirs), which the caller may list and filter by that field, at a list route of their own (`GET /v1/<path>`; a record reached only through another's routes is left out), or which are read through this subject's records (`through`): a record's related panels. */
                         related: {
                             /**
                              * @description The referring records: their own list is GET /v1/lists/{subject}.
@@ -24327,6 +24327,51 @@ export interface operations {
                              * @enum {string}
                              */
                             onDelete: "restrict" | "keep";
+                            /** @description Present when they are read through this record (their declaration's `readThrough`): by whoever may read it, at `GET /v1/<path>` with `{id}` this record's id (`limit`, `cursor`; `{ items, nextCursor }`, newest first, no `total`), not at their own list; their fields and columns, as their own list describes them, for a table of them. */
+                            through?: {
+                                fields: {
+                                    /**
+                                     * @description The name in the query: `?<name>.<operator>=`, `{ "field": <name> }` in `filter`, `sort=<name>`. Custom fields are `custom.<key>`.
+                                     * @example status
+                                     */
+                                    name: string;
+                                    /**
+                                     * @description How values are written: datetime ISO 8601 with an offset, date YYYY-MM-DD, enum one of `options`.
+                                     * @enum {string}
+                                     */
+                                    type: "string" | "uuid" | "datetime" | "date" | "number" | "boolean" | "enum";
+                                    /**
+                                     * @description The values an enum takes.
+                                     * @example [
+                                     *       "draft",
+                                     *       "published"
+                                     *     ]
+                                     */
+                                    options?: string[];
+                                    /**
+                                     * @description The operators it may be filtered with; empty: none.
+                                     * @example [
+                                     *       "eq",
+                                     *       "ne",
+                                     *       "in",
+                                     *       "notIn"
+                                     *     ]
+                                     */
+                                    operators: ("eq" | "ne" | "in" | "notIn" | "contains" | "notContains" | "startsWith" | "endsWith" | "gt" | "gte" | "lt" | "lte" | "between" | "isNull")[];
+                                    /**
+                                     * @description What the field's values are ids of, for a picker instead of a text box: `tag` (GET /v1/tags), `unit` (GET /v1/organizational-units: search with `q`, name ids with `id=`), `principal` (a user's or an API client's key, `user:<id>` or `client:<id>`: GET /v1/people searches users with `q`, names keys with `key=`) or a record's subject (`Invoice`: GET its list). Absent for any other field.
+                                     * @example tag
+                                     */
+                                    ref?: string;
+                                    /** @description `sort` may name it. */
+                                    sortable: boolean;
+                                    /** @description A custom field of the caller's tenant (GET /v1/custom-fields). */
+                                    custom: boolean;
+                                    /** @description A custom field's label, as its administrators named it. */
+                                    label?: string;
+                                }[];
+                                select: string[];
+                            };
                         }[];
                         /** @description The views besides the table that this subject declares and this caller can use: a field they may not filter by leaves its view out. Null when none. Fetch their records with the list route, bounded by `filter` on the fields named here. */
                         views: {

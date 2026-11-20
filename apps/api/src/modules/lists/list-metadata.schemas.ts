@@ -83,6 +83,15 @@ export const listRelatedSchema = z.object({
     .describe(
       'Deleting a record they refer to: `restrict` refuses it while live ones do (409 `record_referenced`); `keep` moves it to the recycle bin with their field kept, so a restore brings the relation back.',
     ),
+  through: z
+    .object({
+      fields: z.array(listFieldSchema),
+      select: z.array(z.string()),
+    })
+    .optional()
+    .describe(
+      "Present when they are read through this record (their declaration's `readThrough`): by whoever may read it, at `GET /v1/<path>` with `{id}` this record's id (`limit`, `cursor`; `{ items, nextCursor }`, newest first, no `total`), not at their own list; their fields and columns, as their own list describes them, for a table of them.",
+    ),
 });
 /**
  * The record views a subject declares (`views` of its record or list
@@ -193,7 +202,7 @@ export const listMetadataSchema = z
     related: z
       .array(listRelatedSchema)
       .describe(
-        "The records that refer to this subject's (a `ref` field of theirs), which the caller may list and filter by that field, at a list route of their own (`GET /v1/<path>`; a record reached only through another's routes is left out): a record's related panels.",
+        "The records that refer to this subject's (a `ref` field of theirs), which the caller may list and filter by that field, at a list route of their own (`GET /v1/<path>`; a record reached only through another's routes is left out), or which are read through this subject's records (`through`): a record's related panels.",
       ),
     views: listViewsSchema,
   })

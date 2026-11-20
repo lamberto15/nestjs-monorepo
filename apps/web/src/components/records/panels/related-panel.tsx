@@ -83,11 +83,14 @@ export function RelatedPanel(props: {
     queryFn: () => listRelated(path, field, props.id, cursor),
     placeholderData: keepPreviousData,
   });
-  const description = useListDescription(subject);
+  const { through } = props.related;
+  // Read through this record: its description names their columns, as the
+  // reader may not read their own list.
+  const description = useListDescription(subject, !through);
   const form = recordFormOf(subject);
   const link = recordLinkOf(subject);
   const heading = `related-${path}-${field}`;
-  const columns = childColumns(description.data, field, title);
+  const columns = childColumns(through ?? description.data, field, title);
   const [editing, setEditing] = useState<{ id?: string } | null>(null);
   const refresh = () =>
     queryClient.invalidateQueries({
@@ -113,7 +116,7 @@ export function RelatedPanel(props: {
           {t('related.heading', { subject, field })}
         </h3>
         <div className="flex items-center gap-2">
-          {link?.list && (
+          {link?.list && !through && (
             <Button
               size="sm"
               variant="ghost"
@@ -201,11 +204,16 @@ export function RelatedPanel(props: {
           {(cursors.length > 1 || page.data.nextCursor) && (
             <div className="flex items-center justify-end gap-2 text-sm text-muted-foreground">
               <span>
-                {t('related.range', {
-                  from: first + 1,
-                  to: first + page.data.items.length,
-                  total: page.data.total ?? first + page.data.items.length,
-                })}
+                {page.data.total == null
+                  ? t('related.span', {
+                      from: first + 1,
+                      to: first + page.data.items.length,
+                    })
+                  : t('related.range', {
+                      from: first + 1,
+                      to: first + page.data.items.length,
+                      total: page.data.total,
+                    })}
               </span>
               <Button
                 size="icon-sm"
@@ -341,7 +349,7 @@ type Column = {
  * a long text is cut to its cell.
  */
 function childColumns(
-  description: ListDescription | undefined,
+  description: Pick<ListDescription, 'fields' | 'select'> | undefined,
   parentField: string,
   title: string | null,
 ): Column[] {

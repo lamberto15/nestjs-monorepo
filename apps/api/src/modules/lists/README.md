@@ -32,5 +32,8 @@ changes is the form's to do.
   Add-ons' `describe()` keys are merged at the top level. `views` come from the
   record's declaration (checked at startup), `related` lists the records
   whose `ref` field points at this subject (`record-relations.ts`) that the
-  caller may read and filter by that field. `recycleBin` is true with
+  caller may read and filter by that field. A child read through this
+  subject (`readThrough` of its declaration) is listed for whoever may read
+  this subject instead: its `path` is the parent's route
+  (`accounts/{id}/notes`) and `through` carries its fields and columns. `recycleBin` is true with
   `softDelete` for whoever may `restore` the subject.

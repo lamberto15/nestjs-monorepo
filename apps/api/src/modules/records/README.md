@@ -12,12 +12,18 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
 
 ## Writing a feature
 
-1. **`<item>.record.ts`**: `defineRecord({ subject, path, noun, table, softDelete, recycleBinDays, unit, clientAccess, grants, idempotency, apiTag, views, fields })`.
+1. **`<item>.record.ts`**: `defineRecord({ subject, path, noun, table, softDelete, recycleBinDays, unit, clientAccess, grants, idempotency, apiTag, views, readThrough, fields })`.
    Fields come from `field.*` (modules/fields): `.searchable()`, `.unique()`,
    `.optional()`, `.readOnly()` (set by the service only; a body's value is
    dropped, as unknown keys are). A reference:
    `parentId: field.ref((): Referenced => recordTableOf(ITEM)).optional()`
    (`.onDelete('keep')` for an optional one that stays while its record is in the bin).
+   `readThrough: 'accountId'`: a child read through its parent (a log of
+   activities on an account), by whoever may read the parent, at a route the
+   feature writes under the parent's, `GET /v1/<parents>/:id/<path>`
+   (`limit`, `cursor`; `{ items, nextCursor }`, newest first). The parent's
+   related panel lists it there, with its columns, and the app does not
+   start without that route (the fixture: `test/fixtures/notes`).
 2. **`<item>s.tables.ts`**: `export const items = recordTable(ITEM, { columns: numberColumns() })`:
    id, ownerId, unitId (with `unit`), the fields, the add-ons' `columns`,
    timestamps, deletedAt/deletedBy (with `softDelete`), the search vector

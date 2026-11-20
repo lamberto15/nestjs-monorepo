@@ -343,4 +343,78 @@ describe('a child table', () => {
     expect(await screen.findByText('Called')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
   });
+
+  it("reads a child read through its parent at the parent's route, with the columns the parent's description gives", async () => {
+    const asked: string[] = [];
+    let ownList = 0;
+    server.use(
+      http.get('/v1/lists/Visit', () => {
+        ownList += 1;
+        return HttpResponse.json({}, { status: 403 });
+      }),
+      http.get(`/v1/orders/${ORDER}/visits`, ({ request }) => {
+        asked.push(new URL(request.url).search);
+        return HttpResponse.json({
+          items: [
+            { id: 'v1', note: 'Called', outcome: 'reached', orderId: ORDER },
+          ],
+          nextCursor: null,
+        });
+      }),
+    );
+    await renderComponent(
+      <RelatedPanel
+        base="/v1/orders/{id}"
+        id={ORDER}
+        related={{
+          ...RELATED,
+          subject: 'Visit',
+          path: 'orders/{id}/visits',
+          title: 'note',
+          through: {
+            select: ['id', 'note', 'outcome', 'orderId'],
+            fields: [
+              {
+                name: 'note',
+                type: 'string',
+                operators: ['eq'],
+                sortable: true,
+                custom: false,
+              },
+              {
+                name: 'outcome',
+                type: 'string',
+                operators: ['eq'],
+                sortable: true,
+                custom: false,
+              },
+              {
+                name: 'orderId',
+                type: 'uuid',
+                operators: ['eq'],
+                ref: 'Order',
+                sortable: false,
+                custom: false,
+              },
+            ],
+          },
+        }}
+      />,
+      // The parent's readers: no Visit permission at all.
+      { can: [] },
+    );
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Called')).toBeVisible();
+    expect(within(table).getByText('reached')).toBeVisible();
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).toEqual(['Name', 'Outcome', 'Actions']);
+    // Paged, not filtered nor counted: the route is the parent's.
+    expect(asked[0]).toBe('?limit=10');
+    // Their own list is not read, nor offered.
+    expect(ownList).toBe(0);
+    expect(screen.queryByText('Open all')).toBeNull();
+  });
 });

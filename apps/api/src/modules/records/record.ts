@@ -79,6 +79,15 @@ export interface RecordDeclaration<F extends Fields = Fields> {
    * board of an enum field, a calendar of date fields, a timeline.
    */
   views?: RecordViews;
+  /**
+   * A child read through its parent (a log of activities on a record): the
+   * reference to the parent (`accountId`). Whoever may read the parent reads
+   * its children at a route of the feature's own under the parent's,
+   * `GET /v1/<parents>/:id/<path>` (`limit`, `cursor`; `{ items, nextCursor }`,
+   * newest first), and the parent's page lists them there (`related` of
+   * GET /v1/lists/{subject}). The app does not start without that route.
+   */
+  readThrough?: Extract<keyof F, string>;
   fields: F;
 }
 
@@ -113,6 +122,14 @@ export function defineRecord<
         `${declaration.subject}: "${name}" is a column every record has: name the field otherwise.`,
       );
     }
+  }
+  if (
+    declaration.readThrough !== undefined &&
+    declaration.fields[declaration.readThrough]?.kind !== 'ref'
+  ) {
+    throw new Error(
+      `${declaration.subject}: readThrough "${declaration.readThrough}" is no ref field of its own.`,
+    );
   }
   // Nest hashes a dynamic module's metadata (forFeature(), an add-on's
   // forRecord()): the subject names the declaration, which holds tables and schemas.

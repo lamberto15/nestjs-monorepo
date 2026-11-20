@@ -94,7 +94,12 @@ always has its invoice.
 - **A child saved another way** (a log, an activity: added through the
   parent's own route, never changed or deleted) writes its
   `record-form.tsx` by hand: its own `Form`, `useCanAdd` for who may add
-  one, and no `useDelete` (no delete button). What the parent keeps of its
+  one, and no `useDelete` (no delete button). When it is also read through
+  the parent (by whoever may read the parent, not by a permission of its
+  own), its declaration says so, `readThrough: '<parent field>'`, and its
+  feature writes `GET /v1/<parents>/:id/<children>` (`limit`, `cursor`;
+  `{ items, nextCursor }`): the table pages through that route (records
+  README, step 1). "Open all" is not offered for it. What the parent keeps of its
   latest child (a status, the last activity's date) is the parent's: its
   service sets it in the same transaction.
 - **A hand-written feature** joins by writing the two files
