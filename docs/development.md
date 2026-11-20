@@ -47,7 +47,7 @@ Run from the root. Turborepo runs a script in every package that has it
 
 | Command                                     | Does                                                                    |
 | ------------------------------------------- | ----------------------------------------------------------------------- |
-| `pnpm dev`                                  | The API (`nest start --watch`) and the web app (Vite).                  |
+| `pnpm dev`                                  | The API (`nest start --watch -b swc --type-check`) and the web app (Vite). |
 | `pnpm build`                                | Builds every package.                                                   |
 | `pnpm lint`                                 | oxlint in each package (type-aware); the browser tests also type-check. |
 | `pnpm typecheck`                            | Type-checks the packages that have the script.                          |
@@ -68,6 +68,13 @@ Run from the root. Turborepo runs a script in every package that has it
 | `pnpm knip`                                 | Unused files, exports and dependencies (`knip.jsonc`).                  |
 | `pnpm raw-sql`                              | The no-raw-SQL check (`tools/ci/raw-sql.mjs`).                          |
 | `pnpm db:seed:demo`, `pnpm db:mark-dev`     | The demo seed ([below](#demo-data)).                                    |
+
+The API's development scripts (`dev`, `start:debug`, `dev:worker`, `ops`)
+compile with SWC, Nest CLI's `-b swc` builder (`@swc/cli`, `@swc/core`):
+measured on this repository, a first build in about 1.3 s instead of 20 s,
+and a saved file rebuilt in under 0.1 s instead of about 1 s. `--type-check`
+runs `tsc` beside it, so type errors are still reported. `nest build`, the
+image's and CI's build, stays on `tsc`.
 
 The API's own scripts (`apps/api/package.json`) run with `pnpm --filter api <script>`:
 `db:generate`, `db:migrate`, `db:generate:fixtures`, `test:cov`, `test:watch`,
