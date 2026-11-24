@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { TimeoutPolicy } from '@nestjs/resilience';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
 import {
   type ChoiceProvider,
@@ -169,18 +170,17 @@ const unavailable = () =>
     message: 'The choices could not be read now: try again.',
   });
 
+const sourceTimeout = new TimeoutPolicy({
+  timeout: SOURCE_TIMEOUT_MS,
+  name: 'form-option-source',
+});
+
 /** A provider's call, or a 503 when it fails or takes longer than SOURCE_TIMEOUT_MS. */
 async function bounded<T>(call: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(unavailable()), SOURCE_TIMEOUT_MS);
-  });
   try {
-    return await Promise.race([call, timeout]);
+    return await sourceTimeout.execute(() => call);
   } catch (error) {
     if (error instanceof ForbiddenException) throw error;
     throw unavailable();
-  } finally {
-    clearTimeout(timer);
   }
 }

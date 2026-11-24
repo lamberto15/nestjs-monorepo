@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ResilienceTimeoutError, TimeoutPolicy } from '@nestjs/resilience';
 import type { Redis } from 'ioredis';
-import { setTimeout } from 'node:timers/promises';
 import { REDIS } from '../../core/redis/redis.js';
 import {
   LIVE_TTL_SECONDS,
@@ -11,6 +11,10 @@ import {
 
 /** How long a request waits for Redis before going on without its counters. */
 const REDIS_TIMEOUT_MS = 500;
+const redisTimeout = new TimeoutPolicy({
+  timeout: REDIS_TIMEOUT_MS,
+  name: 'usage-counters',
+});
 
 /**
  * The live counters: one Redis hash per client and UTC day, a field per
@@ -135,19 +139,13 @@ export class UsageCounters {
       this.logger.warn(`${what}: Redis is ${this.redis.status}`);
       return fallback;
     }
-    const gaveUp = Symbol('timeout');
     try {
-      const result = await Promise.race([
-        read(),
-        // ref: false, so a pending timer never keeps the process alive.
-        setTimeout(REDIS_TIMEOUT_MS, gaveUp, { ref: false }),
-      ]);
-      if (result === gaveUp) {
+      return await redisTimeout.execute(read);
+    } catch (error) {
+      if (error instanceof ResilienceTimeoutError) {
         this.logger.warn(`${what}: Redis took over ${REDIS_TIMEOUT_MS} ms`);
         return fallback;
       }
-      return result as T;
-    } catch (error) {
       this.logger.warn(`${what}: ${(error as Error).message}`);
       return fallback;
     }

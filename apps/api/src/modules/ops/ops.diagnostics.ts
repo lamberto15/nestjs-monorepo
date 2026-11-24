@@ -1,4 +1,3 @@
-import { setTimeout } from 'node:timers/promises';
 import {
   BadRequestException,
   Injectable,
@@ -8,6 +7,7 @@ import {
 import { DiscoveryService } from '@nestjs/core';
 import { t } from '@nestjs/i18n';
 import { MailTransport, SmtpTransport } from '@nestjs/mail';
+import { ResilienceTimeoutError, TimeoutPolicy } from '@nestjs/resilience';
 import { logRedaction } from '../../core/logging/redaction.js';
 import {
   ReadinessCheck,
@@ -60,6 +60,10 @@ export interface DiagnosticTest {
 
 /** How long one probe may take. */
 const PROBE_MS = 5000;
+const probeTimeout = new TimeoutPolicy({
+  timeout: PROBE_MS,
+  name: 'ops-diagnostic',
+});
 
 const describe = (error: unknown) =>
   logRedaction
@@ -150,12 +154,13 @@ export class OpsDiagnostics {
   }
 
   private async run(probe: DiagnosticProbe) {
-    await Promise.race([
-      probe.check(),
-      setTimeout(PROBE_MS, undefined, { ref: false }).then(() => {
-        throw new Error(`No answer within ${PROBE_MS / 1000} s.`);
-      }),
-    ]);
+    try {
+      await probeTimeout.execute(() => probe.check());
+    } catch (error) {
+      throw error instanceof ResilienceTimeoutError
+        ? new Error(`No answer within ${PROBE_MS / 1000} s.`)
+        : error;
+    }
   }
 
   /** Every integration's state: the cheap checks run, the on-demand ones are only read as set up. */

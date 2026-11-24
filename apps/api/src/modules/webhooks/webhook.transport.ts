@@ -13,6 +13,7 @@ import {
   type WebhookTransportResponse,
   type WebhookTransportSendOptions,
 } from '@nestjs/webhooks';
+import { TimeoutPolicy } from '@nestjs/resilience';
 import type { Database } from '../../core/database/database.js';
 import { addressAllowed, socketHost } from '../../core/http/safe-fetch.js';
 import { webhooksConfig } from './webhooks.config.js';
@@ -22,6 +23,11 @@ import {
 } from './webhooks.tables.js';
 
 type Config = ConfigType<typeof webhooksConfig>;
+
+const saveCheckTimeout = new TimeoutPolicy({
+  timeout: '3s',
+  name: 'webhook-destination-check',
+});
 
 /** The one address WEBHOOKS_ALLOW_LOOPBACK opens: not other private ranges. */
 const LOOPBACK = '127.0.0.1';
@@ -90,12 +96,7 @@ export async function destinationRefusal(
         : undefined,
   );
   // A slow resolver doesn't hold the request: the delivery checks again.
-  return Promise.race([
-    check,
-    new Promise<undefined>((resolve) =>
-      setTimeout(() => resolve(undefined), 3000).unref(),
-    ),
-  ]);
+  return saveCheckTimeout.execute(() => check).catch(() => undefined);
 }
 
 /**
