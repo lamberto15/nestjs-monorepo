@@ -217,6 +217,10 @@ export class OidcController {
   // `?error=reauthentication_required` instead of the guard's 403 problem,
   // which a navigation can't read; the web app asks GET /auth/reauthenticate
   // first to spare the round trip.
+  // Each start keeps a pending sign-in for 10 minutes, at most 100,000 of
+  // them (account.stores.ts): unthrottled, a few addresses would push
+  // everyone else's out before their callback.
+  @Throttle({ default: { limit: 20, ttl: minutes(15) } })
   @SessionOnly({ optional: true })
   @Can.Anyone()
   @Get('oidc/:provider/login')
