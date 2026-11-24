@@ -15,11 +15,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { minutes } from '@nestjs/throttler';
 import { z } from 'zod';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
 import { Captcha } from '../captcha/captcha.decorator.js';
-import { AddressThrottle } from './address-throttle.guard.js';
+import { PasswordSignInThrottle } from './address-throttle.guard.js';
 import { DuringMfaEnrollment } from './mfa-enrollment.guard.js';
 import { DuringOnboarding } from './onboarding.js';
 import { PasswordSignIn } from './password-sign-in.service.js';
@@ -55,14 +54,8 @@ export class AuthController {
     private readonly signInService: SignInService,
   ) {}
 
-  // Five tries per email and address every 15 minutes.
   @Public()
-  @AddressThrottle({
-    name: 'sign-in',
-    limit: 5,
-    ttl: minutes(15),
-    perEmail: true,
-  })
+  @PasswordSignInThrottle()
   @Captcha({ action: 'sign-in', count: 'failures' })
   @Post('sign-in')
   @AllowInMaintenance()

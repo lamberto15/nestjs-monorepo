@@ -321,6 +321,26 @@ describe('sign-in and the principal (e2e)', () => {
       expect((await attempt('someone-else@acme.dev')).statusCode).toBe(401);
     });
 
+    it('allows 20 tries per email from every address together, then 429 for that email alone', async () => {
+      const { email } = await createUser(app);
+      const attempt = (address: string, as = email) =>
+        app.inject({
+          method: 'POST',
+          url: '/v1/auth/sign-in',
+          payload: { email: as, password: 'wrong' },
+          remoteAddress: address,
+        });
+      for (let i = 0; i < 20; i++) {
+        expect((await attempt(`198.51.100.${i + 1}`)).statusCode).toBe(401);
+      }
+      const limited = await attempt('198.51.100.99');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json()).toMatchObject({ code: 'rate_limited' });
+      expect(
+        (await attempt('198.51.100.99', 'someone-else@acme.dev')).statusCode,
+      ).toBe(401);
+    });
+
     it('refuses a sign-in from another site’s page (CSRF)', async () => {
       const { email } = await createUser(app);
       const response = await app.inject({

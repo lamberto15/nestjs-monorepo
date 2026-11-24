@@ -7,6 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTooManyRequestsResponse } from '@nestjs/swagger';
+import { minutes } from '@nestjs/throttler';
 import { ScaledThrottlerGuard } from '../../core/throttling/scaled-throttler.guard.js';
 import { normalizeEmail } from './users.repository.js';
 
@@ -28,6 +29,13 @@ export interface AddressThrottleOptions {
    * accounts and one account must not be guessed at from one address.
    */
   perEmail?: boolean;
+  /**
+   * With `perEmail`: a second budget per email alone, from every address
+   * together, so many addresses can't take turns guessing one account's
+   * password. Looser than the address's: past it, that email is refused
+   * from everywhere until the window ends (429), its owner included.
+   */
+  perAccount?: { limit: number; ttl: number };
 }
 
 const ADDRESS_THROTTLE = Symbol('address-throttle');
@@ -48,9 +56,25 @@ export const AddressThrottle = (options: AddressThrottleOptions) =>
     SetMetadata(ADDRESS_THROTTLE, options),
     UseGuards(AddressThrottlerGuard),
     ApiTooManyRequestsResponse({
-      description: `rate_limited: more than ${options.limit} requests in ${options.ttl / 60_000} minutes${options.perEmail ? ' for this email' : ''} from this address.`,
+      description: `rate_limited: more than ${options.limit} requests in ${options.ttl / 60_000} minutes${options.perEmail ? ' for this email' : ''} from this address${options.perAccount ? `, or ${options.perAccount.limit} for this email from every address` : ''}.`,
     }),
   );
+
+/**
+ * Every password sign-in (the browser's and a token client's): five tries
+ * per email and address every 15 minutes, and twenty per email from every
+ * address together, so a password can't be guessed by spreading the tries
+ * over many addresses (with CAPTCHA_MODE off, the default, nothing else
+ * would stop it).
+ */
+export const PasswordSignInThrottle = () =>
+  AddressThrottle({
+    name: 'sign-in',
+    limit: 5,
+    ttl: minutes(15),
+    perEmail: true,
+    perAccount: { limit: 20, ttl: minutes(15) },
+  });
 
 @Injectable()
 export class AddressThrottlerGuard extends ScaledThrottlerGuard {
@@ -65,7 +89,7 @@ export class AddressThrottlerGuard extends ScaledThrottlerGuard {
     const email = options.perEmail
       ? emailOf((req as { body?: unknown }).body)
       : '';
-    return this.handleRequest({
+    await this.handleRequest({
       context,
       limit: options.limit,
       ttl: options.ttl,
@@ -81,6 +105,21 @@ export class AddressThrottlerGuard extends ScaledThrottlerGuard {
         createHash('sha256')
           .update(`address:${name}:${tracker}:${email}`)
           .digest('hex'),
+    });
+    const account = options.perAccount;
+    if (!account || !email) {
+      return true;
+    }
+    const name = `${options.name}-account`;
+    return this.handleRequest({
+      context,
+      limit: account.limit,
+      ttl: account.ttl,
+      blockDuration: account.ttl,
+      throttler: { name, limit: account.limit, ttl: account.ttl },
+      getTracker: () => email,
+      generateKey: (_context, tracker) =>
+        createHash('sha256').update(`account:${name}:${tracker}`).digest('hex'),
     });
   }
 }
