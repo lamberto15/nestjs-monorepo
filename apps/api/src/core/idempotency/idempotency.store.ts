@@ -10,6 +10,7 @@ import {
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
 import { and, eq, gt, inArray, lte } from 'drizzle-orm';
+import { deleteInBatches } from '../database/batches.js';
 import type { Database } from '../database/database.js';
 import { idempotencyKeys } from './idempotency.tables.js';
 
@@ -142,13 +143,8 @@ export class DrizzleIdempotencyStore implements IdempotencyStore {
    * fall behind a busy API (every record create is idempotent, kept 24
    * hours), and the table would only grow. Returns how many went.
    */
-  async pruneAll(limit = 1000): Promise<number> {
-    let total = 0;
-    for (;;) {
-      const deleted = await this.prune(limit);
-      total += deleted;
-      if (deleted < limit) return total;
-    }
+  pruneAll(limit = 1000): Promise<number> {
+    return deleteInBatches((batch) => this.prune(batch), limit);
   }
 
   /**

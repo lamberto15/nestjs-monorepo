@@ -2,15 +2,13 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
+import { deleteInBatches } from '../../core/database/batches.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { DevicesService } from './notifications.devices.service.js';
 import { notificationsConfig } from './notifications.config.js';
 import { NotificationsRepository } from './notifications.repository.js';
 
 const JOB = 'notification-retention';
-
-/** Rows deleted per statement: short transactions, short locks. */
-const BATCH = 5_000;
 
 const DAY = 86_400_000;
 
@@ -39,18 +37,15 @@ export class NotificationRetentionJob {
   @WithoutOverlapping()
   async run(now = new Date()) {
     const before = (days: number) => new Date(now.getTime() - days * DAY);
-    const deleted = await this.tenancy.acrossTenants(JOB, async () => {
-      let total = 0;
-      for (;;) {
-        const gone = await this.repository.deleteOld(
+    const deleted = await this.tenancy.acrossTenants(JOB, () =>
+      deleteInBatches((limit) =>
+        this.repository.deleteOld(
           before(this.config.retentionDays),
           before(this.config.maxAgeDays),
-          BATCH,
-        );
-        total += gone;
-        if (gone < BATCH) return total;
-      }
-    });
+          limit,
+        ),
+      ),
+    );
     const devices = await this.devices.sweep(
       before(this.config.deviceRetentionDays),
     );

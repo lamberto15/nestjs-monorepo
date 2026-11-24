@@ -1,14 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
+import { deleteInBatches } from '../../core/database/batches.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { RECENTS_RETENTION_DAYS } from './recents.schemas.js';
 import { RecentsRepository } from './recents.repository.js';
 
 const JOB = 'recents-retention';
-
-/** Rows deleted per statement: short transactions, short locks. */
-const BATCH = 5_000;
 
 /**
  * Deletes recent records older than RECENTS_RETENTION_DAYS every night at
@@ -31,14 +29,11 @@ export class RecentsRetentionJob {
     const before = new Date(
       now.getTime() - RECENTS_RETENTION_DAYS * 86_400_000,
     );
-    const deleted = await this.tenancy.acrossTenants(JOB, async () => {
-      let total = 0;
-      for (;;) {
-        const gone = await this.repository.deleteViewedBefore(before, BATCH);
-        total += gone;
-        if (gone < BATCH) return total;
-      }
-    });
+    const deleted = await this.tenancy.acrossTenants(JOB, () =>
+      deleteInBatches((limit) =>
+        this.repository.deleteViewedBefore(before, limit),
+      ),
+    );
     this.logger.log('Old recent records deleted', { deleted });
     return deleted;
   }

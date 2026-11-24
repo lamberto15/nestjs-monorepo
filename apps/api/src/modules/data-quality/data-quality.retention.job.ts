@@ -2,14 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
+import { deleteInBatches } from '../../core/database/batches.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { dataQualityConfig } from './data-quality.config.js';
 import { DataQualityRepository } from './data-quality.repository.js';
 
 const JOB = 'data-quality-finding-retention';
-
-/** Rows deleted per statement: short transactions, short locks. */
-const BATCH = 5_000;
 
 /**
  * Deletes the findings no scan or recheck found again for
@@ -35,14 +33,11 @@ export class DataQualityRetentionJob {
   async run(now = new Date()) {
     const days = this.config.findingRetentionDays;
     const before = new Date(now.getTime() - days * 86_400_000);
-    const deleted = await this.tenancy.acrossTenants(JOB, async () => {
-      let total = 0;
-      for (;;) {
-        const count = await this.repository.deleteFindingsBefore(before, BATCH);
-        total += count;
-        if (count < BATCH) return total;
-      }
-    });
+    const deleted = await this.tenancy.acrossTenants(JOB, () =>
+      deleteInBatches((limit) =>
+        this.repository.deleteFindingsBefore(before, limit),
+      ),
+    );
     this.logger.log('Old data-quality findings deleted', { deleted, days });
     return deleted;
   }

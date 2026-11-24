@@ -2,14 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
+import { deleteInBatches } from '../../core/database/batches.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { automationsConfig } from './automations.config.js';
 import { AutomationsRepository } from './automations.repository.js';
 
 const JOB = 'automation-run-retention';
-
-/** Rows deleted per statement: short transactions, short locks. */
-const BATCH = 5_000;
 
 /**
  * Deletes the run log's runs older than AUTOMATIONS_RUN_RETENTION_DAYS
@@ -34,14 +32,11 @@ export class AutomationRunRetentionJob {
   async run(now = new Date()) {
     const days = this.config.runRetentionDays;
     const before = new Date(now.getTime() - days * 86_400_000);
-    const deleted = await this.tenancy.acrossTenants(JOB, async () => {
-      let total = 0;
-      for (;;) {
-        const count = await this.repository.deleteRunsBefore(before, BATCH);
-        total += count;
-        if (count < BATCH) return total;
-      }
-    });
+    const deleted = await this.tenancy.acrossTenants(JOB, () =>
+      deleteInBatches((limit) =>
+        this.repository.deleteRunsBefore(before, limit),
+      ),
+    );
     this.logger.log('Old automation runs deleted', { deleted, days });
     return deleted;
   }

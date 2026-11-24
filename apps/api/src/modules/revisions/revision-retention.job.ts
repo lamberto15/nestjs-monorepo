@@ -2,12 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
+import { deleteInBatches } from '../../core/database/batches.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { revisionsConfig } from './revisions.config.js';
 import { RevisionsRepository } from './revisions.repository.js';
 
 const JOB = 'revisions-retention';
-const BATCH = 5000;
 
 /**
  * Deletes revisions older than REVISIONS_RETENTION_DAYS, every night at
@@ -35,14 +35,11 @@ export class RevisionRetentionJob {
   async run(now = new Date()) {
     const days = this.config.retentionDays;
     const before = new Date(now.getTime() - days * 86_400_000);
-    const deleted = await this.tenancy.acrossTenants(JOB, async () => {
-      let total = 0;
-      for (;;) {
-        const gone = await this.repository.deleteOlderThan(before, BATCH);
-        total += gone;
-        if (gone < BATCH) return total;
-      }
-    });
+    const deleted = await this.tenancy.acrossTenants(JOB, () =>
+      deleteInBatches((limit) =>
+        this.repository.deleteOlderThan(before, limit),
+      ),
+    );
     this.logger.log('Old revisions deleted', { deleted, days });
     return deleted;
   }

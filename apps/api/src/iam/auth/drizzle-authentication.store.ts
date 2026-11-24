@@ -9,6 +9,7 @@ import {
 } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { and, eq, inArray, isNull, lt, lte, max, min, or } from 'drizzle-orm';
+import { deleteInBatches } from '../../core/database/batches.js';
 import type { Database } from '../../core/database/database.js';
 import {
   AUTH_EVENTS,
@@ -32,8 +33,6 @@ import { UsersRepository } from './users.repository.js';
  * a session or a token family is announced (`auth.session-ended`,
  * `auth.token-session-ended`) for the sockets it opened.
  */
-/** Expired rows deleted per statement by `pruneExpired()`. */
-const PRUNE_BATCH = 5000;
 
 const ownedOrImpersonatedBy = (userId: string) =>
   or(
@@ -231,7 +230,7 @@ export class DrizzleAuthenticationStore
 
   /**
    * Deletes the sessions and refresh-token families that expired by `now`,
-   * PRUNE_BATCH rows a statement (SessionPruneJob). Nothing is announced:
+   * DELETE_BATCH rows a statement (core/database/batches.ts) (SessionPruneJob). Nothing is announced:
    * an expired session or family authenticates nothing already, and its
    * sockets were ended by their own deadlines. Returns how many rows went.
    */
@@ -241,19 +240,18 @@ export class DrizzleAuthenticationStore
       [sessions, sessions.expiresAt],
       [refreshTokens, refreshTokens.familyExpiresAt],
     ] as const) {
-      for (;;) {
+      total += await deleteInBatches(async (limit) => {
         const expired = this.db
           .select({ id: table.id })
           .from(table)
           .where(lte(expiresAt, now))
-          .limit(PRUNE_BATCH);
+          .limit(limit);
         const deleted = await this.db
           .delete(table)
           .where(inArray(table.id, expired))
           .returning({ id: table.id });
-        total += deleted.length;
-        if (deleted.length < PRUNE_BATCH) break;
-      }
+        return deleted.length;
+      });
     }
     return total;
   }

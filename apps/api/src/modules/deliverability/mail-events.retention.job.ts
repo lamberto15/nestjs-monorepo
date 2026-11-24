@@ -4,13 +4,11 @@ import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
 import type { DatabaseTransactions } from '../../core/database/database.js';
+import { deleteInBatches } from '../../core/database/batches.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import { deliverabilityConfig } from './deliverability.config.js';
 import { MAIL_EVENTS_RETENTION_JOB } from './deliverability.permissions.js';
 import { DeliverabilityRepository } from './deliverability.repository.js';
-
-/** Events deleted per transaction. */
-const BATCH = 5000;
 
 /**
  * Deletes bounce, complaint and delivery events older than
@@ -39,14 +37,12 @@ export class MailEventsRetentionJob {
       async () => {
         const days = this.config.eventsRetentionDays;
         const before = new Date(now.getTime() - days * 86_400_000);
-        let total = 0;
-        for (;;) {
-          const deleted = await this.txHost.withTransaction(() =>
-            this.repository.deleteEventsBefore(before, BATCH),
-          );
-          total += deleted;
-          if (deleted < BATCH) break;
-        }
+        // Each batch in its own transaction: short locks on a busy table.
+        const total = await deleteInBatches((limit) =>
+          this.txHost.withTransaction(() =>
+            this.repository.deleteEventsBefore(before, limit),
+          ),
+        );
         this.logger.log('Old mail events deleted', { deleted: total, days });
         return total;
       },

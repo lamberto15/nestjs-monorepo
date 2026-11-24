@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
+import { deleteInBatches } from '../../core/database/batches.js';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { systemPrincipal } from '../auth/principal.js';
@@ -15,9 +16,6 @@ export const AUDIT_RETENTION = systemPrincipal({
   key: 'audit-retention',
   label: 'Audit retention',
 });
-
-/** Entries deleted per transaction. */
-const BATCH = 5000;
 
 /**
  * Deletes audit entries older than AUDIT_RETENTION_DAYS, every night at
@@ -73,11 +71,10 @@ export class AuditRetentionJob {
   }
 
   /** Batches in the current scope, each with the record of its deletion in its transaction. */
-  private async prune(before: Date, days: number) {
-    let total = 0;
-    for (;;) {
-      const deleted = await this.txHost.withTransaction(async () => {
-        const rows = await this.repository.deleteOlderThan(before, BATCH);
+  private prune(before: Date, days: number) {
+    return deleteInBatches((limit) =>
+      this.txHost.withTransaction(async () => {
+        const rows = await this.repository.deleteOlderThan(before, limit);
         if (rows.length > 0) {
           // Who removed history, and how much: never itself pruned this run.
           await this.audit.record(AUDIT_RETENTION, {
@@ -90,11 +87,7 @@ export class AuditRetentionJob {
           });
         }
         return rows.length;
-      });
-      total += deleted;
-      if (deleted < BATCH) {
-        return total;
-      }
-    }
+      }),
+    );
   }
 }

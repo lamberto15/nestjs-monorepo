@@ -2,14 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
+import { deleteInBatches } from '../../core/database/batches.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { recurrenceConfig } from './recurrence.config.js';
 import { RecurrenceRepository } from './recurrence.repository.js';
 
 const JOB = 'record-schedule-run-retention';
-
-/** Rows deleted per statement: short transactions, short locks. */
-const BATCH = 5_000;
 
 /**
  * Forgets the occurrences handled more than RECURRENCE_RUN_RETENTION_DAYS
@@ -36,14 +34,11 @@ export class RecurrenceRetentionJob {
   async run(now = new Date()) {
     const days = this.config.runRetentionDays;
     const before = new Date(now.getTime() - days * 86_400_000);
-    const deleted = await this.tenancy.acrossTenants(JOB, async () => {
-      let total = 0;
-      for (;;) {
-        const gone = await this.repository.deleteRunsBefore(before, BATCH);
-        total += gone;
-        if (gone < BATCH) return total;
-      }
-    });
+    const deleted = await this.tenancy.acrossTenants(JOB, () =>
+      deleteInBatches((limit) =>
+        this.repository.deleteRunsBefore(before, limit),
+      ),
+    );
     this.logger.log('Old schedule runs deleted', { deleted, days });
     return deleted;
   }
