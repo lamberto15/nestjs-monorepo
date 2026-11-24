@@ -1,10 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  Injectable,
-  Logger,
-  type OnApplicationShutdown,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import {
   IdempotencyStorage,
@@ -12,14 +7,13 @@ import {
   type IdempotencyStore,
   type IdempotencyStoredPayload,
 } from '@nestjs/idempotency';
+import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
+import { Cron } from '@nestjs/schedule';
 import { and, eq, gt, inArray, lte } from 'drizzle-orm';
 import type { Database } from '../database/database.js';
 import { idempotencyKeys } from './idempotency.tables.js';
 
 const { keyHash, owner: ownerColumn, expiresAt } = idempotencyKeys;
-
-/** How often expired records are deleted. They're ignored and reusable before that. */
-const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Idempotency records in the application's PostgreSQL database
@@ -28,11 +22,8 @@ const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
  * whose lock was taken over can't overwrite the new owner's record.
  */
 @Injectable()
-export class DrizzleIdempotencyStore
-  implements IdempotencyStore, OnModuleInit, OnApplicationShutdown
-{
+export class DrizzleIdempotencyStore implements IdempotencyStore {
   private readonly logger = new Logger(DrizzleIdempotencyStore.name);
-  private pruneTimer?: NodeJS.Timeout;
 
   constructor(
     @InjectDrizzle() private readonly db: Database,
@@ -160,17 +151,20 @@ export class DrizzleIdempotencyStore
     }
   }
 
-  onModuleInit() {
-    this.pruneTimer = setInterval(() => {
-      this.pruneAll().catch((error: unknown) =>
-        this.logger.warn(`Pruning idempotency keys failed: ${String(error)}`),
-      );
-    }, PRUNE_INTERVAL_MS);
-    this.pruneTimer.unref();
-  }
-
-  onApplicationShutdown() {
-    clearInterval(this.pruneTimer);
+  /**
+   * Every hour, on one instance (the worker's scheduler): every instance
+   * pruning the same rows each hour was the same work N times.
+   */
+  @Cron('17 * * * *', { name: 'idempotency-prune', timeZone: 'UTC' })
+  @OnOneInstance({ key: 'idempotency:prune' })
+  @WithoutOverlapping()
+  async prunePeriodically() {
+    try {
+      return await this.pruneAll();
+    } catch (error) {
+      this.logger.warn(`Pruning idempotency keys failed: ${String(error)}`);
+      return 0;
+    }
   }
 
   /** The caller's lock, if it still holds it and it hasn't expired. */

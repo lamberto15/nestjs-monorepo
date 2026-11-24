@@ -13,7 +13,7 @@ export class EncryptionAdminScheduler {
   constructor(private readonly admin: EncryptionAdminService) {}
 
   /** Returns how many jobs it queued. */
-  @Cron('20 * * * *', { name: 'reencryption' })
+  @Cron('20 * * * *', { name: 'reencryption', timeZone: 'UTC' })
   @OnOneInstance({ key: 'encryption:reencryption' })
   @WithoutOverlapping()
   run() {

@@ -102,7 +102,12 @@ export class EncryptionAdminService {
         return 0;
       }
       // The job's envelope: the tenant to run in, null for the tables of none.
-      await this.queue.add(JOB, { tenantId });
+      // While a scope's job is pending, the next hour queues no second one.
+      await this.queue.add(
+        JOB,
+        { tenantId },
+        { deduplication: { id: `reencrypt:${tenantId ?? 'global'}` } },
+      );
       return 1;
     });
     const total = queued.reduce((sum, count) => sum + count, 0);

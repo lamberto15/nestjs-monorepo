@@ -204,7 +204,11 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
     this.assertEnabled();
     await this.guard?.assertEditable(actor);
     await this.find(id);
-    await this.queue.add('verify', withTenant({ domainId: id }));
+    // A second click while the check is pending queues nothing more; once
+    // it ran, a new request checks again (BullMQ's simple deduplication).
+    await this.queue.add('verify', withTenant({ domainId: id }), {
+      deduplication: { id: `verify:${id}` },
+    });
   }
 
   /**
