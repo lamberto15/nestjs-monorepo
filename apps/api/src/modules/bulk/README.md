@@ -23,7 +23,7 @@ Redis. `restore` is offered only with a recycle bin.
 skipped, results }`, one result per id in the order sent; more ids, and every
   filter, are a job: `202 { id, status: 'queued' }`.
 - `GET /v1/bulk` (`?status=`, `?kind=`, cursor) and `GET /v1/bulk/{id}`: the
-  runs you queued in this tenant, with progress (every 100 items), times and
+  runs you queued in this tenant, with progress (after every group of 100 items), times and
   result (10 000 item results kept; counts exact). Only the principal who
   started a run sees it; kept 7 days.
 
@@ -37,8 +37,13 @@ or not yours is `skipped` (`not_found`).
 
 `BulkService` checks the action's permission, parses the selection and
 input (again in the worker), selects the records the principal may act on in
-SQL (`access.sqlFilter()`, keyset by id), and calls the store per record, each
-in its own transaction. Jobs run on the `bulk` queue (one attempt, never
+SQL (`access.sqlFilter()`, keyset by id), and calls the store per record. The
+records are written in groups of 100 (`BULK_GROUP`), one transaction per group
+and a savepoint per record: one commit per group, and a record that fails
+(a 4xx) rolls back alone and is reported with its reason while the group goes
+on. Each record keeps its own audit entry and domain event, written in its
+group's transaction. A database error rolls back its whole group and stops the
+run; earlier groups stay done. Jobs run on the `bulk` queue (one attempt, never
 retried blindly; a lost worker fails the run, items done stay done). The
 principal is checked again when the job starts. Audit: `bulk.started` (the
 run's one line in the log, `targetId` the run id), then each record's own

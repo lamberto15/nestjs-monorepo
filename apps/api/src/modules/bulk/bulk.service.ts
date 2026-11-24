@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { InjectTransaction } from '@nestjs-cls/transactional';
+import {
+  InjectTransaction,
+  Propagation,
+  TransactionHost,
+} from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import { AuthorizationService } from '@nestjs/authorization';
 import {
@@ -14,7 +18,10 @@ import type { Job, Queue } from 'bullmq';
 import { and, inArray, isNotNull, isNull } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
-import type { Database } from '../../core/database/database.js';
+import type {
+  Database,
+  DatabaseTransactions,
+} from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
 import { walkList } from '../../core/http/pagination.js';
 import { JobIndex, type JobPage } from '../../core/jobs/job-index.js';
@@ -39,8 +46,9 @@ import { BulkTally, itemError, skipped } from './bulk.results.js';
 import { actionsOf, bulkInputSchema } from './bulk.schemas.js';
 import {
   BULK,
-  BULK_PROGRESS_EVERY,
+  BULK_GROUP,
   type BulkAction,
+  type BulkItemResult,
   type BulkJob,
   type BulkRequest,
   type BulkResult,
@@ -136,6 +144,7 @@ export class BulkService {
   constructor(
     @InjectQueue(BULK) private readonly queue: Queue<BulkJob, BulkResult>,
     @InjectTransaction() private readonly db: Database,
+    private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly authorization: AuthorizationService,
@@ -278,9 +287,11 @@ export class BulkService {
   }
 
   /**
-   * Performs the action on every selected record, one at a time, each in
-   * the store's own transaction: a 4xx fails that item alone; ids the
-   * selection did not yield are skipped.
+   * Performs the action on every selected record, BULK_GROUP at a time in
+   * one transaction, each item in a savepoint of it: a 4xx rolls back and
+   * fails that item alone; ids the selection did not yield are skipped.
+   * Anything else (the database gone) rolls back its group and stops the
+   * run; earlier groups stay done.
    */
   async execute(
     principal: Principal,
@@ -305,19 +316,29 @@ export class BulkService {
       action,
       selection,
     )) {
-      for (const row of batch) {
-        seen?.add(row.id);
-        try {
-          await this.perform(principal, registration, action, row, input);
-          tally.add({ id: row.id, status: 'done' });
-        } catch (error) {
-          const failure = itemError(error);
-          if (!failure) throw error;
-          tally.add({ id: row.id, status: 'failed', error: failure });
-        }
-        if (progress && tally.processed % BULK_PROGRESS_EVERY === 0) {
-          await progress(tally);
-        }
+      for (let start = 0; start < batch.length; start += BULK_GROUP) {
+        const group = batch.slice(start, start + BULK_GROUP);
+        for (const row of group) seen?.add(row.id);
+        const results = await this.txHost.withTransaction(async () => {
+          const results: BulkItemResult[] = [];
+          for (const row of group) {
+            try {
+              // The store's own transaction joins this savepoint.
+              await this.txHost.withTransaction(Propagation.Nested, () =>
+                this.perform(principal, registration, action, row, input),
+              );
+              results.push({ id: row.id, status: 'done' });
+            } catch (error) {
+              const failure = itemError(error);
+              if (!failure) throw error;
+              results.push({ id: row.id, status: 'failed', error: failure });
+            }
+          }
+          return results;
+        });
+        // Counted once committed: a group rolled back reports nothing done.
+        for (const result of results) tally.add(result);
+        await progress?.(tally);
       }
     }
     for (const id of selection.ids ?? []) {
@@ -371,9 +392,10 @@ export class BulkService {
 
   /**
    * One item, as the record's route does it: the policy and, for a change,
-   * the field-level check, on the row locked in the store's transaction;
-   * then the store's write, with its hooks, legal hold, audit entry and
-   * event. A 4xx fails this item alone.
+   * the field-level check, on the row locked in the store's transaction
+   * (here the item's savepoint in its group's transaction); then the
+   * store's write, with its hooks, legal hold, audit entry and event. A 4xx
+   * fails this item alone.
    */
   private async perform(
     principal: Principal,

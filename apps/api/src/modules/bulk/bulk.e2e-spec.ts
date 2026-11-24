@@ -20,7 +20,7 @@ import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { BulkModule } from './bulk.module.js';
-import { BULK } from './bulk.types.js';
+import { BULK, BULK_GROUP, type BulkResult } from './bulk.types.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
@@ -365,6 +365,45 @@ describe('bulk operations (e2e)', () => {
       'testItem.updated',
       'testItem.updated',
     ]);
+  });
+
+  it('writes more than one group (BULK_GROUP), a failing item rolled back alone, and reports every item', async () => {
+    const plain = await Promise.all(
+      Array.from({ length: BULK_GROUP + 1 }, () => create(editor.headers)),
+    );
+    const parent = await create(editor.headers);
+    await create(editor.headers, { parentId: parent.id });
+    // The failing one in the second group, after a committed first group.
+    const ids = [...plain.map((item) => item.id), parent.id];
+    const started = await bulk(editor.headers, { action: 'delete', ids });
+    expect(started.statusCode, started.body).toBe(202);
+    const run = await finished(editor.headers, started.json().id);
+    expect(run.result).toMatchObject({
+      done: BULK_GROUP + 1,
+      failed: 1,
+      skipped: 0,
+    });
+    const result = (await queue.getJob(started.json().id))
+      ?.returnvalue as BulkResult;
+    expect(result.results.map((r) => r.id)).toEqual(ids);
+    expect(result.results.at(-1)).toMatchObject({
+      status: 'failed',
+      error: { code: 'record_referenced' },
+    });
+    expect(
+      (await call('GET', `/v1/test-items/${parent.id}`, editor.headers))
+        .statusCode,
+    ).toBe(200);
+    // Each item keeps its own audit entry, in the run.
+    const items = await inTenant(() =>
+      db()
+        .select({ action: auditLog.action })
+        .from(auditLog)
+        .where(eq(auditLog.runId, started.json().id)),
+    );
+    expect(items.filter((e) => e.action === 'testItem.deleted')).toHaveLength(
+      BULK_GROUP + 1,
+    );
   });
 
   it('closes a run that fails for good with bulk.failed, in the run', async () => {

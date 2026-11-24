@@ -8,8 +8,12 @@ export const BULK = 'bulk';
 export const MAX_BULK_IDS = 500;
 /** Item results a queued job keeps (its counts are exact). */
 export const MAX_BULK_RESULTS = 10_000;
-/** A queued run reports its progress every this many items. */
-export const BULK_PROGRESS_EVERY = 100;
+/**
+ * Items written in one transaction, each in a savepoint of its own: one
+ * commit per group rather than per item, while a failing item still rolls
+ * back alone. A queued run reports its progress after each group.
+ */
+export const BULK_GROUP = 100;
 
 /**
  * What a record's bulk route does to many of its records, each as the

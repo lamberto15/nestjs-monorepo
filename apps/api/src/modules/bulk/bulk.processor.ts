@@ -65,7 +65,7 @@ export class BulkProcessor extends TenantWorkerHost<BulkJob, BulkResult> {
             failed: tally.failed,
           };
           await job.updateProgress(counts);
-          // Every BULK_PROGRESS_EVERY items: coarse enough to push as it is.
+          // After each group (BULK_GROUP items): coarse enough to push as it is.
           this.realtime.toPrincipal(principal, bulkProgress, {
             ...run,
             ...counts,
