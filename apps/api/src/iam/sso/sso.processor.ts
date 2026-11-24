@@ -1,4 +1,7 @@
 import { Processor } from '@nestjs/bullmq';
+import { Injectable, Logger } from '@nestjs/common';
+import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
+import { Cron } from '@nestjs/schedule';
 import type { Job } from 'bullmq';
 import { TenantWorkerHost } from '../../core/tenancy/tenant-job.js';
 import { SystemContext } from '../access/system-context.js';
@@ -45,5 +48,48 @@ export class SsoProcessor extends TenantWorkerHost<SsoJob> {
       },
       { transaction: false, tenantId: data.tenantId },
     );
+  }
+}
+
+/**
+ * Every night at 02:25 UTC, on one instance: every verified domain's TXT
+ * record looked up again, in its tenant. A record gone (the domain changed
+ * hands) ends its verification, and with it the connections' and SCIM's
+ * right to its addresses; a lookup that failed changes nothing. One
+ * tenant's failure stops no other's.
+ */
+@Injectable()
+export class SsoDomainsCheckJob {
+  private readonly logger = new Logger('SsoDomains');
+
+  constructor(
+    private readonly system: SystemContext,
+    private readonly domains: SsoDomainsService,
+  ) {}
+
+  @Cron('25 2 * * *', { name: 'sso-domains', timeZone: 'UTC' })
+  @OnOneInstance({ key: 'iam:sso-domains' })
+  @WithoutOverlapping()
+  async run() {
+    let checked = 0;
+    for (const tenantId of await this.domains.routedTenants()) {
+      try {
+        await this.system.run(
+          SSO_JOB,
+          async (system) => {
+            for (const id of await this.domains.verifiedIds()) {
+              await this.domains.verify(system, id);
+              checked += 1;
+            }
+          },
+          { transaction: false, tenantId },
+        );
+      } catch (error) {
+        this.logger.error(
+          `SSO domain check failed for tenant ${tenantId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return checked;
   }
 }

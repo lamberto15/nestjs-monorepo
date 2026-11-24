@@ -27,6 +27,8 @@ import { ssoDomainRoutes, ssoDomains } from './sso.tables.js';
 
 /** Where the TXT record goes, under the domain. */
 export const VERIFICATION_RECORD = '_sso-verification';
+/** DNS answers that say the record is not there (not a lookup that failed). */
+const GONE = new Set(['ENOTFOUND', 'ENODATA']);
 /** What its value starts with. */
 const VALUE_PREFIX = 'sso-verification=';
 
@@ -133,8 +135,9 @@ export class SsoDomainsService {
 
   /**
    * The job's work: looks the TXT record up and records the outcome. A
-   * domain stays verified once it was (removing it is the way back); a
-   * failed check of a verified domain records only the error.
+   * verified domain whose record is gone (the domain changed hands: the DNS
+   * says so, ENOTFOUND or ENODATA, or holds another value) is verified no
+   * more, and its route goes; a lookup that failed records only the error.
    */
   async verify(actor: Principal, id: string) {
     const [row] = await this.db
@@ -144,47 +147,90 @@ export class SsoDomainsService {
     if (!row) {
       return;
     }
-    let found = false;
+    let outcome: 'found' | 'gone' | 'failed';
     let error: string | null = null;
     try {
       const records = await this.dns.resolveTxt(
         `${VERIFICATION_RECORD}.${row.domain}`,
       );
-      found = records.some(
+      outcome = records.some(
         (chunks) => chunks.join('') === row.verificationToken,
-      );
-      if (!found) {
+      )
+        ? 'found'
+        : 'gone';
+      if (outcome === 'gone') {
         error = 'The TXT record was not found or holds another value.';
       }
     } catch (failure) {
-      error = `DNS lookup failed: ${(failure as { code?: string }).code ?? (failure as Error).message}`;
+      const code = (failure as { code?: string }).code;
+      outcome = code && GONE.has(code) ? 'gone' : 'failed';
+      error = `DNS lookup failed: ${code ?? (failure as Error).message}`;
     }
     const now = new Date();
     await this.txHost.withTransaction(async () => {
+      // Locked and read again: a domain removed while the lookup ran must
+      // not get its route back.
+      const [current] = await this.db
+        .select({ verifiedAt: ssoDomains.verifiedAt })
+        .from(ssoDomains)
+        .where(eq(ssoDomains.id, id))
+        .for('update');
+      if (!current) {
+        return;
+      }
+      const was = current.verifiedAt !== null;
+      const verified =
+        outcome === 'found' ? true : outcome === 'gone' ? false : was;
       await this.db
         .update(ssoDomains)
         .set({
           lastCheckedAt: now,
-          lastError: found ? null : error,
-          ...(found && !row.verifiedAt && { verifiedAt: now }),
+          lastError: error,
+          verifiedAt: verified ? (current.verifiedAt ?? now) : null,
         })
         .where(eq(ssoDomains.id, id));
-      if (found) {
+      if (outcome === 'found') {
         // The sign-in page's lookup (global; kept with the verification).
         await this.db
           .insert(ssoDomainRoutes)
           .values({ domain: row.domain, tenantId: row.tenantId })
           .onConflictDoNothing();
+      } else if (outcome === 'gone') {
+        await this.db
+          .delete(ssoDomainRoutes)
+          .where(
+            and(
+              eq(ssoDomainRoutes.domain, row.domain),
+              eq(ssoDomainRoutes.tenantId, row.tenantId),
+            ),
+          );
       }
-      if (found && !row.verifiedAt) {
+      if (verified !== was) {
         await this.audit.record(actor, {
-          action: 'sso.domain-verified',
+          action: verified ? 'sso.domain-verified' : 'sso.domain-suspended',
           targetType: 'sso-domain',
           targetId: id,
           details: { domain: row.domain },
         });
       }
     });
+  }
+
+  /** The current tenant's verified domains: what the nightly check looks up again. */
+  async verifiedIds() {
+    const rows = await this.db
+      .select({ id: ssoDomains.id })
+      .from(ssoDomains)
+      .where(isNotNull(ssoDomains.verifiedAt));
+    return rows.map((row) => row.id);
+  }
+
+  /** The tenants that route a domain (global): whose domains the nightly check walks. */
+  async routedTenants() {
+    const rows = await this.db
+      .selectDistinct({ tenantId: ssoDomainRoutes.tenantId })
+      .from(ssoDomainRoutes);
+    return rows.map((row) => row.tenantId);
   }
 
   /** Whether the current tenant verified `domain`. */

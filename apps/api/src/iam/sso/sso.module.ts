@@ -31,7 +31,7 @@ import { ssoConfig } from './sso.config.js';
 import { SsoController } from './sso.controller.js';
 import { SSO_PERMISSIONS } from './sso.permissions.js';
 import { SsoPolicy } from './sso.policy.js';
-import { SsoProcessor } from './sso.processor.js';
+import { SsoDomainsCheckJob, SsoProcessor } from './sso.processor.js';
 import { SSO_QUEUE, SSO_TXT_RESOLVER } from './sso.queue.js';
 
 // The identity provider's page posts the SAML response from its own site:
@@ -80,6 +80,7 @@ csrfExclusions.set('sso.saml-acs', {
     SamlMetadataImport,
     SsoConnectionGuard,
     SsoProcessor,
+    SsoDomainsCheckJob,
     ScimUsersService,
     ScimGroupsService,
     // The domains' TXT lookups: the system resolver, bounded; tests replace it.

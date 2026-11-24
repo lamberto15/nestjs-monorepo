@@ -8,6 +8,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import {
   accessModules,
   member,
+  roleIds,
   tenantWithAdmin,
 } from '../../../test/access.js';
 import { signIn, TEST_PASSWORD } from '../../../test/auth.js';
@@ -32,9 +33,13 @@ import { memberships, users } from '../auth/auth.tables.js';
 import { tokenClaims } from '../auth/authentication-method.js';
 import type { RequestPrincipal } from '../auth/principal.js';
 import { SsoModule } from './sso.module.js';
-import { SsoProcessor } from './sso.processor.js';
+import { SsoDomainsCheckJob, SsoProcessor } from './sso.processor.js';
 import { SSO_TXT_RESOLVER, type TxtResolver } from './sso.queue.js';
-import { ssoConnections, ssoIdentities } from './sso.tables.js';
+import {
+  ssoConnections,
+  ssoDomainRoutes,
+  ssoIdentities,
+} from './sso.tables.js';
 import { ssoProvider } from './sso-accounts.service.js';
 
 vi.hoisted(() => {
@@ -172,6 +177,54 @@ describe('enterprise SSO (e2e)', () => {
       expect(String(row!.stored)).not.toContain(secret);
     });
 
+    it('take changing who the IdP is only from whoever may grant the roles it maps', async () => {
+      const [administrator] = await roleIds(app, tenantId, 'administrator');
+      const created = await call('POST', '/v1/sso/connections', admin.headers, {
+        protocol: 'oidc',
+        name: `mapped-${randomUUID().slice(0, 8)}`,
+        issuer: 'https://login.acme.test',
+        clientId: 'app',
+        clientSecret: newSecret(),
+        roleMappings: [{ group: 'admins', roleId: administrator }],
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      const url = `/v1/sso/connections/${created.json().id}`;
+      const role = await call('POST', '/v1/access/roles', admin.headers, {
+        name: `SSO manager ${randomUUID().slice(0, 6)}`,
+        permissions: [
+          { subject: 'Access', action: 'manageSso', conditions: [] },
+        ],
+      });
+      expect(role.statusCode, role.body).toBe(201);
+      const manager = await member(app, tenantId, [role.json().id]);
+
+      // A name is not who the IdP is.
+      const renamed = await call('PATCH', url, manager.headers, {
+        name: `renamed-${randomUUID().slice(0, 8)}`,
+      });
+      expect(renamed.statusCode, renamed.body).toBe(200);
+      // An IdP of their own would hand out the administrator role.
+      for (const changes of [
+        { issuer: 'https://evil.acme.test' },
+        { clientId: 'theirs' },
+      ]) {
+        const refused = await call('PATCH', url, manager.headers, changes);
+        expect(refused.statusCode, refused.body).toBe(403);
+      }
+      const kept = await call('GET', url, admin.headers);
+      expect(kept.json().oidc).toMatchObject({
+        issuer: 'https://login.acme.test',
+        clientId: 'app',
+      });
+      expect(
+        (
+          await call('PATCH', url, admin.headers, {
+            issuer: 'https://login2.acme.test',
+          })
+        ).statusCode,
+      ).toBe(200);
+    });
+
     it('verify a domain through its TXT record only', async () => {
       await call('POST', '/v1/sso/domains', admin.headers, {
         domain: 'unverified.test',
@@ -186,6 +239,39 @@ describe('enterprise SSO (e2e)', () => {
       expect(byName('unverified.test')?.verified).toBe(false);
       expect(byName(DOMAIN)?.verified).toBe(true);
     });
+  });
+
+  it('checks every verified domain each night, and ends one whose record is gone', async () => {
+    const other = await tenantWithAdmin(app);
+    const domain = `moving-${randomUUID().slice(0, 6)}.test`;
+    await verifyDomain(app, dns, other.admin.headers, other.tenantId, domain);
+    const listed = async () =>
+      (await call('GET', '/v1/sso/domains', other.admin.headers))
+        .json<{ items: { domain: string; verified: boolean }[] }>()
+        .items.find((d) => d.domain === domain);
+    const routed = async () =>
+      (
+        await db()
+          .select({ tenantId: ssoDomainRoutes.tenantId })
+          .from(ssoDomainRoutes)
+          .where(eq(ssoDomainRoutes.domain, domain))
+      ).length;
+    expect((await listed())?.verified).toBe(true);
+
+    // Still there: nothing changes.
+    expect(await app.get(SsoDomainsCheckJob).run()).toBeGreaterThan(0);
+    expect((await listed())?.verified).toBe(true);
+    // Gone (the domain changed hands): the domain is no longer the tenant's.
+    dns.records.delete(`_sso-verification.${domain}`);
+    await app.get(SsoDomainsCheckJob).run();
+    expect((await listed())?.verified).toBe(false);
+    expect(await routed()).toBe(0);
+    // This tenant's own domain was left alone.
+    expect(
+      (await call('GET', '/v1/sso/domains', admin.headers))
+        .json<{ items: { domain: string; verified: boolean }[] }>()
+        .items.find((d) => d.domain === DOMAIN)?.verified,
+    ).toBe(true);
   });
 
   describe('OpenID Connect', () => {

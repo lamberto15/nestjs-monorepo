@@ -203,7 +203,22 @@ export class SsoConnectionsService {
         throw missingFields(['clientSecret']);
       }
     }
-    await this.checkRoles(actor, changes);
+    // Who the IdP is (its keys, URLs, client, claims) decides who gets the
+    // roles a connection hands out: whoever changes it takes those roles
+    // over, and must be able to grant them, as if they had mapped them.
+    const trustChanged =
+      ALL_PROTOCOL_FIELDS.some((field) => changes[field] !== undefined) ||
+      changes.groupsAttribute !== undefined;
+    const kept = trustChanged
+      ? (await this.roleMappingsOf(id))
+          .filter((mapping) =>
+            mapping.group === null
+              ? changes.defaultRoleIds === undefined
+              : changes.roleMappings === undefined,
+          )
+          .map((mapping) => mapping.roleId)
+      : [];
+    await this.checkRoles(actor, changes, kept);
     const issuerChanged =
       changes.issuer !== undefined && changes.issuer !== before.issuer;
     const row = await this.txHost.withTransaction(async () => {
@@ -587,14 +602,17 @@ export class SsoConnectionsService {
    * Whoever maps a group to a role, or gives one to just-in-time members,
    * must be able to grant it themselves (the access API's rule): else
    * `Access.manageSso` and an IdP of one's own would hand out any role.
+   * `kept`: the roles already mapped, when the IdP itself changes.
    */
   private async checkRoles(
     actor: UserPrincipal,
     input: Partial<Pick<RoleSetup, 'roleMappings' | 'defaultRoleIds'>>,
+    kept: readonly string[] = [],
   ) {
     const roleIds = [
       ...(input.roleMappings ?? []).map((mapping) => mapping.roleId),
       ...(input.defaultRoleIds ?? []),
+      ...kept,
     ];
     if (roleIds.length > 0) {
       await this.roles.checkRoleGrant(actor, [...new Set(roleIds)]);

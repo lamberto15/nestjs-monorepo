@@ -25,9 +25,17 @@ tenant's audit log (`auth.sign-in-failed`). A first sign-in provisions the
 person just in time (`jitProvisioning`) or links the account of a
 verified address; roles come from the connection's default roles and its
 group mappings, granted only within what the mapping's author could grant.
+Changing who the IdP is (its protocol settings: issuer, client, endpoints,
+keys, claim mapping, groups attribute) takes being able to grant every role
+the connection already maps (403 otherwise): `Access.manageSso` over a
+connection mapping to administrators is as strong as administrator.
 
 Jobs (queue `sso`, system job `sso`): an OIDC connection's discovery
 document, and a domain's TXT record (`_sso-verification.<domain>`).
+`SsoDomainsCheckJob` (02:25 UTC, one instance) looks every verified
+domain's record up again: one gone (ENOTFOUND, ENODATA, another value) is
+verified no more (`sso.domain-suspended`) and loses its sign-in route; a
+lookup that failed changes nothing.
 
 ## Configuration
 
