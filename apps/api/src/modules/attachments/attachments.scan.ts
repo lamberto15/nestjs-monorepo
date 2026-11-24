@@ -1,11 +1,7 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable, Logger } from '@nestjs/common';
 import { StorageDisk } from '@nestjs/storage';
-import { and, asc, eq, inArray, lt } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { SystemContext } from '../../iam/access/system-context.js';
@@ -22,7 +18,8 @@ import {
 import { MalwareScanner } from './attachments.scanner.js';
 import { AttachmentsService } from './attachments.service.js';
 import { AttachmentVersionsService } from './attachments.versions.js';
-import { type Attachment, attachments } from './attachments.tables.js';
+import { AttachmentsRepository } from './attachments.repository.js';
+import type { Attachment } from './attachments.tables.js';
 
 /** How a scan ended, as `attachments_scanned{result}` counts it. */
 export type ScanOutcome = 'clean' | 'infected' | 'error';
@@ -55,7 +52,7 @@ export class AttachmentScanService {
   private readonly scanned: Counter;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly scanner: MalwareScanner,
     private readonly disk: StorageDisk,
@@ -85,10 +82,7 @@ export class AttachmentScanService {
     return this.system.run(
       ATTACHMENT_SCAN_JOB,
       async (system) => {
-        const [row] = await this.db
-          .select()
-          .from(attachments)
-          .where(eq(attachments.id, job.attachmentId));
+        const row = await this.repository.find(job.attachmentId);
         if (!row || row.scanStatus !== 'pending') return 'skipped';
         let verdict;
         try {
@@ -99,17 +93,7 @@ export class AttachmentScanService {
           throw error;
         }
         if (!verdict.infected) {
-          const [clean] = await this.db
-            .update(attachments)
-            .set({ scanStatus: 'clean' })
-            .where(
-              and(
-                eq(attachments.id, row.id),
-                eq(attachments.scanStatus, 'pending'),
-              ),
-            )
-            .returning({ id: attachments.id });
-          if (clean) {
+          if (await this.repository.markClean(row.id)) {
             this.scanned.add(1, { result: 'clean' });
             this.attachments.changed(system, row, row.id, 'scanned');
             // An image is processed only once it may be served.
@@ -141,12 +125,10 @@ export class AttachmentScanService {
       ATTACHMENT_SCAN_JOB,
       async (system) => {
         if (!this.scanner.enabled) return this.release(system);
-        const stale = await this.db
-          .select({ id: attachments.id })
-          .from(attachments)
-          .where(this.retried(now))
-          .orderBy(asc(attachments.createdAt))
-          .limit(BATCH);
+        const stale = await this.repository.pendingScans(
+          this.retriedBefore(now),
+          BATCH,
+        );
         const period = String(Math.floor(now.getTime() / RETRY_MS));
         for (const { id } of stale) await this.queue.enqueue(id, period);
         return stale.length;
@@ -157,22 +139,14 @@ export class AttachmentScanService {
 
   /** The tenants `retryPending()` has work in, read across every tenant (the retry job, in `acrossTenants()`). */
   async pendingTenants(now: Date) {
-    const rows = await this.db
-      .selectDistinct({ tenantId: attachments.tenantId })
-      .from(attachments)
-      .where(this.retried(now));
-    return rows.map((row) => row.tenantId);
+    return this.repository.pendingScanTenants(this.retriedBefore(now));
   }
 
   /** What `retryPending()` handles: with scanning on the uploads pending past `RETRY_MS`, off every pending one (released). */
-  private retried(now: Date) {
-    const pending = eq(attachments.scanStatus, 'pending');
+  private retriedBefore(now: Date) {
     return this.scanner.enabled
-      ? and(
-          pending,
-          lt(attachments.createdAt, new Date(now.getTime() - RETRY_MS)),
-        )
-      : pending;
+      ? new Date(now.getTime() - RETRY_MS)
+      : undefined;
   }
 
   /** Scanning is off: the pending files become `clean` (a round of `BATCH` at a time), audited. */
@@ -180,24 +154,7 @@ export class AttachmentScanService {
     let released = 0;
     for (;;) {
       const rows = await this.txHost.withTransaction(async () => {
-        const done = await this.db
-          .update(attachments)
-          .set({ scanStatus: 'clean' })
-          .where(
-            and(
-              eq(attachments.scanStatus, 'pending'),
-              inArray(
-                attachments.id,
-                this.db
-                  .select({ id: attachments.id })
-                  .from(attachments)
-                  .where(eq(attachments.scanStatus, 'pending'))
-                  .orderBy(asc(attachments.createdAt))
-                  .limit(BATCH),
-              ),
-            ),
-          )
-          .returning();
+        const done = await this.repository.releasePendingScans(BATCH);
         if (done.length > 0) {
           await this.audit.record(system, {
             action: 'attachments.released',
@@ -231,17 +188,9 @@ export class AttachmentScanService {
       // current again, rather than the history going; only a first file is deleted.
       reverted =
         row.version > 1 ? await this.versions.revertRejected(row) : null;
-      const [gone] = reverted
-        ? [reverted]
-        : await this.db
-            .delete(attachments)
-            .where(
-              and(
-                eq(attachments.id, row.id),
-                eq(attachments.scanStatus, 'pending'),
-              ),
-            )
-            .returning({ id: attachments.id });
+      const gone = reverted
+        ? true
+        : await this.repository.deletePending(row.id);
       if (!gone) return false; // removed by its uploader meanwhile: nothing to audit
       await this.audit.record(system, {
         action: 'attachment.rejected',

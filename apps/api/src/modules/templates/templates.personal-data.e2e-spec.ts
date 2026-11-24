@@ -1,3 +1,4 @@
+import { TemplatesRepository } from './templates.repository.js';
 import { TemplatesPersonalData } from './templates.personal-data.js';
 import { recordTemplates } from './templates.tables.js';
 import { personalDataSection } from '../../../test/personal-data.js';
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `templates` section (templates.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('templates', [TemplatesPersonalData], {
+personalDataSection('templates', [TemplatesPersonalData, TemplatesRepository], {
   seed: async (c) => {
     const base = { subject: 'TestItem', scope: 'tenant' };
     const values = (owner: string, label: string, visibility: string) => ({

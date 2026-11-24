@@ -3,12 +3,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { inArray, lt } from 'drizzle-orm';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import { deliverabilityConfig } from './deliverability.config.js';
 import { MAIL_EVENTS_RETENTION_JOB } from './deliverability.permissions.js';
-import { mailEvents } from './deliverability.tables.js';
+import { DeliverabilityRepository } from './deliverability.repository.js';
 
 /** Events deleted per transaction. */
 const BATCH = 5000;
@@ -28,6 +27,7 @@ export class MailEventsRetentionJob {
     @Inject(deliverabilityConfig.KEY)
     private readonly config: ConfigType<typeof deliverabilityConfig>,
     private readonly system: SystemContext,
+    private readonly repository: DeliverabilityRepository,
   ) {}
 
   @Cron('40 3 * * *', { name: 'mail-events-retention', timeZone: 'UTC' })
@@ -41,18 +41,9 @@ export class MailEventsRetentionJob {
         const before = new Date(now.getTime() - days * 86_400_000);
         let total = 0;
         for (;;) {
-          const deleted = await this.txHost.withTransaction(async () => {
-            const old = this.txHost.tx
-              .select({ id: mailEvents.id })
-              .from(mailEvents)
-              .where(lt(mailEvents.createdAt, before))
-              .limit(BATCH);
-            const rows = await this.txHost.tx
-              .delete(mailEvents)
-              .where(inArray(mailEvents.id, old))
-              .returning({ id: mailEvents.id });
-            return rows.length;
-          });
+          const deleted = await this.txHost.withTransaction(() =>
+            this.repository.deleteEventsBefore(before, BATCH),
+          );
           total += deleted;
           if (deleted < BATCH) break;
         }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -17,15 +17,12 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { StorageDisk, StorageFileNotFoundError } from '@nestjs/storage';
-import { and, count, eq, gt, isNull, lt, or } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
 import { QuotasService } from '../quotas/quotas.service.js';
 import { storageConfig } from '../storage/storage.config.js';
 import { STORAGE_BYTES } from './attachments.quota.js';
+import { AttachmentsRepository } from './attachments.repository.js';
 import type {
   AttachmentAnnounce,
   AttachmentView,
@@ -37,10 +34,7 @@ import {
   AttachmentsService,
   type RecordRef,
 } from './attachments.service.js';
-import {
-  type AttachmentUpload,
-  attachmentUploads,
-} from './attachments.tables.js';
+import type { AttachmentUpload } from './attachments.tables.js';
 import { directUploadType, isAllowedType } from './attachments.types.js';
 import {
   checkUploadedObject,
@@ -125,7 +119,7 @@ export class AttachmentUploadsService {
   private readonly logger = new Logger(AttachmentUploadsService.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly disk: StorageDisk,
     private readonly attachments: AttachmentsService,
@@ -236,17 +230,11 @@ export class AttachmentUploadsService {
       // Only the uploads that can still be completed: an expired one (a PUT
       // that failed, a tab closed) frees its place, though the sweep deletes
       // its row only at night.
-      const [pending] = await this.db
-        .select({ pending: count() })
-        .from(attachmentUploads)
-        .where(
-          and(
-            eq(attachmentUploads.uploadedBy, uploadedBy),
-            isNull(attachmentUploads.completedAt),
-            gt(attachmentUploads.expiresAt, new Date()),
-          ),
-        );
-      if ((pending?.pending ?? 0) >= MAX_PENDING_UPLOADS) {
+      const pending = await this.repository.countOpenUploads(
+        uploadedBy,
+        new Date(),
+      );
+      if (pending >= MAX_PENDING_UPLOADS) {
         throw new HttpException(
           {
             code: 'attachment_uploads_pending',
@@ -255,16 +243,12 @@ export class AttachmentUploadsService {
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
-      const [inserted] = await this.db
-        .insert(attachmentUploads)
-        .values({
-          subject: record.subject,
-          recordId: record.recordId,
-          ...upload,
-          uploadedBy,
-        })
-        .returning();
-      return inserted!;
+      return this.repository.insertUpload({
+        subject: record.subject,
+        recordId: record.recordId,
+        ...upload,
+        uploadedBy,
+      });
     });
   }
 
@@ -362,28 +346,13 @@ export class AttachmentUploadsService {
       // would move to the same part name, so the row is locked for the move:
       // the second waits, finds the offset taken, and leaves the part alone.
       const advanced = await this.txHost.withTransaction(async () => {
-        const [open] = await this.db
-          .select({ id: attachmentUploads.id })
-          .from(attachmentUploads)
-          .where(
-            and(
-              eq(attachmentUploads.id, upload.id),
-              eq(attachmentUploads.received, offset),
-              isNull(attachmentUploads.completingAt),
-              isNull(attachmentUploads.completedAt),
-            ),
-          )
-          .for('update');
-        if (!open) {
+        if (!(await this.repository.lockUploadAt(upload.id, offset))) {
           return undefined;
         }
         await this.disk.move(temporary, partKey(upload.key, offset));
-        const [row] = await this.db
-          .update(attachmentUploads)
-          .set({ received: offset + length })
-          .where(eq(attachmentUploads.id, upload.id))
-          .returning();
-        return row;
+        return this.repository.updateUpload(upload.id, {
+          received: offset + length,
+        });
       });
       if (!advanced) {
         throw offsetMismatch(
@@ -401,9 +370,7 @@ export class AttachmentUploadsService {
   async cancel(principal: Principal, record: RecordRef, uploadId: string) {
     const upload = await this.claim(principal, record, uploadId);
     await this.disk.delete(await uploadObjects(this.disk, upload));
-    await this.db
-      .delete(attachmentUploads)
-      .where(eq(attachmentUploads.id, upload.id));
+    await this.repository.deleteUploads([upload.id]);
   }
 
   /** The caller's own open session for this record, or a 404. */
@@ -412,19 +379,11 @@ export class AttachmentUploadsService {
     record: RecordRef,
     uploadId: string,
   ) {
-    const [row] = await this.db
-      .select()
-      .from(attachmentUploads)
-      .where(
-        and(
-          eq(attachmentUploads.id, uploadId),
-          eq(attachmentUploads.subject, record.subject),
-          eq(attachmentUploads.recordId, record.recordId),
-          eq(attachmentUploads.uploadedBy, principalKey(principal)),
-          eq(attachmentUploads.resumable, true),
-          isNull(attachmentUploads.completedAt),
-        ),
-      );
+    const row = await this.repository.findSession(
+      uploadId,
+      record,
+      principalKey(principal),
+    );
     if (!row) {
       throw new NotFoundException({
         code: 'attachment_upload_not_found',
@@ -512,11 +471,11 @@ export class AttachmentUploadsService {
         ip,
         // With the attachment, or not at all: the upload is completed when the attachment exists.
         {
-          within: () =>
-            this.db
-              .update(attachmentUploads)
-              .set({ completedAt: new Date() })
-              .where(eq(attachmentUploads.id, upload.id)),
+          within: async () => {
+            await this.repository.updateUpload(upload.id, {
+              completedAt: new Date(),
+            });
+          },
         },
       );
     } catch (error) {
@@ -601,35 +560,18 @@ export class AttachmentUploadsService {
     record: RecordRef,
     uploadId: string,
   ) {
-    const mine = and(
-      eq(attachmentUploads.id, uploadId),
-      eq(attachmentUploads.subject, record.subject),
-      eq(attachmentUploads.recordId, record.recordId),
-      eq(attachmentUploads.uploadedBy, principalKey(principal)),
-      // A completed upload is the client's no more: 404, as when its row was deleted.
-      isNull(attachmentUploads.completedAt),
+    // A completed upload is the client's no more: 404, as when its row was deleted.
+    const uploadedBy = principalKey(principal);
+    const claimed = await this.repository.claimUpload(
+      uploadId,
+      record,
+      uploadedBy,
+      new Date(Date.now() - CLAIM_MS),
     );
-    const [claimed] = await this.db
-      .update(attachmentUploads)
-      .set({ completingAt: new Date() })
-      .where(
-        and(
-          mine,
-          or(
-            isNull(attachmentUploads.completingAt),
-            lt(attachmentUploads.completingAt, new Date(Date.now() - CLAIM_MS)),
-          ),
-        ),
-      )
-      .returning();
     if (claimed) {
       return claimed;
     }
-    const [existing] = await this.db
-      .select({ id: attachmentUploads.id })
-      .from(attachmentUploads)
-      .where(mine);
-    if (!existing) {
+    if (!(await this.repository.hasUpload(uploadId, record, uploadedBy))) {
       throw new NotFoundException({
         code: 'attachment_upload_not_found',
         message: `Upload ${uploadId} not found.`,
@@ -643,10 +585,8 @@ export class AttachmentUploadsService {
 
   /** Lets the upload be completed again (a claim from a request that is done with it). */
   private async release(upload: AttachmentUpload) {
-    await this.db
-      .update(attachmentUploads)
-      .set({ completingAt: null })
-      .where(eq(attachmentUploads.id, upload.id))
+    await this.repository
+      .updateUpload(upload.id, { completingAt: null })
       .catch((error: unknown) =>
         this.logger.warn('An upload was not released', {
           upload: upload.id,
@@ -680,15 +620,12 @@ export class AttachmentUploadsService {
       });
       return;
     }
-    await this.db
-      .delete(attachmentUploads)
-      .where(eq(attachmentUploads.id, upload.id))
-      .catch((error: unknown) =>
-        this.logger.warn('An upload row was not deleted', {
-          upload: upload.id,
-          error: String(error),
-        }),
-      );
+    await this.repository.deleteUploads([upload.id]).catch((error: unknown) =>
+      this.logger.warn('An upload row was not deleted', {
+        upload: upload.id,
+        error: String(error),
+      }),
+    );
   }
 }
 

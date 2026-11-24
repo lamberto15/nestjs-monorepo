@@ -13,6 +13,7 @@ import { defineSettings } from './settings.types.js';
 import { SettingsController } from './settings.controller.js';
 import { SETTING_PERMISSIONS } from './settings.permissions.js';
 import { SettingsPolicy } from './settings.policy.js';
+import { SettingsRepository } from './settings.repository.js';
 import { SettingsService } from './settings.service.js';
 import type { SettingDeclaration } from './settings.types.js';
 import { SettingsPersonalData } from './settings.personal-data.js';
@@ -46,6 +47,7 @@ import { SettingsPersonalData } from './settings.personal-data.js';
     SettingsCache,
     SettingsCatalog,
     SettingsService,
+    SettingsRepository,
     SettingsPolicy,
     OperatorGuard,
     FlagGuard,

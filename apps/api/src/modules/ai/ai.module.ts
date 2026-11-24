@@ -17,6 +17,7 @@ import { aiModuleOptions } from './ai.models.js';
 import { AiProcessor } from './ai.processor.js';
 import { AiRunRetentionJob } from './ai.retention.job.js';
 import { AI_TOKENS } from './ai.quota.js';
+import { AiRepository } from './ai.repository.js';
 import { AI, AiService } from './ai.service.js';
 import { AI_SETTINGS } from './ai.settings.js';
 import { AiSourceRegistration, AiSources } from './ai.source.js';
@@ -55,6 +56,7 @@ import { AiFeature } from './ai.feature.js';
   providers: [
     AiSources,
     AiService,
+    AiRepository,
     AiProcessor,
     AiPersonalData,
     AiFeature,

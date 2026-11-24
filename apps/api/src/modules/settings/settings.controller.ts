@@ -6,7 +6,6 @@ import {
   HttpCode,
   HttpStatus,
   Ip,
-  NotFoundException,
   Param,
   Put,
   Query,
@@ -81,12 +80,8 @@ export class SettingsController {
   @ApiOperation({ summary: 'One setting, with your value' })
   @ApiOkResponse({ standardSchema: settingViewSchema })
   @ApiNotFoundResponse()
-  async get(@CurrentUser() user: RequestPrincipal, @Param('key') key: string) {
-    const declaration = this.settings.declaration(key);
-    if (declaration.public === false && !(await this.settings.canRead(user))) {
-      throw new NotFoundException(`No setting "${key}".`);
-    }
-    return this.settings.view(declaration, user);
+  get(@CurrentUser() user: RequestPrincipal, @Param('key') key: string) {
+    return this.settings.viewOf(user, key);
   }
 
   @Put(':key/mine')

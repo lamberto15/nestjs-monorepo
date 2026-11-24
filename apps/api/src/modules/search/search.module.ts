@@ -3,13 +3,14 @@ import { DiscoveryModule } from '@nestjs/core';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { RecordsModule } from '../records/records.module.js';
 import { SearchController } from './search.controller.js';
+import { SearchRepository } from './search.repository.js';
 import { SearchService } from './search.service.js';
 
 /** GET /v1/search: the records of every feature that declares searchable fields (README.md). */
 @Module({
   imports: [DiscoveryModule, RecordsModule, AccessModule],
   controllers: [SearchController],
-  providers: [SearchService],
+  providers: [SearchService, SearchRepository],
   exports: [SearchService],
 })
 export class SearchModule {}

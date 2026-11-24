@@ -6,6 +6,7 @@ import { ListsModule } from '../lists/lists.module.js';
 import { RecordsModule } from '../records/records.module.js';
 import { ViewsController } from './views.controller.js';
 import { VIEW_PERMISSIONS } from './views.permissions.js';
+import { ViewsRepository } from './views.repository.js';
 import { ViewsService } from './views.service.js';
 import { ViewsPersonalData } from './views.personal-data.js';
 
@@ -19,7 +20,7 @@ import { ViewsPersonalData } from './views.personal-data.js';
     RecordsModule,
   ],
   controllers: [ViewsController],
-  providers: [ViewsService, ViewsPersonalData],
+  providers: [ViewsService, ViewsRepository, ViewsPersonalData],
   // Favorites pin a view only while its owner sees it (modules/favorites).
   exports: [ViewsService],
 })

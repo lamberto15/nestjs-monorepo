@@ -5,6 +5,7 @@ import {
   PeopleController,
   UnitDirectoryController,
 } from './people.controller.js';
+import { PeopleRepository } from './people.repository.js';
 import { PeopleService } from './people.service.js';
 
 /**
@@ -17,7 +18,7 @@ import { PeopleService } from './people.service.js';
 @Module({
   imports: [StorageModule, AvatarsModule],
   controllers: [PeopleController, UnitDirectoryController],
-  providers: [PeopleService],
+  providers: [PeopleService, PeopleRepository],
   exports: [PeopleService],
 })
 export class PeopleModule {}

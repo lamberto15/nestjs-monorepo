@@ -1,3 +1,4 @@
+import { MessagingRepository } from './messaging.repository.js';
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
 import { inArray } from 'drizzle-orm';
 import { MessagingPersonalData } from './messaging.personal-data.js';
@@ -21,6 +22,7 @@ personalDataSection(
   'messaging',
   [
     MessagingPersonalData,
+    MessagingRepository,
     {
       provide: EncryptionService,
       useValue: { decrypt: (_c: unknown, v: string) => v },

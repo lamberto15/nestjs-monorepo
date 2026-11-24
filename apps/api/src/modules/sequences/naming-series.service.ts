@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -7,20 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { and, asc, desc, eq, getColumns, ne } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
@@ -39,7 +29,6 @@ import {
   printValue,
   renderPattern,
 } from './naming-pattern.js';
-import { NAMING_SERIES_LIST } from './naming-series.list.js';
 import {
   type NamingContext,
   NamingSeriesRegistry,
@@ -54,7 +43,8 @@ import type {
   SetNamingCounterDto,
   UpdateNamingSeriesDto,
 } from './naming-series.schemas.js';
-import { type NamingCondition, namingSeries } from './sequences.tables.js';
+import type { NamingCondition, namingSeries } from './sequences.tables.js';
+import { SequencesRepository } from './sequences.repository.js';
 import { sequencesConfig } from './sequences.config.js';
 import {
   NUMBERING_ABBREVIATION,
@@ -113,7 +103,7 @@ interface CounterOptions {
 @Injectable()
 export class NamingSeriesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SequencesRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly registry: NamingSeriesRegistry,
     private readonly sequences: SequencesService,
@@ -221,20 +211,7 @@ export class NamingSeriesService {
 
   /** A page of series, newest first unless the query sorts; each with the number it gives next. */
   async list(query: ListQuery) {
-    const where = NAMING_SERIES_LIST.where(query);
-    const [rows, total] = await Promise.all([
-      this.db
-        .select({
-          ...getColumns(namingSeries),
-          ...NAMING_SERIES_LIST.sortSelect(query),
-        })
-        .from(namingSeries)
-        .where(and(where, afterCursor(namingSeries.id, query)))
-        .orderBy(...pageOrder(namingSeries.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, namingSeries, where, query),
-    ]);
+    const [rows, total] = await this.repository.seriesPage(query);
     const page = toPage(rows, query, total);
     return { ...page, items: await this.views(page.items) };
   }
@@ -259,28 +236,22 @@ export class NamingSeriesService {
     this.check(numbered, dto);
     const row = await this.txHost
       .withTransaction(async () => {
-        const [existing] = await this.db
-          .select({ id: namingSeries.id })
-          .from(namingSeries)
-          .where(eq(namingSeries.subject, dto.subject))
-          .limit(1);
         // A subject's first series is its default: it takes over from the declared format.
-        const isDefault = dto.isDefault === true || !existing;
+        const isDefault =
+          dto.isDefault === true ||
+          !(await this.repository.hasSeries(dto.subject));
         if (isDefault) {
           await this.clearDefault(dto.subject);
         }
-        const [created] = await this.db
-          .insert(namingSeries)
-          .values({
-            subject: dto.subject,
-            pattern: dto.pattern,
-            label: dto.label || null,
-            isDefault,
-            dateField: dto.dateField ?? null,
-            conditions: dto.conditions ?? [],
-            priority: dto.priority ?? 0,
-          })
-          .returning();
+        const created = await this.repository.insertSeries({
+          subject: dto.subject,
+          pattern: dto.pattern,
+          label: dto.label || null,
+          isDefault,
+          dateField: dto.dateField ?? null,
+          conditions: dto.conditions ?? [],
+          priority: dto.priority ?? 0,
+        });
         await this.audit.record(principal, {
           action: 'namingSeries.created',
           targetType: 'namingSeries',
@@ -331,11 +302,7 @@ export class NamingSeriesService {
         if (values.isDefault) {
           await this.clearDefault(series.subject, id);
         }
-        const [updated] = await this.db
-          .update(namingSeries)
-          .set(values)
-          .where(eq(namingSeries.id, id))
-          .returning();
+        const updated = await this.repository.updateSeries(id, values);
         await this.audit.record(principal, {
           action: 'namingSeries.updated',
           targetType: 'namingSeries',
@@ -365,19 +332,11 @@ export class NamingSeriesService {
   async remove(principal: Principal, id: string, ip?: string) {
     const series = await this.row(id);
     await this.txHost.withTransaction(async () => {
-      await this.db.delete(namingSeries).where(eq(namingSeries.id, id));
+      await this.repository.deleteSeries(id);
       if (series.isDefault) {
-        const [oldest] = await this.db
-          .select({ id: namingSeries.id })
-          .from(namingSeries)
-          .where(eq(namingSeries.subject, series.subject))
-          .orderBy(asc(namingSeries.createdAt), asc(namingSeries.id))
-          .limit(1);
+        const oldest = await this.repository.oldestSeriesId(series.subject);
         if (oldest) {
-          await this.db
-            .update(namingSeries)
-            .set({ isDefault: true })
-            .where(eq(namingSeries.id, oldest.id));
+          await this.repository.updateSeries(oldest, { isDefault: true });
         }
       }
       await this.audit.record(principal, {
@@ -467,10 +426,7 @@ export class NamingSeriesService {
   }
 
   private async row(id: string): Promise<Series> {
-    const [series] = await this.db
-      .select()
-      .from(namingSeries)
-      .where(eq(namingSeries.id, id));
+    const series = await this.repository.findSeries(id);
     if (!series) {
       throw new NotFoundException(`Naming series ${id} not found.`);
     }
@@ -479,12 +435,7 @@ export class NamingSeriesService {
 
   /** The series a body names: a 400 when it is no series of the subject. */
   private async named(subject: string, seriesId: string) {
-    const [series] = await this.db
-      .select()
-      .from(namingSeries)
-      .where(
-        and(eq(namingSeries.subject, subject), eq(namingSeries.id, seriesId)),
-      );
+    const series = await this.repository.findSeriesOf(subject, seriesId);
     if (!series) {
       throw invalid(
         'namingSeriesId',
@@ -506,15 +457,7 @@ export class NamingSeriesService {
       names: readonly string[],
     ) => Promise<Readonly<Record<string, unknown>>>,
   ) {
-    const rows = await this.db
-      .select()
-      .from(namingSeries)
-      .where(eq(namingSeries.subject, numbered.subject))
-      .orderBy(
-        desc(namingSeries.priority),
-        asc(namingSeries.createdAt),
-        asc(namingSeries.id),
-      );
+    const rows = await this.repository.seriesOf(numbered.subject);
     const fields = numbered.fields ?? {};
     const conditioned = rows.filter((row) => row.conditions.length > 0);
     // The values conditions test that the body doesn't hold: read once, for all of them.
@@ -782,17 +725,8 @@ export class NamingSeriesService {
     return dateValues(at, this.config.timezone);
   }
 
-  private async clearDefault(subject: string, except?: string) {
-    await this.db
-      .update(namingSeries)
-      .set({ isDefault: false })
-      .where(
-        and(
-          eq(namingSeries.subject, subject),
-          eq(namingSeries.isDefault, true),
-          except ? ne(namingSeries.id, except) : undefined,
-        ),
-      );
+  private clearDefault(subject: string, except?: string) {
+    return this.repository.clearDefault(subject, except);
   }
 
   private taken(subject: string, pattern: string) {

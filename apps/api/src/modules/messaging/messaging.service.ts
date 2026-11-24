@@ -1,6 +1,6 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { InjectQueue } from '@nestjs/bullmq';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   HttpException,
@@ -12,12 +12,8 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import type { Queue } from 'bullmq';
-import { and, eq, isNull, lt } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { normalizers } from '../../core/encryption/data-cipher.js';
 import { EncryptedColumns } from '../../core/encryption/encrypted-columns.js';
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
@@ -31,6 +27,7 @@ import { messagingConfig } from './messaging.config.js';
 import { MESSAGING_INBOUND_JOB } from './messaging.permissions.js';
 import { allowedPrefix, maskPhone } from './messaging.policy.js';
 import { MESSAGING } from './messaging.queue.js';
+import { MessagingRepository } from './messaging.repository.js';
 import type { DeviceView, PhoneView } from './messaging.schemas.js';
 import {
   type DevicePlatform,
@@ -61,7 +58,7 @@ export class MessagingService {
   private readonly logger = new Logger('Messaging');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: MessagingRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly encryption: EncryptionService,
     private readonly audit: AuditService,
@@ -87,10 +84,7 @@ export class MessagingService {
     ip?: string,
   ): Promise<DeviceView> {
     return this.txHost.withTransaction(async () => {
-      const [existing] = await this.db
-        .select()
-        .from(devices)
-        .where(this.encryption.lookup(devices.token, input.token));
+      const existing = await this.repository.findDeviceByToken(input.token);
       const values = {
         userId: user.id,
         platform: input.platform,
@@ -98,29 +92,18 @@ export class MessagingService {
         lastSeenAt: new Date(),
       };
       const row = existing
-        ? (
-            await this.db
-              .update(devices)
-              .set({
-                ...values,
-                // Re-sealed: a token indexed under an older key moves to the current one.
-                ...this.encryption.seal(devices.token, input.token),
-              })
-              .where(eq(devices.id, existing.id))
-              .returning()
-          )[0]!
-        : (
-            await this.db
-              .insert(devices)
-              .values({
-                ...values,
-                ...(this.encryption.seal(devices.token, input.token) as {
-                  token: string;
-                  tokenIndex: string;
-                }),
-              })
-              .returning()
-          )[0]!;
+        ? await this.repository.updateDevice(existing.id, {
+            ...values,
+            // Re-sealed: a token indexed under an older key moves to the current one.
+            ...this.encryption.seal(devices.token, input.token),
+          })
+        : await this.repository.insertDevice({
+            ...values,
+            ...(this.encryption.seal(devices.token, input.token) as {
+              token: string;
+              tokenIndex: string;
+            }),
+          });
       if (!existing || existing.userId !== user.id) {
         await this.audit.record(user, {
           action: 'device.registered',
@@ -135,22 +118,14 @@ export class MessagingService {
   }
 
   async devicesOf(user: UserPrincipal): Promise<DeviceView[]> {
-    const rows = await this.db
-      .select()
-      .from(devices)
-      .where(eq(devices.userId, user.id))
-      .orderBy(devices.createdAt);
+    const rows = await this.repository.devicesOf(user.id);
     return rows.map(view);
   }
 
   /** Removes one of the caller's devices: its token is deleted, not kept revoked. */
   async removeDevice(user: UserPrincipal, id: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
-      const removed = await this.db
-        .delete(devices)
-        .where(and(eq(devices.id, id), eq(devices.userId, user.id)))
-        .returning({ id: devices.id });
-      if (!removed.length) {
+      if (!(await this.repository.deleteDevice(user.id, id))) {
         throw new NotFoundException('No such device.');
       }
       await this.audit.record(user, {
@@ -165,10 +140,7 @@ export class MessagingService {
   /** The decrypted token of a device, for the worker; undefined when it is gone. */
   /** The token of the user's device: none once another account has registered it. */
   async deviceToken(deviceId: string, userId: string) {
-    const [row] = await this.db
-      .select()
-      .from(devices)
-      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
+    const row = await this.repository.findDevice(userId, deviceId);
     return row
       ? {
           platform: row.platform,
@@ -179,27 +151,18 @@ export class MessagingService {
 
   /** The provider reported the token dead (or the device is otherwise gone). */
   async dropDevice(deviceId: string, userId: string) {
-    await this.db
-      .delete(devices)
-      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
+    await this.repository.deleteDevice(userId, deviceId);
   }
 
   /** The ids of the user's devices that can get a push now. */
   async deviceIdsOf(userId: string) {
-    const rows = await this.db
-      .select({ id: devices.id })
-      .from(devices)
-      .where(eq(devices.userId, userId));
-    return rows.map((row) => row.id);
+    return this.repository.deviceIdsOf(userId);
   }
 
   // ---- the phone number ----
 
   async phoneOf(user: UserPrincipal): Promise<PhoneView> {
-    const [row] = await this.db
-      .select()
-      .from(phoneNumbers)
-      .where(eq(phoneNumbers.userId, user.id));
+    const row = await this.repository.phoneOf(user.id);
     return row
       ? {
           phone: maskPhone(
@@ -247,10 +210,7 @@ export class MessagingService {
       );
     }
     await this.txHost.withTransaction(async () => {
-      const [existing] = await this.db
-        .select()
-        .from(phoneNumbers)
-        .where(eq(phoneNumbers.userId, user.id));
+      const existing = await this.repository.phoneOf(user.id);
       const same =
         existing &&
         this.encryption.decrypt(phoneNumbers.phone, existing.phone) ===
@@ -260,13 +220,7 @@ export class MessagingService {
           phone: string;
           phoneIndex: string;
         };
-        await this.db
-          .insert(phoneNumbers)
-          .values({ userId: user.id, ...sealed })
-          .onConflictDoUpdate({
-            target: phoneNumbers.userId,
-            set: { ...sealed, verifiedAt: null, optedOutAt: null },
-          });
+        await this.repository.savePhone(user.id, sealed);
         await this.audit.record(user, {
           action: 'phone.set',
           targetType: 'user',
@@ -286,11 +240,7 @@ export class MessagingService {
 
   async removePhone(user: UserPrincipal, ip?: string) {
     await this.txHost.withTransaction(async () => {
-      const removed = await this.db
-        .delete(phoneNumbers)
-        .where(eq(phoneNumbers.userId, user.id))
-        .returning({ id: phoneNumbers.id });
-      if (removed.length) {
+      if (await this.repository.deletePhone(user.id)) {
         await this.audit.record(user, {
           action: 'phone.removed',
           targetType: 'user',
@@ -358,12 +308,7 @@ export class MessagingService {
     }
     await this.redis.del(this.codeKey(user.id));
     await this.txHost.withTransaction(async () => {
-      const verified = await this.db
-        .update(phoneNumbers)
-        .set({ verifiedAt: new Date() })
-        .where(eq(phoneNumbers.userId, user.id))
-        .returning({ id: phoneNumbers.id });
-      if (!verified.length) {
+      if (!(await this.repository.verifyPhone(user.id))) {
         throw new NotFoundException('Set a phone number first.');
       }
       await this.audit.record(user, {
@@ -385,24 +330,14 @@ export class MessagingService {
     userId: string,
     unverified = false,
   ): Promise<string | undefined> {
-    const [row] = await this.db
-      .select()
-      .from(phoneNumbers)
-      .where(
-        and(eq(phoneNumbers.userId, userId), isNull(phoneNumbers.optedOutAt)),
-      );
+    const row = await this.repository.sendablePhoneOf(userId);
     if (!row || (!row.verifiedAt && !unverified)) return undefined;
     return this.encryption.decrypt(phoneNumbers.phone, row.phone) ?? undefined;
   }
 
   /** Whether the user has a number SMS may go to (the channel's cheap check; no decryption). */
   async hasSendablePhone(userId: string) {
-    const [row] = await this.db
-      .select({ verifiedAt: phoneNumbers.verifiedAt })
-      .from(phoneNumbers)
-      .where(
-        and(eq(phoneNumbers.userId, userId), isNull(phoneNumbers.optedOutAt)),
-      );
+    const row = await this.repository.sendablePhoneOf(userId);
     return row?.verifiedAt != null;
   }
 
@@ -432,22 +367,12 @@ export class MessagingService {
     return this.system.run(
       MESSAGING_INBOUND_JOB,
       async (system) => {
-        const rows = await this.db
-          .select({
-            id: phoneNumbers.id,
-            userId: phoneNumbers.userId,
-            optedOutAt: phoneNumbers.optedOutAt,
-          })
-          .from(phoneNumbers)
-          .where(this.encryption.lookup(phoneNumbers.phone, normalized));
+        const rows = await this.repository.phonesByNumber(normalized);
         const changing = rows.filter((row) =>
           out ? row.optedOutAt === null : row.optedOutAt !== null,
         );
         for (const row of changing) {
-          await this.db
-            .update(phoneNumbers)
-            .set({ optedOutAt: out ? new Date() : null })
-            .where(eq(phoneNumbers.id, row.id));
+          await this.repository.setOptedOut(row.id, out ? new Date() : null);
           await this.audit.record(system, {
             action: out ? 'phone.optedOut' : 'phone.optedIn',
             targetType: 'user',
@@ -469,10 +394,6 @@ export class MessagingService {
 
   /** Devices not seen since `before`: what the nightly job removes. */
   async removeStaleDevices(before: Date) {
-    const removed = await this.db
-      .delete(devices)
-      .where(lt(devices.lastSeenAt, before))
-      .returning({ id: devices.id });
-    return removed.length;
+    return this.repository.deleteDevicesSeenBefore(before);
   }
 }

@@ -1,15 +1,11 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { asc, count, eq } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
@@ -23,10 +19,8 @@ import {
   MAX_CALENDARS,
   type UpdateCalendarDto,
 } from './calendars.schemas.js';
-import {
-  type BusinessCalendarRow,
-  businessCalendars,
-} from './calendars.tables.js';
+import { CalendarsRepository } from './calendars.repository.js';
+import type { BusinessCalendarRow } from './calendars.tables.js';
 
 /** JSON with sorted keys: jsonb returns an object's keys in its own order. */
 const stable = (value: unknown) =>
@@ -60,17 +54,13 @@ const view = (row: BusinessCalendarRow) => ({
 @Injectable()
 export class CalendarsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: CalendarsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
   ) {}
 
   async list() {
-    const rows = await this.db
-      .select()
-      .from(businessCalendars)
-      .orderBy(asc(businessCalendars.name))
-      .limit(MAX_CALENDARS);
+    const rows = await this.repository.list();
     return { items: rows.map(view) };
   }
 
@@ -80,10 +70,7 @@ export class CalendarsService {
 
   /** The calendar of the current tenant, for deadline math; 404 when it is none of the tenant's. */
   async row(id: string) {
-    const [row] = await this.db
-      .select()
-      .from(businessCalendars)
-      .where(eq(businessCalendars.id, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       throw new NotFoundException(`Calendar ${id} not found.`);
     }
@@ -93,27 +80,22 @@ export class CalendarsService {
   async create(principal: Principal, dto: CreateCalendarDto, ip?: string) {
     const row = await this.txHost
       .withTransaction(async () => {
-        const [{ total } = { total: 0 }] = await this.db
-          .select({ total: count() })
-          .from(businessCalendars);
+        const total = await this.repository.count();
         if (total >= MAX_CALENDARS) {
           throw new BadRequestException({
             code: 'validation_failed',
             message: `At most ${MAX_CALENDARS} calendars.`,
           });
         }
-        const [created] = await this.db
-          .insert(businessCalendars)
-          .values(dto)
-          .returning();
+        const created = await this.repository.insert(dto);
         await this.audit.record(principal, {
           action: 'businessCalendar.created',
           targetType: 'businessCalendar',
-          targetId: created!.id,
-          details: { name: created!.name, timezone: created!.timezone },
+          targetId: created.id,
+          details: { name: created.name, timezone: created.timezone },
           ip,
         });
-        return created!;
+        return created;
       })
       .catch((error: unknown) => {
         throw nameTaken(error, dto.name);
@@ -144,22 +126,18 @@ export class CalendarsService {
     const moves = changed.some((key) => key !== 'name');
     const row = await this.txHost
       .withTransaction(async () => {
-        const [updated] = await this.db
-          .update(businessCalendars)
-          .set({
-            ...Object.fromEntries(changed.map((key) => [key, dto[key]])),
-            ...(moves && { version: before.version + 1 }),
-          })
-          .where(eq(businessCalendars.id, id))
-          .returning();
+        const updated = await this.repository.update(id, {
+          ...Object.fromEntries(changed.map((key) => [key, dto[key]])),
+          ...(moves && { version: before.version + 1 }),
+        });
         await this.audit.record(principal, {
           action: 'businessCalendar.updated',
           targetType: 'businessCalendar',
           targetId: id,
-          details: { changed, version: updated!.version },
+          details: { changed, version: updated.version },
           ip,
         });
-        return updated!;
+        return updated;
       })
       .catch((error: unknown) => {
         throw nameTaken(error, dto.name ?? before.name);
@@ -172,9 +150,7 @@ export class CalendarsService {
     const before = await this.row(id);
     await this.txHost
       .withTransaction(async () => {
-        await this.db
-          .delete(businessCalendars)
-          .where(eq(businessCalendars.id, id));
+        await this.repository.delete(id);
         await this.audit.record(principal, {
           action: 'businessCalendar.deleted',
           targetType: 'businessCalendar',

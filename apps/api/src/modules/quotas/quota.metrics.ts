@@ -28,7 +28,7 @@ interface Reading {
  */
 @Injectable()
 export class QuotaMetrics implements OnModuleInit {
-  private readonly logger = new Logger('QuotaMetrics');
+  private readonly logger = new Logger(QuotaMetrics.name);
   private cached?: { at: number; readings: Promise<Reading[]> };
 
   constructor(

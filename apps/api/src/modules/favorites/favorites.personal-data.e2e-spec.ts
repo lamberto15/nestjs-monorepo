@@ -1,4 +1,5 @@
 import { FavoritesPersonalData } from './favorites.personal-data.js';
+import { FavoritesRepository } from './favorites.repository.js';
 import { favorites } from './favorites.tables.js';
 import { personalDataSection } from '../../../test/personal-data.js';
 
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `favorites` section (favorites.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('favorites', [FavoritesPersonalData], {
+personalDataSection('favorites', [FavoritesPersonalData, FavoritesRepository], {
   seed: async (c) => {
     await c.inTenant(() =>
       c.db.insert(favorites).values([

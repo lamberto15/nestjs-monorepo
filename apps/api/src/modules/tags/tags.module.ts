@@ -10,7 +10,7 @@ import {
   type Type,
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
-import { AuthorizationService, Can } from '@nestjs/authorization';
+import { Can } from '@nestjs/authorization';
 import {
   ApiBadRequestResponse,
   ApiForbiddenResponse,
@@ -37,7 +37,6 @@ import {
   type RecordHooks,
 } from '../records/record-extension.js';
 import { RecordsModule } from '../records/records.module.js';
-import { Records } from '../records/records.service.js';
 import { AddTagAction } from './tags.automation.js';
 import { TagsController } from './tags.controller.js';
 import { TAGS_PERMISSIONS } from './tags.permissions.js';
@@ -48,6 +47,7 @@ import {
   setTagsSchema,
   tagRefListSchema,
 } from './tags.schemas.js';
+import { TagsRepository } from './tags.repository.js';
 import { TagsService } from './tags.service.js';
 
 /**
@@ -122,7 +122,13 @@ export class TagsExtension implements RecordHooks {
   ],
   controllers: [TagsController],
   // AddTagAction: the automations' `addTag` (found by their decorator).
-  providers: [TagsService, TagsRegistry, TagsPolicy, AddTagAction],
+  providers: [
+    TagsService,
+    TagsRepository,
+    TagsRegistry,
+    TagsPolicy,
+    AddTagAction,
+  ],
   exports: [TagsService, TagsRegistry],
 })
 export class TagsModule {
@@ -145,14 +151,10 @@ class TagsRecordModule {}
 function tagsRoutes(record: RecordDeclaration): Type {
   @RecordController(record, ':id/tags', 'Tags')
   class TagsRoutes {
-    constructor(
-      private readonly records: Records,
-      private readonly tags: TagsService,
-      private readonly authorization: AuthorizationService,
-    ) {}
+    constructor(private readonly tags: TagsService) {}
 
     @Put()
-    @Can.Anyone() // Checked below: changing the record.
+    @Can.Anyone() // Checked by TagsService: changing the record.
     @ApiOperation({
       summary: `Set ${aNoun(record)}'s tags`,
       description: `Replaces the whole set (\`[]\` removes every tag); the tags must be \`${record.subject}\` tags (GET /v1/tags?subject=${record.subject}). Answers the ${record.noun}'s tags, by name. Audited (\`tags.changed\`, from and to).`,
@@ -171,26 +173,7 @@ function tagsRoutes(record: RecordDeclaration): Type {
       @Body({ schema: setTagsSchema }) dto: SetTagsDto,
       @Ip() ip: string,
     ) {
-      const { store, feature } = this.records.of(record.subject);
-      // Unreadable: the 404 of a missing one; readable but not theirs to change: a 403.
-      const row = await store.findOne(id, { visibleTo: user });
-      await this.authorization.authorize(
-        feature.policy as unknown as Type<{
-          update(...args: unknown[]): boolean;
-        }>,
-        'update',
-        user,
-        row,
-      );
-      return {
-        items: await this.tags.setTags(
-          user,
-          record.subject,
-          id,
-          dto.tagIds,
-          ip,
-        ),
-      };
+      return this.tags.setRecordTags(user, record.subject, id, dto.tagIds, ip);
     }
   }
   return TagsRoutes;

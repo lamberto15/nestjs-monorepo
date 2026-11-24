@@ -42,6 +42,7 @@ import { AttachmentScanService } from './attachments.scan.js';
 import { malwareScanner, MalwareScanner } from './attachments.scanner.js';
 import { PresignedUploadsFeature } from './attachments.feature.js';
 import { AttachmentSearch } from './attachments.search.js';
+import { AttachmentsRepository } from './attachments.repository.js';
 import { AttachmentsService } from './attachments.service.js';
 import { AttachmentSweepJob } from './attachments.sweep.js';
 import {
@@ -107,6 +108,7 @@ import { AttachmentsPersonalData } from './attachments.personal-data.js';
         }),
     },
     AttachmentsService,
+    AttachmentsRepository,
     AttachmentVersionsService,
     AttachmentUploadsService,
     AttachmentScanQueue,

@@ -1,3 +1,4 @@
+import { ViewsRepository } from './views.repository.js';
 import { ViewsPersonalData } from './views.personal-data.js';
 import { savedViews } from './views.tables.js';
 import { personalDataSection } from '../../../test/personal-data.js';
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `views` section (views.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('views', [ViewsPersonalData], {
+personalDataSection('views', [ViewsPersonalData, ViewsRepository], {
   seed: async (c) => {
     const base = { subject: 'TestItem', scope: 'tenant' };
     const values = (owner: string, label: string, visibility: string) => ({

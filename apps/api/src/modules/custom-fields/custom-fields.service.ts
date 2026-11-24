@@ -1,19 +1,16 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type { PgTable } from 'drizzle-orm/pg-core';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import { AuthorizationService } from '@nestjs/authorization';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
-import type { Principal } from '../../iam/auth/principal.js';
+import type { Principal, RequestPrincipal } from '../../iam/auth/principal.js';
 import { Records } from '../records/records.service.js';
 import {
   type CustomFieldDefinition,
@@ -21,14 +18,28 @@ import {
   hasOptions,
 } from './custom-field.types.js';
 import { definitionIssues } from './custom-field.values.js';
+import { CustomFieldPolicy } from './custom-fields.policy.js';
+import { CustomFieldsRepository } from './custom-fields.repository.js';
 import type {
   CreateCustomFieldDto,
+  CustomFieldListQuery,
   UpdateCustomFieldDto,
 } from './custom-fields.schemas.js';
-import {
-  customFieldDefinitions as d,
-  customFieldValues as v,
-} from './custom-fields.tables.js';
+
+/** A definition as the API shows it (`default`, not the column's name). */
+export const customFieldView = ({
+  defaultValue,
+  ...field
+}: CustomFieldDefinition) => ({
+  ...field,
+  default: defaultValue ?? null,
+});
+
+/** `Invoice`'s names from its noun, as the search names subjects. */
+const labelOf = (noun: string) => {
+  const singular = noun[0]!.toUpperCase() + noun.slice(1);
+  return { singular, plural: `${singular}s` };
+};
 
 /** Active fields a subject may have: each is a key in its records' values and a list field. */
 export const MAX_ACTIVE_FIELDS = 100;
@@ -53,11 +64,68 @@ export const CUSTOM_CAPABILITY = 'custom';
 @Injectable()
 export class CustomFieldsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: CustomFieldsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly audit: AuditService,
+    private readonly authorization: AuthorizationService,
   ) {}
+
+  /** The subjects the caller may read the fields of, named; a 403 when none. */
+  async readableSubjects(user: RequestPrincipal) {
+    const subjects = this.subjects();
+    const allowed = await Promise.all(
+      subjects.map(({ subject }) =>
+        this.authorization.can(CustomFieldPolicy, 'read', user, subject),
+      ),
+    );
+    const readable = subjects.filter((_, index) => allowed[index]);
+    if (readable.length === 0) throw new ForbiddenException();
+    return {
+      items: readable.map(({ subject, noun }) => ({
+        subject,
+        label: labelOf(noun),
+      })),
+    };
+  }
+
+  /**
+   * A subject's fields as the API shows them, for whoever may read the
+   * subject; with how many records hold each (`include=counts`) only for
+   * those who manage the fields: counting reads every value of the subject.
+   */
+  async list(user: RequestPrincipal, query: CustomFieldListQuery) {
+    this.assertSubject(query.subject);
+    await this.authorization.authorize(
+      CustomFieldPolicy,
+      'read',
+      user,
+      query.subject,
+    );
+    if (query.include === 'counts') {
+      await this.authorization.authorize(
+        CustomFieldPolicy,
+        'manageCustomFields',
+        user,
+      );
+    }
+    const items = await this.definitions(query.subject, {
+      includeInactive: query.includeInactive,
+    });
+    const counts =
+      query.include === 'counts'
+        ? await this.valueCounts(query.subject, items)
+        : undefined;
+    return {
+      items: items.map((field) => ({
+        ...customFieldView(field),
+        ...(counts && {
+          valueCount: counts.get(field.key)?.records ?? 0,
+          deletedValueCount: counts.get(field.key)?.deleted ?? 0,
+        }),
+      })),
+    };
+  }
 
   /** The records that take custom fields: those importing CustomFieldsModule.forRecord(). */
   subjects() {
@@ -85,24 +153,14 @@ export class CustomFieldsService {
     subject: string,
     { includeInactive = false } = {},
   ): Promise<CustomFieldDefinition[]> {
-    const rows = await this.db
-      .select()
-      .from(d)
-      .where(
-        and(
-          eq(d.subject, subject),
-          includeInactive ? undefined : eq(d.active, true),
-        ),
-      )
-      .orderBy(asc(d.position), asc(d.key));
-    return rows as CustomFieldDefinition[];
+    return this.repository.definitions(subject, includeInactive);
   }
 
   /** One definition, or a 404. */
   async findOne(id: string): Promise<CustomFieldDefinition> {
-    const [field] = await this.db.select().from(d).where(eq(d.id, id));
+    const field = await this.repository.findById(id);
     if (!field) throw new NotFoundException(`Custom field ${id} not found.`);
-    return field as CustomFieldDefinition;
+    return field;
   }
 
   /**
@@ -114,32 +172,11 @@ export class CustomFieldsService {
   async valueCounts(subject: string, fields: CustomFieldDefinition[]) {
     if (fields.length === 0)
       return new Map<string, { records: number; deleted: number }>();
-    const table = this.records.of(subject).feature.table;
-    const deletedAt = table.deletedAt;
-    const holds = (key: string) => sql`${v.values} ? ${key}::text`;
-    const counted = (condition: ReturnType<typeof and>) =>
-      sql<number>`count(*) filter (where ${condition})`.mapWith(Number);
-    const columns = Object.fromEntries(
-      fields.flatMap((field, index) => [
-        [
-          `r${index}`,
-          counted(
-            and(holds(field.key), deletedAt ? isNull(deletedAt) : undefined),
-          ),
-        ],
-        [
-          `d${index}`,
-          deletedAt
-            ? counted(and(holds(field.key), isNotNull(deletedAt)))
-            : sql<number>`0`.mapWith(Number),
-        ],
-      ]),
+    const row = await this.repository.valueCounts(
+      subject,
+      this.records.of(subject).feature.table,
+      fields.map((field) => field.key),
     );
-    const [row] = (await this.db
-      .select(columns)
-      .from(v)
-      .innerJoin(table as unknown as PgTable, eq(table.id, v.recordId))
-      .where(eq(v.subject, subject))) as Record<string, number>[];
     return new Map(
       fields.map((field, index) => [
         field.key,
@@ -159,13 +196,9 @@ export class CustomFieldsService {
     assertValid(definition);
     return this.txHost.withTransaction(async () => {
       await this.assertRoom(input.subject);
-      const [{ last }] = await this.db
-        .select({ last: max(d.position) })
-        .from(d)
-        .where(eq(d.subject, input.subject));
-      const [created] = await this.db
-        .insert(d)
-        .values({
+      const last = await this.repository.lastPosition(input.subject);
+      const created = await this.repository
+        .insert({
           subject: input.subject,
           key: input.key,
           label: input.label,
@@ -176,7 +209,6 @@ export class CustomFieldsService {
           filterable: input.filterable ?? false,
           sortable: input.sortable ?? false,
         })
-        .returning()
         // The unique index decides, so two creates of one key can't both pass.
         .catch((error: unknown) => {
           throw databaseErrorKind(error) === 'unique_violation'
@@ -189,15 +221,15 @@ export class CustomFieldsService {
       await this.audit.record(actor, {
         action: 'customField.created',
         targetType: 'customField',
-        targetId: created!.id,
+        targetId: created.id,
         details: {
-          subject: created!.subject,
-          key: created!.key,
-          type: created!.type,
+          subject: created.subject,
+          key: created.key,
+          type: created.type,
         },
         ip,
       });
-      return created as CustomFieldDefinition;
+      return created;
     });
   }
 
@@ -233,7 +265,7 @@ export class CustomFieldsService {
         if (input.options === undefined && !hasOptions(input.type)) {
           next.options = null;
         }
-        if (await this.holdsValues(before.subject, before.key)) {
+        if (await this.repository.holdsValues(before.subject, before.key)) {
           throw new ConflictException({
             code: 'custom_field_in_use',
             message: `Records hold values of "${before.key}": its type can't change from ${before.type} to ${input.type}. Add a new field instead.`,
@@ -247,7 +279,9 @@ export class CustomFieldsService {
           .filter((value) => !kept.has(value));
         for (const value of removed) {
           const held = before.type === 'multiSelect' ? [value] : value;
-          if (await this.holdsValues(before.subject, before.key, held)) {
+          if (
+            await this.repository.holdsValues(before.subject, before.key, held)
+          ) {
             throw new ConflictException({
               code: 'custom_field_in_use',
               message: `Records hold the choice "${value}" of "${before.key}": it can't be removed.`,
@@ -259,32 +293,28 @@ export class CustomFieldsService {
       if (input.active && !before.active) {
         await this.assertRoom(before.subject);
       }
-      const [after] = await this.db
-        .update(d)
-        .set({
-          ...(input.label !== undefined && { label: input.label }),
-          ...(input.description !== undefined && {
-            description: input.description,
-          }),
-          ...(input.required !== undefined && { required: input.required }),
-          ...(input.filterable !== undefined && {
-            filterable: input.filterable,
-          }),
-          ...(input.sortable !== undefined && { sortable: input.sortable }),
-          ...(input.active !== undefined && { active: input.active }),
-          ...next,
-          updatedAt: new Date(),
-        })
-        .where(eq(d.id, id))
-        .returning();
+      const after = await this.repository.update(id, {
+        ...(input.label !== undefined && { label: input.label }),
+        ...(input.description !== undefined && {
+          description: input.description,
+        }),
+        ...(input.required !== undefined && { required: input.required }),
+        ...(input.filterable !== undefined && {
+          filterable: input.filterable,
+        }),
+        ...(input.sortable !== undefined && { sortable: input.sortable }),
+        ...(input.active !== undefined && { active: input.active }),
+        ...next,
+        updatedAt: new Date(),
+      });
       await this.audit.record(actor, {
         action: 'customField.updated',
         targetType: 'customField',
         targetId: id,
-        details: { changes: changesOf(before, after as CustomFieldDefinition) },
+        details: { changes: changesOf(before, after) },
         ip,
       });
-      return after as CustomFieldDefinition;
+      return after;
     });
   }
 
@@ -316,10 +346,7 @@ export class CustomFieldsService {
         ...current.map((field) => field.id).filter((id) => !ids.includes(id)),
       ];
       for (const [position, id] of order.entries()) {
-        await this.db
-          .update(d)
-          .set({ position, updatedAt: new Date() })
-          .where(eq(d.id, id));
+        await this.repository.setPosition(id, position);
       }
       await this.audit.record(actor, {
         action: 'customField.reordered',
@@ -336,30 +363,13 @@ export class CustomFieldsService {
   }
 
   private async assertRoom(subject: string) {
-    const [{ active }] = await this.db
-      .select({ active: count() })
-      .from(d)
-      .where(and(eq(d.subject, subject), eq(d.active, true)));
+    const active = await this.repository.countActive(subject);
     if (active >= MAX_ACTIVE_FIELDS) {
       throw new ConflictException({
         code: 'custom_field_limit',
         message: `${subject} has ${MAX_ACTIVE_FIELDS} active fields, the most it may have: deactivate one first.`,
       });
     }
-  }
-
-  /** Whether any record holds a value for `key` (or this value: a choice), on the GIN index. */
-  private async holdsValues(subject: string, key: string, value?: unknown) {
-    const condition =
-      value === undefined
-        ? sql`${v.values} ? ${key}::text`
-        : sql`${v.values} @> ${JSON.stringify({ [key]: value })}::jsonb`;
-    const rows = await this.db
-      .select({ id: v.id })
-      .from(v)
-      .where(and(eq(v.subject, subject), condition))
-      .limit(1);
-    return rows.length > 0;
   }
 }
 

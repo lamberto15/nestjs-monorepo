@@ -1,3 +1,4 @@
+import { RevisionsRepository } from './revisions.repository.js';
 import { RevisionsPersonalData } from './revisions.personal-data.js';
 import { revisions } from './revisions.tables.js';
 import { personalDataSection, uuid } from '../../../test/personal-data.js';
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `revisions` section (revisions.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('revisions', [RevisionsPersonalData], {
+personalDataSection('revisions', [RevisionsPersonalData, RevisionsRepository], {
   seed: async (c) => {
     const base = { subject: 'TestItem', recordId: uuid(), snapshot: {} };
     await c.inTenant(() =>

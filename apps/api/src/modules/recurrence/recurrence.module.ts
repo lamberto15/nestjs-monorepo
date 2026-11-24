@@ -14,6 +14,7 @@ import { recurrenceConfig } from './recurrence.config.js';
 import { RecurrenceController } from './recurrence.controller.js';
 import { RECURRENCE_PERMISSIONS } from './recurrence.permissions.js';
 import { RecurrenceProcessor } from './recurrence.processor.js';
+import { RecurrenceRepository } from './recurrence.repository.js';
 import { RecurrenceRetentionJob } from './recurrence.retention.job.js';
 import { RecurrenceScheduler } from './recurrence.scheduler.js';
 import {
@@ -51,6 +52,7 @@ import { RecurrencePersonalData } from './recurrence.personal-data.js';
   providers: [
     ScheduleTargets,
     RecurrenceService,
+    RecurrenceRepository,
     RecurrenceProcessor,
     RecurrenceScheduler,
     RecurrenceRetentionJob,

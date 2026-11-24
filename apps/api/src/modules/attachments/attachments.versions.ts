@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -7,17 +7,14 @@ import {
   PreconditionFailedException,
 } from '@nestjs/common';
 import { StorageDisk, type StoredUpload } from '@nestjs/storage';
-import { and, desc, eq, isNull, ne, or } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { assertUnchanged } from '../../core/http/etag.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
 import { QuotasService } from '../quotas/quotas.service.js';
 import { renditionKeys } from './attachments.renditions.js';
 import { STORAGE_BYTES } from './attachments.quota.js';
+import { AttachmentsRepository } from './attachments.repository.js';
 import {
   AttachmentImagesQueue,
   AttachmentScanQueue,
@@ -36,11 +33,7 @@ import {
   type RecordRef,
   view,
 } from './attachments.service.js';
-import {
-  type Attachment,
-  attachments,
-  attachmentVersions,
-} from './attachments.tables.js';
+import type { Attachment } from './attachments.tables.js';
 import { isExtractable } from './attachments.extractor.js';
 
 /** The most versions one attachment keeps, the current one included: the bytes of all of them count in the tenant's storage. */
@@ -69,7 +62,7 @@ interface NextVersion {
 @Injectable()
 export class AttachmentVersionsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly disk: StorageDisk,
     private readonly audit: AuditService,
@@ -85,11 +78,7 @@ export class AttachmentVersionsService {
     id: string,
   ): Promise<{ items: AttachmentVersionView[] }> {
     const current = await this.attachments.findReadable(principal, id);
-    const earlier = await this.db
-      .select()
-      .from(attachmentVersions)
-      .where(eq(attachmentVersions.attachmentId, id))
-      .orderBy(desc(attachmentVersions.version));
+    const earlier = await this.repository.versions(id);
     return {
       items: [
         {
@@ -228,56 +217,32 @@ export class AttachmentVersionsService {
    * longer pending.
    */
   async revertRejected(rejected: Attachment): Promise<Attachment | null> {
-    const [previous] = await this.db
-      .select()
-      .from(attachmentVersions)
-      .where(eq(attachmentVersions.attachmentId, rejected.id))
-      .orderBy(desc(attachmentVersions.version))
-      .limit(1);
+    const previous = await this.repository.latestVersion(rejected.id);
     if (!previous) return null;
-    const [reverted] = await this.db
-      .update(attachments)
-      .set({
-        key: previous.key,
-        name: previous.name,
-        size: previous.size,
-        contentType: previous.contentType,
-        uploadedBy: previous.uploadedBy,
-        revisionNote: previous.note,
-        version: previous.version,
-        versionedAt: previous.uploadedAt,
-        // It was clean when archived.
-        scanStatus: 'clean',
-        renditionStatus: this.images.wants(previous.contentType)
-          ? 'pending'
-          : null,
-        textPending: isExtractable(previous.contentType),
-        renditions: {},
-      })
-      .where(
-        and(
-          eq(attachments.id, rejected.id),
-          eq(attachments.scanStatus, 'pending'),
-        ),
-      )
-      .returning();
+    const reverted = await this.repository.updatePending(rejected.id, {
+      key: previous.key,
+      name: previous.name,
+      size: previous.size,
+      contentType: previous.contentType,
+      uploadedBy: previous.uploadedBy,
+      revisionNote: previous.note,
+      version: previous.version,
+      versionedAt: previous.uploadedAt,
+      // It was clean when archived.
+      scanStatus: 'clean',
+      renditionStatus: this.images.wants(previous.contentType)
+        ? 'pending'
+        : null,
+      textPending: isExtractable(previous.contentType),
+      renditions: {},
+    });
     if (!reverted) return null;
-    await this.db
-      .delete(attachmentVersions)
-      .where(eq(attachmentVersions.id, previous.id));
+    await this.repository.deleteVersion(previous.id);
     return reverted;
   }
 
   private async earlier(id: string, version: number) {
-    const [row] = await this.db
-      .select()
-      .from(attachmentVersions)
-      .where(
-        and(
-          eq(attachmentVersions.attachmentId, id),
-          eq(attachmentVersions.version, version),
-        ),
-      );
+    const row = await this.repository.findVersion(id, version);
     if (!row) {
       throw new NotFoundException({
         code: 'attachment_version_not_found',
@@ -344,9 +309,10 @@ export class AttachmentVersionsService {
   ): Promise<AttachmentView> {
     const row = await this.txHost.withTransaction(async () => {
       await this.quotas.assertRoom(STORAGE_BYTES, next.size);
-      const [updated] = await this.db
-        .update(attachments)
-        .set({
+      const updated = await this.repository.updateIdle(
+        current.id,
+        current.version,
+        {
           key: next.key,
           name: next.name,
           size: next.size,
@@ -361,20 +327,8 @@ export class AttachmentVersionsService {
             : null,
           textPending: isExtractable(next.contentType),
           renditions: {},
-        })
-        .where(
-          and(
-            eq(attachments.id, current.id),
-            eq(attachments.version, current.version),
-            eq(attachments.locked, false),
-            eq(attachments.scanStatus, 'clean'),
-            or(
-              isNull(attachments.renditionStatus),
-              ne(attachments.renditionStatus, 'pending'),
-            ),
-          ),
-        )
-        .returning();
+        },
+      );
       if (!updated) {
         throw new PreconditionFailedException({
           code: 'precondition_failed',
@@ -382,7 +336,7 @@ export class AttachmentVersionsService {
             'The attachment changed since you read it: read it again, then retry with its ETag.',
         });
       }
-      await this.db.insert(attachmentVersions).values({
+      await this.repository.insertVersion({
         attachmentId: current.id,
         version: current.version,
         key: current.key,

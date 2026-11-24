@@ -1,14 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { HttpException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { StorageDisk, StorageFileNotFoundError } from '@nestjs/storage';
-import { and, asc, eq, inArray, lt } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
@@ -32,7 +28,8 @@ import {
 } from './attachments.queues.js';
 import { STORAGE_BYTES } from './attachments.quota.js';
 import { AttachmentsService } from './attachments.service.js';
-import { type Attachment, attachments } from './attachments.tables.js';
+import { AttachmentsRepository } from './attachments.repository.js';
+import type { Attachment } from './attachments.tables.js';
 
 /** How an image's processing ended, as `attachment_images_processed{result}` counts it. */
 export type ImageOutcome = 'ready' | 'failed' | 'error';
@@ -69,7 +66,7 @@ export class AttachmentImagesService {
   private readonly processed: Counter;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly disk: StorageDisk,
     private readonly processor: ImageProcessor,
@@ -100,10 +97,7 @@ export class AttachmentImagesService {
     return this.system.run(
       ATTACHMENT_IMAGES_JOB,
       async (system) => {
-        const [row] = await this.db
-          .select()
-          .from(attachments)
-          .where(eq(attachments.id, job.attachmentId));
+        const row = await this.repository.find(job.attachmentId);
         // Never before the scan says clean (the scan queues this job then).
         if (
           !row ||
@@ -168,10 +162,7 @@ export class AttachmentImagesService {
     return this.system.run(
       ATTACHMENT_IMAGES_JOB,
       async (system) => {
-        const [row] = await this.db
-          .select()
-          .from(attachments)
-          .where(eq(attachments.id, job.attachmentId));
+        const row = await this.repository.find(job.attachmentId);
         if (!row || row.renditionStatus !== 'pending') return 'skipped';
         return this.fail(
           row,
@@ -197,12 +188,10 @@ export class AttachmentImagesService {
       ATTACHMENT_IMAGES_JOB,
       async () => {
         if (!this.queue.enabled) return this.release();
-        const stale = await this.db
-          .select({ id: attachments.id })
-          .from(attachments)
-          .where(this.retried(now))
-          .orderBy(asc(attachments.updatedAt))
-          .limit(BATCH);
+        const stale = await this.repository.pendingImages(
+          this.retriedBefore(now),
+          BATCH,
+        );
         const period = String(Math.floor(now.getTime() / RETRY_MS));
         for (const { id } of stale) await this.queue.enqueue(id, period);
         return stale.length;
@@ -213,47 +202,21 @@ export class AttachmentImagesService {
 
   /** The tenants `retryPending()` has work in, read across every tenant (the retry job, in `acrossTenants()`). */
   async pendingTenants(now: Date) {
-    const rows = await this.db
-      .selectDistinct({ tenantId: attachments.tenantId })
-      .from(attachments)
-      .where(this.retried(now));
-    return rows.map((row) => row.tenantId);
+    return this.repository.pendingImageTenants(this.retriedBefore(now));
   }
 
   /** What `retryPending()` handles: with processing on the clean images pending past `RETRY_MS`, off every pending one (released). */
-  private retried(now: Date) {
-    const pending = eq(attachments.renditionStatus, 'pending');
-    return this.queue.enabled
-      ? and(
-          pending,
-          // A scan still running queues the job itself when it ends.
-          eq(attachments.scanStatus, 'clean'),
-          lt(attachments.updatedAt, new Date(now.getTime() - RETRY_MS)),
-        )
-      : pending;
+  private retriedBefore(now: Date) {
+    return this.queue.enabled ? new Date(now.getTime() - RETRY_MS) : undefined;
   }
 
   /** Processing is off: the pending images lose their state (a round of `BATCH` at a time). */
   private async release() {
     let released = 0;
     for (;;) {
-      const rows = await this.db
-        .update(attachments)
-        .set({ renditionStatus: null })
-        .where(
-          inArray(
-            attachments.id,
-            this.db
-              .select({ id: attachments.id })
-              .from(attachments)
-              .where(eq(attachments.renditionStatus, 'pending'))
-              .orderBy(asc(attachments.updatedAt))
-              .limit(BATCH),
-          ),
-        )
-        .returning({ id: attachments.id });
-      released += rows.length;
-      if (rows.length < BATCH) return released;
+      const count = await this.repository.releasePendingImages(BATCH);
+      released += count;
+      if (count < BATCH) return released;
     }
   }
 
@@ -311,17 +274,11 @@ export class AttachmentImagesService {
         if (size > row.size) {
           await this.quotas.assertRoom(STORAGE_BYTES, size - row.size);
         }
-        const [done] = await this.db
-          .update(attachments)
-          .set({ key, size, renditions, renditionStatus: 'ready' })
-          .where(
-            and(
-              eq(attachments.id, row.id),
-              eq(attachments.renditionStatus, 'pending'),
-              eq(attachments.key, row.key),
-            ),
-          )
-          .returning();
+        const done = await this.repository.storeRenditions(row, {
+          key,
+          size,
+          renditions,
+        });
         if (!done) return undefined; // removed or processed meanwhile: nothing to audit
         await this.audit.record(system, {
           action: 'attachment.processed',
@@ -364,16 +321,7 @@ export class AttachmentImagesService {
     message: string,
     system: SystemPrincipal,
   ): Promise<'failed'> {
-    const [done] = await this.db
-      .update(attachments)
-      .set({ renditionStatus: 'failed' })
-      .where(
-        and(
-          eq(attachments.id, row.id),
-          eq(attachments.renditionStatus, 'pending'),
-        ),
-      )
-      .returning({ id: attachments.id });
+    const done = await this.repository.failRenditions(row.id);
     this.processed.add(1, { result: 'failed' });
     this.logger.warn('An image could not be processed; it stays as uploaded', {
       attachment: row.id,

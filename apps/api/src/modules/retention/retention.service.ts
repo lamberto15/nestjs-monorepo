@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
@@ -7,13 +7,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import { and, asc, count, eq, inArray, lt, not } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
 import { onceJob } from '../../core/queues/queues.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import {
   type TenantEnvelope,
   withTenant,
@@ -22,12 +17,11 @@ import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { Principal, SystemPrincipal } from '../../iam/auth/principal.js';
-import { notHeld } from '../../iam/holds/holds.tables.js';
 import { RecordPurges } from './record-purge.js';
 import { RETENTION_JOB } from './retention.permissions.js';
 import { type RetentionRule, RetentionRules } from './retention.rules.js';
 import type { SetRetentionDto } from './retention.schemas.js';
-import { retentionPolicies } from './retention.tables.js';
+import { RetentionRepository } from './retention.repository.js';
 
 /** The retention queue. */
 export const RETENTION_QUEUE = 'retention';
@@ -87,7 +81,7 @@ export class RetentionService {
   private readonly logger = new Logger('Retention');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RetentionRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly rules: RetentionRules,
     private readonly purges: RecordPurges,
@@ -107,7 +101,7 @@ export class RetentionService {
 
   /** The declared rules with this tenant's choice for each. */
   async list() {
-    const policies = await this.db.select().from(retentionPolicies);
+    const policies = await this.repository.policies();
     const byRule = new Map(policies.map((policy) => [policy.rule, policy]));
     return {
       items: this.rules.all().map((rule) => {
@@ -155,18 +149,9 @@ export class RetentionService {
     const rule = this.find(name);
     this.assertDays(rule, dto.days);
     await this.txHost.withTransaction(async () => {
-      const [before] = await this.db
-        .select()
-        .from(retentionPolicies)
-        .where(eq(retentionPolicies.rule, name));
+      const before = await this.repository.findPolicy(name);
       const days = dto.days ?? before?.days ?? rule.defaultDays;
-      await this.db
-        .insert(retentionPolicies)
-        .values({ rule: name, days, enabled: dto.enabled })
-        .onConflictDoUpdate({
-          target: [retentionPolicies.tenantId, retentionPolicies.rule],
-          set: { days, enabled: dto.enabled },
-        });
+      await this.repository.savePolicy(name, days, dto.enabled);
       await this.audit.record(principal, {
         action: 'retention.policy-changed',
         targetType: 'retentionRule',
@@ -181,15 +166,6 @@ export class RetentionService {
     return (await this.list()).items.find((item) => item.name === name)!;
   }
 
-  /** The rows of a rule older than the cutoff, still pending. */
-  private due(rule: RetentionRule, cutoff: Date) {
-    return and(
-      lt(rule.ageColumn, cutoff),
-      rule.where,
-      rule.action === 'anonymise' ? rule.anonymise!.pending : undefined,
-    );
-  }
-
   /**
    * A dry run: what a run would purge or anonymise in this tenant now, and
    * what a legal hold would keep. `days` tries other days than the ones in
@@ -198,33 +174,11 @@ export class RetentionService {
   async preview(name: string, days?: number) {
     const rule = this.find(name);
     this.assertDays(rule, days);
-    const [policy] = await this.db
-      .select({ days: retentionPolicies.days })
-      .from(retentionPolicies)
-      .where(eq(retentionPolicies.rule, name));
+    const policy = await this.repository.findPolicy(name);
     const used = days ?? policy?.days ?? rule.defaultDays;
     const before = new Date(Date.now() - used * DAY);
-    const counted = await this.countDue(rule, before);
+    const counted = await this.repository.countDue(rule, before);
     return { name, days: used, before: before.toISOString(), ...counted };
-  }
-
-  /** The due rows of a rule: those a run takes (`due`) and those a hold keeps (`held`). */
-  private async countDue(rule: RetentionRule, cutoff: Date) {
-    const table: PgTable = rule.table;
-    const due = this.due(rule, cutoff);
-    const [free, held] = await Promise.all(
-      [
-        notHeld(rule.subject, rule.table.id),
-        not(notHeld(rule.subject, rule.table.id)),
-      ].map((condition) =>
-        this.db
-          .select({ count: count() })
-          .from(table)
-          .where(and(due, condition))
-          .then((rows) => rows[0]?.count ?? 0),
-      ),
-    );
-    return { due: free, held };
   }
 
   /**
@@ -236,12 +190,8 @@ export class RetentionService {
     const perTenant = await this.tenancy.forEachTenant(
       RETENTION_JOB.key,
       async () => {
-        const policies = await this.db
-          .select({ rule: retentionPolicies.rule })
-          .from(retentionPolicies)
-          .where(eq(retentionPolicies.enabled, true));
         let queued = 0;
-        for (const { rule } of policies) {
+        for (const rule of await this.repository.enabledRules()) {
           if (!this.rules.find(rule)) {
             continue; // a rule no longer declared
           }
@@ -281,39 +231,26 @@ export class RetentionService {
     rule: RetentionRule,
     first: boolean,
   ): Promise<RetentionBatch> {
-    const [policy] = await this.db
-      .select()
-      .from(retentionPolicies)
-      .where(eq(retentionPolicies.rule, rule.name));
+    const policy = await this.repository.findPolicy(rule.name);
     if (!policy?.enabled) {
       return { count: 0, more: false };
     }
     const cutoff = new Date(Date.now() - policy.days * DAY);
-    const table: PgTable = rule.table;
-    const id = rule.table.id;
     // Counted before the first batch only: how many due rows a hold keeps.
-    const held = first ? (await this.countDue(rule, cutoff)).held : undefined;
+    const held = first
+      ? (await this.repository.countDue(rule, cutoff)).held
+      : undefined;
     const done = await this.txHost.withTransaction(async () => {
       // Locked, and checked for holds in the same statement.
-      const rows = await this.db
-        .select({ id })
-        .from(table)
-        .where(and(this.due(rule, cutoff), notHeld(rule.subject, id)))
-        .orderBy(asc(id))
-        .limit(RETENTION_BATCH)
-        .for('update', { skipLocked: true });
-      if (rows.length === 0) {
+      const ids = await this.repository.lockDue(rule, cutoff, RETENTION_BATCH);
+      if (ids.length === 0) {
         return { count: 0, more: false };
       }
-      const ids = rows.map((row) => row.id as string);
       if (rule.action === 'purge') {
         await this.purges.forget(rule.subject, ids);
-        await this.db.delete(table).where(inArray(id, ids));
+        await this.repository.deleteRows(rule, ids);
       } else {
-        await this.db
-          .update(table)
-          .set(rule.anonymise!.set as never)
-          .where(inArray(id, ids));
+        await this.repository.anonymiseRows(rule, ids);
       }
       await this.audit.record(system, {
         action:
@@ -336,9 +273,6 @@ export class RetentionService {
 
   /** Records a finished run on the tenant's policy. */
   async finish(rule: RetentionRule, total: number) {
-    await this.db
-      .update(retentionPolicies)
-      .set({ lastRunAt: new Date(), lastCount: total })
-      .where(eq(retentionPolicies.rule, rule.name));
+    await this.repository.finish(rule.name, total);
   }
 }

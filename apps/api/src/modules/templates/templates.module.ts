@@ -13,6 +13,7 @@ import { RecordsModule } from '../records/records.module.js';
 import { TemplatesController } from './templates.controller.js';
 import { TEMPLATE_PERMISSIONS } from './templates.permissions.js';
 import { TEMPLATES_CAPABILITY, TemplatesService } from './templates.service.js';
+import { TemplatesRepository } from './templates.repository.js';
 import { TemplatesPersonalData } from './templates.personal-data.js';
 
 /**
@@ -37,7 +38,7 @@ class TemplatesExtension implements RecordHooks {
     RecordsModule,
   ],
   controllers: [TemplatesController],
-  providers: [TemplatesService, TemplatesPersonalData],
+  providers: [TemplatesService, TemplatesRepository, TemplatesPersonalData],
 })
 export class TemplatesModule {
   /**

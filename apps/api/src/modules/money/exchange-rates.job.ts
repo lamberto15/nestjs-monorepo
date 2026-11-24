@@ -118,7 +118,7 @@ export type ExchangeRatesRun =
  */
 @Injectable()
 export class ExchangeRatesJob {
-  private readonly logger = new Logger('ExchangeRates');
+  private readonly logger = new Logger(ExchangeRatesJob.name);
 
   constructor(
     @InjectHttpClient(ECB_RATES) private readonly http: HttpClient,

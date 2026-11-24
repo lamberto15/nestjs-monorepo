@@ -4,6 +4,7 @@ import { AuditModule } from '../../iam/audit/audit.module.js';
 import { CalendarsController } from './calendars.controller.js';
 import { CALENDAR_PERMISSIONS } from './calendars.permissions.js';
 import { CalendarPolicy } from './calendars.policy.js';
+import { CalendarsRepository } from './calendars.repository.js';
 import { CalendarsService } from './calendars.service.js';
 
 /**
@@ -15,7 +16,7 @@ import { CalendarsService } from './calendars.service.js';
 @Module({
   imports: [AccessModule.forFeature(CALENDAR_PERMISSIONS), AuditModule],
   controllers: [CalendarsController],
-  providers: [CalendarsService, CalendarPolicy],
+  providers: [CalendarsService, CalendarsRepository, CalendarPolicy],
   exports: [CalendarsService],
 })
 export class CalendarsModule {}

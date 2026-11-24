@@ -1,14 +1,10 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
 import { Records } from '../records/records.service.js';
 import {
@@ -17,7 +13,8 @@ import {
   type RecordRecentDto,
 } from './recents.schemas.js';
 import { RecentsRegistry } from './recents.registry.js';
-import { recentRecords } from './recents.tables.js';
+import { RecentsRepository } from './recents.repository.js';
+import type { recentRecords } from './recents.tables.js';
 
 type Row = typeof recentRecords.$inferSelect;
 
@@ -32,7 +29,7 @@ type Row = typeof recentRecords.$inferSelect;
 @Injectable()
 export class RecentsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RecentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly registry: RecentsRegistry,
@@ -40,17 +37,11 @@ export class RecentsService {
 
   /** The principal's recent records, newest first, without what they no longer see. */
   async list(principal: Principal) {
-    const rows = await this.db
-      .select()
-      .from(recentRecords)
-      .where(
-        and(
-          eq(recentRecords.owner, principalKey(principal)),
-          gt(recentRecords.viewedAt, this.cutoff()),
-        ),
-      )
-      .orderBy(desc(recentRecords.viewedAt), desc(recentRecords.id))
-      .limit(MAX_RECENTS);
+    const rows = await this.repository.listOf(
+      principalKey(principal),
+      this.cutoff(),
+      MAX_RECENTS,
+    );
     const seen = await Promise.all(
       rows.map((row) => this.sees(principal, row)),
     );
@@ -64,78 +55,34 @@ export class RecentsService {
     await this.assertSees(principal, dto);
     const owner = principalKey(principal);
     return this.txHost.withTransaction(async () => {
-      const [row] = await this.db
-        .insert(recentRecords)
-        .values({ ...dto, owner })
-        .onConflictDoUpdate({
-          target: [
-            recentRecords.tenantId,
-            recentRecords.owner,
-            recentRecords.subject,
-            recentRecords.recordId,
-          ],
-          // The database's clock, as the insert's default: with the app's, a
-          // re-opened record sorted below one opened a moment earlier whenever
-          // the two clocks differed.
-          set: { label: dto.label, viewedAt: sql`now()` },
-        })
-        .returning();
+      const row = await this.repository.upsert(owner, dto);
       // Past the bound: the oldest go.
-      const [{ total }] = await this.db
-        .select({ total: count() })
-        .from(recentRecords)
-        .where(eq(recentRecords.owner, owner));
-      if (total > MAX_RECENTS) {
-        const stale = await this.db
-          .select({ id: recentRecords.id })
-          .from(recentRecords)
-          .where(eq(recentRecords.owner, owner))
-          .orderBy(desc(recentRecords.viewedAt), desc(recentRecords.id))
-          .offset(MAX_RECENTS);
-        await this.db.delete(recentRecords).where(
-          inArray(
-            recentRecords.id,
-            stale.map((s) => s.id),
-          ),
-        );
+      if ((await this.repository.countOf(owner)) > MAX_RECENTS) {
+        await this.repository.deleteBeyond(owner, MAX_RECENTS);
       }
-      return this.item(row!);
+      return this.item(row);
     });
   }
 
   /** Removes one of the principal's recent records, or a 404. */
   async remove(principal: Principal, id: string) {
-    const deleted = await this.db
-      .delete(recentRecords)
-      .where(
-        and(
-          eq(recentRecords.id, id),
-          eq(recentRecords.owner, principalKey(principal)),
-        ),
-      )
-      .returning({ id: recentRecords.id });
-    if (deleted.length === 0) {
+    const deleted = await this.repository.deleteOne(
+      principalKey(principal),
+      id,
+    );
+    if (!deleted) {
       throw new NotFoundException(`Recent record ${id} not found.`);
     }
   }
 
   /** Clears the principal's history in this tenant. */
   async clear(principal: Principal) {
-    await this.db
-      .delete(recentRecords)
-      .where(eq(recentRecords.owner, principalKey(principal)));
+    await this.repository.deleteAllOf(principalKey(principal));
   }
 
   /** When records are gone for good: nobody's recent records any more. */
   async forget(subject: string, recordIds: readonly string[]) {
-    await this.db
-      .delete(recentRecords)
-      .where(
-        and(
-          eq(recentRecords.subject, subject),
-          inArray(recentRecords.recordId, [...recordIds]),
-        ),
-      );
+    await this.repository.deleteForRecords(subject, recordIds);
   }
 
   /** The age past which an entry is expired. */

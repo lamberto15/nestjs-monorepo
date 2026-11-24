@@ -5,16 +5,9 @@ import {
   RequestMethod,
 } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { DiscoveryService, MetadataScanner } from '@nestjs/core';
-import { InjectTransaction } from '@nestjs-cls/transactional';
-import { and, asc, desc, ilike, inArray, isNull, type SQL } from 'drizzle-orm';
-import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
-import type { Database } from '../../core/database/database.js';
-import {
-  escapeLike,
-  fieldsRead,
-  type List,
-} from '../../core/http/list-query.js';
+import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
+import { AuthorizationService } from '@nestjs/authorization';
+import { fieldsRead, type List } from '../../core/http/list-query.js';
 import { AccessPolicy } from '../../iam/access/access.policy.js';
 import { USER_LIST } from '../../iam/access/access.lists.js';
 import { AUDIT_LIST, SIGN_IN_LIST } from '../../iam/audit-log/audit.lists.js';
@@ -34,6 +27,8 @@ import {
   Records,
 } from '../records/records.service.js';
 import { checkListViews, listMetadata, listViews } from './list-metadata.js';
+import { ListPolicy } from './list.policy.js';
+import { ListsRepository } from './lists.repository.js';
 import type { RecordOptionsQuery } from './record-options.schemas.js';
 import type {
   ListField,
@@ -70,8 +65,30 @@ export class ListsService implements OnModuleInit {
     private readonly auditPolicy: AuditPolicy,
     private readonly discovery: DiscoveryService,
     private readonly scanner: MetadataScanner,
-    @InjectTransaction() private readonly db: Database,
+    private readonly reflector: Reflector,
+    private readonly authorization: AuthorizationService,
+    private readonly repository: ListsRepository,
   ) {}
+
+  /** GET /v1/lists/{subject}: an unknown subject is a 404 before any permission is asked. */
+  async describeFor(principal: Principal, subject: string) {
+    this.source(subject);
+    await this.authorization.authorize(ListPolicy, 'read', principal, subject);
+    return this.describe(principal, subject);
+  }
+
+  /** GET /v1/lists/{subject}/options: a 404 for a subject that is no record, before any permission. */
+  async optionsFor(
+    principal: Principal,
+    subject: string,
+    query: RecordOptionsQuery,
+  ) {
+    if (!this.source(subject).record) {
+      throw new NotFoundException(`${subject} is no record.`);
+    }
+    await this.authorization.authorize(ListPolicy, 'read', principal, subject);
+    return { items: await this.options(principal, subject, query) };
+  }
 
   /**
    * A record's options for a picker (GET /v1/lists/{subject}/options): its
@@ -89,43 +106,29 @@ export class ListsService implements OnModuleInit {
   ) {
     const record = this.records.find(subject);
     if (!record) throw new NotFoundException(`${subject} is no record.`);
-    let filtered: SQL | undefined;
+    let filtered: ReturnType<List['where']> | undefined;
     if (Object.keys(filters).length) {
       const list = await record.listFor(principal);
       const query = list.parse(filters);
       await this.access.assertQueryFields(principal, subject, query);
       filtered = list.where(query);
     }
-    const table = record.feature.table as unknown as PgTable &
-      Record<string, AnyPgColumn>;
-    const named = await this.titles.titleField(principal, subject);
-    const title = named ? table[named] : undefined;
+    const title = await this.titles.titleField(principal, subject);
     // Without a readable title a search has nothing to match.
     if (q && !title) return [];
-    const rows = (await this.db
-      .select({ id: table.id! })
-      .from(table)
-      .where(
-        and(
-          id ? inArray(table.id!, id) : undefined,
-          q && title ? ilike(title, `%${escapeLike(q)}%`) : undefined,
-          filtered,
-          table.deletedAt ? isNull(table.deletedAt) : undefined,
-          await this.access.sqlFilter(principal, subject, 'read'),
-        ),
-      )
-      .orderBy(...(title ? [asc(title)] : []), desc(table.id!))
-      .limit(id ? id.length : limit)) as { id: string }[];
+    const ids = await this.repository.optionIds(record, {
+      id,
+      q,
+      title,
+      filters: [
+        filtered,
+        await this.access.sqlFilter(principal, subject, 'read'),
+      ],
+      limit,
+    });
     // Each named after its parent's title, when it has a parent (RecordTitles).
-    const titles = await this.titles.of(
-      principal,
-      subject,
-      rows.map((row) => row.id),
-    );
-    return rows.map((row) => ({
-      id: row.id,
-      title: titles.get(row.id) ?? null,
-    }));
+    const titles = await this.titles.of(principal, subject, ids);
+    return ids.map((id) => ({ id, title: titles.get(id) ?? null }));
   }
 
   /** The paths with a list route (`GET /v1/<path>`): what a related panel can call. */
@@ -172,18 +175,24 @@ export class ListsService implements OnModuleInit {
     for (const wrapper of this.discovery.getControllers()) {
       const { instance, metatype } = wrapper;
       if (!instance || !metatype) continue;
-      const base = Reflect.getMetadata(PATH_METADATA, metatype) as
-        string | string[] | undefined;
+      const base = this.reflector.get<string | string[] | undefined>(
+        PATH_METADATA,
+        metatype,
+      );
       const prototype = Object.getPrototypeOf(instance) as object;
       const listsItself = this.scanner
         .getAllMethodNames(prototype)
         .some((name) => {
           const handler = (prototype as Record<string, unknown>)[name];
           if (typeof handler !== 'function') return false;
-          const method = Reflect.getMetadata(METHOD_METADATA, handler) as
-            RequestMethod | undefined;
-          const path = Reflect.getMetadata(PATH_METADATA, handler) as
-            string | string[] | undefined;
+          const method = this.reflector.get<RequestMethod | undefined>(
+            METHOD_METADATA,
+            handler,
+          );
+          const path = this.reflector.get<string | string[] | undefined>(
+            PATH_METADATA,
+            handler,
+          );
           return (
             method === RequestMethod.GET &&
             [path ?? '/'].flat().some((p) => trim(p) === '')

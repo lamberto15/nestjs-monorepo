@@ -1,8 +1,5 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Database } from '../../core/database/database.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import {
   type ActionContext,
@@ -12,8 +9,8 @@ import {
 } from '../automations/automation-actions.js';
 import type { RecordRegistration } from '../records/records.service.js';
 import { TagsRegistry } from './tags.registry.js';
+import { TagsRepository } from './tags.repository.js';
 import { TagsService } from './tags.service.js';
-import { tags } from './tags.tables.js';
 
 const params = z.object({
   tagId: z.uuid().describe('A tag of the subject (GET /v1/tags).'),
@@ -30,7 +27,7 @@ export class AddTagAction implements AutomationActionHandler<Params> {
   readonly params = params;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: TagsRepository,
     private readonly registry: TagsRegistry,
     private readonly tagsService: TagsService,
     private readonly access: AccessService,
@@ -40,12 +37,8 @@ export class AddTagAction implements AutomationActionHandler<Params> {
     return this.registry.has(record.declaration.subject);
   }
 
-  private async tag(subject: string, id: string) {
-    const [tag] = await this.db
-      .select({ id: tags.id, name: tags.name })
-      .from(tags)
-      .where(and(eq(tags.subject, subject), eq(tags.id, id)));
-    return tag;
+  private tag(subject: string, id: string) {
+    return this.repository.findOfSubject(subject, id);
   }
 
   async check(record: RecordRegistration, { tagId }: Params) {

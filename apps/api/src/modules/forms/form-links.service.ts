@@ -8,12 +8,8 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
-import { and, count, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -27,12 +23,8 @@ import { FORMS_ENABLED } from './forms.settings.js';
 import type { CreatePublicLinkDto, PublicSubmitDto } from './forms.schemas.js';
 import { FormSubmissionsService } from './form-submissions.service.js';
 import { FormsService } from './forms.service.js';
-import {
-  type FormPublicLinkRow,
-  type FormRow,
-  formPublicLinks,
-  forms,
-} from './forms.tables.js';
+import { FormsRepository } from './forms.repository.js';
+import type { FormPublicLinkRow, FormRow } from './forms.tables.js';
 
 /** Working links a form may have at once. */
 export const MAX_PUBLIC_LINKS = 5;
@@ -99,7 +91,7 @@ const view = (row: FormPublicLinkRow) => ({
 @Injectable()
 export class FormPublicLinksService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: FormsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly forms: FormsService,
@@ -113,11 +105,7 @@ export class FormPublicLinksService {
   /** A form's links, newest first (never their tokens). */
   async list(principal: RequestPrincipal, formId: string) {
     await this.forms.editable(principal, formId);
-    const rows = await this.db
-      .select()
-      .from(formPublicLinks)
-      .where(eq(formPublicLinks.formId, formId))
-      .orderBy(desc(formPublicLinks.id));
+    const rows = await this.repository.links(formId);
     return { items: rows.map(view) };
   }
 
@@ -162,44 +150,32 @@ export class FormPublicLinksService {
     const token = `frm_${tenantId}_${randomBytes(32).toString('base64url')}`;
     const row = await this.txHost.withTransaction(async () => {
       // The form locked: two editors can't both make the fifth link.
-      await this.db
-        .select({ id: forms.id })
-        .from(forms)
-        .where(eq(forms.id, formId))
-        .for('update');
-      const [{ open }] = (await this.db
-        .select({ open: count() })
-        .from(formPublicLinks)
-        .where(and(eq(formPublicLinks.formId, formId), working()))) as [
-        { open: number },
-      ];
+      await this.repository.lock(formId);
+      const open = await this.repository.countWorkingLinks(formId);
       if (open >= MAX_PUBLIC_LINKS) {
         throw new BadRequestException(
           `At most ${MAX_PUBLIC_LINKS} working public links per form: revoke one first.`,
         );
       }
-      const [created] = await this.db
-        .insert(formPublicLinks)
-        .values({
-          formId,
-          tokenHash: hashOf(token),
-          createdBy: principalKey(principal),
-          expiresAt,
-          maxSubmissions: dto.maxSubmissions ?? PUBLIC_LINK_DEFAULT_SUBMISSIONS,
-        })
-        .returning();
+      const created = await this.repository.insertLink({
+        formId,
+        tokenHash: hashOf(token),
+        createdBy: principalKey(principal),
+        expiresAt,
+        maxSubmissions: dto.maxSubmissions ?? PUBLIC_LINK_DEFAULT_SUBMISSIONS,
+      });
       await this.audit.record(principal, {
         action: 'form.link-created',
         targetType: 'form',
         targetId: formId,
         details: {
-          linkId: created!.id,
+          linkId: created.id,
           expiresAt: expiresAt.toISOString(),
-          maxSubmissions: created!.maxSubmissions,
+          maxSubmissions: created.maxSubmissions,
         },
         ip,
       });
-      return created!;
+      return created;
     });
     return {
       ...view(row),
@@ -217,17 +193,11 @@ export class FormPublicLinksService {
   ) {
     await this.forms.editable(principal, formId);
     const row = await this.txHost.withTransaction(async () => {
-      const [revoked] = await this.db
-        .update(formPublicLinks)
-        .set({ revokedAt: new Date(), revokedBy: principalKey(principal) })
-        .where(
-          and(
-            eq(formPublicLinks.id, linkId),
-            eq(formPublicLinks.formId, formId),
-            isNull(formPublicLinks.revokedAt),
-          ),
-        )
-        .returning();
+      const revoked = await this.repository.revokeLink(
+        formId,
+        linkId,
+        principalKey(principal),
+      );
       if (!revoked) {
         throw new NotFoundException(`No working link ${linkId} of this form.`);
       }
@@ -276,21 +246,9 @@ export class FormPublicLinksService {
         dto: { versionId: dto.versionId, answers: dto.answers },
         ip,
         during: async () => {
-          const [taken] = await this.db
-            .update(formPublicLinks)
-            .set({
-              submissions: sql`${formPublicLinks.submissions} + 1`,
-              lastSubmittedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(formPublicLinks.id, link.id),
-                working(),
-                lt(formPublicLinks.submissions, formPublicLinks.maxSubmissions),
-              ),
-            )
-            .returning({ id: formPublicLinks.id });
-          if (!taken) throw notFound();
+          if (!(await this.repository.takeLinkSubmission(link.id))) {
+            throw notFound();
+          }
         },
       });
       // What the person sent, as stored: nothing of who else answered.
@@ -315,17 +273,7 @@ export class FormPublicLinksService {
     const tenant = await this.tenancy.find(tenantId);
     if (!tenant?.active) throw notFound();
     return this.tenancy.run(tenantId, async () => {
-      const [found] = await this.db
-        .select({ link: formPublicLinks, form: forms })
-        .from(formPublicLinks)
-        .innerJoin(forms, eq(forms.id, formPublicLinks.formId))
-        .where(
-          and(
-            eq(formPublicLinks.tokenHash, hashOf(token)),
-            working(),
-            lt(formPublicLinks.submissions, formPublicLinks.maxSubmissions),
-          ),
-        );
+      const found = await this.repository.findWorkingLink(hashOf(token));
       if (
         !found ||
         found.form.status !== 'active' ||
@@ -338,10 +286,3 @@ export class FormPublicLinksService {
     });
   }
 }
-
-/** A link that works: not revoked, not expired. */
-const working = () =>
-  and(
-    isNull(formPublicLinks.revokedAt),
-    gt(formPublicLinks.expiresAt, new Date()),
-  );

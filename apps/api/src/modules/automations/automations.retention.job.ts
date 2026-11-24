@@ -1,13 +1,10 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { inArray, lt } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { automationsConfig } from './automations.config.js';
-import { automationRuns } from './automations.tables.js';
+import { AutomationsRepository } from './automations.repository.js';
 
 const JOB = 'automation-run-retention';
 
@@ -24,7 +21,7 @@ export class AutomationRunRetentionJob {
   private readonly logger = new Logger('Automations');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AutomationsRepository,
     private readonly tenancy: Tenancy,
     @Inject(automationsConfig.KEY)
     private readonly config: ConfigType<typeof automationsConfig>,
@@ -40,21 +37,9 @@ export class AutomationRunRetentionJob {
     const deleted = await this.tenancy.acrossTenants(JOB, async () => {
       let total = 0;
       for (;;) {
-        const rows = await this.db
-          .delete(automationRuns)
-          .where(
-            inArray(
-              automationRuns.id,
-              this.db
-                .select({ id: automationRuns.id })
-                .from(automationRuns)
-                .where(lt(automationRuns.createdAt, before))
-                .limit(BATCH),
-            ),
-          )
-          .returning({ id: automationRuns.id });
-        total += rows.length;
-        if (rows.length < BATCH) return total;
+        const count = await this.repository.deleteRunsBefore(before, BATCH);
+        total += count;
+        if (count < BATCH) return total;
       }
     });
     this.logger.log('Old automation runs deleted', { deleted, days });

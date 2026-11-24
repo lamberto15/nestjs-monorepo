@@ -1,17 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, eq, lt, ne, or } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import { messagingConfig } from './messaging.config.js';
 import { MESSAGING_RETENTION_JOB } from './messaging.permissions.js';
 import { previousMonthStart, utcDay } from './messaging.policy.js';
 import { MessagingService } from './messaging.service.js';
-import { messagingUsage } from './messaging.tables.js';
+import { MessagingRepository } from './messaging.repository.js';
 
 /**
  * Every night at 03:45 UTC, on one instance: removes the devices not seen
@@ -25,7 +22,7 @@ export class MessagingRetentionJob {
   private readonly logger = new Logger('Messaging');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: MessagingRepository,
     @Inject(messagingConfig.KEY)
     private readonly config: ConfigType<typeof messagingConfig>,
     private readonly system: SystemContext,
@@ -45,32 +42,14 @@ export class MessagingRetentionJob {
           const devices = await this.messaging.removeStaleDevices(
             new Date(now.getTime() - days * 86_400_000),
           );
-          const removed = await this.db
-            .delete(messagingUsage)
-            .where(
-              or(
-                // The daily counters are of yesterday and before ...
-                and(
-                  ne(messagingUsage.counter, 'spend'),
-                  lt(
-                    messagingUsage.day,
-                    utcDay(new Date(now.getTime() - 86_400_000)),
-                  ),
-                ),
-                // ... the month's spend stays through the next month (for the alert's history).
-                and(
-                  eq(messagingUsage.counter, 'spend'),
-                  lt(messagingUsage.day, previousMonthStart(now)),
-                ),
-              ),
-            )
-            .returning({ id: messagingUsage.id });
-          this.logger.log('Messaging swept', {
-            devices,
-            counters: removed.length,
-            days,
-          });
-          return { devices, counters: removed.length };
+          const counters = await this.repository.deleteCounters(
+            // The daily counters are of yesterday and before ...
+            utcDay(new Date(now.getTime() - 86_400_000)),
+            // ... the month's spend stays through the next month (for the alert's history).
+            previousMonthStart(now),
+          );
+          this.logger.log('Messaging swept', { devices, counters, days });
+          return { devices, counters };
         }),
       { transaction: false, tenantId: null },
     );

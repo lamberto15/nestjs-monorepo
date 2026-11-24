@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import type { OutboxHandlerContext } from '@nestjs/outbox';
 import {
   BadRequestException,
@@ -12,19 +12,9 @@ import type { ConfigType } from '@nestjs/config';
 import { I18nService } from '@nestjs/i18n';
 import { Locks } from '@nestjs/locks';
 import { StorageDisk } from '@nestjs/storage';
-import { and, asc, count, eq, lte } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { OnDomainEvent } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
@@ -44,7 +34,6 @@ import type { TransferFormat } from '../data-transfer/data-transfer.types.js';
 import { PrincipalNow } from '../data-transfer/principal-now.js';
 import { nextRunTime } from './report-time.js';
 import { reportsConfig } from './reports.config.js';
-import { REPORT_LIST } from './reports.lists.js';
 import { ReportFailedMail, ReportReadyMail } from './reports.mails.js';
 import { REPORT_RUNNER_JOB } from './reports.permissions.js';
 import {
@@ -52,7 +41,8 @@ import {
   MAX_ACTIVE_REPORTS,
   type UpdateReportDto,
 } from './reports.schemas.js';
-import { type ReportScheduleRow, reportSchedules } from './reports.tables.js';
+import { ReportsRepository } from './reports.repository.js';
+import type { ReportScheduleRow } from './reports.tables.js';
 
 /** The transfers a report started carry this tag: `report:<id>`. */
 const TAG = 'report:';
@@ -89,10 +79,6 @@ export const isRefusal = (error: unknown) =>
   error.getStatus() >= 400 &&
   error.getStatus() < 500;
 
-/** A report the runner starts at `now`: written once for the tenant's due reports and the tenants that have one. */
-const isDue = (now: Date) =>
-  and(eq(reportSchedules.active, true), lte(reportSchedules.nextRunAt, now));
-
 /**
  * Scheduled reports: an export asked for once, run for its owner on a
  * schedule (daily, weekly, monthly at an hour of their time zone), its file
@@ -105,7 +91,7 @@ const isDue = (now: Date) =>
 @Injectable()
 export class ReportsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ReportsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly transfers: DataTransferService,
     private readonly principals: PrincipalNow,
@@ -122,20 +108,10 @@ export class ReportsService {
 
   /** A page of the principal's reports, newest first unless the query sorts. */
   async page(principal: RequestPrincipal, query: ListQuery) {
-    const where = and(
-      eq(reportSchedules.owner, principalKey(principal)),
-      REPORT_LIST.where(query),
+    const [rows, total] = await this.repository.page(
+      principalKey(principal),
+      query,
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(reportSchedules)
-        .where(and(where, afterCursor(reportSchedules.id, query)))
-        .orderBy(...pageOrder(reportSchedules.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, reportSchedules, where, query),
-    ]);
     const page = toPage(rows, query, total);
     return { ...page, items: page.items.map(view) };
   }
@@ -156,30 +132,27 @@ export class ReportsService {
     const timezone = this.transfers.zone(principal, dto.timezone);
     const row = await this.exclusively(principal, async () => {
       if (dto.active) await this.assertRoomFor(principal);
-      const [created] = await this.db
-        .insert(reportSchedules)
-        .values({
-          owner: principalKey(principal),
-          name: dto.name,
-          exporter: dto.exporter,
-          format: dto.format,
-          filters: dto.filters,
-          sort: dto.sort,
-          timezone,
-          schedule: dto.schedule,
-          recipients,
-          active: dto.active,
-          nextRunAt: nextRunTime(dto.schedule, new Date(), timezone),
-        })
-        .returning();
+      const created = await this.repository.insert({
+        owner: principalKey(principal),
+        name: dto.name,
+        exporter: dto.exporter,
+        format: dto.format,
+        filters: dto.filters,
+        sort: dto.sort,
+        timezone,
+        schedule: dto.schedule,
+        recipients,
+        active: dto.active,
+        nextRunAt: nextRunTime(dto.schedule, new Date(), timezone),
+      });
       await this.audit.record(principal, {
         action: 'report.created',
         targetType: 'report',
-        targetId: created!.id,
-        details: { name: created!.name, exporter: created!.exporter },
+        targetId: created.id,
+        details: { name: created.name, exporter: created.exporter },
         ip,
       });
-      return created!;
+      return created;
     });
     return view(row);
   }
@@ -221,16 +194,12 @@ export class ReportsService {
       if (values.active && !report.active) {
         await this.assertRoomFor(principal);
       }
-      const [updated] = await this.db
-        .update(reportSchedules)
-        .set({
-          ...values,
-          ...(reschedule && {
-            nextRunAt: nextRunTime(schedule, new Date(), timezone),
-          }),
-        })
-        .where(eq(reportSchedules.id, id))
-        .returning();
+      const updated = await this.repository.update(id, {
+        ...values,
+        ...(reschedule && {
+          nextRunAt: nextRunTime(schedule, new Date(), timezone),
+        }),
+      });
       await this.audit.record(principal, {
         action: 'report.updated',
         targetType: 'report',
@@ -238,7 +207,7 @@ export class ReportsService {
         details: { changed: Object.keys(values) },
         ip,
       });
-      return updated!;
+      return updated;
     });
     return view(row);
   }
@@ -246,7 +215,7 @@ export class ReportsService {
   async remove(principal: RequestPrincipal, id: string, ip?: string) {
     const report = await this.findOwn(principal, id);
     await this.txHost.withTransaction(async () => {
-      await this.db.delete(reportSchedules).where(eq(reportSchedules.id, id));
+      await this.repository.delete(id);
       await this.audit.record(principal, {
         action: 'report.deleted',
         targetType: 'report',
@@ -290,11 +259,7 @@ export class ReportsService {
     const transferId = randomUUID();
     const scheduled = options.trigger === 'schedule';
     const claim = await this.txHost.withTransaction(async () => {
-      const [current] = await this.db
-        .select()
-        .from(reportSchedules)
-        .where(eq(reportSchedules.id, report.id))
-        .for('update');
+      const current = await this.repository.lock(report.id);
       if (
         !current ||
         (scheduled &&
@@ -303,18 +268,14 @@ export class ReportsService {
       ) {
         return null;
       }
-      const [claimed] = await this.db
-        .update(reportSchedules)
-        .set({
-          lastRunAt: now,
-          lastTransferId: transferId,
-          ...(scheduled && {
-            nextRunAt: nextRunTime(current.schedule, now, current.timezone),
-          }),
-        })
-        .where(eq(reportSchedules.id, report.id))
-        .returning();
-      return { before: current, claimed: claimed! };
+      const claimed = await this.repository.update(report.id, {
+        lastRunAt: now,
+        lastTransferId: transferId,
+        ...(scheduled && {
+          nextRunAt: nextRunTime(current.schedule, now, current.timezone),
+        }),
+      });
+      return { before: current, claimed };
     });
     if (!claim) return null; // another run took it
     const { before, claimed } = claim;
@@ -331,19 +292,11 @@ export class ReportsService {
         details: { report: claimed.id, trigger: options.trigger },
       });
     } catch (error) {
-      await this.db
-        .update(reportSchedules)
-        .set({
-          lastRunAt: before.lastRunAt,
-          lastTransferId: before.lastTransferId,
-          nextRunAt: before.nextRunAt,
-        })
-        .where(
-          and(
-            eq(reportSchedules.id, report.id),
-            eq(reportSchedules.lastTransferId, transferId),
-          ),
-        );
+      await this.repository.updateIfLastRun(report.id, transferId, {
+        lastRunAt: before.lastRunAt,
+        lastTransferId: before.lastTransferId,
+        nextRunAt: before.nextRunAt,
+      });
       throw error;
     }
     await this.audit.record(principal, {
@@ -364,13 +317,10 @@ export class ReportsService {
     by: SystemPrincipal,
   ) {
     await this.txHost.withTransaction(async () => {
-      await this.db
-        .update(reportSchedules)
-        .set({
-          lastStatus: 'failed',
-          nextRunAt: nextRunTime(report.schedule, now, report.timezone),
-        })
-        .where(eq(reportSchedules.id, report.id));
+      await this.repository.update(report.id, {
+        lastStatus: 'failed',
+        nextRunAt: nextRunTime(report.schedule, now, report.timezone),
+      });
       await this.audit.record(by, {
         action: 'report.skipped',
         targetType: 'report',
@@ -387,10 +337,7 @@ export class ReportsService {
     by: SystemPrincipal,
   ) {
     await this.txHost.withTransaction(async () => {
-      await this.db
-        .update(reportSchedules)
-        .set({ active: false })
-        .where(eq(reportSchedules.id, report.id));
+      await this.repository.update(report.id, { active: false });
       await this.audit.record(by, {
         action: 'report.deactivated',
         targetType: 'report',
@@ -436,23 +383,14 @@ export class ReportsService {
     ctx: OutboxHandlerContext,
     system: SystemPrincipal,
   ) {
-    const [report] = await this.db
-      .select()
-      .from(reportSchedules)
-      .where(eq(reportSchedules.id, reportId));
+    const report = await this.repository.findById(reportId);
     if (!report) return; // deleted meanwhile: nobody to tell
     await this.mail(report, event);
     await this.txHost.withTransaction(async () => {
       await ctx.processInTransaction(this.txHost.tx, async () => {
-        await this.db
-          .update(reportSchedules)
-          .set({ lastStatus: event.status })
-          .where(
-            and(
-              eq(reportSchedules.id, reportId),
-              eq(reportSchedules.lastTransferId, event.id),
-            ),
-          );
+        await this.repository.updateIfLastRun(reportId, event.id, {
+          lastStatus: event.status,
+        });
         await this.audit.record(system, {
           action: 'report.finished',
           targetType: 'report',
@@ -504,21 +442,12 @@ export class ReportsService {
 
   /** The tenant's due reports, as the runner's system principal, at most `limit`. */
   due(now: Date, limit: number) {
-    return this.db
-      .select()
-      .from(reportSchedules)
-      .where(isDue(now))
-      .orderBy(asc(reportSchedules.nextRunAt))
-      .limit(limit);
+    return this.repository.due(now, limit);
   }
 
   /** The tenants with a report due, read across every tenant (the runner, in `acrossTenants()`). */
-  async dueTenants(now: Date) {
-    const rows = await this.db
-      .selectDistinct({ tenantId: reportSchedules.tenantId })
-      .from(reportSchedules)
-      .where(isDue(now));
-    return rows.map((row) => row.tenantId);
+  dueTenants(now: Date) {
+    return this.repository.dueTenants(now);
   }
 
   /**
@@ -555,16 +484,10 @@ export class ReportsService {
 
   /** A 400 when the principal has MAX_ACTIVE_REPORTS active reports already. */
   private async assertRoomFor(principal: RequestPrincipal) {
-    const [row] = await this.db
-      .select({ active: count() })
-      .from(reportSchedules)
-      .where(
-        and(
-          eq(reportSchedules.owner, principalKey(principal)),
-          eq(reportSchedules.active, true),
-        ),
-      );
-    if ((row?.active ?? 0) >= MAX_ACTIVE_REPORTS) {
+    if (
+      (await this.repository.countActiveOf(principalKey(principal))) >=
+      MAX_ACTIVE_REPORTS
+    ) {
       throw invalid([
         {
           path: 'active',
@@ -575,15 +498,7 @@ export class ReportsService {
   }
 
   private async findOwn(principal: RequestPrincipal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(reportSchedules)
-      .where(
-        and(
-          eq(reportSchedules.id, id),
-          eq(reportSchedules.owner, principalKey(principal)),
-        ),
-      );
+    const row = await this.repository.findOwn(principalKey(principal), id);
     if (!row) throw new NotFoundException(`Report ${id} not found.`);
     return row;
   }

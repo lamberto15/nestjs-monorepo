@@ -1,6 +1,3 @@
-import { and, asc, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
-import type { Database } from '../../core/database/database.js';
 import { ExpressionError } from '../expressions/expression.js';
 import {
   type RecordRow,
@@ -9,6 +6,7 @@ import {
 } from '../records/record.js';
 import { relationsFrom } from '../records/record-relations.js';
 import type { DataQualityRegistration } from './data-quality.registry.js';
+import type { DataQualityRepository } from './data-quality.repository.js';
 import type {
   FindingDetail,
   QualityCheck,
@@ -38,7 +36,7 @@ const isEmpty = (value: unknown) =>
  * duplicate check compares them with every live record of the table.
  */
 export async function findProblems(
-  db: Database,
+  repository: DataQualityRepository,
   registration: DataQualityRegistration,
   table: RecordTable,
   rows: readonly RecordRow[],
@@ -70,12 +68,7 @@ export async function findProblems(
     ];
     if (ids.length === 0) continue;
     const binned = new Set(
-      (
-        await db
-          .select({ id: target.id })
-          .from(target as unknown as PgTable)
-          .where(and(inArray(target.id, ids), isNotNull(target.deletedAt)))
-      ).map((row) => row.id as string),
+      await repository.binnedIds(target as unknown as RecordTable, ids),
     );
     for (const row of rows) {
       const to = row[relation.field] as string | null;
@@ -91,9 +84,6 @@ export async function findProblems(
     }
   }
   for (const field of registration.duplicates) {
-    const column = table[field]!;
-    // Drizzle has no lower() or trim(): the key is a case-folded, trimmed value.
-    const key = sql<string>`lower(trim(${column}))`;
     const keys = [
       ...new Set(
         rows.flatMap((row) =>
@@ -104,23 +94,14 @@ export async function findProblems(
       ),
     ];
     if (keys.length === 0) continue;
-    const same = await db
-      .select({ id: table.id, key })
-      .from(table as unknown as PgTable)
-      .where(
-        and(
-          table.deletedAt ? isNull(table.deletedAt) : undefined,
-          inArray(key, keys),
-        ),
-      )
-      .orderBy(asc(table.id));
+    const same = await repository.withKeys(table, field, keys);
     for (const row of rows) {
       if (isEmpty(row[field])) continue;
       const mine = (row[field] as string).trim().toLowerCase();
       const others = same
         .filter((s) => s.key === mine && s.id !== row.id)
         .slice(0, DUPLICATES_KEPT)
-        .map((s) => s.id as string);
+        .map((s) => s.id);
       if (others.length) {
         found.push({
           recordId: row.id,

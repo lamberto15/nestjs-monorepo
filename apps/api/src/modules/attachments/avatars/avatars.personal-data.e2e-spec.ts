@@ -1,4 +1,5 @@
 import { AvatarsPersonalData } from './avatars.personal-data.js';
+import { AvatarsRepository } from './avatars.repository.js';
 import { userAvatars } from './avatars.tables.js';
 import { StorageDisk } from '@nestjs/storage';
 import { inArray } from 'drizzle-orm';
@@ -16,7 +17,7 @@ vi.hoisted(() => {
 });
 
 /** The `avatar` section (avatars.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('avatar', [AvatarsPersonalData], {
+personalDataSection('avatar', [AvatarsPersonalData, AvatarsRepository], {
   seed: async (c) => {
     const disk = c.app.get(StorageDisk);
     await c.inNone(async () => {

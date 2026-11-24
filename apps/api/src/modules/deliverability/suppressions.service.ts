@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   Inject,
@@ -7,30 +7,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { and, count, eq, inArray, isNotNull, sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
 import { deliverabilityConfig } from './deliverability.config.js';
-import { mailEvents, mailSuppressions } from './deliverability.tables.js';
+import { DeliverabilityRepository } from './deliverability.repository.js';
+import type { mailSuppressions } from './deliverability.tables.js';
 import type {
   CreateMailSuppressionDto,
   MailSuppressionView,
 } from './deliverability.schemas.js';
-import { MAIL_SUPPRESSION_LIST } from './deliverability.lists.js';
 import type { MailEvent } from './mail-event.types.js';
 import {
   type MailSuppression,
@@ -84,10 +74,10 @@ export interface AppliedEvents {
 @Injectable()
 @MailSuppressionList()
 export class SuppressionsService implements MailSuppression {
-  private readonly logger = new Logger('MailSuppressions');
+  private readonly logger = new Logger(SuppressionsService.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: DeliverabilityRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     @Inject(deliverabilityConfig.KEY)
@@ -98,11 +88,7 @@ export class SuppressionsService implements MailSuppression {
       'mail_suppressions',
       'Addresses on the suppression list (mail is not sent to them), by reason.',
       async () => {
-        const rows = await this.db
-          .select({ reason: mailSuppressions.reason, value: count() })
-          .from(mailSuppressions)
-          .where(isNotNull(mailSuppressions.suppressedAt))
-          .groupBy(mailSuppressions.reason);
+        const rows = await this.repository.suppressedByReason();
         return SUPPRESSION_REASONS.map((reason) => ({
           labels: { reason },
           value: rows.find((row) => row.reason === reason)?.value ?? 0,
@@ -130,26 +116,13 @@ export class SuppressionsService implements MailSuppression {
 
   /** A page of entries, newest first unless the query sorts. */
   async list(query: ListQuery) {
-    const where = MAIL_SUPPRESSION_LIST.where(query);
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(mailSuppressions)
-        .where(and(where, afterCursor(mailSuppressions.id, query)))
-        .orderBy(...pageOrder(mailSuppressions.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, mailSuppressions, where, query),
-    ]);
+    const [rows, total] = await this.repository.list(query);
     const page = toPage(rows, query, total);
     return { ...page, items: page.items.map(view) };
   }
 
   async findOne(id: string) {
-    const [row] = await this.db
-      .select()
-      .from(mailSuppressions)
-      .where(eq(mailSuppressions.id, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       throw new NotFoundException(`Suppression ${id} not found.`);
     }
@@ -186,15 +159,7 @@ export class SuppressionsService implements MailSuppression {
     if (wanted.length === 0) {
       return verdicts;
     }
-    const rows = await this.db
-      .select()
-      .from(mailSuppressions)
-      .where(
-        and(
-          inArray(mailSuppressions.address, wanted),
-          isNotNull(mailSuppressions.suppressedAt),
-        ),
-      );
+    const rows = await this.repository.suppressedOf(wanted);
     const now = new Date();
     const skipped: string[] = [];
     const expired: string[] = [];
@@ -211,22 +176,13 @@ export class SuppressionsService implements MailSuppression {
       skipped.push(row.address);
     }
     if (expired.length > 0) {
-      await this.db
-        .update(mailSuppressions)
-        .set({ suppressedAt: null, softBounces: 0 })
-        .where(inArray(mailSuppressions.id, expired));
+      await this.repository.unsuppress(expired);
       this.logger.log('Soft-bounce suppressions expired', {
         expired: expired.length,
       });
     }
     if (skipped.length > 0) {
-      await this.db
-        .update(mailSuppressions)
-        .set({
-          skipped: sql`${mailSuppressions.skipped} + 1`,
-          lastSkippedAt: now,
-        })
-        .where(inArray(mailSuppressions.address, skipped));
+      await this.repository.countSkipped(skipped, now);
       this.logger.log('Mail kept from suppressed addresses', {
         mail,
         skipped: skipped.length,
@@ -256,20 +212,16 @@ export class SuppressionsService implements MailSuppression {
       for (const event of events) {
         const address = normalizeAddress(event.address);
         const occurredAt = new Date(event.occurredAt);
-        const [recorded] = await this.db
-          .insert(mailEvents)
-          .values({
-            provider,
-            eventId: id,
-            type: event.type,
-            address,
-            occurredAt: Number.isNaN(occurredAt.getTime())
-              ? new Date()
-              : occurredAt,
-            detail: event.detail ?? null,
-          })
-          .onConflictDoNothing()
-          .returning({ id: mailEvents.id });
+        const recorded = await this.repository.insertEvent({
+          provider,
+          eventId: id,
+          type: event.type,
+          address,
+          occurredAt: Number.isNaN(occurredAt.getTime())
+            ? new Date()
+            : occurredAt,
+          detail: event.detail ?? null,
+        });
         if (!recorded) {
           continue; // a replay
         }
@@ -294,20 +246,17 @@ export class SuppressionsService implements MailSuppression {
     address: string,
     event: MailEvent,
   ) {
-    const [current] = await this.db
-      .select()
-      .from(mailSuppressions)
-      .where(eq(mailSuppressions.address, address))
-      .for('update');
+    const current = await this.repository.lockOfAddress(address);
     const now = new Date();
     const expired = current ? this.softBounceExpired(current, now) : false;
     const wasSuppressed = !!current?.suppressedAt && !expired;
     if (event.type === 'delivery') {
       if (current && (current.softBounces > 0 || expired) && !wasSuppressed) {
-        await this.db
-          .update(mailSuppressions)
-          .set({ softBounces: 0, suppressedAt: null, lastSeenAt: now })
-          .where(eq(mailSuppressions.id, current.id));
+        await this.repository.update(current.id, {
+          softBounces: 0,
+          suppressedAt: null,
+          lastSeenAt: now,
+        });
       }
       return false;
     }
@@ -324,23 +273,20 @@ export class SuppressionsService implements MailSuppression {
     // What this event says the entry should be, on its own.
     const suppressNow = reason !== 'soft_bounce' || softBounces >= threshold;
     if (!current) {
-      const [created] = await this.db
-        .insert(mailSuppressions)
-        .values({
-          address,
-          reason,
-          source: provider,
-          lastDetail: event.detail ?? null,
-          events: 1,
-          softBounces,
-          firstSeenAt: now,
-          lastSeenAt: now,
-          suppressedAt: suppressNow ? now : null,
-          createdBy: principalKey(system),
-        })
-        .returning();
+      const created = await this.repository.insert({
+        address,
+        reason,
+        source: provider,
+        lastDetail: event.detail ?? null,
+        events: 1,
+        softBounces,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        suppressedAt: suppressNow ? now : null,
+        createdBy: principalKey(system),
+      });
       if (suppressNow) {
-        await this.record(system, 'created', created!);
+        await this.record(system, 'created', created);
       }
       return suppressNow;
     }
@@ -348,28 +294,24 @@ export class SuppressionsService implements MailSuppression {
       suppressNow &&
       (!wasSuppressed ||
         RANK[reason] > RANK[current.reason as SuppressionReason]);
-    const [updated] = await this.db
-      .update(mailSuppressions)
-      .set({
-        events: current.events + 1,
-        softBounces,
-        lastSeenAt: now,
-        lastDetail: event.detail ?? current.lastDetail,
-        ...(upgrade
-          ? {
-              reason,
-              source: provider,
-              suppressedAt: wasSuppressed ? current.suppressedAt : now,
-            }
-          : expired && { suppressedAt: null }),
-      })
-      .where(eq(mailSuppressions.id, current.id))
-      .returning();
+    const updated = await this.repository.update(current.id, {
+      events: current.events + 1,
+      softBounces,
+      lastSeenAt: now,
+      lastDetail: event.detail ?? current.lastDetail,
+      ...(upgrade
+        ? {
+            reason,
+            source: provider,
+            suppressedAt: wasSuppressed ? current.suppressedAt : now,
+          }
+        : expired && { suppressedAt: null }),
+    });
     if (upgrade) {
       await this.record(
         system,
         wasSuppressed ? 'updated' : 'created',
-        updated!,
+        updated,
         wasSuppressed ? { from: current.reason } : undefined,
       );
     }
@@ -386,21 +328,18 @@ export class SuppressionsService implements MailSuppression {
     const now = new Date();
     const row = await this.txHost
       .withTransaction(async () => {
-        const [created] = await this.db
-          .insert(mailSuppressions)
-          .values({
-            address,
-            reason: 'manual',
-            source: 'manual',
-            note: dto.note || null,
-            firstSeenAt: now,
-            lastSeenAt: now,
-            suppressedAt: now,
-            createdBy: principalKey(principal),
-          })
-          .returning();
-        await this.record(principal, 'created', created!, undefined, ip);
-        return created!;
+        const created = await this.repository.insert({
+          address,
+          reason: 'manual',
+          source: 'manual',
+          note: dto.note || null,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          suppressedAt: now,
+          createdBy: principalKey(principal),
+        });
+        await this.record(principal, 'created', created, undefined, ip);
+        return created;
       })
       .catch((error: unknown) => {
         throw databaseErrorKind(error) === 'unique_violation'
@@ -422,15 +361,11 @@ export class SuppressionsService implements MailSuppression {
   async remove(principal: Principal, id: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
       // Read under the lock, so the audit entry's `before` is what was deleted.
-      const [row] = await this.db
-        .select()
-        .from(mailSuppressions)
-        .where(eq(mailSuppressions.id, id))
-        .for('update');
+      const row = await this.repository.findById(id, { lock: true });
       if (!row) {
         throw new NotFoundException(`Suppression ${id} not found.`);
       }
-      await this.db.delete(mailSuppressions).where(eq(mailSuppressions.id, id));
+      await this.repository.delete(id);
       await this.record(principal, 'deleted', row, undefined, ip);
     });
   }

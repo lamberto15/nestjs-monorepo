@@ -1,19 +1,18 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { t } from '@nestjs/i18n';
-import { and, eq, gte, lte } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
-import type { UserPrincipal } from '../../iam/auth/principal.js';
+import type {
+  RequestPrincipal,
+  UserPrincipal,
+} from '../../iam/auth/principal.js';
 import { UsageCounters } from './usage.counters.js';
 import {
   addDays,
@@ -22,7 +21,7 @@ import {
   TOTAL_FIELD,
   utcDay,
 } from './usage.keys.js';
-import { apiClientQuotas, apiUsage } from './usage.tables.js';
+import { UsageRepository } from './usage.repository.js';
 
 /** The longest range one usage report covers. */
 export const MAX_REPORT_DAYS = 400;
@@ -38,7 +37,7 @@ const LIVE_DAYS = Math.ceil(LIVE_TTL_SECONDS / 86_400);
 @Injectable()
 export class UsageService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: UsageRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly counters: UsageCounters,
     private readonly audit: AuditService,
@@ -46,11 +45,7 @@ export class UsageService {
 
   /** The client's daily quota, or null: none. */
   async quotaOf(clientId: string): Promise<number | null> {
-    const [row] = await this.db
-      .select({ dailyQuota: apiClientQuotas.dailyQuota })
-      .from(apiClientQuotas)
-      .where(eq(apiClientQuotas.clientId, clientId));
-    return row?.dailyQuota ?? null;
+    return (await this.repository.quotaOf(clientId)) ?? null;
   }
 
   /** Sets (or, with null, removes) a client's daily quota; audited. */
@@ -64,17 +59,9 @@ export class UsageService {
     await this.txHost.withTransaction(async () => {
       const before = await this.quotaOf(clientId);
       if (dailyQuota === null) {
-        await this.db
-          .delete(apiClientQuotas)
-          .where(eq(apiClientQuotas.clientId, clientId));
+        await this.repository.deleteQuota(clientId);
       } else {
-        await this.db
-          .insert(apiClientQuotas)
-          .values({ clientId, dailyQuota })
-          .onConflictDoUpdate({
-            target: [apiClientQuotas.tenantId, apiClientQuotas.clientId],
-            set: { dailyQuota },
-          });
+        await this.repository.saveQuota(clientId, dailyQuota);
       }
       await this.audit.record(actor, {
         action: 'client.quota-changed',
@@ -85,6 +72,17 @@ export class UsageService {
       });
     });
     return { dailyQuota };
+  }
+
+  /** The caller's own usage: only API clients have usage, a user gets a 403. */
+  async ownUsage(
+    principal: RequestPrincipal,
+    range: { from?: string; to?: string },
+  ) {
+    if (principal.kind !== 'client') {
+      throw new ForbiddenException(t('usage.clientsOnly'));
+    }
+    return this.report(principal.id, range);
   }
 
   /** An API client's usage, for administrators: a 404 for an unknown client. */
@@ -126,20 +124,7 @@ export class UsageService {
       }
     };
 
-    const rows = await this.db
-      .select({
-        day: apiUsage.day,
-        route: apiUsage.route,
-        count: apiUsage.count,
-      })
-      .from(apiUsage)
-      .where(
-        and(
-          eq(apiUsage.clientId, clientId),
-          gte(apiUsage.day, from),
-          lte(apiUsage.day, to),
-        ),
-      );
+    const rows = await this.repository.rows(clientId, from, to);
     for (const row of rows) {
       add(row.day, row.route, row.count);
     }
@@ -175,11 +160,7 @@ export class UsageService {
   }
 
   private async assertClient(clientId: string) {
-    const [client] = await this.db
-      .select({ id: apiClients.id })
-      .from(apiClients)
-      .where(eq(apiClients.id, clientId));
-    if (!client) {
+    if (!(await this.repository.clientExists(clientId))) {
       throw new NotFoundException(t('usage.clientNotFound'));
     }
   }

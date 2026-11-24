@@ -1,16 +1,6 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, exists, isNull } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
-import type { Database } from '../../core/database/database.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
-import {
-  headline,
-  matches,
-  rank,
-  rankedMatches,
-} from '../records/full-text.js';
 import { Records } from '../records/records.service.js';
 import {
   SearchSource,
@@ -18,8 +8,7 @@ import {
   type SearchSourceProvider,
 } from '../search/search.source.js';
 import { AttachmentTextQueue } from './attachments.queues.js';
-import { attachments } from './attachments.tables.js';
-import { attachmentTexts } from './attachments.texts.tables.js';
+import { AttachmentsRepository } from './attachments.repository.js';
 
 /**
  * Files in the global search (ATTACHMENT_TEXT_SEARCH): the attachments whose
@@ -36,7 +25,7 @@ import { attachmentTexts } from './attachments.texts.tables.js';
 @Injectable()
 export class AttachmentSearch implements SearchSourceProvider {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly access: AccessService,
     private readonly records: Records,
     private readonly queue: AttachmentTextQueue,
@@ -65,58 +54,15 @@ export class AttachmentSearch implements SearchSourceProvider {
     limit: number,
   ): Promise<SearchHit[]> {
     const { subject } = declaration;
-    const table = feature.table;
-    // On attachment_texts alone, so the capped count and the ranking find the
-    // matches by the GIN index; the record's read filter decides per match.
-    const where = and(
-      matches(attachmentTexts.search, q),
-      exists(
-        this.db
-          .select({ id: attachments.id })
-          .from(attachments)
-          .innerJoin(
-            table as unknown as PgTable,
-            eq(table.id, attachments.recordId),
-          )
-          .where(
-            and(
-              eq(attachments.id, attachmentTexts.attachmentId),
-              eq(attachments.key, attachmentTexts.key),
-              eq(attachments.subject, subject),
-              eq(attachments.scanStatus, 'clean'),
-              eq(attachments.locked, false),
-              isNull(attachments.fields),
-              await this.access.sqlFilter(principal, subject, 'read', {
-                deleted: false,
-              }),
-            ),
-          ),
-      ),
+    const rows = await this.repository.searchTexts(
+      feature.table,
+      subject,
+      await this.access.sqlFilter(principal, subject, 'read', {
+        deleted: false,
+      }),
+      q,
+      limit,
     );
-    const score = rank(attachmentTexts.search, q);
-    const rows = await this.db
-      .select({
-        id: attachments.id,
-        name: attachments.name,
-        recordId: attachments.recordId,
-        score,
-        snippet: headline(attachmentTexts.text, q),
-      })
-      .from(attachmentTexts)
-      .innerJoin(attachments, eq(attachments.id, attachmentTexts.attachmentId))
-      .where(
-        and(
-          where,
-          await rankedMatches(
-            this.db,
-            attachmentTexts,
-            attachmentTexts.id,
-            where,
-          ),
-        ),
-      )
-      .orderBy(desc(score), desc(attachmentTexts.id))
-      .limit(limit);
     return rows.map((row) => ({
       subject: 'Attachment',
       id: row.id,

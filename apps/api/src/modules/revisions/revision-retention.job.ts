@@ -1,18 +1,13 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, eq, exists, gt, inArray, lt } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { revisionsConfig } from './revisions.config.js';
-import { revisions } from './revisions.tables.js';
+import { RevisionsRepository } from './revisions.repository.js';
 
 const JOB = 'revisions-retention';
 const BATCH = 5000;
-const newer = alias(revisions, 'newer');
 
 /**
  * Deletes revisions older than REVISIONS_RETENTION_DAYS, every night at
@@ -24,10 +19,10 @@ const newer = alias(revisions, 'newer');
  */
 @Injectable()
 export class RevisionRetentionJob {
-  private readonly logger = new Logger('Revisions');
+  private readonly logger = new Logger(RevisionRetentionJob.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RevisionsRepository,
     private readonly tenancy: Tenancy,
     @Inject(revisionsConfig.KEY)
     private readonly config: ConfigType<typeof revisionsConfig>,
@@ -39,41 +34,13 @@ export class RevisionRetentionJob {
   @WithoutOverlapping()
   async run(now = new Date()) {
     const days = this.config.retentionDays;
-    const old = and(
-      lt(revisions.changedAt, new Date(now.getTime() - days * 86_400_000)),
-      // Not a record's latest: a newer revision of the same record exists.
-      exists(
-        this.db
-          .select({ one: newer.id })
-          .from(newer)
-          .where(
-            and(
-              eq(newer.tenantId, revisions.tenantId),
-              eq(newer.subject, revisions.subject),
-              eq(newer.recordId, revisions.recordId),
-              gt(newer.number, revisions.number),
-            ),
-          ),
-      ),
-    );
+    const before = new Date(now.getTime() - days * 86_400_000);
     const deleted = await this.tenancy.acrossTenants(JOB, async () => {
       let total = 0;
       for (;;) {
-        const rows = await this.db
-          .delete(revisions)
-          .where(
-            inArray(
-              revisions.id,
-              this.db
-                .select({ id: revisions.id })
-                .from(revisions)
-                .where(old)
-                .limit(BATCH),
-            ),
-          )
-          .returning({ id: revisions.id });
-        total += rows.length;
-        if (rows.length < BATCH) return total;
+        const gone = await this.repository.deleteOlderThan(before, BATCH);
+        total += gone;
+        if (gone < BATCH) return total;
       }
     });
     this.logger.log('Old revisions deleted', { deleted, days });

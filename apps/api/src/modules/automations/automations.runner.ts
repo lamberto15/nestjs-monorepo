@@ -1,13 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { isDeepStrictEqual } from 'node:util';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 import type { OutboxHandlerContext } from '@nestjs/outbox';
-import { and, eq } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Events, OnDomainEvent } from '../../core/outbox/events.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import type { SystemPrincipal } from '../../iam/auth/principal.js';
@@ -26,7 +22,7 @@ import {
   MAX_RUNS_PER_HOUR,
   type Planned,
 } from './automations.service.js';
-import { automationRules } from './automations.tables.js';
+import { AutomationsRepository } from './automations.repository.js';
 
 /**
  * Set while a rule's actions run: the writes they make start no rule
@@ -48,7 +44,7 @@ export class AutomationRunner {
   private readonly logger = new Logger('Automations');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AutomationsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly events: Events,
     private readonly automations: AutomationsService,
@@ -67,21 +63,11 @@ export class AutomationRunner {
     before?: RecordRow,
   ) {
     if (AUTOMATING.getStore()) return;
-    const rules = await this.db
-      .select({
-        id: automationRules.id,
-        version: automationRules.version,
-        field: automationRules.field,
-      })
-      .from(automationRules)
-      .where(
-        and(
-          eq(automationRules.subject, record.subject),
-          eq(automationRules.status, 'active'),
-          eq(automationRules.trigger, event),
-        ),
-      )
-      .limit(MAX_ACTIVE_RULES);
+    const rules = await this.repository.activeRules(
+      record.subject,
+      event,
+      MAX_ACTIVE_RULES,
+    );
     if (!rules.length) return;
     // As the API shows them: a money field is one value there.
     const now = recordView(record, after) as Record<string, unknown>;

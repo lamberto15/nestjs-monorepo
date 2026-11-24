@@ -41,7 +41,7 @@ const POLL_MS = 5_000;
  */
 @Injectable()
 export class ModeService implements OnModuleInit, OnApplicationShutdown {
-  private readonly logger = new Logger('Mode');
+  private readonly logger = new Logger(ModeService.name);
   private mode: AppMode;
   private readAt = 0;
   private reading: Promise<AppMode> | undefined;

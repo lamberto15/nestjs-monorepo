@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
@@ -8,15 +8,10 @@ import {
   type OutboxHandlerContext,
 } from '@nestjs/outbox';
 import type { Queue } from 'bullmq';
-import { and, eq } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { Events, OnDomainEvent } from '../../core/outbox/events.js';
 import { onceJob } from '../../core/queues/queues.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
 import { DevicesService } from './notifications.devices.service.js';
@@ -31,7 +26,7 @@ import { NotificationMail } from './notifications.mails.js';
 import { NotificationPreferencesService } from './notifications.preferences.service.js';
 import { PUSH_QUEUE, type PushJob } from './notifications.push.js';
 import { NotificationsService } from './notifications.service.js';
-import { notifications } from './notifications.tables.js';
+import { NotificationsRepository } from './notifications.repository.js';
 import { UnsubscribeLinks } from './notifications.unsubscribe.js';
 import type { EmailMode } from './notifications.types.js';
 import { quietUntil } from './quiet-hours.js';
@@ -59,7 +54,7 @@ export class NotificationDelivery {
   private readonly logger = new Logger('Notifications');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: NotificationsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly catalog: NotificationCatalog,
     private readonly notifications: NotificationsService,
@@ -80,10 +75,7 @@ export class NotificationDelivery {
     { notificationId }: { notificationId: string },
     ctx: OutboxHandlerContext,
   ) {
-    const [row] = await this.db
-      .select()
-      .from(notifications)
-      .where(eq(notifications.id, notificationId));
+    const row = await this.repository.find(notificationId);
     if (!row || row.deliveredAt) {
       return; // collapsed away or removed since; or delivered before a crash
     }
@@ -96,10 +88,7 @@ export class NotificationDelivery {
     const recipient = await this.recipient(row.recipient, row.tenantId);
     if (!recipient) {
       // Deactivated since: the stored notification stays, nothing is sent.
-      await this.db
-        .update(notifications)
-        .set({ deliveredAt: new Date() })
-        .where(eq(notifications.id, row.id));
+      await this.repository.update(row.id, { deliveredAt: new Date() });
       return;
     }
     const user = recipient.kind === 'user' ? recipient : undefined;
@@ -182,14 +171,11 @@ export class NotificationDelivery {
                 ),
               }
             : {};
-        await this.db
-          .update(notifications)
-          .set({
-            deliveredAt: now,
-            ...(user && mode === 'immediate' && { emailedAt: now }),
-            ...digest,
-          })
-          .where(eq(notifications.id, row.id));
+        await this.repository.update(row.id, {
+          deliveredAt: now,
+          ...(user && mode === 'immediate' && { emailedAt: now }),
+          ...digest,
+        });
         // An API client hears it as a webhook, when it subscribed to the type.
         if (recipient.kind === 'client') {
           await this.events.publish(notificationCreatedWebhook, {
@@ -233,10 +219,7 @@ export class NotificationDelivery {
     if (kind !== 'client') {
       return null; // the system has no inbox: notify() never stores one for it
     }
-    const [client] = await this.db
-      .select()
-      .from(apiClients)
-      .where(and(eq(apiClients.id, id), eq(apiClients.active, true)));
+    const client = await this.repository.findActiveClient(id);
     return client
       ? { kind: 'client', id: client.id, name: client.name, tenantId }
       : null;

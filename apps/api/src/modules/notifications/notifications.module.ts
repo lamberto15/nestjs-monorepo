@@ -41,6 +41,7 @@ import { NotificationPreferencesService } from './notifications.preferences.serv
 import { PUSH_QUEUE, WebPush, WebPushTransport } from './notifications.push.js';
 import { PushProcessor } from './notifications.push.processor.js';
 import { NotificationRetentionJob } from './notifications.retention.job.js';
+import { NotificationsRepository } from './notifications.repository.js';
 import { NotificationsService } from './notifications.service.js';
 import { UnsubscribeLinks } from './notifications.unsubscribe.js';
 import { UnsubscribeController } from './notifications.unsubscribe.controller.js';
@@ -53,6 +54,7 @@ import {
 import { TEST_NOTIFICATIONS } from './notifications.test.js';
 import type { NotificationTypeDeclaration } from './notifications.types.js';
 import { SubscriptionsController } from './subscriptions.controller.js';
+import { SubscriptionsRepository } from './subscriptions.repository.js';
 import { SubscriptionsService } from './subscriptions.service.js';
 import { NotificationsPersonalData } from './notifications.personal-data.js';
 
@@ -117,6 +119,8 @@ import { NotificationsPersonalData } from './notifications.personal-data.js';
     },
     NotificationCatalog,
     NotificationsService,
+    NotificationsRepository,
+    SubscriptionsRepository,
     NotificationPreferencesService,
     NotificationDelivery,
     NotificationDigestJob,

@@ -1,24 +1,14 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, ilike } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
-import { escapeLike } from '../../core/http/list-query.js';
 import { AccessService } from '../../iam/access/access.service.js';
-import { users } from '../../iam/auth/auth.tables.js';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
-import { currentMembership } from '../../iam/organization/memberships.js';
 import { OrganizationService } from '../../iam/organization/organization.service.js';
 import {
-  organizationalUnitMemberships,
-  organizationalUnits,
-} from '../../iam/organization/organization.tables.js';
-import {
-  type ChoiceItem,
   type ChoiceProvider,
   ChoiceSource,
   type ChoiceSet,
   paramFits,
 } from './choices.registry.js';
+import { ChoicesRepository } from './choices.repository.js';
 
 /** The set the module ships with, as its example: pick a unit, then one of its members. */
 export const UNIT_MEMBER_SET: ChoiceSet = {
@@ -42,39 +32,21 @@ export class OrganizationalUnitsChoices implements ChoiceProvider {
   readonly label = 'Organizational units';
   readonly params = {};
 
-  constructor(@InjectTransaction() private readonly db: Database) {}
+  constructor(private readonly repository: ChoicesRepository) {}
 
   async mayUse(principal: RequestPrincipal) {
     return principal.kind === 'user';
   }
 
   options({ q, limit }: { q: string | undefined; limit: number }) {
-    return this.find(
-      q ? ilike(organizationalUnits.name, `%${escapeLike(q)}%`) : undefined,
-      limit,
-    );
+    return this.repository.units({ q }, limit);
   }
 
   async has({ value }: { value: string }) {
     return (
       paramFits('uuid', value) &&
-      (await this.find(eq(organizationalUnits.id, value), 1)).length > 0
+      (await this.repository.units({ value }, 1)).length > 0
     );
-  }
-
-  private find(
-    where: ReturnType<typeof and>,
-    limit: number,
-  ): Promise<ChoiceItem[]> {
-    return this.db
-      .select({
-        value: organizationalUnits.id,
-        label: organizationalUnits.name,
-      })
-      .from(organizationalUnits)
-      .where(where)
-      .orderBy(asc(organizationalUnits.name), asc(organizationalUnits.id))
-      .limit(limit);
   }
 }
 
@@ -92,7 +64,7 @@ export class UnitMembersChoices implements ChoiceProvider {
   readonly params = { unitId: 'uuid' } as const;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ChoicesRepository,
     private readonly access: AccessService,
     private readonly organization: OrganizationService,
   ) {}
@@ -113,11 +85,7 @@ export class UnitMembersChoices implements ChoiceProvider {
     limit: number;
   }) {
     return (await this.may(principal, params.unitId!))
-      ? this.find(
-          params.unitId!,
-          limit,
-          q ? ilike(users.name, `%${escapeLike(q)}%`) : undefined,
-        )
+      ? this.repository.unitMembers(params.unitId!, { q }, limit)
       : [];
   }
 
@@ -133,7 +101,8 @@ export class UnitMembersChoices implements ChoiceProvider {
     return (
       paramFits('uuid', value) &&
       (await this.may(principal, params.unitId!)) &&
-      (await this.find(params.unitId!, 1, eq(users.id, value))).length > 0
+      (await this.repository.unitMembers(params.unitId!, { value }, 1)).length >
+        0
     );
   }
 
@@ -143,25 +112,5 @@ export class UnitMembersChoices implements ChoiceProvider {
       ((await this.access.can(principal, 'manageUsers', 'Access')) ||
         (await this.organization.unitsOf(principal.id)).includes(unitId))
     );
-  }
-
-  private find(
-    unitId: string,
-    limit: number,
-    extra?: ReturnType<typeof and>,
-  ): Promise<ChoiceItem[]> {
-    return this.db
-      .select({ value: users.id, label: users.name })
-      .from(organizationalUnitMemberships)
-      .innerJoin(users, eq(users.id, organizationalUnitMemberships.userId))
-      .where(
-        and(
-          eq(organizationalUnitMemberships.unitId, unitId),
-          currentMembership(),
-          extra,
-        ),
-      )
-      .orderBy(asc(users.name), asc(users.id))
-      .limit(limit);
   }
 }

@@ -9,6 +9,7 @@ import { CustomFieldsExtension } from './custom-fields.extension.js';
 import { CUSTOM_FIELD_PERMISSIONS } from './custom-fields.permissions.js';
 import { CustomFieldPolicy } from './custom-fields.policy.js';
 import { CustomFieldsTransfer } from './custom-fields.transfer.js';
+import { CustomFieldsRepository } from './custom-fields.repository.js';
 import { CustomFieldsService } from './custom-fields.service.js';
 import { CustomValuesService } from './custom-values.service.js';
 
@@ -28,6 +29,7 @@ import { CustomValuesService } from './custom-values.service.js';
   // CustomFieldsTransfer: the `custom.<key>` columns of exports and imports (modules/data-transfer).
   providers: [
     CustomFieldsService,
+    CustomFieldsRepository,
     CustomValuesService,
     CustomFieldPolicy,
     CustomFieldsTransfer,

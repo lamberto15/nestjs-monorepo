@@ -1,36 +1,25 @@
 import { TransactionHost } from '@nestjs-cls/transactional';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
 import {
   currentTenantScope,
   requireTenantId,
 } from '../../core/tenancy/tenant-scope.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
-import {
-  apiClientRoles,
-  roles,
-  userRoles,
-} from '../../iam/access/access.tables.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
-import { apiClients, memberships } from '../../iam/auth/auth.tables.js';
 import { OperatorGuard } from '../../iam/auth/operator-only.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
-import { organizationalUnits } from '../../iam/organization/organization.tables.js';
 import { OrganizationService } from '../../iam/organization/organization.service.js';
 import { SettingsCache } from './settings.cache.js';
 import { SettingsCatalog } from './settings.catalog.js';
 import { SettingsPolicy } from './settings.policy.js';
+import { SettingsRepository } from './settings.repository.js';
 import { resolveSetting, type SettingSource } from './settings.resolution.js';
 import {
   type FlagRule,
@@ -111,7 +100,7 @@ export class SettingsService {
   private readonly writeGuards = new Map<string, WriteGuard[]>();
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SettingsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly cache: SettingsCache,
     private readonly catalog: SettingsCatalog,
@@ -314,19 +303,9 @@ export class SettingsService {
         : null;
     }
     if (rulesNeed(rules, ['role'])) {
-      const grants = principal.kind === 'user' ? userRoles : apiClientRoles;
-      const holder =
-        principal.kind === 'user' ? userRoles.userId : apiClientRoles.clientId;
-      const rows = await this.db
-        .select({ roleId: grants.roleId })
-        .from(grants)
-        .where(
-          and(
-            eq(holder, principal.id),
-            or(isNull(grants.expiresAt), gt(grants.expiresAt, new Date())),
-          ),
-        );
-      attributes.roleIds = new Set(rows.map((row) => row.roleId));
+      attributes.roleIds = new Set(
+        await this.repository.liveRoleIdsOf(principal.kind, principal.id),
+      );
     }
     return attributes;
   }
@@ -341,9 +320,7 @@ export class SettingsService {
       ),
     );
     if (!wanted.size) return;
-    const found = new Set(
-      (await this.db.select({ id: roles.id }).from(roles)).map((r) => r.id),
-    );
+    const found = new Set(await this.repository.roleIds());
     const missing = [...wanted].filter((id) => !found.has(id));
     if (missing.length) {
       throw invalid([
@@ -387,6 +364,15 @@ export class SettingsService {
       (canEdit ?? (await this.canEdit(principal))) &&
       (await this.operators.actsAsOperator(principal))
     );
+  }
+
+  /** One setting with the principal's value: a non-public one is a 404 to who may not read it. */
+  async viewOf(principal: Principal, key: string) {
+    const declaration = this.declaration(key);
+    if (declaration.public === false && !(await this.canRead(principal))) {
+      throw new NotFoundException(`No setting "${key}".`);
+    }
+    return this.view(declaration, principal);
   }
 
   async view(
@@ -616,10 +602,7 @@ export class SettingsService {
       await this.assertWriter(actor, key, 'platform', undefined, value);
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [before] = await this.db
-        .select()
-        .from(platformSettingValues)
-        .where(eq(platformSettingValues.key, key));
+      const before = await this.repository.findPlatformValue(key);
       const kept = rules ?? before?.rules ?? [];
       const columns = {
         ...this.stored(declaration, platformSettingValues.secret, value),
@@ -628,11 +611,7 @@ export class SettingsService {
         rules: kept,
         updatedBy: principalKey(actor),
       };
-      const [after] = await this.db
-        .insert(platformSettingValues)
-        .values({ key, ...columns })
-        .onConflictDoUpdate({ target: platformSettingValues.key, set: columns })
-        .returning();
+      const after = await this.repository.savePlatformValue(key, columns);
       await this.audit.record(actor, {
         action: 'setting.updated',
         targetType: 'setting',
@@ -657,7 +636,7 @@ export class SettingsService {
         },
         ip,
       });
-      return after!;
+      return after;
     });
     this.cache.invalidate();
     return this.shownRow(declaration, row);
@@ -667,10 +646,7 @@ export class SettingsService {
   async unsetPlatform(actor: Principal, key: string, ip?: string) {
     const declaration = this.declaration(key);
     const removed = await this.txHost.withTransaction(async () => {
-      const [before] = await this.db
-        .delete(platformSettingValues)
-        .where(eq(platformSettingValues.key, key))
-        .returning();
+      const before = await this.repository.deletePlatformValue(key);
       if (before) {
         await this.audit.record(actor, {
           action: 'setting.reset',
@@ -762,36 +738,22 @@ export class SettingsService {
       ]);
     }
     if (scope === 'unit') {
-      const [unit] = await this.db
-        .select({ id: organizationalUnits.id })
-        .from(organizationalUnits)
-        .where(eq(organizationalUnits.id, scopeId));
+      const unit = await this.repository.findUnitId(scopeId);
       if (!unit) {
         throw new NotFoundException(
           `Organizational unit ${scopeId} not found.`,
         );
       }
-      return unit.id;
+      return unit;
     }
     const [kind, id] = scopeId.split(':') as [string, string | undefined];
     const found =
       kind === 'user' && id && UUID.test(id)
-        ? await this.db
-            .select({ id: memberships.userId })
-            .from(memberships)
-            .where(
-              and(
-                eq(memberships.userId, id),
-                eq(memberships.tenantId, requireTenantId('A setting')),
-              ),
-            )
+        ? await this.repository.isMember(id, requireTenantId('A setting'))
         : kind === 'client' && id && UUID.test(id)
-          ? await this.db
-              .select({ id: apiClients.id })
-              .from(apiClients)
-              .where(eq(apiClients.id, id))
-          : [];
-    if (found.length === 0) {
+          ? await this.repository.clientExists(id)
+          : false;
+    if (!found) {
       throw new NotFoundException(`Principal ${scopeId} not found.`);
     }
     return scopeId;
@@ -809,16 +771,11 @@ export class SettingsService {
   ) {
     const key = declaration.key;
     const row = await this.txHost.withTransaction(async () => {
-      const [before] = await this.db
-        .select()
-        .from(settingOverrides)
-        .where(
-          and(
-            eq(settingOverrides.key, key),
-            eq(settingOverrides.scope, scope),
-            eq(settingOverrides.scopeId, scopeId),
-          ),
-        );
+      const before = await this.repository.findOverride({
+        key,
+        scope,
+        scopeId,
+      });
       const kept = rules ?? before?.rules ?? [];
       const columns = {
         ...this.stored(declaration, settingOverrides.secret, value),
@@ -826,19 +783,10 @@ export class SettingsService {
         rules: kept,
         updatedBy: principalKey(actor),
       };
-      const [after] = await this.db
-        .insert(settingOverrides)
-        .values({ key, scope, scopeId, ...columns })
-        .onConflictDoUpdate({
-          target: [
-            settingOverrides.tenantId,
-            settingOverrides.key,
-            settingOverrides.scope,
-            settingOverrides.scopeId,
-          ],
-          set: columns,
-        })
-        .returning();
+      const after = await this.repository.saveOverride(
+        { key, scope, scopeId },
+        columns,
+      );
       await this.audit.record(actor, {
         action: 'setting.updated',
         targetType: 'setting',
@@ -857,7 +805,7 @@ export class SettingsService {
         },
         ip,
       });
-      return after!;
+      return after;
     });
     this.cache.invalidate(row.tenantId);
     return this.shownRow(declaration, row);
@@ -872,16 +820,11 @@ export class SettingsService {
   ) {
     const key = declaration.key;
     const removed = await this.txHost.withTransaction(async () => {
-      const [before] = await this.db
-        .delete(settingOverrides)
-        .where(
-          and(
-            eq(settingOverrides.key, key),
-            eq(settingOverrides.scope, scope),
-            eq(settingOverrides.scopeId, scopeId),
-          ),
-        )
-        .returning();
+      const before = await this.repository.deleteOverride({
+        key,
+        scope,
+        scopeId,
+      });
       if (before) {
         await this.audit.record(actor, {
           action: 'setting.reset',

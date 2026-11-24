@@ -33,6 +33,7 @@ import { AUTOMATION_PERMISSIONS } from './automations.permissions.js';
 import { AutomationRulePolicy } from './automations.policy.js';
 import { AutomationRunRetentionJob } from './automations.retention.job.js';
 import { AutomationRunner } from './automations.runner.js';
+import { AutomationsRepository } from './automations.repository.js';
 import {
   AUTOMATIONS_CAPABILITY,
   AutomationsService,
@@ -60,6 +61,7 @@ import {
   providers: [
     AutomationActions,
     AutomationsService,
+    AutomationsRepository,
     AutomationRunner,
     AutomationRunRetentionJob,
     AutomationRulePolicy,

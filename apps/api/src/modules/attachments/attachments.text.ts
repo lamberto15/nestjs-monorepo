@@ -1,15 +1,11 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Processor } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
 import { StorageDisk, StorageFileNotFoundError } from '@nestjs/storage';
-import { and, asc, eq, isNull, lt } from 'drizzle-orm';
 import type { Job } from 'bullmq';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
@@ -26,11 +22,9 @@ import {
   type AttachmentJob,
   AttachmentTextQueue,
 } from './attachments.queues.js';
-import { type Attachment, attachments } from './attachments.tables.js';
-import {
-  type AttachmentTextStatus,
-  attachmentTexts,
-} from './attachments.texts.tables.js';
+import { AttachmentsRepository } from './attachments.repository.js';
+import type { Attachment } from './attachments.tables.js';
+import type { AttachmentTextStatus } from './attachments.texts.tables.js';
 
 /**
  * How long a clean, extractable file may go without its text before
@@ -41,15 +35,8 @@ export const TEXT_RETRY_MS = 5 * 60 * 1000;
 /** Rows per round. */
 const BATCH = 1000;
 
-/** The files `retryPending()` queues: attachments_text_pending_idx's predicate, changed more than `TEXT_RETRY_MS` ago. */
-const retried = (now: Date) =>
-  and(
-    eq(attachments.textPending, true),
-    eq(attachments.scanStatus, 'clean'),
-    eq(attachments.locked, false),
-    isNull(attachments.fields),
-    lt(attachments.updatedAt, new Date(now.getTime() - TEXT_RETRY_MS)),
-  );
+/** The files `retryPending()` queues: those changed more than `TEXT_RETRY_MS` ago. */
+const retriedBefore = (now: Date) => new Date(now.getTime() - TEXT_RETRY_MS);
 
 /**
  * The text of uploaded files, for the search inside files
@@ -68,7 +55,7 @@ export class AttachmentTextService {
   private readonly extracted: Counter;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly disk: StorageDisk,
     private readonly extractor: TextExtractor,
@@ -93,10 +80,7 @@ export class AttachmentTextService {
     return this.system.run(
       ATTACHMENT_TEXT_JOB,
       async () => {
-        const [row] = await this.db
-          .select()
-          .from(attachments)
-          .where(eq(attachments.id, job.attachmentId));
+        const row = await this.repository.find(job.attachmentId);
         if (
           !row ||
           row.scanStatus !== 'clean' ||
@@ -105,16 +89,10 @@ export class AttachmentTextService {
         ) {
           return 'skipped';
         }
-        const [done] = await this.db
-          .select({ id: attachmentTexts.id })
-          .from(attachmentTexts)
-          .where(
-            and(
-              eq(attachmentTexts.attachmentId, row.id),
-              eq(attachmentTexts.key, row.key),
-            ),
-          );
-        if (done || !isExtractable(row.contentType)) {
+        if (
+          (await this.repository.hasText(row.id, row.key)) ||
+          !isExtractable(row.contentType)
+        ) {
           // Nothing to extract for this file: the retry stops looking at it.
           await this.settled(row);
           return 'skipped';
@@ -169,12 +147,10 @@ export class AttachmentTextService {
     return this.system.run(
       ATTACHMENT_TEXT_JOB,
       async () => {
-        const stale = await this.db
-          .select({ id: attachments.id })
-          .from(attachments)
-          .where(retried(now))
-          .orderBy(asc(attachments.updatedAt))
-          .limit(BATCH);
+        const stale = await this.repository.pendingTexts(
+          retriedBefore(now),
+          BATCH,
+        );
         const period = String(Math.floor(now.getTime() / TEXT_RETRY_MS));
         for (const { id } of stale) await this.queue.enqueue(id, period);
         return stale.length;
@@ -186,11 +162,7 @@ export class AttachmentTextService {
   /** The tenants `retryPending()` has work in, read across every tenant (the retry job, in `acrossTenants()`). */
   async pendingTenants(now: Date) {
     if (!this.queue.enabled) return [];
-    const rows = await this.db
-      .selectDistinct({ tenantId: attachments.tenantId })
-      .from(attachments)
-      .where(retried(now));
-    return rows.map((row) => row.tenantId);
+    return this.repository.pendingTextTenants(retriedBefore(now));
   }
 
   /**
@@ -200,19 +172,8 @@ export class AttachmentTextService {
    */
   private store(row: Attachment, status: AttachmentTextStatus, text: string) {
     return this.txHost.withTransaction(async () => {
-      const [current] = await this.db
-        .select({ id: attachments.id })
-        .from(attachments)
-        .where(and(eq(attachments.id, row.id), eq(attachments.key, row.key)))
-        .for('share');
-      if (!current) return false;
-      await this.db
-        .insert(attachmentTexts)
-        .values({ attachmentId: row.id, key: row.key, status, text })
-        .onConflictDoUpdate({
-          target: [attachmentTexts.tenantId, attachmentTexts.attachmentId],
-          set: { key: row.key, status, text, updatedAt: new Date() },
-        });
+      if (!(await this.repository.shareLockFile(row.id, row.key))) return false;
+      await this.repository.saveText(row.id, row.key, status, text);
       await this.settled(row);
       return true;
     });
@@ -220,10 +181,7 @@ export class AttachmentTextService {
 
   /** The file at `row.key` needs no more extraction (if it is still the attachment's). */
   private async settled(row: Attachment) {
-    await this.db
-      .update(attachments)
-      .set({ textPending: false })
-      .where(and(eq(attachments.id, row.id), eq(attachments.key, row.key)));
+    await this.repository.settleText(row.id, row.key);
   }
 }
 

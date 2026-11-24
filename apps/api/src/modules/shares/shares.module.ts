@@ -57,6 +57,7 @@ import {
   SharesService,
 } from './shares.service.js';
 import { SharesPersonalData } from './shares.personal-data.js';
+import { SharesRepository } from './shares.repository.js';
 
 /**
  * What a record that can be shared tells the engine: its list description
@@ -122,7 +123,12 @@ const sharePermissions = (record: RecordDeclaration) =>
     RecordsModule,
   ],
   controllers: [SharedController],
-  providers: [SharesService, ShareCodeMail, SharesPersonalData],
+  providers: [
+    SharesService,
+    SharesRepository,
+    ShareCodeMail,
+    SharesPersonalData,
+  ],
   exports: [SharesService],
 })
 export class SharesModule {

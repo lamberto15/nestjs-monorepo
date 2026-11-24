@@ -1,4 +1,5 @@
 import { RecentsPersonalData } from './recents.personal-data.js';
+import { RecentsRepository } from './recents.repository.js';
 import { recentRecords } from './recents.tables.js';
 import { personalDataSection } from '../../../test/personal-data.js';
 
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `recents` section (recents.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('recents', [RecentsPersonalData], {
+personalDataSection('recents', [RecentsPersonalData, RecentsRepository], {
   seed: async (c) => {
     await c.inTenant(() =>
       c.db.insert(recentRecords).values([

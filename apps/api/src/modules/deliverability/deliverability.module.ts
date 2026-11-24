@@ -28,6 +28,7 @@ import { MailEventsController } from './mail-events.controller.js';
 import { MailEventsProcessor } from './mail-events.processor.js';
 import { MailEventsRetentionJob } from './mail-events.retention.job.js';
 import { MailEventsService } from './mail-events.service.js';
+import { DeliverabilityRepository } from './deliverability.repository.js';
 import { SuppressionsService } from './suppressions.service.js';
 import { DeliverabilityPersonalData } from './deliverability.personal-data.js';
 
@@ -74,6 +75,7 @@ import { DeliverabilityPersonalData } from './deliverability.personal-data.js';
     MailEventsProcessor,
     MailEventsRetentionJob,
     SuppressionsService,
+    DeliverabilityRepository,
     MailDeliveryRules,
     MailSuppressionPolicy,
     OperatorGuard,

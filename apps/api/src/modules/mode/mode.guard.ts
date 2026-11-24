@@ -34,12 +34,10 @@ export const ReadOnlyPerCall = () => SetMetadata(READ_ONLY_PER_CALL, true);
  */
 export const MCP_TOOL_METADATA = 'nestjs:mcp:primitive';
 
-/** Whether an MCP tool declares that it changes nothing. */
-const declaresReadOnly = (handler: object) =>
-  (
-    Reflect.getMetadata(MCP_TOOL_METADATA, handler) as
-      { options?: { annotations?: { readOnlyHint?: boolean } } } | undefined
-  )?.options?.annotations?.readOnlyHint === true;
+/** What `@Tool()` keeps of a tool, as far as read-only mode reads it. */
+interface ToolOptions {
+  options?: { annotations?: { readOnlyHint?: boolean } };
+}
 
 /**
  * While `read-only`, every request that writes (not GET, HEAD or OPTIONS)
@@ -67,7 +65,7 @@ export class ModeGuard implements CanActivate {
       const mode = await this.mode.get();
       if (
         mode === 'normal' ||
-        (mode === 'read-only' && declaresReadOnly(context.getHandler()))
+        (mode === 'read-only' && this.declaresReadOnly(context))
       ) {
         return true;
       }
@@ -100,6 +98,16 @@ export class ModeGuard implements CanActivate {
       return true;
     }
     throw refusal(mode);
+  }
+
+  /** Whether an MCP tool declares that it changes nothing. */
+  private declaresReadOnly(context: ExecutionContext) {
+    return (
+      this.reflector.get<ToolOptions | undefined>(
+        MCP_TOOL_METADATA,
+        context.getHandler(),
+      )?.options?.annotations?.readOnlyHint === true
+    );
   }
 }
 

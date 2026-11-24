@@ -1,13 +1,9 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { and, eq, or, sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { sequencesConfig } from './sequences.config.js';
-import { sequences } from './sequences.tables.js';
+import { SequencesRepository } from './sequences.repository.js';
 
 export interface NextNumberOptions {
   /** Numbered apart: a unit's id, a client's key… Default: one series. */
@@ -55,7 +51,7 @@ export function formatNumber(
 @Injectable()
 export class SequencesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SequencesRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     @Inject(sequencesConfig.KEY)
     private readonly config: ConfigType<typeof sequencesConfig>,
@@ -68,15 +64,7 @@ export class SequencesService {
       ? this.yearOf(options.at ?? new Date())
       : undefined;
     const scope = [options.scope ?? '', year ?? ''].join('|');
-    const [row] = await this.db
-      .insert(sequences)
-      .values({ name, scope, value: 1 })
-      .onConflictDoUpdate({
-        target: [sequences.tenantId, sequences.name, sequences.scope],
-        set: { value: sql`${sequences.value} + 1` },
-      })
-      .returning({ value: sequences.value });
-    const value = Number(row!.value);
+    const value = await this.repository.increment(name, scope);
     return { value, formatted: formatNumber(value, options, year) };
   }
 
@@ -89,11 +77,7 @@ export class SequencesService {
       ? this.yearOf(options.at ?? new Date())
       : undefined;
     const scope = [options.scope ?? '', year ?? ''].join('|');
-    const [row] = await this.db
-      .select({ value: sequences.value })
-      .from(sequences)
-      .where(and(eq(sequences.name, name), eq(sequences.scope, scope)));
-    return Number(row?.value ?? 0);
+    return Number((await this.repository.valueOf(name, scope)) ?? 0);
   }
 
   /**
@@ -109,19 +93,10 @@ export class SequencesService {
     { carryFrom }: { carryFrom?: string } = {},
   ) {
     this.assertTransaction();
-    // Without a counter to carry on, the first row holds 1; params of an untyped sum would not resolve.
-    const initial = carryFrom
-      ? sql`1 + coalesce((select ${sequences.value} from ${sequences} where ${and(eq(sequences.name, name), eq(sequences.scope, carryFrom))}), 0)`
-      : 1;
-    const [row] = await this.db
-      .insert(sequences)
-      .values({ name, scope: key, value: initial })
-      .onConflictDoUpdate({
-        target: [sequences.tenantId, sequences.name, sequences.scope],
-        set: { value: sql`${sequences.value} + 1` },
-      })
-      .returning({ value: sequences.value });
-    return Number(row!.value);
+    // Without a counter to carry on, the first row holds 1.
+    return carryFrom
+      ? this.repository.incrementFrom(name, key, carryFrom)
+      : this.repository.increment(name, key);
   }
 
   /** A naming series counter's last value (0 when none), `carryFrom` as in `take()`. */
@@ -137,20 +112,9 @@ export class SequencesService {
     const wanted = counters.flatMap(({ name, key, carryFrom }) =>
       [key, carryFrom]
         .filter((scope) => scope !== undefined)
-        .map((scope) =>
-          and(eq(sequences.name, name), eq(sequences.scope, scope)),
-        ),
+        .map((scope) => ({ name, scope })),
     );
-    const rows = wanted.length
-      ? await this.db
-          .select({
-            name: sequences.name,
-            scope: sequences.scope,
-            value: sequences.value,
-          })
-          .from(sequences)
-          .where(or(...wanted))
-      : [];
+    const rows = await this.repository.values(wanted);
     const valueOf = (name: string, scope?: string) =>
       rows.find((row) => row.name === name && row.scope === scope)?.value;
     return counters.map(({ name, key, carryFrom }) =>
@@ -172,28 +136,13 @@ export class SequencesService {
   ) {
     this.assertTransaction();
     // The row's lock first: a number taken meanwhile is counted.
-    const [locked] = await this.db
-      .select({ value: sequences.value })
-      .from(sequences)
-      .where(and(eq(sequences.name, name), eq(sequences.scope, key)))
-      .for('update');
-    const current = locked
-      ? Number(locked.value)
-      : await this.peek(name, key, { carryFrom });
+    const locked = await this.repository.lockValue(name, key);
+    const current = locked ?? (await this.peek(name, key, { carryFrom }));
     if (value < current) {
       return { set: false, before: current };
     }
-    const [row] = await this.db
-      .insert(sequences)
-      .values({ name, scope: key, value })
-      .onConflictDoUpdate({
-        target: [sequences.tenantId, sequences.name, sequences.scope],
-        set: { value },
-        // Taken by a write that committed between the two statements.
-        setWhere: sql`${sequences.value} <= ${value}`,
-      })
-      .returning({ value: sequences.value });
-    return { set: row !== undefined, before: current };
+    const set = await this.repository.setIfNotPast(name, key, value);
+    return { set, before: current };
   }
 
   /** The row lock that makes numbers gapless lasts until the commit: outside a transaction it would end at once. */

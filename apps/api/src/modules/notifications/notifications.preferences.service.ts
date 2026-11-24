@@ -1,8 +1,6 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import {
   type Principal,
@@ -12,7 +10,7 @@ import {
 import { NotificationCatalog } from './notifications.catalog.js';
 import { notificationsConfig } from './notifications.config.js';
 import { offered } from './notifications.preferences.js';
-import { notificationPreferences } from './notifications.tables.js';
+import { NotificationsRepository } from './notifications.repository.js';
 import type { PreferenceOverrides } from './notifications.types.js';
 import type { QuietHours } from './quiet-hours.js';
 
@@ -25,7 +23,7 @@ import type { QuietHours } from './quiet-hours.js';
 @Injectable()
 export class NotificationPreferencesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: NotificationsRepository,
     private readonly catalog: NotificationCatalog,
     private readonly audit: AuditService,
     @Inject(notificationsConfig.KEY)
@@ -34,20 +32,12 @@ export class NotificationPreferencesService {
 
   /** A recipient's stored overrides (empty when none). */
   async overrides(recipient: string): Promise<PreferenceOverrides> {
-    const [row] = await this.db
-      .select({ settings: notificationPreferences.settings })
-      .from(notificationPreferences)
-      .where(eq(notificationPreferences.recipient, recipient));
-    return row?.settings ?? {};
+    return this.repository.overridesOf(recipient);
   }
 
   /** A recipient's quiet hours, or null. */
   async quietHoursOf(recipient: string): Promise<QuietHours | null> {
-    const [row] = await this.db
-      .select({ quietHours: notificationPreferences.quietHours })
-      .from(notificationPreferences)
-      .where(eq(notificationPreferences.recipient, recipient));
-    return row?.quietHours ?? null;
+    return this.repository.quietHoursOf(recipient);
   }
 
   /** The caller's effective settings, per type, for the channels they may set. */
@@ -88,13 +78,7 @@ export class NotificationPreferencesService {
       if (Object.keys(given).length > 0) settings[type] = given;
     }
     const from = await this.overrides(recipient);
-    await this.db
-      .insert(notificationPreferences)
-      .values({ recipient, settings })
-      .onConflictDoUpdate({
-        target: notificationPreferences.recipient,
-        set: { settings },
-      });
+    await this.repository.saveOverrides(recipient, settings);
     await this.audit.record(principal, {
       action: 'notificationPreferences.updated',
       targetType: 'notificationPreferences',
@@ -124,13 +108,7 @@ export class NotificationPreferencesService {
   ) {
     const recipient = principalKey(principal);
     const from = await this.quietHoursOf(recipient);
-    await this.db
-      .insert(notificationPreferences)
-      .values({ recipient, quietHours: quiet })
-      .onConflictDoUpdate({
-        target: notificationPreferences.recipient,
-        set: { quietHours: quiet },
-      });
+    await this.repository.saveQuietHours(recipient, quiet);
     await this.audit.record(principal, {
       action: 'notificationQuietHours.updated',
       targetType: 'notificationPreferences',

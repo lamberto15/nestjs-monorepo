@@ -22,7 +22,7 @@ const BATCH = 500;
  */
 @Injectable()
 export class ReportsRunner {
-  private readonly logger = new Logger('Reports');
+  private readonly logger = new Logger(ReportsRunner.name);
 
   constructor(
     private readonly reports: ReportsService,

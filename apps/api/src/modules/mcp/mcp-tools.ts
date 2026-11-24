@@ -9,7 +9,7 @@ import {
   UseFilters,
   applyDecorators,
 } from '@nestjs/common';
-import { DiscoveryService, MetadataScanner } from '@nestjs/core';
+import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { t } from '@nestjs/i18n';
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import {
@@ -49,7 +49,7 @@ interface ToolMetadata {
  */
 @Catch()
 export class McpErrorFilter implements ExceptionFilter {
-  private readonly logger = new Logger('Mcp');
+  private readonly logger = new Logger(McpErrorFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): CallToolResult {
     if (host.getType<string>() !== 'mcp') {
@@ -122,6 +122,7 @@ export class McpToolChecks implements OnModuleInit {
   constructor(
     private readonly discovery: DiscoveryService,
     private readonly scanner: MetadataScanner,
+    private readonly reflector: Reflector,
   ) {}
 
   onModuleInit() {
@@ -138,20 +139,22 @@ export class McpToolChecks implements OnModuleInit {
       > | null;
       // A value made by Object.create(null) has no class, so no tool.
       if (!prototype) continue;
-      const type = prototype.constructor as { name: string };
+      const type = prototype.constructor as (() => unknown) & { name: string };
       for (const name of this.scanner.getAllMethodNames(prototype)) {
-        const method = prototype[name] as object;
-        const tool = Reflect.getMetadata(MCP_TOOL_METADATA, method) as
-          ToolMetadata | undefined;
+        const method = prototype[name] as () => unknown;
+        const tool = this.reflector.get<ToolMetadata | undefined>(
+          MCP_TOOL_METADATA,
+          method,
+        );
         if (!tool) continue;
         const where = `${type.name}.${name}`;
-        if (!Reflect.getMetadata(MCP_TOOLS, type)) {
+        if (!this.reflector.get<boolean | undefined>(MCP_TOOLS, type)) {
           problems.push(`${where}: its class has no @McpTools()`);
         }
         const checked = [CAN, CAN_ANYONE].some(
           (key) =>
-            Reflect.getMetadata(key, method) !== undefined ||
-            Reflect.getMetadata(key, type) !== undefined,
+            this.reflector.get<unknown>(key, method) !== undefined ||
+            this.reflector.get<unknown>(key, type) !== undefined,
         );
         if (!checked) {
           problems.push(`${where}: declares no @Can() or @Can.Anyone()`);
@@ -159,8 +162,10 @@ export class McpToolChecks implements OnModuleInit {
         const writes = [method, type]
           .flatMap(
             (host) =>
-              (Reflect.getMetadata(CAN, host) as
-                { ability: string }[] | undefined) ?? [],
+              this.reflector.get<{ ability: string }[] | undefined>(
+                CAN,
+                host,
+              ) ?? [],
           )
           .filter(({ ability }) => WRITES.has(ability));
         if (tool.options?.annotations?.readOnlyHint && writes.length > 0) {

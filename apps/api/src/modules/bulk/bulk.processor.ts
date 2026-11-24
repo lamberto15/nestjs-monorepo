@@ -1,16 +1,13 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { OnWorkerEvent, Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { inTenantOf, TenantWorkerHost } from '../../core/tenancy/tenant-job.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { inAuditRun } from '../../iam/audit/audit-run.js';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
 import { Realtime } from '../realtime/realtime.service.js';
+import { BulkRepository } from './bulk.repository.js';
 import { bulkFailed, bulkFinished, bulkProgress } from './bulk.events.js';
 import { PRINCIPAL_GONE, BulkService, publicReason } from './bulk.service.js';
 import {
@@ -37,7 +34,7 @@ export class BulkProcessor extends TenantWorkerHost<BulkJob, BulkResult> {
     private readonly bulk: BulkService,
     private readonly realtime: Realtime,
     private readonly users: UsersRepository,
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: BulkRepository,
   ) {
     super();
   }
@@ -138,10 +135,7 @@ export class BulkProcessor extends TenantWorkerHost<BulkJob, BulkResult> {
     }
     if (principal.kind !== 'client') return null;
     // Row-level security: another tenant's client is none.
-    const [client] = await this.db
-      .select({ active: apiClients.active, name: apiClients.name })
-      .from(apiClients)
-      .where(eq(apiClients.id, principal.id));
+    const client = await this.repository.findClient(principal.id);
     return client?.active ? { ...principal, name: client.name } : null;
   }
 }

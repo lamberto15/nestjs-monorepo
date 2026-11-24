@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -6,29 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  and,
-  count,
-  eq,
-  getColumns,
-  inArray,
-  or,
-  type SQL,
-  sql,
-} from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { manager } from '../../iam/access/access.policy.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -37,18 +18,19 @@ import {
   type RequestPrincipal,
 } from '../../iam/auth/principal.js';
 import { OrganizationService } from '../../iam/organization/organization.service.js';
-import { organizationalUnits } from '../../iam/organization/organization.tables.js';
 import { fieldSchemas } from '../fields/fields.js';
 import { Records } from '../records/records.service.js';
-import { TEMPLATE_LIST } from './template.list.js';
 import type {
   CreateTemplateDto,
   UpdateTemplateDto,
 } from './template.schemas.js';
 import {
-  type RecordTemplateRow,
-  recordTemplates,
-  type TemplateVisibility,
+  type TemplateSeer,
+  TemplatesRepository,
+} from './templates.repository.js';
+import type {
+  RecordTemplateRow,
+  TemplateVisibility,
 } from './templates.tables.js';
 
 /** At most this many templates per owner. */
@@ -98,7 +80,7 @@ const scopeOf = (
 @Injectable()
 export class TemplatesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: TemplatesRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly access: AccessService,
@@ -160,28 +142,9 @@ export class TemplatesService {
     const creatable = (await this.subjects(principal)).items.map(
       (item) => item.subject,
     );
-    const where = and(
-      await this.visibleTo(principal),
-      creatable.length
-        ? inArray(recordTemplates.subject, creatable)
-        : sql`false`,
-      TEMPLATE_LIST.where(query),
-    );
+    const seer = await this.seer(principal);
     const isManager = await this.isManager(principal);
-    const [rows, total] = await Promise.all([
-      this.db
-        // With the sort values the cursor needs (lower(name)); pick() drops them.
-        .select({
-          ...getColumns(recordTemplates),
-          ...TEMPLATE_LIST.sortSelect(query),
-        })
-        .from(recordTemplates)
-        .where(and(where, afterCursor(recordTemplates.id, query)))
-        .orderBy(...pageOrder(recordTemplates.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, recordTemplates, where, query),
-    ]);
+    const [rows, total] = await this.repository.page(seer, creatable, query);
     const page = toPage(rows, query, total);
     return {
       ...page,
@@ -208,9 +171,8 @@ export class TemplatesService {
     await this.assertMayShare(principal, dto.visibility, unitId);
     const row = await this.txHost.withTransaction(async () => {
       await this.assertRoomFor(owner);
-      const [created] = await this.db
-        .insert(recordTemplates)
-        .values({
+      const created = await this.repository
+        .insert({
           subject: dto.subject,
           name: dto.name,
           visibility: dto.visibility,
@@ -219,18 +181,17 @@ export class TemplatesService {
           scope: scopeOf(dto.visibility, owner, unitId),
           values: dto.values,
         })
-        .returning()
         .catch((error: unknown) => {
           throw this.taken(error, dto.subject, dto.name);
         });
       await this.audit.record(principal, {
         action: 'recordTemplate.created',
         targetType: 'recordTemplate',
-        targetId: created!.id,
+        targetId: created.id,
         details: { subject: dto.subject, name: dto.name },
         ip,
       });
-      return created!;
+      return created;
     });
     return this.template(principal, row, await this.isManager(principal));
   }
@@ -289,9 +250,8 @@ export class TemplatesService {
       await this.assertSaveable(principal, found.subject, values.values);
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(recordTemplates)
-        .set({
+      const updated = await this.repository
+        .update(id, {
           ...(values.name !== undefined && { name: values.name }),
           ...(values.values !== undefined && { values: values.values }),
           ...(reshare && {
@@ -300,8 +260,6 @@ export class TemplatesService {
             scope: scopeOf(visibility, found.owner, unitId),
           }),
         })
-        .where(eq(recordTemplates.id, id))
-        .returning()
         .catch((error: unknown) => {
           throw this.taken(error, found.subject, values.name ?? found.name);
         });
@@ -312,7 +270,7 @@ export class TemplatesService {
         details: { subject: found.subject, changed: Object.keys(values) },
         ip,
       });
-      return updated!;
+      return updated;
     });
     return this.template(principal, row, isManager);
   }
@@ -321,7 +279,7 @@ export class TemplatesService {
     const found = await this.findVisible(principal, id);
     this.assertMayChange(principal, found, await this.isManager(principal));
     await this.txHost.withTransaction(async () => {
-      await this.db.delete(recordTemplates).where(eq(recordTemplates.id, id));
+      await this.repository.delete(id);
       await this.audit.record(principal, {
         action: 'recordTemplate.deleted',
         targetType: 'recordTemplate',
@@ -461,10 +419,7 @@ export class TemplatesService {
       }
       return;
     }
-    const [unit] = await this.db
-      .select({ id: organizationalUnits.id })
-      .from(organizationalUnits)
-      .where(eq(organizationalUnits.id, unitId!));
+    const unit = await this.repository.findUnitId(unitId!);
     if (!unit) {
       throw invalid([{ path: 'unitId', message: 'No such unit.' }]);
     }
@@ -472,7 +427,7 @@ export class TemplatesService {
       !isManager &&
       !(
         principal.kind === 'user' &&
-        (await this.organization.unitsOf(principal.id)).includes(unit.id)
+        (await this.organization.unitsOf(principal.id)).includes(unit)
       )
     ) {
       throw new ForbiddenException({
@@ -528,31 +483,23 @@ export class TemplatesService {
     };
   }
 
-  /** The SQL condition for the templates the principal sees: theirs, their units', the tenant's. */
-  private async visibleTo(principal: RequestPrincipal): Promise<SQL> {
-    const unitIds =
-      principal.kind === 'user'
-        ? await this.organization.unitsOf(principal.id)
-        : [];
-    return or(
-      // Theirs whatever it is shared with: an administrator shares with a unit they aren't in.
-      eq(recordTemplates.owner, principalKey(principal)),
-      eq(recordTemplates.visibility, 'tenant'),
-      unitIds.length
-        ? and(
-            eq(recordTemplates.visibility, 'unit'),
-            inArray(recordTemplates.unitId, unitIds),
-          )
-        : undefined,
-    )!;
+  /** Who the principal is to templates: they see theirs, their units', the tenant's. */
+  private async seer(principal: RequestPrincipal): Promise<TemplateSeer> {
+    return {
+      owner: principalKey(principal),
+      unitIds:
+        principal.kind === 'user'
+          ? await this.organization.unitsOf(principal.id)
+          : [],
+    };
   }
 
   /** A template the principal sees, else a 404 as for one that doesn't exist. */
   private async findVisible(principal: RequestPrincipal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(recordTemplates)
-      .where(and(eq(recordTemplates.id, id), await this.visibleTo(principal)));
+    const row = await this.repository.findVisible(
+      await this.seer(principal),
+      id,
+    );
     if (!row) throw new NotFoundException(`Template ${id} not found.`);
     return row;
   }
@@ -572,11 +519,9 @@ export class TemplatesService {
    * saves racing may pass the limit by one: it is a courtesy, not a quota.
    */
   private async assertRoomFor(owner: string) {
-    const [row] = await this.db
-      .select({ templates: count() })
-      .from(recordTemplates)
-      .where(eq(recordTemplates.owner, owner));
-    if ((row?.templates ?? 0) >= MAX_TEMPLATES_PER_OWNER) {
+    if (
+      (await this.repository.countOwnedBy(owner)) >= MAX_TEMPLATES_PER_OWNER
+    ) {
       throw invalid([
         {
           path: 'name',

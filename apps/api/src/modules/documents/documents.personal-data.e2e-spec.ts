@@ -1,4 +1,5 @@
 import { DocumentsPersonalData } from './documents.personal-data.js';
+import { DocumentsRepository } from './documents.repository.js';
 import { documents } from './documents.tables.js';
 import { personalDataSection, uuid } from '../../../test/personal-data.js';
 
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `documents` section (documents.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('documents', [DocumentsPersonalData], {
+personalDataSection('documents', [DocumentsPersonalData, DocumentsRepository], {
   seed: async (c) => {
     const base = {
       source: 'test-items',

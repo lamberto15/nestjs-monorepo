@@ -10,6 +10,7 @@ import { RecordsModule } from '../records/records.module.js';
 import { commentsController } from './comments.controller.js';
 import { CommentsExtension } from './comments.extension.js';
 import { COMMENT_NOTIFICATIONS } from './comments.notifications.js';
+import { CommentsRepository } from './comments.repository.js';
 import { CommentsService } from './comments.service.js';
 import { CommentsPersonalData } from './comments.personal-data.js';
 
@@ -20,7 +21,7 @@ import { CommentsPersonalData } from './comments.personal-data.js';
 class CommentsNotificationsModule {}
 
 /** The person's comments for their export and erasure: one section however many records take comments. */
-@Module({ providers: [CommentsPersonalData] })
+@Module({ providers: [CommentsPersonalData, CommentsRepository] })
 class CommentsPersonalDataModule {}
 
 /**
@@ -47,6 +48,7 @@ export class CommentsModule {
       providers: [
         { provide: RECORD, useValue: record },
         CommentsService,
+        CommentsRepository,
         CommentsExtension,
       ],
     };

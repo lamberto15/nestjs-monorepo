@@ -1,4 +1,5 @@
 import { AiPersonalData } from './ai.personal-data.js';
+import { AiRepository } from './ai.repository.js';
 import { aiRuns } from './ai.tables.js';
 import { personalDataSection, uuid } from '../../../test/personal-data.js';
 
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `ai` section (ai.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('ai', [AiPersonalData], {
+personalDataSection('ai', [AiPersonalData, AiRepository], {
   seed: async (c) => {
     const base = {
       source: 'test-items',

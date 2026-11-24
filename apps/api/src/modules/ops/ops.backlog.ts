@@ -1,13 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectDrizzle } from '@nestjs/drizzle';
 import { t } from '@nestjs/i18n';
 import { OutboxDeadLetters } from '@nestjs/outbox';
 import type { Job, JobType } from 'bullmq';
-import { and, count, eq, inArray, isNull, lt, not, or, sql } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { MAIL_QUEUE } from '../../core/mail/mail.queue.js';
-import { outboxDeadLetters, outboxMessages } from './outbox-store.view.js';
 import type { BacklogScope } from './ops.schemas.js';
+import { OpsRepository } from './ops.repository.js';
 import { OpsService } from './ops.service.js';
 
 /** Rows per statement, jobs per Redis page: nothing grows with the backlog. */
@@ -24,15 +21,6 @@ const PREVIEWED: JobType[] = [...DISCARDABLE, 'active'];
 const essential = (job: Job) =>
   (job.data as { essential?: boolean } | undefined)?.essential === true;
 
-type OutboxColumns = Pick<
-  typeof outboxMessages | typeof outboxDeadLetters,
-  'topic' | 'headers' | 'createdAt'
->;
-
-/** A message no relay holds: never leased, or its lease ran out. */
-const notLeased = (now: number) =>
-  or(isNull(outboxMessages.leaseUntil), lt(outboxMessages.leaseUntil, now))!;
-
 /**
  * Scoped recovery of the two places a notification storm piles up: the
  * outbox (pending messages and dead letters) and the `mail` queue. A
@@ -47,7 +35,7 @@ const notLeased = (now: number) =>
 @Injectable()
 export class OpsBacklog {
   constructor(
-    @InjectDrizzle() private readonly db: Database,
+    private readonly repository: OpsRepository,
     private readonly deadLetters: OutboxDeadLetters,
     private readonly ops: OpsService,
   ) {}
@@ -55,14 +43,11 @@ export class OpsBacklog {
   /** What a discard or a retry with this scope would touch, counted. */
   async preview(scope: BacklogScope) {
     const now = Date.now();
-    const pending = await this.groups(outboxMessages, scope, notLeased(now));
-    const [inFlight] = await this.db
-      .select({ count: count() })
-      .from(outboxMessages)
-      .where(and(this.outboxWhere(outboxMessages, scope), not(notLeased(now))));
-    const dead = await this.groups(outboxDeadLetters, scope);
+    const pending = await this.groups('messages', scope, now);
+    const leased = await this.repository.countLeased(scope, now);
+    const dead = await this.groups('deadLetters', scope, now);
     return {
-      outbox: { pending, deadLetters: dead, leased: inFlight?.count ?? 0 },
+      outbox: { pending, deadLetters: dead, leased },
       mail: scope.tenantId ? null : await this.previewMail(scope),
     };
   }
@@ -83,19 +68,7 @@ export class OpsBacklog {
     while (done < limit) {
       const size = Math.min(BATCH, limit - done);
       const now = Date.now();
-      const ids = (
-        await this.db
-          .select({ id: outboxMessages.id })
-          .from(outboxMessages)
-          .where(and(this.outboxWhere(outboxMessages, scope), notLeased(now)))
-          .limit(size)
-      ).map((row) => row.id);
-      if (ids.length > 0) {
-        await this.db
-          .delete(outboxMessages)
-          .where(and(inArray(outboxMessages.id, ids), notLeased(now)));
-      }
-      let removed = ids.length;
+      let removed = await this.repository.deletePending(scope, now, size);
       if (removed < size) {
         const letters = await this.letterIds(scope, size - removed);
         if (letters.length > 0)
@@ -131,15 +104,8 @@ export class OpsBacklog {
     return { count: done, more: done >= limit };
   }
 
-  private async letterIds(scope: BacklogScope, size: number) {
-    return (
-      await this.db
-        .select({ id: outboxDeadLetters.id })
-        .from(outboxDeadLetters)
-        .where(this.outboxWhere(outboxDeadLetters, scope))
-        .orderBy(outboxDeadLetters.createdAt)
-        .limit(size)
-    ).map((row) => row.id);
+  private letterIds(scope: BacklogScope, size: number) {
+    return this.repository.deadLetterIds(scope, size);
   }
 
   private mailQueue() {
@@ -156,27 +122,12 @@ export class OpsBacklog {
     }
   }
 
-  /** The outbox rows of a scope. The tenant is in the message's headers. */
-  private outboxWhere(columns: OutboxColumns, scope: BacklogScope) {
-    return and(
-      scope.tenantId
-        ? eq(sql`${columns.headers}->>'tenantId'`, scope.tenantId)
-        : undefined,
-      scope.topic ? eq(columns.topic, scope.topic) : undefined,
-      scope.before ? lt(columns.createdAt, scope.before.getTime()) : undefined,
-    );
-  }
-
   private async groups(
-    table: typeof outboxMessages | typeof outboxDeadLetters,
+    table: 'messages' | 'deadLetters',
     scope: BacklogScope,
-    extra?: ReturnType<typeof notLeased>,
+    now: number,
   ) {
-    const rows = await this.db
-      .select({ topic: table.topic, count: count() })
-      .from(table)
-      .where(and(this.outboxWhere(table, scope), extra))
-      .groupBy(table.topic);
+    const rows = await this.repository.countByTopic(table, scope, now);
     rows.sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic));
     return {
       total: rows.reduce((sum, row) => sum + row.count, 0),

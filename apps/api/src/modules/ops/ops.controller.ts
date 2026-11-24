@@ -25,11 +25,11 @@ import {
 } from '@nestjs/swagger';
 import { type Observable, map } from 'rxjs';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
-import { AuditService } from '../../iam/audit/audit.service.js';
 import { OperatorOnly } from '../../iam/auth/operator-only.js';
 import type { UserPrincipal } from '../../iam/auth/principal.js';
 import { UserOnly } from '../../iam/auth/user-only.decorator.js';
 import { UserThrottle } from '../../iam/auth/user-throttle.guard.js';
+import { OpsActions } from './ops.actions.js';
 import { OpsBacklog } from './ops.backlog.js';
 import { OpsDiagnostics } from './ops.diagnostics.js';
 import { OpsEventStream } from './ops.events.js';
@@ -85,7 +85,7 @@ import { OpsService } from './ops.service.js';
 export class OpsController {
   constructor(
     private readonly ops: OpsService,
-    private readonly audit: AuditService,
+    private readonly actions: OpsActions,
     private readonly backlog: OpsBacklog,
     private readonly diagnostics: OpsDiagnostics,
     private readonly events: OpsEventStream,
@@ -127,19 +127,12 @@ export class OpsController {
   })
   @ApiOkResponse({ standardSchema: pausedSchema })
   @ApiNotFoundResponse({ description: 'queue_not_found.' })
-  async pause(
+  pause(
     @CurrentUser() user: UserPrincipal,
     @Param('name') name: string,
     @Ip() ip: string,
   ) {
-    const result = await this.ops.pause(name);
-    await this.audit.record(user, {
-      action: 'ops.queue-paused',
-      targetType: 'queue',
-      targetId: name,
-      ip,
-    });
-    return result;
+    return this.actions.pause(user, name, ip);
   }
 
   @Post('queues/:name/resume')
@@ -148,19 +141,12 @@ export class OpsController {
   @ApiOperation({ summary: 'Resume a paused queue. Audited.' })
   @ApiOkResponse({ standardSchema: pausedSchema })
   @ApiNotFoundResponse({ description: 'queue_not_found.' })
-  async resume(
+  resume(
     @CurrentUser() user: UserPrincipal,
     @Param('name') name: string,
     @Ip() ip: string,
   ) {
-    const result = await this.ops.resume(name);
-    await this.audit.record(user, {
-      action: 'ops.queue-resumed',
-      targetType: 'queue',
-      targetId: name,
-      ip,
-    });
-    return result;
+    return this.actions.resume(user, name, ip);
   }
 
   @Post('queues/:name/retry-failed')
@@ -169,20 +155,12 @@ export class OpsController {
   @ApiOperation({ summary: "Run a queue's failed jobs again. Audited." })
   @ApiOkResponse({ standardSchema: retriedSchema })
   @ApiNotFoundResponse({ description: 'queue_not_found.' })
-  async retryFailed(
+  retryFailed(
     @CurrentUser() user: UserPrincipal,
     @Param('name') name: string,
     @Ip() ip: string,
   ) {
-    const retried = await this.ops.retryFailed(name);
-    await this.audit.record(user, {
-      action: 'ops.queue-failed-retried',
-      targetType: 'queue',
-      targetId: name,
-      details: { retried },
-      ip,
-    });
-    return { retried };
+    return this.actions.retryFailed(user, name, ip);
   }
 
   @Get('outbox')
@@ -220,18 +198,12 @@ export class OpsController {
       'They go back to the outbox with a fresh retry budget and the same id, so consumers still recognise them. Audited.',
   })
   @ApiOkResponse({ standardSchema: retriedSchema })
-  async retryDeadLetters(
+  retryDeadLetters(
     @CurrentUser() user: UserPrincipal,
     @Body({ schema: deadLettersTargetSchema }) body: DeadLettersTarget,
     @Ip() ip: string,
   ) {
-    const retried = await this.ops.retryDeadLetters(body);
-    await this.audit.record(user, {
-      action: 'ops.dead-letters-retried',
-      details: { ids: body.ids ?? 'all', retried },
-      ip,
-    });
-    return { retried };
+    return this.actions.retryDeadLetters(user, body, ip);
   }
 
   @Post('dead-letters/discard')
@@ -243,18 +215,12 @@ export class OpsController {
     description: 'Audited.',
   })
   @ApiOkResponse({ standardSchema: discardedSchema })
-  async discardDeadLetters(
+  discardDeadLetters(
     @CurrentUser() user: UserPrincipal,
     @Body({ schema: deadLettersTargetSchema }) body: DeadLettersTarget,
     @Ip() ip: string,
   ) {
-    const discarded = await this.ops.discardDeadLetters(body);
-    await this.audit.record(user, {
-      action: 'ops.dead-letters-discarded',
-      details: { ids: body.ids ?? 'all', discarded },
-      ip,
-    });
-    return { discarded };
+    return this.actions.discardDeadLetters(user, body, ip);
   }
 
   @Get('diagnostics')
@@ -280,20 +246,12 @@ export class OpsController {
   })
   @ApiOkResponse({ standardSchema: diagnosticTestSchema })
   @ApiNotFoundResponse({ description: 'diagnostic_not_found.' })
-  async testDiagnostic(
+  testDiagnostic(
     @CurrentUser() user: UserPrincipal,
     @Param('check') check: string,
     @Ip() ip: string,
   ) {
-    const result = await this.diagnostics.test(check);
-    await this.audit.record(user, {
-      action: 'ops.diagnostic-tested',
-      targetType: 'integration',
-      targetId: check,
-      details: { ok: result.ok, durationMs: result.durationMs },
-      ip,
-    });
-    return result;
+    return this.actions.testDiagnostic(user, check, ip);
   }
 
   @Sse('events')
@@ -338,23 +296,12 @@ export class OpsController {
       'outbox: deletes pending messages not being delivered, and dead letters. mail: removes waiting, delayed and failed jobs, never essential mail or running work. Up to limit (10,000) per call: call again while more. Preview first. Audited.',
   })
   @ApiOkResponse({ standardSchema: backlogResultSchema })
-  async discardBacklog(
+  discardBacklog(
     @CurrentUser() user: UserPrincipal,
     @Body({ schema: backlogActionSchema }) body: BacklogAction,
     @Ip() ip: string,
   ) {
-    const result = await this.backlog.discard(
-      body.target,
-      body.scope,
-      body.limit,
-    );
-    await this.audit.record(user, {
-      action: 'ops.backlog-discarded',
-      targetType: body.target,
-      details: { scope: body.scope, ...result },
-      ip,
-    });
-    return result;
+    return this.actions.discardBacklog(user, body, ip);
   }
 
   @Post('backlog/retry')
@@ -366,23 +313,12 @@ export class OpsController {
       'outbox: requeues the dead letters with a fresh retry budget; mail: retries the failed jobs. Up to limit (10,000) per call: call again while more. Audited.',
   })
   @ApiOkResponse({ standardSchema: backlogResultSchema })
-  async retryBacklog(
+  retryBacklog(
     @CurrentUser() user: UserPrincipal,
     @Body({ schema: backlogActionSchema }) body: BacklogAction,
     @Ip() ip: string,
   ) {
-    const result = await this.backlog.retry(
-      body.target,
-      body.scope,
-      body.limit,
-    );
-    await this.audit.record(user, {
-      action: 'ops.backlog-retried',
-      targetType: body.target,
-      details: { scope: body.scope, ...result },
-      ip,
-    });
-    return result;
+    return this.actions.retryBacklog(user, body, ip);
   }
 
   @Get('workflows')
@@ -415,18 +351,11 @@ export class OpsController {
   @ApiOkResponse({ standardSchema: workflowSchema })
   @ApiNotFoundResponse({ description: 'workflow_not_found.' })
   @ApiConflictResponse({ description: 'workflow_not_retryable: not failed.' })
-  async retryWorkflow(
+  retryWorkflow(
     @CurrentUser() user: UserPrincipal,
     @Param('id') id: string,
     @Ip() ip: string,
   ) {
-    const result = await this.ops.retryWorkflow(id);
-    await this.audit.record(user, {
-      action: 'ops.workflow-retried',
-      targetType: 'workflow',
-      targetId: id,
-      ip,
-    });
-    return result;
+    return this.actions.retryWorkflow(user, id, ip);
   }
 }

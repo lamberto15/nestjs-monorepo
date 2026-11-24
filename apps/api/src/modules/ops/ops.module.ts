@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
+import { OpsActions } from './ops.actions.js';
 import { OpsBacklog } from './ops.backlog.js';
 import { OpsController } from './ops.controller.js';
 import {
@@ -12,6 +13,7 @@ import {
 import { OpsEventStream } from './ops.events.js';
 import { OPS_PERMISSIONS } from './ops.permissions.js';
 import { OpsPolicy } from './ops.policy.js';
+import { OpsRepository } from './ops.repository.js';
 import { OpsService } from './ops.service.js';
 
 /**
@@ -31,6 +33,8 @@ import { OpsService } from './ops.service.js';
     OpsService,
     OpsPolicy,
     OpsBacklog,
+    OpsRepository,
+    OpsActions,
     OpsDiagnostics,
     OpsEventStream,
     MailDiagnostic,

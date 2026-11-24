@@ -1,14 +1,13 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { t } from '@nestjs/i18n';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import { principalKey, type UserPrincipal } from '../../iam/auth/principal.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
 import { NotificationCatalog } from './notifications.catalog.js';
 import { NotificationPreferencesService } from './notifications.preferences.service.js';
-import { notificationPreferences } from './notifications.tables.js';
+import { NotificationsRepository } from './notifications.repository.js';
 import {
   type UnsubscribeClaims,
   UnsubscribeLinks,
@@ -38,7 +37,7 @@ export type UnsubscribeDescription =
 @Injectable()
 export class UnsubscribeService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: NotificationsRepository,
     private readonly links: UnsubscribeLinks,
     private readonly catalog: NotificationCatalog,
     private readonly preferences: NotificationPreferencesService,
@@ -106,13 +105,7 @@ export class UnsubscribeService {
       switched.push(declaration.type);
     }
     if (switched.length === 0) return; // off already, or not a type any more
-    await this.db
-      .insert(notificationPreferences)
-      .values({ recipient, settings: to })
-      .onConflictDoUpdate({
-        target: notificationPreferences.recipient,
-        set: { settings: to },
-      });
+    await this.repository.saveOverrides(recipient, to);
     await this.audit.record(user, {
       action: 'notificationPreferences.updated',
       targetType: 'notificationPreferences',

@@ -1,13 +1,10 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { inArray, lt } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { dataQualityConfig } from './data-quality.config.js';
-import { dataQualityFindings } from './data-quality.tables.js';
+import { DataQualityRepository } from './data-quality.repository.js';
 
 const JOB = 'data-quality-finding-retention';
 
@@ -25,7 +22,7 @@ export class DataQualityRetentionJob {
   private readonly logger = new Logger('DataQuality');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: DataQualityRepository,
     private readonly tenancy: Tenancy,
     @Inject(dataQualityConfig.KEY)
     private readonly config: ConfigType<typeof dataQualityConfig>,
@@ -41,21 +38,9 @@ export class DataQualityRetentionJob {
     const deleted = await this.tenancy.acrossTenants(JOB, async () => {
       let total = 0;
       for (;;) {
-        const rows = await this.db
-          .delete(dataQualityFindings)
-          .where(
-            inArray(
-              dataQualityFindings.id,
-              this.db
-                .select({ id: dataQualityFindings.id })
-                .from(dataQualityFindings)
-                .where(lt(dataQualityFindings.checkedAt, before))
-                .limit(BATCH),
-            ),
-          )
-          .returning({ id: dataQualityFindings.id });
-        total += rows.length;
-        if (rows.length < BATCH) return total;
+        const count = await this.repository.deleteFindingsBefore(before, BATCH);
+        total += count;
+        if (count < BATCH) return total;
       }
     });
     this.logger.log('Old data-quality findings deleted', { deleted, days });

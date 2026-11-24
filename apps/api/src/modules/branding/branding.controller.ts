@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,7 +8,6 @@ import {
   HttpCode,
   HttpStatus,
   Ip,
-  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -20,7 +18,6 @@ import {
 } from '@nestjs/common';
 import { CurrentUser, Public } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
-import { t } from '@nestjs/i18n';
 import {
   ApiConflictResponse,
   ApiConsumes,
@@ -51,7 +48,6 @@ import {
   type UpdateBranding,
 } from './branding.schemas.js';
 import { BrandingService, LOGO_TYPES } from './branding.service.js';
-import type { LogoVariant } from './branding.tables.js';
 
 const locked = 'Locked by the operators (branding_locked).';
 
@@ -113,7 +109,7 @@ export class BrandingController {
     @Body({ schema: logoUploadSchema }) _body: unknown,
     @Ip() ip: string,
   ) {
-    return this.store(user, file, 'light', ip);
+    return this.branding.logoUploaded(user, file, 'light', ip);
   }
 
   @Post('logo/dark')
@@ -135,7 +131,7 @@ export class BrandingController {
     @Body({ schema: logoUploadSchema }) _body: unknown,
     @Ip() ip: string,
   ) {
-    return this.store(user, file, 'dark', ip);
+    return this.branding.logoUploaded(user, file, 'dark', ip);
   }
 
   @Delete('logo')
@@ -166,18 +162,6 @@ export class BrandingController {
   @ApiConflictResponse({ description: locked })
   async removeDark(@CurrentUser() user: Principal, @Ip() ip: string) {
     await this.branding.removeLogo(user, 'dark', ip);
-  }
-
-  private store(
-    user: Principal,
-    file: StoredUpload | undefined,
-    variant: LogoVariant,
-    ip: string,
-  ) {
-    if (!file) {
-      throw new BadRequestException(t('branding.noFile'));
-    }
-    return this.branding.logoUploaded(user, file, variant, ip);
   }
 }
 
@@ -228,9 +212,6 @@ export class PublicBrandingController {
   }
 
   private serve(file: Awaited<ReturnType<BrandingService['logoFile']>>) {
-    if (!file) {
-      throw new NotFoundException(t('branding.noLogo'));
-    }
     return new StreamableFile(file.body, {
       type: file.contentType,
       length: file.size,

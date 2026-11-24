@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   ConflictException,
@@ -6,32 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  exists,
-  getColumns,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  ne,
-  notInArray,
-  or,
-  type SQL,
-  sql,
-} from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { onceJob } from '../../core/queues/queues.js';
-import { afterCursor } from '../../core/http/pagination.js';
 import {
   type TenantEnvelope,
   withTenant,
@@ -39,24 +15,26 @@ import {
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
-import type { RecordRow, RecordTable } from '../records/record.js';
+import type { RecordRow } from '../records/record.js';
 import { Records } from '../records/records.service.js';
 import { findProblems } from './data-quality.checks.js';
 import {
   type DataQualityRegistration,
   DataQualityRegistry,
 } from './data-quality.registry.js';
+import {
+  DataQualityRepository,
+  type FindingVisibility,
+} from './data-quality.repository.js';
 import type {
   DataQualityFindingView,
   DataQualityScanView,
   FindingsQuery,
 } from './data-quality.schemas.js';
-import {
-  type DataQualityFindingRow,
-  dataQualityFindings as findings,
-  type DataQualityScanRow,
-  dataQualityScans as scans,
-  type QualitySeverity,
+import type {
+  DataQualityFindingRow,
+  DataQualityScanRow,
+  QualitySeverity,
 } from './data-quality.tables.js';
 
 export const DATA_QUALITY_QUEUE = 'data-quality';
@@ -86,7 +64,7 @@ export interface DataQualityJob extends TenantEnvelope {
 @Injectable()
 export class DataQualityService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: DataQualityRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly registry: DataQualityRegistry,
     private readonly records: Records,
@@ -100,36 +78,17 @@ export class DataQualityService {
     return this.records.of(registration.subject).feature.table;
   }
 
-  /** The live records of a table: the recycle bin's are not checked. */
-  private live(table: RecordTable) {
-    return table.deletedAt ? isNull(table.deletedAt) : undefined;
-  }
-
   /** The open and dismissed findings per subject the principal may read, and the last scan. */
   async summary(principal: Principal) {
-    const [last] = await this.db
-      .select()
-      .from(scans)
-      .orderBy(desc(scans.createdAt), desc(scans.id))
-      .limit(1);
+    const last = await this.repository.lastScan();
     const subjects = [];
     for (const registration of this.registry.all()) {
       if (!(await this.access.can(principal, 'read', registration.subject))) {
         continue;
       }
-      const rows = await this.db
-        .select({
-          severity: findings.severity,
-          total: count(),
-          dismissed: count(findings.dismissedAt),
-        })
-        .from(findings)
-        .innerJoin(
-          this.table(registration) as unknown as PgTable,
-          eq(this.table(registration).id, findings.recordId),
-        )
-        .where(await this.visible(principal, registration))
-        .groupBy(findings.severity);
+      const rows = await this.repository.severityCounts(
+        await this.visible(principal, registration),
+      );
       const open = (severity: QualitySeverity) => {
         const row = rows.find((r) => r.severity === severity);
         return row ? row.total - row.dismissed : 0;
@@ -152,25 +111,11 @@ export class DataQualityService {
     recordId?: string,
   ) {
     const registration = this.registration(subject);
-    const t = this.table(registration);
-    const rows = await this.db
-      .select(getColumns(findings))
-      .from(findings)
-      .innerJoin(t as unknown as PgTable, eq(t.id, findings.recordId))
-      .where(
-        and(
-          await this.visible(principal, registration),
-          recordId ? eq(findings.recordId, recordId) : undefined,
-          query.dismissed
-            ? isNotNull(findings.dismissedAt)
-            : isNull(findings.dismissedAt),
-          query.severity ? eq(findings.severity, query.severity) : undefined,
-          query.check ? eq(findings.check, query.check) : undefined,
-          afterCursor(findings.id, query),
-        ),
-      )
-      .orderBy(desc(findings.id))
-      .limit(query.limit + 1);
+    const rows = await this.repository.findings(
+      await this.visible(principal, registration),
+      query,
+      recordId,
+    );
     const items = rows.slice(0, query.limit);
     return {
       items: await this.views(principal, registration, items),
@@ -182,13 +127,7 @@ export class DataQualityService {
   async startScan(principal: Principal, ip?: string) {
     const registrations = this.registry.all();
     const scan = await this.txHost.withTransaction(async () => {
-      const [running] = await this.db
-        .select()
-        .from(scans)
-        .where(inArray(scans.status, ['queued', 'running']))
-        .orderBy(desc(scans.createdAt))
-        .limit(1)
-        .for('update');
+      const running = await this.repository.lockRunningScan();
       if (running) {
         if (Date.now() - running.createdAt.getTime() < SCAN_STALE_MS) {
           throw new ConflictException({
@@ -196,40 +135,32 @@ export class DataQualityService {
             message: 'A data-quality scan is already running.',
           });
         }
-        await this.db
-          .update(scans)
-          .set({ status: 'failed', finishedAt: new Date() })
-          .where(eq(scans.id, running.id));
+        await this.repository.updateScan(running.id, {
+          status: 'failed',
+          finishedAt: new Date(),
+        });
       }
       let total = 0;
       for (const registration of registrations) {
-        const t = this.table(registration);
-        const [row] = await this.db
-          .select({ n: count() })
-          .from(t as unknown as PgTable)
-          .where(this.live(t));
-        total += row!.n;
+        total += await this.repository.countLive(this.table(registration));
       }
-      const [created] = await this.db
-        .insert(scans)
-        .values({
-          total,
-          status: registrations.length ? 'queued' : 'completed',
-          findings: registrations.length ? null : 0,
-          finishedAt: registrations.length ? null : new Date(),
-          startedBy: principalKey(principal),
-          // The app's clock, as the findings' checkedAt: what the last sweep compares.
-          createdAt: new Date(),
-        })
-        .returning();
+      const created = await this.repository.insertScan({
+        total,
+        status: registrations.length ? 'queued' : 'completed',
+        findings: registrations.length ? null : 0,
+        finishedAt: registrations.length ? null : new Date(),
+        startedBy: principalKey(principal),
+        // The app's clock, as the findings' checkedAt: what the last sweep compares.
+        createdAt: new Date(),
+      });
       await this.audit.record(principal, {
         action: 'data-quality.scan-started',
         targetType: 'dataQualityScan',
-        targetId: created!.id,
+        targetId: created.id,
         details: { total },
         ip,
       });
-      return created!;
+      return created;
     });
     if (registrations[0]) {
       try {
@@ -251,10 +182,7 @@ export class DataQualityService {
    * job, or null when the scan is done (or gone).
    */
   async batch(job: DataQualityJob): Promise<DataQualityJob | null> {
-    const [scan] = await this.db
-      .select()
-      .from(scans)
-      .where(eq(scans.id, job.scanId));
+    const scan = await this.repository.findScan(job.scanId);
     if (!scan || scan.status === 'failed' || scan.status === 'completed') {
       return null;
     }
@@ -266,54 +194,39 @@ export class DataQualityService {
     if (registration) {
       // The scan reads every live record as the system, in the job's tenant
       // (row-level security); who sees a finding is decided when it is read.
-      const t = this.table(registration);
-      const rows = (await this.db
-        .select()
-        .from(t as unknown as PgTable)
-        .where(and(this.live(t), job.after ? gt(t.id, job.after) : undefined))
-        .orderBy(asc(t.id))
-        .limit(SCAN_BATCH)) as RecordRow[];
+      const rows = await this.repository.liveBatch(
+        this.table(registration),
+        job.after,
+        SCAN_BATCH,
+      );
       await this.record(registration, rows, new Date());
       read = rows.length;
       last = rows.at(-1)?.id;
     }
-    await this.db
-      .update(scans)
-      .set({ status: 'running', scanned: sql`${scans.scanned} + ${read}` })
-      .where(eq(scans.id, scan.id));
+    await this.repository.addScanned(scan.id, read);
     if (registration && read === SCAN_BATCH) {
       return { ...job, after: last };
     }
     // The subject is done: what this scan didn't find again no longer holds.
-    await this.db
-      .delete(findings)
-      .where(
-        and(
-          eq(findings.subject, job.subject),
-          lt(findings.checkedAt, scan.createdAt),
-        ),
-      );
+    await this.repository.deleteCheckedBefore(job.subject, scan.createdAt);
     const next = registrations[index + 1];
     if (next) {
       return { tenantId: job.tenantId, scanId: scan.id, subject: next.subject };
     }
-    const [open] = await this.db
-      .select({ n: count() })
-      .from(findings)
-      .where(isNull(findings.dismissedAt));
-    await this.db
-      .update(scans)
-      .set({ status: 'completed', findings: open!.n, finishedAt: new Date() })
-      .where(eq(scans.id, scan.id));
+    await this.repository.updateScan(scan.id, {
+      status: 'completed',
+      findings: await this.repository.countOpen(),
+      finishedAt: new Date(),
+    });
     return null;
   }
 
   /** A scan that failed for good (DataQualityProcessor). */
   async fail(scanId: string) {
-    await this.db
-      .update(scans)
-      .set({ status: 'failed', finishedAt: new Date() })
-      .where(eq(scans.id, scanId));
+    await this.repository.updateScan(scanId, {
+      status: 'failed',
+      finishedAt: new Date(),
+    });
   }
 
   /**
@@ -335,11 +248,10 @@ export class DataQualityService {
   async dismiss(principal: Principal, id: string, ip?: string) {
     const finding = await this.findOne(principal, id);
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(findings)
-        .set({ dismissedAt: new Date(), dismissedBy: principalKey(principal) })
-        .where(eq(findings.id, id))
-        .returning();
+      const updated = await this.repository.updateFinding(id, {
+        dismissedAt: new Date(),
+        dismissedBy: principalKey(principal),
+      });
       await this.audit.record(principal, {
         action: 'data-quality.finding-dismissed',
         targetType: 'dataQualityFinding',
@@ -352,7 +264,7 @@ export class DataQualityService {
         },
         ip,
       });
-      return updated!;
+      return updated;
     });
     const [view] = await this.views(principal, this.registration(row.subject), [
       row,
@@ -375,36 +287,20 @@ export class DataQualityService {
   /** Forgets the findings of records deleted for good (DataQualityExtension). */
   async forget(subject: string, ids: readonly string[]) {
     if (ids.length === 0) return;
-    await this.db
-      .delete(findings)
-      .where(
-        and(
-          eq(findings.subject, subject),
-          inArray(findings.recordId, [...ids]),
-        ),
-      );
+    await this.repository.deleteOfRecords(subject, ids);
   }
 
   /** Checks one record again: its findings now (none once it is in the recycle bin). */
   private async recheckRecord(subject: string, recordId: string) {
     const registration = this.registration(subject);
-    const t = this.table(registration);
     const now = new Date();
     await this.txHost.withTransaction(async () => {
-      const rows = (await this.db
-        .select()
-        .from(t as unknown as PgTable)
-        .where(and(eq(t.id, recordId), this.live(t)))) as RecordRow[];
+      const rows = await this.repository.liveRecord(
+        this.table(registration),
+        recordId,
+      );
       await this.record(registration, rows, now);
-      await this.db
-        .delete(findings)
-        .where(
-          and(
-            eq(findings.subject, subject),
-            eq(findings.recordId, recordId),
-            lt(findings.checkedAt, now),
-          ),
-        );
+      await this.repository.deleteCheckedBefore(subject, now, recordId);
     });
   }
 
@@ -420,20 +316,13 @@ export class DataQualityService {
 
   /** A finding, if the principal may see it. */
   private async seen(principal: Principal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(findings)
-      .where(eq(findings.id, id));
+    const row = await this.repository.findFinding(id);
     const registration = row && this.registry.find(row.subject);
     if (!registration) return undefined;
-    const t = this.table(registration);
-    const [shown] = await this.db
-      .select({ id: findings.id })
-      .from(findings)
-      .innerJoin(t as unknown as PgTable, eq(t.id, findings.recordId))
-      .where(
-        and(eq(findings.id, id), await this.visible(principal, registration)),
-      );
+    const shown = await this.repository.isVisible(
+      id,
+      await this.visible(principal, registration),
+    );
     return shown ? row : undefined;
   }
 
@@ -441,7 +330,7 @@ export class DataQualityService {
   private async visible(
     principal: Principal,
     registration: DataQualityRegistration,
-  ): Promise<SQL | undefined> {
+  ): Promise<FindingVisibility> {
     const { subject } = registration;
     const hidden = [
       ...(await this.access.deniedFields(principal, 'read', subject)),
@@ -453,33 +342,17 @@ export class DataQualityService {
         rule.compiled.reads.some((name) => hidden.includes(name)),
       )
       .map((rule) => rule.name);
-    const readable = await this.access.sqlFilter(principal, subject, 'read');
-    const t = this.table(registration);
-    return and(
-      eq(findings.subject, subject),
-      hidden.length
-        ? or(eq(findings.check, 'rule'), notInArray(findings.field, hidden))
-        : undefined,
-      rules.length
-        ? or(ne(findings.check, 'rule'), notInArray(findings.field, rules))
-        : undefined,
-      readable,
+    return {
+      subject,
+      table: this.table(registration),
+      hiddenFields: hidden,
+      hiddenRules: rules,
+      readable: await this.access.sqlFilter(principal, subject, 'read'),
       // A duplicate names the other records and tells their value: shown
       // only when the reader may read one of them too (views() shows only
-      // those). The subquery's own table shadows the outer one, so the read
-      // filter applies to the other records.
-      registration.duplicates.length && readable
-        ? or(
-            ne(findings.check, 'duplicate'),
-            exists(
-              this.db
-                .select({ id: t.id })
-                .from(t as unknown as PgTable)
-                .where(and(inArray(t.id, duplicateIds), readable)),
-            ),
-          )
-        : undefined,
-    );
+      // those).
+      duplicates: registration.duplicates.length > 0,
+    };
   }
 
   /** Findings as the API shows them to `principal`: a duplicate names only the records they may read. */
@@ -495,24 +368,17 @@ export class DataQualityService {
         ),
       ),
     ];
-    const t = this.table(registration);
     const readable = new Set(
       ids.length
-        ? (
-            await this.db
-              .select({ id: t.id })
-              .from(t as unknown as PgTable)
-              .where(
-                and(
-                  inArray(t.id, ids),
-                  await this.access.sqlFilter(
-                    principal,
-                    registration.subject,
-                    'read',
-                  ),
-                ),
-              )
-          ).map((row) => row.id as string)
+        ? await this.repository.allowedIds(
+            this.table(registration),
+            ids,
+            await this.access.sqlFilter(
+              principal,
+              registration.subject,
+              'read',
+            ),
+          )
         : [],
     );
     return rows.map((row) => {
@@ -547,36 +413,21 @@ export class DataQualityService {
   ) {
     if (rows.length === 0) return;
     const found = await findProblems(
-      this.db,
+      this.repository,
       registration,
       this.table(registration),
       rows,
     );
     if (found.length === 0) return;
-    await this.db
-      .insert(findings)
-      .values(
-        found.map((f) => ({
-          ...f,
-          subject: registration.subject,
-          checkedAt: now,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: [
-          findings.tenantId,
-          findings.subject,
-          findings.recordId,
-          findings.check,
-          findings.field,
-        ],
-        // Dismissed stays dismissed: the problem is the same one. `excluded` is the row proposed.
-        set: {
-          severity: sql`excluded.severity`,
-          detail: sql`excluded.detail`,
-          checkedAt: now,
-        },
-      });
+    // Dismissed stays dismissed: the problem is the same one.
+    await this.repository.upsertFindings(
+      found.map((f) => ({
+        ...f,
+        subject: registration.subject,
+        checkedAt: now,
+      })),
+      now,
+    );
   }
 }
 
@@ -585,12 +436,6 @@ function duplicatesOf(row: DataQualityFindingRow): string[] {
   const ids = row.detail?.duplicateOf;
   return ids === undefined ? [] : [ids].flat();
 }
-
-/**
- * The same ids in SQL, for one finding of the outer query: `$.duplicateOf[*]`
- * is lax, so a single id (written before) reads as one. Drizzle has no jsonpath.
- */
-const duplicateIds = sql`(select (jsonb_path_query(${findings.detail}, '$.duplicateOf[*]') #>> '{}')::uuid)`;
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
 

@@ -1,20 +1,11 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   Injectable,
   NotFoundException,
   type OnModuleInit,
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { and, eq, inArray } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import {
   AccessRecordFinder,
   type RecordFinder,
@@ -25,7 +16,7 @@ import {
   NotificationsService,
   type NotifyInput,
 } from './notifications.service.js';
-import { recordSubscriptions } from './notifications.tables.js';
+import { SubscriptionsRepository } from './subscriptions.repository.js';
 import { SUBSCRIPTION_LIST } from './subscriptions.lists.js';
 
 type Who = Pick<Principal, 'kind' | 'id'>;
@@ -50,7 +41,7 @@ export class SubscriptionsService implements OnModuleInit {
   private readonly finders = new Map<string, RecordFinder>();
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SubscriptionsRepository,
     private readonly notifications: NotificationsService,
     private readonly discovery: DiscoveryService,
     private readonly access: AccessService,
@@ -99,27 +90,16 @@ export class SubscriptionsService implements OnModuleInit {
    */
   async subscribe(principal: Who, record: RecordRef) {
     if (principal.kind === 'system') return;
-    await this.db
-      .insert(recordSubscriptions)
-      .values({ ...record, subscriber: principalKey(principal) })
-      .onConflictDoNothing();
+    await this.repository.insert(record, principalKey(principal));
   }
 
   /** Stops watching; false when the principal wasn't. */
   async unsubscribe(principal: Who, record: RecordRef) {
-    const deleted = await this.db
-      .delete(recordSubscriptions)
-      .where(this.one(principal, record))
-      .returning({ id: recordSubscriptions.id });
-    return deleted.length > 0;
+    return this.repository.delete(record, principalKey(principal));
   }
 
   async isWatching(principal: Who, record: RecordRef) {
-    const [row] = await this.db
-      .select({ id: recordSubscriptions.id })
-      .from(recordSubscriptions)
-      .where(this.one(principal, record));
-    return row !== undefined;
+    return this.repository.exists(record, principalKey(principal));
   }
 
   /**
@@ -132,31 +112,16 @@ export class SubscriptionsService implements OnModuleInit {
     recordIds: readonly string[],
   ): Promise<Set<string>> {
     if (recordIds.length === 0) return new Set();
-    const rows = await this.db
-      .select({ recordId: recordSubscriptions.recordId })
-      .from(recordSubscriptions)
-      .where(
-        and(
-          eq(recordSubscriptions.subject, subject),
-          eq(recordSubscriptions.subscriber, principalKey(principal)),
-          inArray(recordSubscriptions.recordId, [...recordIds]),
-        ),
-      );
-    return new Set(rows.map((row) => row.recordId));
+    return new Set(
+      await this.repository.watchedIds(principalKey(principal), subject, [
+        ...recordIds,
+      ]),
+    );
   }
 
   /** The principal keys watching a record. */
   async watchers(record: RecordRef): Promise<string[]> {
-    const rows = await this.db
-      .select({ subscriber: recordSubscriptions.subscriber })
-      .from(recordSubscriptions)
-      .where(
-        and(
-          eq(recordSubscriptions.subject, record.subject),
-          eq(recordSubscriptions.recordId, record.recordId),
-        ),
-      );
-    return rows.map((row) => row.subscriber);
+    return this.repository.watchers(record);
   }
 
   /**
@@ -182,20 +147,11 @@ export class SubscriptionsService implements OnModuleInit {
 
   /** A page of what the principal watches. */
   async page(principal: Principal, query: ListQuery) {
-    const where = and(
-      eq(recordSubscriptions.subscriber, principalKey(principal)),
+    const [rows, total] = await this.repository.page(
+      principalKey(principal),
       SUBSCRIPTION_LIST.where(query),
+      query,
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(recordSubscriptions)
-        .where(and(where, afterCursor(recordSubscriptions.id, query)))
-        .orderBy(...pageOrder(recordSubscriptions.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, recordSubscriptions, where, query),
-    ]);
     const page = toPage(rows, query, total);
     return {
       ...page,
@@ -219,52 +175,16 @@ export class SubscriptionsService implements OnModuleInit {
   /** Records gone for good (a purge, a delete): nobody watches them any more. */
   /** A merge: the duplicate's watchers watch the survivor (once). */
   async merge(subject: string, from: string, to: string) {
-    const moved = await this.db
-      .delete(recordSubscriptions)
-      .where(
-        and(
-          eq(recordSubscriptions.subject, subject),
-          eq(recordSubscriptions.recordId, from),
-        ),
-      )
-      .returning();
-    if (moved.length > 0) {
-      await this.db
-        .insert(recordSubscriptions)
-        .values(
-          moved.map(({ id: _id, ...watcher }) => ({
-            ...watcher,
-            recordId: to,
-          })),
-        )
-        .onConflictDoNothing();
-    }
+    await this.repository.move(subject, from, to);
   }
 
   async forget(subject: string, recordIds: readonly string[]) {
     if (recordIds.length === 0) return;
-    await this.db
-      .delete(recordSubscriptions)
-      .where(
-        and(
-          eq(recordSubscriptions.subject, subject),
-          inArray(recordSubscriptions.recordId, [...recordIds]),
-        ),
-      );
+    await this.repository.deleteForRecords(subject, [...recordIds]);
   }
 
   /** A principal is gone (their account deleted): they watch nothing. */
   async erase(principal: Who) {
-    await this.db
-      .delete(recordSubscriptions)
-      .where(eq(recordSubscriptions.subscriber, principalKey(principal)));
-  }
-
-  private one(principal: Who, record: RecordRef) {
-    return and(
-      eq(recordSubscriptions.subject, record.subject),
-      eq(recordSubscriptions.recordId, record.recordId),
-      eq(recordSubscriptions.subscriber, principalKey(principal)),
-    );
+    await this.repository.deleteOf(principalKey(principal));
   }
 }

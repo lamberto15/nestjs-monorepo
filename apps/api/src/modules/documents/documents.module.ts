@@ -20,6 +20,7 @@ import { documentsConfig } from './documents.config.js';
 import { DocumentsController } from './documents.controller.js';
 import { DocumentsProcessor } from './documents.processor.js';
 import { DocumentsExtension, documentRoutes } from './documents.record.js';
+import { DocumentsRepository } from './documents.repository.js';
 import { DOCUMENTS, DocumentsService } from './documents.service.js';
 import {
   type DocumentOptions,
@@ -65,6 +66,7 @@ import { DocumentsFeature } from './documents.feature.js';
     DocumentTemplates,
     PdfRenderer,
     DocumentsService,
+    DocumentsRepository,
     DocumentsProcessor,
     DocumentsPersonalData,
     DocumentsFeature,

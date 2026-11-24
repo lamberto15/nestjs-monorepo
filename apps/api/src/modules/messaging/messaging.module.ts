@@ -20,6 +20,7 @@ import { MessagingProcessor } from './messaging.processor.js';
 import { MESSAGING } from './messaging.queue.js';
 import { MessagingRetentionJob } from './messaging.retention.job.js';
 import { MessagingSender } from './messaging.sender.js';
+import { MessagingRepository } from './messaging.repository.js';
 import { MessagingService } from './messaging.service.js';
 import { MESSAGING_SETTINGS } from './messaging.settings.js';
 import { SmsInboundController } from './sms-inbound.controller.js';
@@ -51,6 +52,7 @@ import { MessagingPersonalData } from './messaging.personal-data.js';
     smsProvider,
     pushProvider,
     MessagingService,
+    MessagingRepository,
     MessagingLimits,
     MessagingProcessor,
     MessagingRetentionJob,

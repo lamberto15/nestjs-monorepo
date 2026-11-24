@@ -1,10 +1,7 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
+import { DataTransferRepository } from './data-transfer.repository.js';
 
 /**
  * A principal a job carries (data, possibly days old), as it is now in a
@@ -15,7 +12,7 @@ import { UsersRepository } from '../../iam/auth/users.repository.js';
 @Injectable()
 export class PrincipalNow {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: DataTransferRepository,
     private readonly users: UsersRepository,
   ) {}
 
@@ -29,10 +26,7 @@ export class PrincipalNow {
       return user?.tenantId === tenantId ? user : null;
     }
     if (kind !== 'client') return null;
-    const [client] = await this.db
-      .select()
-      .from(apiClients)
-      .where(eq(apiClients.id, id));
+    const client = await this.repository.findClient(id);
     return client?.active
       ? { kind: 'client', id, name: client.name, tenantId }
       : null;

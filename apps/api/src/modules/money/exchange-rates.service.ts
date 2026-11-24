@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
-import { and, count, desc, eq, inArray, lte, max, sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { currency } from './currencies.js';
 import {
   divideRounded,
@@ -17,7 +13,7 @@ import {
 import type { RatesOfDay } from './ecb-rates.js';
 import { Money } from './money.js';
 import { RateUnavailableError } from './exchange-rates.errors.js';
-import { exchangeRates } from './money.tables.js';
+import { ExchangeRatesRepository } from './exchange-rates.repository.js';
 
 /** The ECB's euro foreign exchange reference rates. */
 export const ECB = { source: 'ecb', base: 'EUR' } as const;
@@ -112,17 +108,13 @@ export function crossConvert(
 @Injectable()
 export class ExchangeRatesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ExchangeRatesRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
   ) {}
 
   /** The newest day stored for `source`, or null before the first fetch. */
   async newestDay(source: string = ECB.source): Promise<string | null> {
-    const [row] = await this.db
-      .select({ day: max(exchangeRates.day) })
-      .from(exchangeRates)
-      .where(eq(exchangeRates.source, source));
-    return row?.day ?? null;
+    return this.repository.newestDay(source);
   }
 
   /** The rates of the newest day on or before `day` (default today, UTC), or null when none is stored. */
@@ -130,30 +122,15 @@ export class ExchangeRatesService {
     day: string = utcToday(),
     source: string = ECB.source,
   ): Promise<RatesSnapshot | null> {
-    const [found] = await this.db
-      .select({ day: max(exchangeRates.day) })
-      .from(exchangeRates)
-      .where(
-        and(eq(exchangeRates.source, source), lte(exchangeRates.day, day)),
-      );
-    if (!found?.day) {
+    const found = await this.repository.newestDay(source, day);
+    if (!found) {
       return null;
     }
-    const rows = await this.db
-      .select({
-        base: exchangeRates.base,
-        currency: exchangeRates.currency,
-        rate: exchangeRates.rate,
-      })
-      .from(exchangeRates)
-      .where(
-        and(eq(exchangeRates.source, source), eq(exchangeRates.day, found.day)),
-      )
-      .orderBy(exchangeRates.currency);
+    const rows = await this.repository.ratesOf(source, found);
     return {
       source,
       base: rows[0]?.base ?? ECB.base,
-      day: found.day,
+      day: found,
       rates: Object.fromEntries(rows.map((row) => [row.currency, row.rate])),
     };
   }
@@ -193,34 +170,16 @@ export class ExchangeRatesService {
       };
     }
     const needed = [amount.currency, target].filter((code) => code !== base);
-    const [found] = await this.db
-      .select({ day: exchangeRates.day })
-      .from(exchangeRates)
-      .where(
-        and(
-          eq(exchangeRates.source, source),
-          eq(exchangeRates.base, base),
-          lte(exchangeRates.day, day),
-          inArray(exchangeRates.currency, needed),
-        ),
-      )
-      .groupBy(exchangeRates.day)
-      .having(eq(count(), needed.length))
-      .orderBy(desc(exchangeRates.day))
-      .limit(1);
+    const found = await this.repository.newestDayWith(
+      source,
+      base,
+      day,
+      needed,
+    );
     if (!found) {
       throw new RateUnavailableError(needed, day, source);
     }
-    const rows = await this.db
-      .select({ currency: exchangeRates.currency, rate: exchangeRates.rate })
-      .from(exchangeRates)
-      .where(
-        and(
-          eq(exchangeRates.source, source),
-          eq(exchangeRates.day, found.day),
-          inArray(exchangeRates.currency, needed),
-        ),
-      );
+    const rows = await this.repository.ratesFor(source, found, needed);
     const rateOf = (code: string) =>
       code === base ? '1' : rows.find((row) => row.currency === code)!.rate;
     const legs = { from: rateOf(amount.currency), to: rateOf(target) };
@@ -235,7 +194,7 @@ export class ExchangeRatesService {
       from: amount,
       amount: converted.amount,
       rate: converted.rate,
-      rateDate: found.day,
+      rateDate: found,
       source,
       base,
       legs,
@@ -262,31 +221,6 @@ export class ExchangeRatesService {
         rate,
       })),
     );
-    return this.txHost.withTransaction(async () => {
-      let written = 0;
-      // In batches: a parameter list has its limits.
-      for (let start = 0; start < rows.length; start += 1000) {
-        const changed = await this.db
-          .insert(exchangeRates)
-          .values(rows.slice(start, start + 1000))
-          .onConflictDoUpdate({
-            target: [
-              exchangeRates.source,
-              exchangeRates.day,
-              exchangeRates.currency,
-            ],
-            set: {
-              rate: sql`excluded.rate`,
-              base: sql`excluded.base`,
-              updatedAt: new Date(),
-            },
-            // Only a changed rate is a write (an hourly refetch of the same day is none).
-            setWhere: sql`${exchangeRates.rate} <> excluded.rate or ${exchangeRates.base} <> excluded.base`,
-          })
-          .returning({ id: exchangeRates.id });
-        written += changed.length;
-      }
-      return written;
-    });
+    return this.txHost.withTransaction(() => this.repository.upsert(rows));
   }
 }

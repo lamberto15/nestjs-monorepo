@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -7,19 +7,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, eq, gt, inArray } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -33,10 +23,10 @@ import { relationTitle } from '../records/record-relations.js';
 import type { RecordDeclaration, RecordRow } from '../records/record.js';
 import { Records } from '../records/records.service.js';
 import { Realtime } from '../realtime/realtime.service.js';
-import { COMMENT_LIST } from './comments.lists.js';
 import { recordCommented } from './comments.events.js';
+import { CommentsRepository } from './comments.repository.js';
 import type { CommentView } from './comments.schemas.js';
-import { comments } from './comments.tables.js';
+import type { comments } from './comments.tables.js';
 
 type Comment = typeof comments.$inferSelect;
 type Action = 'added' | 'edited' | 'removed' | 'resolved' | 'reopened';
@@ -81,11 +71,11 @@ interface Names {
  */
 @Injectable()
 export class CommentsService {
-  private readonly logger = new Logger('Comments');
+  private readonly logger = new Logger(CommentsService.name);
 
   constructor(
     @InjectRecord() private readonly record: RecordDeclaration,
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: CommentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly access: AccessService,
@@ -100,17 +90,11 @@ export class CommentsService {
   /** A page of the record's comments, oldest first unless the query sorts. */
   async list(principal: Principal, recordId: string, query: ListQuery) {
     await this.readable(principal, recordId);
-    const where = and(this.of(recordId), COMMENT_LIST.where(query));
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(comments)
-        .where(and(where, this.after(query)))
-        .orderBy(...this.order(query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, comments, where, query),
-    ]);
+    const [rows, total] = await this.repository.list(
+      this.record.subject,
+      recordId,
+      query,
+    );
     const page = toPage(rows, query, total);
     const known = await this.nameMap(page.items);
     return { ...page, items: page.items.map((row) => view(row, known)) };
@@ -142,37 +126,30 @@ export class CommentsService {
         });
       }
       if (parent) {
-        const [counted] = await this.db
-          .select({ replies: count() })
-          .from(comments)
-          .where(eq(comments.parentId, parent.id));
-        if ((counted?.replies ?? 0) >= MAX_REPLIES) {
+        if ((await this.repository.countReplies(parent.id)) >= MAX_REPLIES) {
           throw new ConflictException({
             code: 'comment_thread_full',
             message: `A thread takes at most ${MAX_REPLIES} replies: start a new one.`,
           });
         }
       }
-      const [earlier] = await this.db
-        .select({ id: comments.id })
-        .from(comments)
-        .where(and(this.of(recordId), eq(comments.author, author)))
-        .limit(1);
-      const [created] = await this.db
-        .insert(comments)
-        .values({
-          subject: this.record.subject,
-          recordId,
-          author,
-          body,
-          mentions,
-          parentId: parent?.id ?? null,
-        })
-        .returning();
+      const earlier = await this.repository.hasCommented(
+        this.record.subject,
+        recordId,
+        author,
+      );
+      const created = await this.repository.insert({
+        subject: this.record.subject,
+        recordId,
+        author,
+        body,
+        mentions,
+        parentId: parent?.id ?? null,
+      });
       await this.audit.record(principal, {
         action: 'comment.added',
         targetType: 'comment',
-        targetId: created!.id,
+        targetId: created.id,
         details: {
           subject: this.record.subject,
           recordId,
@@ -181,11 +158,11 @@ export class CommentsService {
         },
         ip,
       });
-      await this.notify(record, created!, principal, mentions, parent);
+      await this.notify(record, created, principal, mentions, parent);
       // Their first comment here: they hear of the answers.
       if (!earlier)
         await this.subscriptions.subscribe(principal, this.ref(recordId));
-      return created!;
+      return created;
     });
     this.pushed(principal, row, 'added');
     return view(row, await this.nameMap([row]));
@@ -209,11 +186,11 @@ export class CommentsService {
     }
     const mentions = await this.mentions(record, body, principal);
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(comments)
-        .set({ body, mentions, editedAt: new Date() })
-        .where(eq(comments.id, id))
-        .returning();
+      const updated = await this.repository.update(id, {
+        body,
+        mentions,
+        editedAt: new Date(),
+      });
       await this.audit.record(principal, {
         action: 'comment.edited',
         targetType: 'comment',
@@ -222,8 +199,8 @@ export class CommentsService {
         ip,
       });
       const added = mentions.filter((key) => !comment.mentions.includes(key));
-      await this.tellMentioned(record, updated!, principal, added);
-      return updated!;
+      await this.tellMentioned(record, updated, principal, added);
+      return updated;
     });
     this.pushed(principal, row, 'edited');
     return view(row, await this.nameMap([row]));
@@ -241,13 +218,10 @@ export class CommentsService {
     await this.assertAuthorOrModerator(principal, record, comment, 'remove');
     await this.txHost.withTransaction(async () => {
       // A thread's replies go with its top-level comment (the foreign key cascades).
-      const [counted] = comment.parentId
-        ? []
-        : await this.db
-            .select({ replies: count() })
-            .from(comments)
-            .where(eq(comments.parentId, id));
-      await this.db.delete(comments).where(eq(comments.id, id));
+      const replies = comment.parentId
+        ? 0
+        : await this.repository.countReplies(id);
+      await this.repository.delete(id);
       await this.audit.record(principal, {
         action: 'comment.removed',
         targetType: 'comment',
@@ -257,7 +231,7 @@ export class CommentsService {
           recordId,
           author: comment.author,
           parentId: comment.parentId,
-          replies: counted?.replies ?? 0,
+          replies,
         },
         ip,
       });
@@ -278,27 +252,12 @@ export class CommentsService {
   /** Records gone for good (a purge, a delete without bin): their comments go too, in that transaction. */
   /** A merge: the duplicate's comments move to the survivor. */
   async merge(from: string, to: string) {
-    await this.db
-      .update(comments)
-      .set({ recordId: to })
-      .where(
-        and(
-          eq(comments.subject, this.record.subject),
-          eq(comments.recordId, from),
-        ),
-      );
+    await this.repository.moveRecord(this.record.subject, from, to);
   }
 
   async forget(ids: readonly string[]) {
     if (ids.length === 0) return;
-    await this.db
-      .delete(comments)
-      .where(
-        and(
-          eq(comments.subject, this.record.subject),
-          inArray(comments.recordId, [...ids]),
-        ),
-      );
+    await this.repository.deleteOfRecords(this.record.subject, ids);
   }
 
   private async setResolved(
@@ -321,15 +280,12 @@ export class CommentsService {
       return view(comment, await this.nameMap([comment]));
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(comments)
-        .set(
-          resolved
-            ? { resolvedAt: new Date(), resolvedBy: principalKey(principal) }
-            : { resolvedAt: null, resolvedBy: null },
-        )
-        .where(eq(comments.id, id))
-        .returning();
+      const updated = await this.repository.update(
+        id,
+        resolved
+          ? { resolvedAt: new Date(), resolvedBy: principalKey(principal) }
+          : { resolvedAt: null, resolvedBy: null },
+      );
       await this.audit.record(principal, {
         action: resolved ? 'comment.resolved' : 'comment.reopened',
         targetType: 'comment',
@@ -337,7 +293,7 @@ export class CommentsService {
         details: { subject: this.record.subject, recordId },
         ip,
       });
-      return updated!;
+      return updated;
     });
     this.pushed(principal, row, resolved ? 'resolved' : 'reopened');
     return view(row, await this.nameMap([row]));
@@ -377,37 +333,17 @@ export class CommentsService {
   }
 
   private async findOne(recordId: string, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(comments)
-      .where(and(this.of(recordId), eq(comments.id, id)));
+    const row = await this.repository.findOne(
+      this.record.subject,
+      recordId,
+      id,
+    );
     if (!row) throw new NotFoundException(`Comment ${id} not found.`);
     return row;
   }
 
   private ref(recordId: string) {
     return { subject: this.record.subject, recordId };
-  }
-
-  private of(recordId: string) {
-    return and(
-      eq(comments.subject, this.record.subject),
-      eq(comments.recordId, recordId),
-    );
-  }
-
-  /** Oldest first by default (a conversation reads down); `?sort=` as any list. */
-  private order(query: ListQuery) {
-    return query.sort?.length
-      ? pageOrder(comments.id, query)
-      : [asc(comments.id)];
-  }
-
-  private after(query: ListQuery) {
-    if (!query.cursor || query.sort?.length) {
-      return afterCursor(comments.id, query);
-    }
-    return gt(comments.id, query.cursor);
   }
 
   /**

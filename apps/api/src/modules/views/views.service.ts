@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -6,34 +6,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  and,
-  count,
-  eq,
-  getColumns,
-  inArray,
-  or,
-  type SQL,
-  sql,
-} from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import {
   fieldsRead,
   type List,
   type ListQuery,
 } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  pageQuerySchema,
-  toPage,
-} from '../../core/http/pagination.js';
+import { pageQuerySchema, toPage } from '../../core/http/pagination.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { manager } from '../../iam/access/access.policy.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -41,17 +21,12 @@ import {
   principalKey,
   type RequestPrincipal,
 } from '../../iam/auth/principal.js';
-import { organizationalUnits } from '../../iam/organization/organization.tables.js';
 import { OrganizationService } from '../../iam/organization/organization.service.js';
 import { ListsService } from '../lists/lists.service.js';
 import { Records } from '../records/records.service.js';
-import { VIEW_LIST } from './view.list.js';
 import type { CreateViewDto, UpdateViewDto } from './view.schemas.js';
-import {
-  type SavedViewRow,
-  savedViews,
-  type ViewVisibility,
-} from './views.tables.js';
+import { type ViewSeer, ViewsRepository } from './views.repository.js';
+import type { SavedViewRow, ViewVisibility } from './views.tables.js';
 
 /** At most this many saved views per owner. */
 export const MAX_VIEWS_PER_OWNER = 100;
@@ -98,7 +73,7 @@ const scopeOf = (
 @Injectable()
 export class ViewsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ViewsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly lists: ListsService,
     private readonly records: Records,
@@ -110,26 +85,9 @@ export class ViewsService {
   /** A page of the views the principal sees (theirs, their units', the tenant's) of the lists they may read. */
   async page(principal: RequestPrincipal, query: ListQuery) {
     const readable = await this.readableSubjects(principal);
-    const where = and(
-      await this.visibleTo(principal),
-      readable.length ? inArray(savedViews.subject, readable) : sql`false`,
-      VIEW_LIST.where(query),
-    );
+    const seer = await this.seer(principal);
     const isManager = await this.isManager(principal);
-    const [rows, total] = await Promise.all([
-      this.db
-        // With the sort values the cursor needs (lower(name)); pick() drops them.
-        .select({
-          ...getColumns(savedViews),
-          ...VIEW_LIST.sortSelect(query),
-        })
-        .from(savedViews)
-        .where(and(where, afterCursor(savedViews.id, query)))
-        .orderBy(...pageOrder(savedViews.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, savedViews, where, query),
-    ]);
+    const [rows, total] = await this.repository.page(seer, readable, query);
     const page = toPage(rows, query, total);
     return {
       ...page,
@@ -158,9 +116,8 @@ export class ViewsService {
     await this.assertMayShare(principal, dto.visibility, unitId);
     const row = await this.txHost.withTransaction(async () => {
       await this.assertRoomFor(owner);
-      const [created] = await this.db
-        .insert(savedViews)
-        .values({
+      const created = await this.repository
+        .insert({
           subject: dto.subject,
           name: dto.name,
           visibility: dto.visibility,
@@ -170,18 +127,17 @@ export class ViewsService {
           query: dto.query,
           columns: dto.columns,
         })
-        .returning()
         .catch((error: unknown) => {
           throw this.taken(error, dto.subject, dto.name);
         });
       await this.audit.record(principal, {
         action: 'view.created',
         targetType: 'view',
-        targetId: created!.id,
+        targetId: created.id,
         details: { subject: dto.subject, name: dto.name },
         ip,
       });
-      return created!;
+      return created;
     });
     return this.view(principal, row, await this.isManager(principal));
   }
@@ -243,9 +199,8 @@ export class ViewsService {
       );
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(savedViews)
-        .set({
+      const updated = await this.repository
+        .update(id, {
           ...(values.name !== undefined && { name: values.name }),
           ...(values.query !== undefined && { query: values.query }),
           ...(values.columns !== undefined && { columns: values.columns }),
@@ -255,8 +210,6 @@ export class ViewsService {
             scope: scopeOf(visibility, view.owner, unitId),
           }),
         })
-        .where(eq(savedViews.id, id))
-        .returning()
         .catch((error: unknown) => {
           throw this.taken(error, view.subject, values.name ?? view.name);
         });
@@ -267,7 +220,7 @@ export class ViewsService {
         details: { subject: view.subject, changed: Object.keys(values) },
         ip,
       });
-      return updated!;
+      return updated;
     });
     return this.view(principal, row, isManager);
   }
@@ -276,7 +229,7 @@ export class ViewsService {
     const view = await this.findVisible(principal, id);
     this.assertMayChange(principal, view, await this.isManager(principal));
     await this.txHost.withTransaction(async () => {
-      await this.db.delete(savedViews).where(eq(savedViews.id, id));
+      await this.repository.delete(id);
       await this.audit.record(principal, {
         action: 'view.deleted',
         targetType: 'view',
@@ -442,10 +395,7 @@ export class ViewsService {
       }
       return;
     }
-    const [unit] = await this.db
-      .select({ id: organizationalUnits.id })
-      .from(organizationalUnits)
-      .where(eq(organizationalUnits.id, unitId!));
+    const unit = await this.repository.findUnitId(unitId!);
     if (!unit) {
       throw invalid([{ path: 'unitId', message: 'No such unit.' }]);
     }
@@ -453,7 +403,7 @@ export class ViewsService {
       !isManager &&
       !(
         principal.kind === 'user' &&
-        (await this.organization.unitsOf(principal.id)).includes(unit.id)
+        (await this.organization.unitsOf(principal.id)).includes(unit)
       )
     ) {
       throw new ForbiddenException({
@@ -510,23 +460,15 @@ export class ViewsService {
     };
   }
 
-  /** The SQL condition for the views the principal sees: theirs, their units', the tenant's. */
-  private async visibleTo(principal: RequestPrincipal): Promise<SQL> {
-    const unitIds =
-      principal.kind === 'user'
-        ? await this.organization.unitsOf(principal.id)
-        : [];
-    return or(
-      // Theirs whatever it is shared with: an administrator shares with a unit they aren't in.
-      eq(savedViews.owner, principalKey(principal)),
-      eq(savedViews.visibility, 'tenant'),
-      unitIds.length
-        ? and(
-            eq(savedViews.visibility, 'unit'),
-            inArray(savedViews.unitId, unitIds),
-          )
-        : undefined,
-    )!;
+  /** Who the principal is to views: they see theirs, their units', the tenant's. */
+  private async seer(principal: RequestPrincipal): Promise<ViewSeer> {
+    return {
+      owner: principalKey(principal),
+      unitIds:
+        principal.kind === 'user'
+          ? await this.organization.unitsOf(principal.id)
+          : [],
+    };
   }
 
   /** The lists the principal may read (a view of another is not theirs to see). */
@@ -540,10 +482,10 @@ export class ViewsService {
 
   /** A view the principal sees (and whose list they may read), else a 404 as for one that doesn't exist. */
   private async findVisible(principal: RequestPrincipal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(savedViews)
-      .where(and(eq(savedViews.id, id), await this.visibleTo(principal)));
+    const row = await this.repository.findVisible(
+      await this.seer(principal),
+      id,
+    );
     if (
       !row ||
       !this.subjects().includes(row.subject) ||
@@ -569,11 +511,7 @@ export class ViewsService {
    * racing may pass the limit by one: it is a courtesy, not a quota.
    */
   private async assertRoomFor(owner: string) {
-    const [row] = await this.db
-      .select({ views: count() })
-      .from(savedViews)
-      .where(eq(savedViews.owner, owner));
-    if ((row?.views ?? 0) >= MAX_VIEWS_PER_OWNER) {
+    if ((await this.repository.countOwnedBy(owner)) >= MAX_VIEWS_PER_OWNER) {
       throw invalid([
         {
           path: 'name',

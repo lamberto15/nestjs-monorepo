@@ -92,3 +92,6 @@ export type MergePreview = z.infer<typeof mergePreviewSchema>;
 
 // The record panels type their answers from these, with or without a feature.
 publishSchemas('merge', duplicateListSchema, mergePreviewSchema);
+
+/** The survivor of a merge, as its GET shows it. */
+export const mergedRecordSchema = z.record(z.string(), z.unknown());

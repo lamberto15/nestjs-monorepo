@@ -23,6 +23,7 @@ import {
   type ChoiceSet,
   ChoiceSets,
 } from './choices.registry.js';
+import { ChoicesRepository } from './choices.repository.js';
 import { ChoicesService } from './choices.service.js';
 
 /** The set a record validates (`forRecord(record, set)`). */
@@ -42,6 +43,7 @@ const RECORD_SET = Symbol('RECORD_SET');
     ChoicesRegistry,
     ChoicesService,
     ChoicesLoader,
+    ChoicesRepository,
     OrganizationalUnitsChoices,
     UnitMembersChoices,
     { provide: ChoiceSets, useValue: new ChoiceSets([UNIT_MEMBER_SET]) },

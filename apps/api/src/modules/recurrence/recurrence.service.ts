@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
@@ -10,25 +10,14 @@ import {
 } from '@nestjs/common';
 import { Locks } from '@nestjs/locks';
 import type { Queue } from 'bullmq';
-import { and, asc, count, eq, lte } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { onceJob } from '../../core/queues/queues.js';
 import { withTenant } from '../../core/tenancy/tenant-job.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
 import {
   principalKey,
   type RequestPrincipal,
@@ -38,18 +27,14 @@ import { UsersRepository } from '../../iam/auth/users.repository.js';
 import type { BusinessCalendarRow } from '../calendars/calendars.tables.js';
 import { CalendarsService } from '../calendars/calendars.service.js';
 import { RECORD_SCHEDULE_JOB } from './recurrence.permissions.js';
-import { RECORD_SCHEDULE_LIST } from './recurrence.lists.js';
 import {
   type CreateRecordScheduleDto,
   MAX_ACTIVE_SCHEDULES,
   type PreviewRecordScheduleDto,
   type UpdateRecordScheduleDto,
 } from './recurrence.schemas.js';
-import {
-  type RecordScheduleRow,
-  recordScheduleRuns,
-  recordSchedules,
-} from './recurrence.tables.js';
+import { RecurrenceRepository } from './recurrence.repository.js';
+import type { RecordScheduleRow } from './recurrence.tables.js';
 import { ScheduleTargets } from './recurrence.targets.js';
 import {
   nextOccurrence,
@@ -114,10 +99,10 @@ export type RunOutcome = 'created' | 'skipped' | 'failed' | 'ended' | 'idle';
  */
 @Injectable()
 export class RecurrenceService {
-  private readonly logger = new Logger('RecordSchedules');
+  private readonly logger = new Logger(RecurrenceService.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RecurrenceRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     @InjectQueue(RECORD_SCHEDULE_QUEUE) private readonly queue: Queue,
     private readonly targets: ScheduleTargets,
@@ -130,20 +115,10 @@ export class RecurrenceService {
   ) {}
 
   async page(principal: RequestPrincipal, query: ListQuery) {
-    const where = and(
-      eq(recordSchedules.owner, principalKey(principal)),
-      RECORD_SCHEDULE_LIST.where(query),
+    const [rows, total] = await this.repository.page(
+      principalKey(principal),
+      query,
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(recordSchedules)
-        .where(and(where, afterCursor(recordSchedules.id, query)))
-        .orderBy(...pageOrder(recordSchedules.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, recordSchedules, where, query),
-    ]);
     const page = toPage(rows, query, total);
     return { ...page, items: page.items.map(view) };
   }
@@ -190,30 +165,27 @@ export class RecurrenceService {
     }
     const row = await this.exclusively(principal, async () => {
       await this.assertRoomFor(principal);
-      const [created] = await this.db
-        .insert(recordSchedules)
-        .values({
-          owner: principalKey(principal),
-          name: dto.name,
-          target: dto.target,
-          template: dto.template,
-          rrule: dto.rrule,
-          startDate: dto.startDate,
-          time: dto.time,
-          timezone,
-          calendarId: dto.calendarId ?? null,
-          maxOccurrences: rule.count,
-          nextRunAt: next,
-        })
-        .returning();
+      const created = await this.repository.insert({
+        owner: principalKey(principal),
+        name: dto.name,
+        target: dto.target,
+        template: dto.template,
+        rrule: dto.rrule,
+        startDate: dto.startDate,
+        time: dto.time,
+        timezone,
+        calendarId: dto.calendarId ?? null,
+        maxOccurrences: rule.count,
+        nextRunAt: next,
+      });
       await this.audit.record(principal, {
         action: 'recordSchedule.created',
         targetType: 'recordSchedule',
-        targetId: created!.id,
-        details: { name: created!.name, target: created!.target },
+        targetId: created.id,
+        details: { name: created.name, target: created.target },
         ip,
       });
-      return created!;
+      return created;
     });
     return view(row);
   }
@@ -264,16 +236,12 @@ export class RecurrenceService {
       }
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(recordSchedules)
-        .set({
-          ...values,
-          maxOccurrences: rule.count,
-          nextRunAt,
-          ...(retime && { failures: 0, lastError: null }),
-        })
-        .where(eq(recordSchedules.id, id))
-        .returning();
+      const updated = await this.repository.update(id, {
+        ...values,
+        maxOccurrences: rule.count,
+        nextRunAt,
+        ...(retime && { failures: 0, lastError: null }),
+      });
       await this.audit.record(principal, {
         action: 'recordSchedule.updated',
         targetType: 'recordSchedule',
@@ -281,7 +249,7 @@ export class RecurrenceService {
         details: { changed: Object.keys(values) },
         ip,
       });
-      return updated!;
+      return updated;
     });
     return view(row);
   }
@@ -289,7 +257,7 @@ export class RecurrenceService {
   async remove(principal: RequestPrincipal, id: string, ip?: string) {
     const before = await this.findOwn(principal, id);
     await this.txHost.withTransaction(async () => {
-      await this.db.delete(recordSchedules).where(eq(recordSchedules.id, id));
+      await this.repository.delete(id);
       await this.audit.record(principal, {
         action: 'recordSchedule.deleted',
         targetType: 'recordSchedule',
@@ -358,17 +326,7 @@ export class RecurrenceService {
    * what the scheduler runs in every tenant. Returns whether it did.
    */
   async queueIfDue(now: Date) {
-    const [due] = await this.db
-      .select({ id: recordSchedules.id })
-      .from(recordSchedules)
-      .where(
-        and(
-          eq(recordSchedules.status, 'active'),
-          lte(recordSchedules.nextRunAt, now),
-        ),
-      )
-      .limit(1);
-    if (!due) return false;
+    if (!(await this.repository.anyDue(now))) return false;
     const job = withTenant({});
     // From the tenant and the pass: the pass run again queues nothing new.
     const pass = Math.floor(now.getTime() / PASS_MS);
@@ -395,19 +353,9 @@ export class RecurrenceService {
    * Returns how many records it created. `now` lets a test choose the moment.
    */
   async runTenant(system: SystemPrincipal, now = new Date()) {
-    const due = await this.db
-      .select({ id: recordSchedules.id })
-      .from(recordSchedules)
-      .where(
-        and(
-          eq(recordSchedules.status, 'active'),
-          lte(recordSchedules.nextRunAt, now),
-        ),
-      )
-      .orderBy(asc(recordSchedules.nextRunAt))
-      .limit(BATCH);
+    const due = await this.repository.dueIds(now, BATCH);
     let created = 0;
-    for (const { id } of due) {
+    for (const id of due) {
       for (let made = 0; made < MAX_PER_PASS; made++) {
         const outcome = await this.runDue(id, now, system);
         if (outcome === 'created') created++;
@@ -450,11 +398,7 @@ export class RecurrenceService {
     let due: RecordScheduleRow | undefined;
     try {
       return await this.txHost.withTransaction(async () => {
-        const [row] = await this.db
-          .select()
-          .from(recordSchedules)
-          .where(eq(recordSchedules.id, id))
-          .for('update', { skipLocked: true });
+        const row = await this.repository.lock(id, { skipLocked: true });
         if (
           !row ||
           row.status !== 'active' ||
@@ -479,15 +423,11 @@ export class RecurrenceService {
         }
         const parsed = target.schema.safeParse(row.template);
         if (!parsed.success) return this.stop(row, 'template_invalid', system);
-        const [claimed] = await this.db
-          .insert(recordScheduleRuns)
-          .values({
-            scheduleId: row.id,
-            occurrenceAt: row.nextRunAt,
-            status: 'created',
-          })
-          .onConflictDoNothing()
-          .returning({ id: recordScheduleRuns.id });
+        const claimed = await this.repository.insertRun({
+          scheduleId: row.id,
+          occurrenceAt: row.nextRunAt,
+          status: 'created',
+        });
         if (claimed) {
           await target.create(owner, parsed.data);
           await this.audit.record(system, {
@@ -523,11 +463,7 @@ export class RecurrenceService {
     system: SystemPrincipal,
   ) {
     return this.txHost.withTransaction(async (): Promise<RunOutcome> => {
-      const [row] = await this.db
-        .select()
-        .from(recordSchedules)
-        .where(eq(recordSchedules.id, id))
-        .for('update');
+      const row = await this.repository.lock(id);
       // Changed, paused or taken meanwhile: that attempt is not this one's to count.
       if (
         !row ||
@@ -539,26 +475,20 @@ export class RecurrenceService {
       const error = message.slice(0, 500);
       const failures = row.failures + 1;
       if (failures < MAX_ATTEMPTS) {
-        await this.db
-          .update(recordSchedules)
-          .set({
-            failures,
-            lastError: error,
-            lastStatus: 'failed',
-            lastRunAt: now,
-          })
-          .where(eq(recordSchedules.id, id));
+        await this.repository.update(id, {
+          failures,
+          lastError: error,
+          lastStatus: 'failed',
+          lastRunAt: now,
+        });
         return 'failed';
       }
-      await this.db
-        .insert(recordScheduleRuns)
-        .values({
-          scheduleId: id,
-          occurrenceAt: row.nextRunAt!,
-          status: 'skipped',
-          error,
-        })
-        .onConflictDoNothing();
+      await this.repository.insertRun({
+        scheduleId: id,
+        occurrenceAt: row.nextRunAt!,
+        status: 'skipped',
+        error,
+      });
       await this.audit.record(system, {
         action: 'recordSchedule.skipped',
         targetType: 'recordSchedule',
@@ -585,18 +515,15 @@ export class RecurrenceService {
             await this.calendar(row.calendarId ?? undefined),
             row.nextRunAt!,
           );
-    await this.db
-      .update(recordSchedules)
-      .set({
-        occurrences,
-        failures: 0,
-        lastRunAt: now,
-        lastStatus: result.lastStatus,
-        lastError: result.lastError ?? null,
-        nextRunAt: next,
-        ...(!next && { status: 'ended', endReason: 'completed' }),
-      })
-      .where(eq(recordSchedules.id, row.id));
+    await this.repository.update(row.id, {
+      occurrences,
+      failures: 0,
+      lastRunAt: now,
+      lastStatus: result.lastStatus,
+      lastError: result.lastError ?? null,
+      nextRunAt: next,
+      ...(!next && { status: 'ended' as const, endReason: 'completed' }),
+    });
   }
 
   /** Ends a schedule that can no longer run, and says why. */
@@ -605,10 +532,11 @@ export class RecurrenceService {
     reason: string,
     system: SystemPrincipal,
   ): Promise<RunOutcome> {
-    await this.db
-      .update(recordSchedules)
-      .set({ status: 'ended', endReason: reason, nextRunAt: null })
-      .where(eq(recordSchedules.id, row.id));
+    await this.repository.update(row.id, {
+      status: 'ended',
+      endReason: reason,
+      nextRunAt: null,
+    });
     await this.audit.record(system, {
       action: 'recordSchedule.ended',
       targetType: 'recordSchedule',
@@ -631,10 +559,7 @@ export class RecurrenceService {
       return this.users.inTenant(id, row.tenantId);
     }
     if (kind !== 'client') return null;
-    const [client] = await this.db
-      .select()
-      .from(apiClients)
-      .where(eq(apiClients.id, id));
+    const client = await this.repository.findClient(id);
     return client?.active
       ? { kind: 'client', id, name: client.name, tenantId: row.tenantId }
       : null;
@@ -766,16 +691,10 @@ export class RecurrenceService {
 
   /** A 400 when the principal has MAX_ACTIVE_SCHEDULES active schedules already. */
   private async assertRoomFor(principal: RequestPrincipal) {
-    const [row] = await this.db
-      .select({ active: count() })
-      .from(recordSchedules)
-      .where(
-        and(
-          eq(recordSchedules.owner, principalKey(principal)),
-          eq(recordSchedules.status, 'active'),
-        ),
-      );
-    if ((row?.active ?? 0) >= MAX_ACTIVE_SCHEDULES) {
+    if (
+      (await this.repository.countActiveOf(principalKey(principal))) >=
+      MAX_ACTIVE_SCHEDULES
+    ) {
       throw invalid([
         {
           path: 'status',
@@ -793,11 +712,10 @@ export class RecurrenceService {
     ip?: string,
   ) {
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(recordSchedules)
-        .set({ status, ...set })
-        .where(eq(recordSchedules.id, before.id))
-        .returning();
+      const updated = await this.repository.update(before.id, {
+        status,
+        ...set,
+      });
       await this.audit.record(principal, {
         action: 'recordSchedule.updated',
         targetType: 'recordSchedule',
@@ -805,21 +723,13 @@ export class RecurrenceService {
         details: { status, from: before.status },
         ip,
       });
-      return updated!;
+      return updated;
     });
     return view(row);
   }
 
   private async findOwn(principal: RequestPrincipal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(recordSchedules)
-      .where(
-        and(
-          eq(recordSchedules.id, id),
-          eq(recordSchedules.owner, principalKey(principal)),
-        ),
-      );
+    const row = await this.repository.findOwn(principalKey(principal), id);
     if (!row) {
       throw new NotFoundException(`Recurring schedule ${id} not found.`);
     }

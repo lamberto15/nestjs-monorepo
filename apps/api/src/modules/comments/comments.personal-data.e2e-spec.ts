@@ -1,4 +1,5 @@
 import { CommentsPersonalData } from './comments.personal-data.js';
+import { CommentsRepository } from './comments.repository.js';
 import { comments } from './comments.tables.js';
 import { personalDataSection, uuid } from '../../../test/personal-data.js';
 
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `comments` section (comments.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('comments', [CommentsPersonalData], {
+personalDataSection('comments', [CommentsPersonalData, CommentsRepository], {
   seed: async (c) => {
     const base = { subject: 'TestItem', recordId: uuid() };
     await c.inTenant(() =>

@@ -1,8 +1,5 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Database } from '../../../core/database/database.js';
 import {
   WhoAmIPart,
   type WhoAmIProvider,
@@ -15,7 +12,7 @@ import {
   type PersonalDataSubject,
 } from '../../../iam/personal-data/personal-data.js';
 import { AvatarsService, avatarUrl } from './avatars.service.js';
-import { userAvatars } from './avatars.tables.js';
+import { AvatarsRepository } from './avatars.repository.js';
 
 /**
  * The person's picture: its address in their export. With their account the
@@ -25,20 +22,17 @@ import { userAvatars } from './avatars.tables.js';
 @PersonalData({ name: 'avatar', scopes: ['account'] })
 @Injectable()
 export class AvatarsPersonalData implements PersonalDataSection {
-  constructor(@InjectTransaction() private readonly db: Database) {}
+  constructor(private readonly repository: AvatarsRepository) {}
 
   async rows({ userId }: PersonalDataSubject) {
-    const [row] = await this.db
-      .select()
-      .from(userAvatars)
-      .where(eq(userAvatars.userId, userId));
+    const row = await this.repository.find(userId);
     return row
       ? [{ avatarUrl: avatarUrl(userId, row.key), updatedAt: row.updatedAt }]
       : [];
   }
 
   async erase({ userId }: PersonalDataSubject) {
-    await this.db.delete(userAvatars).where(eq(userAvatars.userId, userId));
+    await this.repository.delete(userId);
   }
 }
 
@@ -62,13 +56,10 @@ export class AvatarsWhoAmI implements WhoAmIProvider {
 @MemberAvatars()
 @Injectable()
 export class AvatarsMembers implements MemberAvatars {
-  constructor(@InjectTransaction() private readonly db: Database) {}
+  constructor(private readonly repository: AvatarsRepository) {}
 
   async avatarUrls(userIds: readonly string[]) {
-    const rows = await this.db
-      .select({ userId: userAvatars.userId, key: userAvatars.key })
-      .from(userAvatars)
-      .where(inArray(userAvatars.userId, [...userIds]));
+    const rows = await this.repository.ofUsers(userIds);
     return new Map(
       rows.map((row) => [row.userId, avatarUrl(row.userId, row.key)]),
     );

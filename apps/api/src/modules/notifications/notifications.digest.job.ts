@@ -1,21 +1,17 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { I18nService } from '@nestjs/i18n';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, desc, eq, inArray, isNotNull, lte } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
 import { NotificationCatalog } from './notifications.catalog.js';
 import { notificationsConfig } from './notifications.config.js';
 import { NotificationDigestMail } from './notifications.mails.js';
-import { notifications } from './notifications.tables.js';
+import { NotificationsRepository } from './notifications.repository.js';
 import { UnsubscribeLinks } from './notifications.unsubscribe.js';
 
 /** At most this many notifications are listed in one digest; the rest is a count. */
@@ -40,7 +36,7 @@ export class NotificationDigestJob {
   private readonly logger = new Logger('Notifications');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: NotificationsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly users: UsersRepository,
     private readonly mailQueue: MailQueue,
@@ -57,32 +53,14 @@ export class NotificationDigestJob {
   @WithoutOverlapping()
   run(now = new Date()) {
     return this.tenancy.acrossTenants(JOB, async () => {
-      const due = await this.db
-        .selectDistinct({ recipient: notifications.recipient })
-        .from(notifications)
-        .where(
-          and(
-            isNotNull(notifications.digest),
-            lte(notifications.digestDueAt, now),
-          ),
-        );
+      const due = await this.repository.digestRecipients(now);
       let mails = 0;
       let items = 0;
-      for (const { recipient } of due) {
+      for (const recipient of due) {
         const user = recipient.startsWith('user:')
           ? await this.users.findActive(recipient.slice('user:'.length))
           : null;
-        const flagged = await this.db
-          .select()
-          .from(notifications)
-          .where(
-            and(
-              eq(notifications.recipient, recipient),
-              isNotNull(notifications.digest),
-              lte(notifications.digestDueAt, now),
-            ),
-          )
-          .orderBy(desc(notifications.id));
+        const flagged = await this.repository.digestItems(recipient, now);
         if (flagged.length === 0) continue;
         // Only what the person may still see: the tenants they are still an active member of.
         const member = new Map<string, boolean>();
@@ -97,25 +75,15 @@ export class NotificationDigestJob {
         // rather than sent twice. Rows not listed (a person gone, a tenant
         // left) are unflagged too, unsent.
         await this.txHost.withTransaction(async () => {
-          await this.db
-            .update(notifications)
-            .set({ digest: null, digestDueAt: null })
-            .where(
-              inArray(
-                notifications.id,
-                flagged.map((row) => row.id),
-              ),
-            );
+          await this.repository.updateMany(
+            flagged.map((row) => row.id),
+            { digest: null, digestDueAt: null },
+          );
           if (rows.length > 0) {
-            await this.db
-              .update(notifications)
-              .set({ emailedAt: now })
-              .where(
-                inArray(
-                  notifications.id,
-                  rows.map((row) => row.id),
-                ),
-              );
+            await this.repository.updateMany(
+              rows.map((row) => row.id),
+              { emailedAt: now },
+            );
           }
         });
         if (!user || rows.length === 0) continue;

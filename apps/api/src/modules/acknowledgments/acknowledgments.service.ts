@@ -1,4 +1,4 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -6,21 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { I18nService } from '@nestjs/i18n';
-import {
-  and,
-  count,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  sql,
-} from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
-import { memberships, users } from '../../iam/auth/auth.tables.js';
 import {
   type Principal,
   principalKey,
@@ -34,11 +22,8 @@ import {
   MAX_PER_VERSION,
   type MyAcknowledgmentView,
 } from './acknowledgments.schemas.js';
-import {
-  acknowledgmentVersions as versions,
-  type RecordAcknowledgment,
-  recordAcknowledgments as acks,
-} from './acknowledgments.tables.js';
+import { AcknowledgmentsRepository } from './acknowledgments.repository.js';
+import type { RecordAcknowledgment } from './acknowledgments.tables.js';
 
 /** A reminder goes to the same person at most this often. */
 export const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -62,7 +47,7 @@ export interface AcknowledgedRecord {
 @Injectable()
 export class AcknowledgmentsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AcknowledgmentsRepository,
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly audit: AuditService,
@@ -76,36 +61,17 @@ export class AcknowledgmentsService {
 
   /** The record's current version (1 until it changed after a first request). */
   async versionOf(subject: string, recordId: string) {
-    const [row] = await this.db
-      .select({ version: versions.version })
-      .from(versions)
-      .where(
-        and(eq(versions.subject, subject), eq(versions.recordId, recordId)),
-      );
-    return row?.version ?? 1;
+    return (await this.repository.versionOf(subject, recordId)) ?? 1;
   }
 
   /** The record changed: a new version, when someone was ever asked about it. */
   async bump(subject: string, recordId: string) {
-    await this.db
-      .update(versions)
-      .set({ version: sql`${versions.version} + 1` })
-      .where(
-        and(eq(versions.subject, subject), eq(versions.recordId, recordId)),
-      );
+    await this.repository.bumpVersion(subject, recordId);
   }
 
   /** Records deleted for good take their requests and versions along. */
   async forget(subject: string, recordIds: readonly string[]) {
-    const ids = [...recordIds];
-    await this.db
-      .delete(acks)
-      .where(and(eq(acks.subject, subject), inArray(acks.recordId, ids)));
-    await this.db
-      .delete(versions)
-      .where(
-        and(eq(versions.subject, subject), inArray(versions.recordId, ids)),
-      );
+    await this.repository.deleteOfRecords(subject, [...recordIds]);
   }
 
   private titleOf({ subject, row }: AcknowledgedRecord) {
@@ -144,24 +110,11 @@ export class AcknowledgmentsService {
     const keys = [...new Set(recipients)];
     await this.assertRecipients(record, keys);
     // The record's version row: the record's later changes count from here.
-    await this.db
-      .insert(versions)
-      .values({ subject, recordId: row.id })
-      .onConflictDoNothing();
+    await this.repository.insertVersion(subject, row.id);
     const version = await this.versionOf(subject, row.id);
-    const mine = and(
-      eq(acks.subject, subject),
-      eq(acks.recordId, row.id),
-      eq(acks.version, version),
-    );
-    const [{ total } = { total: 0 }] = await this.db
-      .select({ total: count() })
-      .from(acks)
-      .where(mine);
-    const have = await this.db
-      .select()
-      .from(acks)
-      .where(and(mine, inArray(acks.recipient, keys)));
+    const mine = { subject, recordId: row.id, version };
+    const total = await this.repository.countOf(mine);
+    const have = await this.repository.ofRecipients(mine, keys);
     const fresh = keys.filter((key) => !have.some((a) => a.recipient === key));
     if (total + fresh.length > MAX_PER_VERSION) {
       throw new ConflictException({
@@ -170,7 +123,7 @@ export class AcknowledgmentsService {
       });
     }
     if (fresh.length) {
-      await this.db.insert(acks).values(
+      await this.repository.insert(
         fresh.map((recipient) => ({
           subject,
           recordId: row.id,
@@ -183,15 +136,10 @@ export class AcknowledgmentsService {
     }
     const open = have.filter((a) => !a.acknowledgedAt);
     if (due && open.length) {
-      await this.db
-        .update(acks)
-        .set({ dueAt: due })
-        .where(
-          inArray(
-            acks.id,
-            open.map((a) => a.id),
-          ),
-        );
+      await this.repository.setDue(
+        open.map((a) => a.id),
+        due,
+      );
     }
     if (fresh.length) {
       await this.audit.record(principal, {
@@ -214,28 +162,17 @@ export class AcknowledgmentsService {
         due,
       );
     }
-    return this.views(
-      await this.db
-        .select()
-        .from(acks)
-        .where(and(mine, inArray(acks.recipient, keys))),
-    );
+    return this.views(await this.repository.ofRecipients(mine, keys));
   }
 
   /** The completion dashboard of a version (default: the current one). */
   async status(subject: string, recordId: string, version?: number) {
     const v = version ?? (await this.versionOf(subject, recordId));
-    const found = await this.db
-      .select()
-      .from(acks)
-      .where(
-        and(
-          eq(acks.subject, subject),
-          eq(acks.recordId, recordId),
-          eq(acks.version, v),
-        ),
-      )
-      .orderBy(acks.createdAt, acks.id);
+    const found = await this.repository.ofVersion({
+      subject,
+      recordId,
+      version: v,
+    });
     const items = await this.views(found);
     const acknowledged = items.filter((i) => i.acknowledgedAt).length;
     return {
@@ -262,25 +199,13 @@ export class AcknowledgmentsService {
   ) {
     const { subject, row } = record;
     const version = await this.versionOf(subject, row.id);
-    const [mine] = await this.db
-      .select()
-      .from(acks)
-      .where(
-        and(
-          eq(acks.subject, subject),
-          eq(acks.recordId, row.id),
-          eq(acks.version, version),
-          eq(acks.recipient, principalKey(principal)),
-        ),
-      )
-      .for('update');
+    const mine = await this.repository.lockOfRecipient(
+      { subject, recordId: row.id, version },
+      principalKey(principal),
+    );
     if (!mine) throw new NotFoundException();
     if (mine.acknowledgedAt) return (await this.views([mine]))[0]!;
-    const [updated] = await this.db
-      .update(acks)
-      .set({ acknowledgedAt: new Date() })
-      .where(eq(acks.id, mine.id))
-      .returning();
+    const updated = await this.repository.markAcknowledged(mine.id);
     await this.audit.record(principal, {
       action: 'acknowledgment.acknowledged',
       targetType: subject,
@@ -288,7 +213,7 @@ export class AcknowledgmentsService {
       details: { version },
       ip,
     });
-    return (await this.views([updated!]))[0]!;
+    return (await this.views([updated]))[0]!;
   }
 
   /** Reminds those who have not acknowledged (or the named ones), but not twice in 24 hours. */
@@ -302,33 +227,20 @@ export class AcknowledgmentsService {
     const { subject, row } = record;
     const now = new Date();
     const version = await this.versionOf(subject, row.id);
-    const open = await this.db
-      .select()
-      .from(acks)
-      .where(
-        and(
-          eq(acks.subject, subject),
-          eq(acks.recordId, row.id),
-          eq(acks.version, version),
-          isNull(acks.acknowledgedAt),
-          recipients?.length ? inArray(acks.recipient, recipients) : undefined,
-        ),
-      );
+    const open = await this.repository.openOf(
+      { subject, recordId: row.id, version },
+      recipients,
+    );
     const due = open.filter(
       (a) =>
         !a.lastRemindedAt ||
         now.getTime() - a.lastRemindedAt.getTime() >= REMINDER_INTERVAL_MS,
     );
     if (due.length) {
-      await this.db
-        .update(acks)
-        .set({ lastRemindedAt: now, reminders: sql`${acks.reminders} + 1` })
-        .where(
-          inArray(
-            acks.id,
-            due.map((a) => a.id),
-          ),
-        );
+      await this.repository.markReminded(
+        due.map((a) => a.id),
+        now,
+      );
       await this.audit.record(principal, {
         action: 'acknowledgment.reminded',
         targetType: subject,
@@ -359,16 +271,7 @@ export class AcknowledgmentsService {
     ip?: string,
   ) {
     const { subject, row } = record;
-    const [found] = await this.db
-      .select()
-      .from(acks)
-      .where(
-        and(
-          eq(acks.id, id),
-          eq(acks.subject, subject),
-          eq(acks.recordId, row.id),
-        ),
-      );
+    const found = await this.repository.findOfRecord(subject, row.id, id);
     if (!found) throw new NotFoundException();
     if (found.acknowledgedAt) {
       throw new ConflictException({
@@ -376,7 +279,7 @@ export class AcknowledgmentsService {
         message: this.text('answered'),
       });
     }
-    await this.db.delete(acks).where(eq(acks.id, id));
+    await this.repository.delete(id);
     await this.audit.record(principal, {
       action: 'acknowledgment.withdrawn',
       targetType: subject,
@@ -392,32 +295,13 @@ export class AcknowledgmentsService {
    * they may still read.
    */
   async mine(principal: Principal, status: 'pending' | 'acknowledged') {
-    const found = await this.db
-      .select({ row: acks })
-      .from(acks)
-      .leftJoin(
-        versions,
-        and(
-          eq(versions.subject, acks.subject),
-          eq(versions.recordId, acks.recordId),
-        ),
-      )
-      .where(
-        and(
-          eq(acks.recipient, principalKey(principal)),
-          status === 'pending'
-            ? and(
-                isNull(acks.acknowledgedAt),
-                // A request for an earlier version can no longer be answered.
-                eq(acks.version, sql`coalesce(${versions.version}, 1)`),
-              )
-            : isNotNull(acks.acknowledgedAt),
-        ),
-      )
-      .orderBy(desc(acks.id))
-      .limit(MINE_LIMIT);
+    const found = await this.repository.ofRecipient(
+      principalKey(principal),
+      status,
+      MINE_LIMIT,
+    );
     const items: MyAcknowledgmentView[] = [];
-    for (const { row } of found) {
+    for (const row of found) {
       const record = await this.readable(principal, row.subject, row.recordId);
       if (!record) continue;
       const [view] = await this.views([row]);
@@ -450,20 +334,10 @@ export class AcknowledgmentsService {
   ) {
     const ids = keys.map((key) => key.slice('user:'.length));
     const members = new Set(
-      (
-        await this.db
-          .select({ id: users.id })
-          .from(users)
-          .innerJoin(memberships, eq(memberships.userId, users.id))
-          .where(
-            and(
-              inArray(users.id, ids),
-              eq(users.active, true),
-              eq(memberships.tenantId, requireTenantId('An acknowledgment')),
-              eq(memberships.active, true),
-            ),
-          )
-      ).map((user) => user.id),
+      await this.repository.activeMemberIds(
+        requireTenantId('An acknowledgment'),
+        ids,
+      ),
     );
     for (const id of ids) {
       const user = { kind: 'user', id } as UserPrincipal;
@@ -510,12 +384,10 @@ export class AcknowledgmentsService {
     ];
     const names = new Map(
       ids.length
-        ? (
-            await this.db
-              .select({ id: users.id, name: users.name })
-              .from(users)
-              .where(inArray(users.id, ids))
-          ).map((user) => [`user:${user.id}`, user.name])
+        ? (await this.repository.userNames(ids)).map((user) => [
+            `user:${user.id}`,
+            user.name,
+          ])
         : [],
     );
     const now = Date.now();

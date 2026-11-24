@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   ForbiddenException,
@@ -12,19 +12,9 @@ import {
 import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
 import { StorageDisk, type StoredUpload } from '@nestjs/storage';
-import { and, eq, inArray, isNotNull, notInArray } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { type ListQuery, queryMatches } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import {
   requireTenantId,
   TenantScopeMissingError,
@@ -44,19 +34,15 @@ import { isTenantFileKey, tenantFileKey } from '../storage/storage.keys.js';
 import { StoredFiles } from '../storage/storage.release.js';
 import { attachmentsConfig } from './attachments.config.js';
 import { recordAttachmentsChanged } from './attachments.events.js';
-import { ATTACHMENT_LIST } from './attachments.lists.js';
 import { STORAGE_BYTES } from './attachments.quota.js';
+import { AttachmentsRepository } from './attachments.repository.js';
 import {
   AttachmentImagesQueue,
   AttachmentScanQueue,
   AttachmentTextQueue,
 } from './attachments.queues.js';
 import type { AttachmentView } from './attachments.schemas.js';
-import {
-  type Attachment,
-  attachments,
-  attachmentVersions,
-} from './attachments.tables.js';
+import type { Attachment } from './attachments.tables.js';
 import { isExtractable } from './attachments.extractor.js';
 
 /** How long a download link works. */
@@ -114,10 +100,10 @@ export function assertOwnFile(key: string) {
  */
 @Injectable()
 export class AttachmentsService {
-  private readonly logger = new Logger('Attachments');
+  private readonly logger = new Logger(AttachmentsService.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly disk: StorageDisk,
     private readonly files: StoredFiles,
@@ -220,24 +206,11 @@ export class AttachmentsService {
     // requires) sees a neutral name, and a filter or sort by name never
     // matches the real one.
     const withheld = await this.withheldNames(principal, record, found);
-    const where = and(
-      eq(attachments.subject, record.subject),
-      eq(attachments.recordId, record.recordId),
-      ATTACHMENT_LIST.where(query),
-      withheld.size && queryMatches(query).includes('name')
-        ? notInArray(attachments.id, [...withheld])
-        : undefined,
+    const [rows, total] = await this.repository.page(
+      record,
+      query,
+      queryMatches(query).includes('name') ? [...withheld] : [],
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(attachments)
-        .where(and(where, afterCursor(attachments.id, query)))
-        .orderBy(...pageOrder(attachments.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, attachments, where, query),
-    ]);
     const page = toPage(rows, query, total);
     const noun = this.records.find(record.subject)!.declaration.noun;
     return {
@@ -261,16 +234,7 @@ export class AttachmentsService {
     record: RecordRef,
     row: Record<string, unknown>,
   ) {
-    const issued = await this.db
-      .select({ id: attachments.id, fields: attachments.fields })
-      .from(attachments)
-      .where(
-        and(
-          eq(attachments.subject, record.subject),
-          eq(attachments.recordId, record.recordId),
-          isNotNull(attachments.fields),
-        ),
-      );
+    const issued = await this.repository.issued(record);
     const withheld = new Set<string>();
     for (const { id, fields } of issued) {
       if (
@@ -308,34 +272,31 @@ export class AttachmentsService {
       const row = await this.txHost.withTransaction(async () => {
         // 422 `quota_exceeded` past the tenant's storage; the catch below deletes the file.
         await this.quotas.assertRoom(STORAGE_BYTES, file.size);
-        const [row] = await this.db
-          .insert(attachments)
-          .values({
-            ...record,
-            key: file.key,
-            // The client's name, for showing and downloading: never a path.
-            name: fileName(file.originalname),
-            size: file.size,
-            contentType: file.contentType,
-            uploadedBy: principalKey(principal),
-            // Off (the default): clean at once. Otherwise it waits for its scan.
-            scanStatus: this.scans.enabled ? 'pending' : 'clean',
-            // An image waits for its renditions (once it is clean); anything else has none.
-            renditionStatus: this.images.wants(file.contentType)
-              ? 'pending'
-              : null,
-            textPending: isExtractable(file.contentType),
-          })
-          .returning();
+        const row = await this.repository.insert({
+          ...record,
+          key: file.key,
+          // The client's name, for showing and downloading: never a path.
+          name: fileName(file.originalname),
+          size: file.size,
+          contentType: file.contentType,
+          uploadedBy: principalKey(principal),
+          // Off (the default): clean at once. Otherwise it waits for its scan.
+          scanStatus: this.scans.enabled ? 'pending' : 'clean',
+          // An image waits for its renditions (once it is clean); anything else has none.
+          renditionStatus: this.images.wants(file.contentType)
+            ? 'pending'
+            : null,
+          textPending: isExtractable(file.contentType),
+        });
         await this.audit.record(principal, {
           action: 'attachment.added',
           targetType: 'attachment',
-          targetId: row!.id,
-          details: details(row!),
+          targetId: row.id,
+          details: details(row),
           ip,
         });
         await within?.();
-        return row!;
+        return row;
       });
       if (row.scanStatus === 'pending') {
         // The scan queues the image job when it finds the file clean.
@@ -371,26 +332,23 @@ export class AttachmentsService {
   ): Promise<AttachmentView> {
     assertOwnFile(file.key);
     await this.quotas.assertRoom(STORAGE_BYTES, file.size);
-    const [row] = await this.db
-      .insert(attachments)
-      .values({
-        ...record,
-        key: file.key,
-        name: fileName(file.name),
-        size: file.size,
-        contentType: file.contentType,
-        uploadedBy: principalKey(principal),
-        locked,
-        fields,
-      })
-      .returning();
+    const row = await this.repository.insert({
+      ...record,
+      key: file.key,
+      name: fileName(file.name),
+      size: file.size,
+      contentType: file.contentType,
+      uploadedBy: principalKey(principal),
+      locked,
+      fields,
+    });
     await this.audit.record(principal, {
       action: 'attachment.added',
       targetType: 'attachment',
-      targetId: row!.id,
-      details: { ...details(row!), locked, fields },
+      targetId: row.id,
+      details: { ...details(row), locked, fields },
     });
-    return view(row!);
+    return view(row);
   }
 
   /**
@@ -472,11 +430,8 @@ export class AttachmentsService {
     const removed = await this.txHost.withTransaction(async () => {
       // A held record keeps its files, every version of them (409 `legal_hold`).
       await this.holds.assertNotHeld(row.subject, [row.recordId]);
-      versionKeys = await this.versionKeys([row.id]);
-      const [gone] = await this.db
-        .delete(attachments)
-        .where(and(eq(attachments.id, row.id), eq(attachments.locked, false)))
-        .returning();
+      versionKeys = await this.repository.versionKeys([row.id]);
+      const gone = await this.repository.deleteUnlocked(row.id);
       if (!gone) throw new NotFoundException(`Attachment ${id} not found.`);
       await this.audit.record(principal, {
         action: 'attachment.removed',
@@ -499,12 +454,7 @@ export class AttachmentsService {
 
   /** A merge: the duplicate's files move to the survivor (their keys stay). */
   async merge(subject: string, from: string, to: string) {
-    await this.db
-      .update(attachments)
-      .set({ recordId: to })
-      .where(
-        and(eq(attachments.subject, subject), eq(attachments.recordId, from)),
-      );
+    await this.repository.moveRecord(subject, from, to);
   }
 
   /**
@@ -514,41 +464,12 @@ export class AttachmentsService {
    */
   async forget(subject: string, ids: readonly string[]) {
     if (ids.length === 0) return;
-    const earlier = await this.db
-      .select({ key: attachmentVersions.key })
-      .from(attachmentVersions)
-      .innerJoin(
-        attachments,
-        eq(attachments.id, attachmentVersions.attachmentId),
-      )
-      .where(
-        and(
-          eq(attachments.subject, subject),
-          inArray(attachments.recordId, [...ids]),
-        ),
-      );
-    const gone = await this.db
-      .delete(attachments)
-      .where(
-        and(
-          eq(attachments.subject, subject),
-          inArray(attachments.recordId, [...ids]),
-        ),
-      )
-      .returning();
+    const earlier = await this.repository.versionKeysOfRecords(subject, ids);
+    const gone = await this.repository.deleteOfRecords(subject, ids);
     await this.files.release([
       ...gone.flatMap((row) => [row.key, ...renditionKeys(row.renditions)]),
-      ...earlier.map((version) => version.key),
+      ...earlier,
     ]);
-  }
-
-  /** The files of the earlier versions of these attachments. */
-  private async versionKeys(ids: string[]) {
-    const rows = await this.db
-      .select({ key: attachmentVersions.key })
-      .from(attachmentVersions)
-      .where(inArray(attachmentVersions.attachmentId, ids));
-    return rows.map((version) => version.key);
   }
 
   /**
@@ -610,17 +531,7 @@ export class AttachmentsService {
     fields: readonly string[],
   ) {
     const row = await this.readableRecord(principal, record);
-    const rows = await this.db
-      .select()
-      .from(attachments)
-      .where(
-        and(
-          eq(attachments.subject, record.subject),
-          eq(attachments.recordId, record.recordId),
-          eq(attachments.scanStatus, 'clean'),
-        ),
-      )
-      .orderBy(attachments.id);
+    const rows = await this.repository.clean(record);
     const covered = rows.filter((file) =>
       (file.fields ?? []).every((field) => fields.includes(field)),
     );
@@ -657,10 +568,7 @@ export class AttachmentsService {
 
   /** An attachment of a record the principal may read, or a 404. */
   async findReadable(principal: Principal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(attachments)
-      .where(eq(attachments.id, id));
+    const row = await this.repository.find(id);
     if (!row) throw new NotFoundException(`Attachment ${id} not found.`);
     if (!(await this.canRead(principal, row, row.fields))) {
       throw new NotFoundException(`Attachment ${id} not found.`);

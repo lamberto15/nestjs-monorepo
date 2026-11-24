@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   Ip,
   Param,
@@ -11,7 +10,6 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
-import { t } from '@nestjs/i18n';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -118,9 +116,6 @@ export class UsageController {
     @CurrentUser() principal: RequestPrincipal,
     @Query({ schema: usageQuerySchema }) query: UsageQuery,
   ) {
-    if (principal.kind !== 'client') {
-      throw new ForbiddenException(t('usage.clientsOnly'));
-    }
-    return this.usage.report(principal.id, query);
+    return this.usage.ownUsage(principal, query);
   }
 }

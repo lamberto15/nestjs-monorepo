@@ -1,4 +1,5 @@
 import { AcknowledgmentsPersonalData } from './acknowledgments.personal-data.js';
+import { AcknowledgmentsRepository } from './acknowledgments.repository.js';
 import { recordAcknowledgments } from './acknowledgments.tables.js';
 import { personalDataSection, uuid } from '../../../test/personal-data.js';
 
@@ -14,28 +15,32 @@ vi.hoisted(() => {
 });
 
 /** The `acknowledgments` section (acknowledgments.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('acknowledgments', [AcknowledgmentsPersonalData], {
-  seed: async (c) => {
-    const base = {
-      subject: 'TestItem',
-      recordId: uuid(),
-      version: 1,
-      requestedBy: c.b.key,
-    };
-    await c.inTenant(() =>
-      c.db.insert(recordAcknowledgments).values([
-        { ...base, recipient: c.a.key },
-        { ...base, recipient: c.b.key },
-      ]),
-    );
+personalDataSection(
+  'acknowledgments',
+  [AcknowledgmentsPersonalData, AcknowledgmentsRepository],
+  {
+    seed: async (c) => {
+      const base = {
+        subject: 'TestItem',
+        recordId: uuid(),
+        version: 1,
+        requestedBy: c.b.key,
+      };
+      await c.inTenant(() =>
+        c.db.insert(recordAcknowledgments).values([
+          { ...base, recipient: c.a.key },
+          { ...base, recipient: c.b.key },
+        ]),
+      );
+    },
+    exported: async (c) => {
+      expect(await c.exported(c.a.id, 'acknowledgments')).toHaveLength(1);
+    },
+    erased: async (c) => {
+      const rows = await c.inTenant(() =>
+        c.db.select().from(recordAcknowledgments),
+      );
+      expect(rows.map((r) => r.recipient)).toEqual([c.b.key]);
+    },
   },
-  exported: async (c) => {
-    expect(await c.exported(c.a.id, 'acknowledgments')).toHaveLength(1);
-  },
-  erased: async (c) => {
-    const rows = await c.inTenant(() =>
-      c.db.select().from(recordAcknowledgments),
-    );
-    expect(rows.map((r) => r.recipient)).toEqual([c.b.key]);
-  },
-});
+);

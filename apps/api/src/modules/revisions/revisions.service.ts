@@ -1,27 +1,9 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuthorizationService } from '@nestjs/authorization';
-import {
-  and,
-  desc,
-  eq,
-  inArray,
-  isNull,
-  lt,
-  or,
-  type SQL,
-  sql,
-} from 'drizzle-orm';
 import { z } from 'zod';
-import type { Database } from '../../core/database/database.js';
+import { assertUnchanged } from '../../core/http/etag.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { validationException } from '../../core/http/problem-details.filter.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -34,9 +16,9 @@ import {
 import { assertWritableFields } from '../records/record.routes.js';
 import { Records } from '../records/records.service.js';
 import { fieldSnapshot, writableFields } from '../fields/fields.js';
-import { REVISION_LIST } from './revisions.list.js';
+import { RevisionsRepository } from './revisions.repository.js';
 import type { RevisionView } from './revisions.schemas.js';
-import { type Changes, revisions } from './revisions.tables.js';
+import type { Changes, revisions } from './revisions.tables.js';
 
 type Revision = typeof revisions.$inferSelect;
 type Snapshot = Record<string, unknown>;
@@ -83,7 +65,7 @@ export class RevisionsService {
   private readonly restoring = new WeakMap<object, number>();
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RevisionsRepository,
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly authorization: AuthorizationService,
@@ -119,29 +101,20 @@ export class RevisionsService {
       restoredFrom?: number;
     },
   ) {
-    const [last] = await this.db
-      .select({ number: revisions.number, snapshot: revisions.snapshot })
-      .from(revisions)
-      .where(this.of(subject, recordId))
-      .orderBy(desc(revisions.number))
-      .limit(1);
-    let previous = last;
+    let previous = await this.repository.last(subject, recordId);
     if (!previous && before) {
-      [previous] = await this.db
-        .insert(revisions)
-        .values({
-          subject,
-          recordId,
-          number: 1,
-          snapshot: before,
-          changes: null,
-          changedBy: UNKNOWN_CHANGER,
-        })
-        .returning({ number: revisions.number, snapshot: revisions.snapshot });
+      previous = await this.repository.insert({
+        subject,
+        recordId,
+        number: 1,
+        snapshot: before,
+        changes: null,
+        changedBy: UNKNOWN_CHANGER,
+      });
     }
     const changes = previous ? diff(previous.snapshot, snapshot) : null;
     if (changes && Object.keys(changes).length === 0) return;
-    await this.db.insert(revisions).values({
+    await this.repository.insert({
       subject,
       recordId,
       number: (previous?.number ?? 0) + 1,
@@ -160,25 +133,22 @@ export class RevisionsService {
     query: ListQuery,
   ) {
     const readable = await this.readable(principal, subject, recordId);
-    const where = and(
-      this.of(subject, recordId),
+    // Newest first by default, the cursor a revision's id.
+    if (
+      query.cursor &&
+      !query.sort?.length &&
+      !z.uuid().safeParse(query.cursor).success
+    ) {
+      throw validationException([
+        { path: ['cursor'], message: 'is not a revision cursor' },
+      ]);
+    }
+    const [rows, total] = await this.repository.page(
+      subject,
+      recordId,
       readable.shown,
-      REVISION_LIST.where(query),
+      query,
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(revisions)
-        .where(and(where, this.after(subject, recordId, query)))
-        .orderBy(
-          ...(query.sort?.length
-            ? pageOrder(revisions.id, query)
-            : [desc(revisions.number)]),
-        )
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, revisions, where, query),
-    ]);
     const page = toPage(rows, query, total);
     return { ...page, items: await this.views(readable, page.items) };
   }
@@ -232,7 +202,7 @@ export class RevisionsService {
     subject: string,
     recordId: string,
     number: number,
-    unchanged: (current: object) => void,
+    ifMatch: string | undefined,
   ) {
     const { store, feature, presenter, declaration } = this.records.of(subject);
     // Only a revision the principal may see: else it would restore what it hides.
@@ -260,7 +230,7 @@ export class RevisionsService {
         body,
         current,
       );
-      unchanged(await presenter.one(principal, current));
+      assertUnchanged(ifMatch, await presenter.one(principal, current));
     };
     if (Object.keys(body).length === 0) {
       await check(row);
@@ -279,14 +249,7 @@ export class RevisionsService {
   /** Records gone for good: their revisions go with them (in that transaction). */
   async forget(subject: string, recordIds: readonly string[]) {
     if (recordIds.length === 0) return;
-    await this.db
-      .delete(revisions)
-      .where(
-        and(
-          eq(revisions.subject, subject),
-          inArray(revisions.recordId, [...recordIds]),
-        ),
-      );
+    await this.repository.deleteForRecords(subject, recordIds);
   }
 
   /**
@@ -310,14 +273,8 @@ export class RevisionsService {
     return {
       row,
       allowed: (field: string) => field in shown,
-      // Drizzle has no jsonb `?|` (has any of these keys).
-      shown:
-        visible.length === Object.keys(view).length
-          ? undefined
-          : or(
-              isNull(revisions.changes),
-              sql`${revisions.changes} ?| ${sql.param(visible)}::text[]`,
-            ),
+      // The fields the revisions shown must change one of; undefined: all shown.
+      shown: visible.length === Object.keys(view).length ? undefined : visible,
     };
   }
 
@@ -325,21 +282,12 @@ export class RevisionsService {
     subject: string,
     recordId: string,
     number: number,
-    shown?: SQL,
+    shown: string[] | undefined,
   ) {
     // An integer column: a number outside it is no revision (not a database error).
-    const [row] = !(number >= 1 && number <= 2_147_483_647)
-      ? []
-      : await this.db
-          .select()
-          .from(revisions)
-          .where(
-            and(
-              this.of(subject, recordId),
-              eq(revisions.number, number),
-              shown,
-            ),
-          );
+    const row = !(number >= 1 && number <= 2_147_483_647)
+      ? undefined
+      : await this.repository.findByNumber(subject, recordId, number, shown);
     if (!row) {
       throw new NotFoundException(
         `Revision ${number} of ${subject} ${recordId} not found.`,
@@ -375,34 +323,5 @@ export class RevisionsService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }));
-  }
-
-  private of(subject: string, recordId: string) {
-    return and(
-      eq(revisions.subject, subject),
-      eq(revisions.recordId, recordId),
-    );
-  }
-
-  /**
-   * Newest first by default: after the cursor's revision is a lower number.
-   * A cursor of another record's revision is none of this one's: no rows.
-   */
-  private after(subject: string, recordId: string, query: ListQuery) {
-    if (!query.cursor || query.sort?.length) {
-      return afterCursor(revisions.id, query);
-    }
-    if (!z.uuid().safeParse(query.cursor).success) {
-      throw validationException([
-        { path: ['cursor'], message: 'is not a revision cursor' },
-      ]);
-    }
-    return lt(
-      revisions.number,
-      this.db
-        .select({ number: revisions.number })
-        .from(revisions)
-        .where(and(this.of(subject, recordId), eq(revisions.id, query.cursor))),
-    );
   }
 }

@@ -1,3 +1,4 @@
+import { SharesRepository } from './shares.repository.js';
 import { SharesPersonalData } from './shares.personal-data.js';
 import { recordShares } from './shares.tables.js';
 import { personalDataSection, uuid } from '../../../test/personal-data.js';
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `shares` section (shares.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('shares', [SharesPersonalData], {
+personalDataSection('shares', [SharesPersonalData, SharesRepository], {
   seed: async (c) => {
     const base = {
       subject: 'TestItem',

@@ -1,23 +1,14 @@
-import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { and, desc, getColumns } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
-import type { DatabaseTransactions } from '../../core/database/database.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
-import {
-  headline,
-  matches,
-  rank,
-  rankedMatches,
-  vectorOf,
-} from '../records/full-text.js';
+import { vectorOf } from '../records/full-text.js';
 import { type RecordDeclaration, searchedFields } from '../records/record.js';
 import {
   type RecordRegistration,
   Records,
 } from '../records/records.service.js';
+import { SearchRepository, SNIPPET } from './search.repository.js';
 import {
   SearchSource,
   type SearchHit,
@@ -25,8 +16,6 @@ import {
 } from './search.source.js';
 
 export type { SearchHit };
-
-const SNIPPET = '__snippet_';
 
 /**
  * The global search (GET /v1/search): every record registered
@@ -41,7 +30,7 @@ export class SearchService {
   constructor(
     private readonly records: Records,
     private readonly access: AccessService,
-    private readonly txHost: TransactionHost<DatabaseTransactions>,
+    private readonly repository: SearchRepository,
     private readonly discovery: DiscoveryService,
   ) {}
 
@@ -103,32 +92,15 @@ export class SearchService {
       visible.length === searchable.length
         ? table.search!
         : vectorOf(visible.map((name) => table[name]!));
-    const where = and(
-      await this.access.sqlFilter(principal, subject, 'read', {
+    const rows = await this.repository.matches(table, {
+      vector,
+      q,
+      filter: await this.access.sqlFilter(principal, subject, 'read', {
         deleted: false,
       }),
-      matches(vector, q),
-    );
-    const score = rank(vector, q);
-    const db = this.txHost.tx;
-    const pg = table as unknown as PgTable;
-    const rows = (await db
-      // The whole row: the permission conditions (`mine`) read it.
-      .select({
-        ...getColumns(pg),
-        score,
-        ...Object.fromEntries(
-          searchable.map((name) => [
-            `${SNIPPET}${name}`,
-            headline(table[name]!, q),
-          ]),
-        ),
-      })
-      .from(pg)
-      // The best of the newest RANK_CAP matches: ranking reads every row it ranks.
-      .where(and(where, await rankedMatches(db, pg, table.id, where)))
-      .orderBy(desc(score), desc(table.id))
-      .limit(limit)) as Record<string, unknown>[];
+      snippets: searchable,
+      limit,
+    });
     const shown = await this.access.redactAll(principal, 'read', subject, rows);
     const subjectLabel = labelOf(declaration);
     return shown.map((row) => ({

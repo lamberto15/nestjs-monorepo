@@ -19,7 +19,6 @@ import {
   ApiOperation,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { z } from 'zod';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
@@ -34,9 +33,11 @@ import {
   type FindDuplicatesDto,
   findDuplicatesSchema,
   type MergeDto,
+  mergedRecordSchema,
   mergePreviewSchema,
   mergeSchema,
 } from './merge.schemas.js';
+import { MergeRepository } from './merge.repository.js';
 import { MERGE_RULES, MergeService } from './merge.service.js';
 
 /** The kinds a rule may match by: money and JSON have no single value to compare. */
@@ -87,7 +88,6 @@ export class MergeModule {
     }
     const rules = rulesOf(record, options.duplicates);
     const nouns = record.path.replace(/-/g, ' ');
-    const shown = z.record(z.string(), z.unknown());
 
     @RecordController(record, '', 'Merge')
     class MergeRoutes {
@@ -158,7 +158,7 @@ export class MergeModule {
         summary: `Merge a duplicate into ${aNoun(record)}`,
         description: `In one transaction, or not at all: the references to the duplicate point at the survivor, the duplicate goes to the recycle bin (restorable: POST /v1/${record.path}/{id}/restore) and the survivor takes the values \`fields\` chooses from it, each through the record's own write (hooks, audit, events). Audited \`.merged\` with what moved, and announced as the domain event of that name so the add-ons that keep rows about it (tags, comments…) move theirs. The checks are the preview's. Answers the survivor.`,
       })
-      @ApiOkResponse({ standardSchema: shown })
+      @ApiOkResponse({ standardSchema: mergedRecordSchema })
       @ApiForbiddenResponse({
         description:
           'As the preview: the survivor, the duplicate, a field or a referring record.',
@@ -187,6 +187,7 @@ export class MergeModule {
         { provide: MERGE_RULES, useValue: rules },
         MergeExtension,
         MergeService,
+        MergeRepository,
       ],
     };
   }

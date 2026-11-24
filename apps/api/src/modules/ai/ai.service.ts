@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   AiModelError,
   AiOutputError,
@@ -22,12 +22,8 @@ import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
 import { APICallError } from 'ai';
 import { type Queue, UnrecoverableError } from 'bullmq';
-import { and, eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
 import { REDIS } from '../../core/redis/redis.js';
 import { type TenantEnvelope } from '../../core/tenancy/tenant-job.js';
@@ -51,7 +47,8 @@ import { AI_TOKENS } from './ai.quota.js';
 import type { AiRequest, AiRunView } from './ai.schemas.js';
 import { AI_ENABLED } from './ai.settings.js';
 import { AiSources } from './ai.source.js';
-import { type AiRunRow, type AiRunStatus, aiRuns } from './ai.tables.js';
+import { AiRepository } from './ai.repository.js';
+import type { AiRunRow, AiRunStatus } from './ai.tables.js';
 import { AI_TASKS, type AiTask } from './ai.tasks.js';
 
 /** The queue of AI runs. */
@@ -103,7 +100,7 @@ export class AiService {
   private readonly logger = new Logger('Ai');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AiRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     @InjectQueue(AI) private readonly queue: Queue<AiJob>,
     private readonly sources: AiSources,
@@ -162,19 +159,16 @@ export class AiService {
     };
     const row = await this.txHost
       .withTransaction(async () => {
-        const [row] = await this.db
-          .insert(aiRuns)
-          .values({
-            ...pending,
-            subject: record.subject,
-            promptVersion: task.version,
-            status: 'queued',
-          })
-          .returning();
+        const row = await this.repository.insert({
+          ...pending,
+          subject: record.subject,
+          promptVersion: task.version,
+          status: 'queued',
+        });
         await this.audit.record(principal, {
           action: 'ai.requested',
           targetType: 'ai_run',
-          targetId: row!.id,
+          targetId: row.id,
           details: {
             source: request.source,
             subject: record.subject,
@@ -184,22 +178,11 @@ export class AiService {
           },
           ip,
         });
-        return row!;
+        return row;
       })
       .catch(async (error: unknown) => {
         if (databaseErrorKind(error) !== 'unique_violation') throw error;
-        const [open] = await this.db
-          .select({ id: aiRuns.id })
-          .from(aiRuns)
-          .where(
-            and(
-              eq(aiRuns.source, pending.source),
-              eq(aiRuns.recordId, pending.recordId),
-              eq(aiRuns.task, pending.task),
-              eq(aiRuns.requestedBy, pending.requestedBy),
-              inArray(aiRuns.status, OPEN),
-            ),
-          );
+        const open = await this.repository.findOpen(pending, OPEN);
         throw new ConflictException({
           code: 'ai_pending',
           message: t('ai.pending'),
@@ -281,7 +264,7 @@ export class AiService {
 
   /** A run the principal asked for, with its output while it is kept; else a 404. */
   async status(principal: Principal, id: string): Promise<AiRunView> {
-    const [row] = await this.db.select().from(aiRuns).where(eq(aiRuns.id, id));
+    const row = await this.repository.findById(id);
     // The output is the requester's: what they could read of the record.
     if (!row || row.requestedBy !== principalKey(principal)) {
       throw new NotFoundException(t('ai.runNotFound'));
@@ -314,11 +297,9 @@ export class AiService {
     job: AiJob,
     principal: RequestPrincipal | null,
   ): Promise<Record<string, unknown>> {
-    const [row] = await this.db
-      .update(aiRuns)
-      .set({ status: 'running' })
-      .where(and(eq(aiRuns.id, job.id), inArray(aiRuns.status, OPEN)))
-      .returning();
+    const row = await this.repository.updateIn(job.id, OPEN, {
+      status: 'running',
+    });
     if (!row) {
       throw new UnrecoverableError(`AI run ${job.id} is not open: not run.`);
     }
@@ -502,18 +483,14 @@ export class AiService {
     },
   ) {
     await this.txHost.withTransaction(async () => {
-      const [done] = await this.db
-        .update(aiRuns)
-        .set({
-          status: outcome.status,
-          model: outcome.model,
-          inputTokens: outcome.usage.inputTokens,
-          outputTokens: outcome.usage.outputTokens,
-          cached: outcome.cached ?? false,
-          error: outcome.error ?? null,
-        })
-        .where(and(eq(aiRuns.id, row.id), inArray(aiRuns.status, OPEN)))
-        .returning();
+      const done = await this.repository.updateIn(row.id, OPEN, {
+        status: outcome.status,
+        model: outcome.model,
+        inputTokens: outcome.usage.inputTokens,
+        outputTokens: outcome.usage.outputTokens,
+        cached: outcome.cached ?? false,
+        error: outcome.error ?? null,
+      });
       if (!done) return;
       await this.audit.record(principal, {
         action: outcome.status === 'completed' ? 'ai.completed' : 'ai.failed',
@@ -544,11 +521,10 @@ export class AiService {
     principal: Pick<Principal, 'kind' | 'id'> = job.principal,
   ) {
     const failed = await this.txHost.withTransaction(async () => {
-      const [failed] = await this.db
-        .update(aiRuns)
-        .set({ status: 'failed', error: reason })
-        .where(and(eq(aiRuns.id, job.id), inArray(aiRuns.status, OPEN)))
-        .returning();
+      const failed = await this.repository.updateIn(job.id, OPEN, {
+        status: 'failed',
+        error: reason,
+      });
       if (failed) {
         await this.audit.record(principal as Principal, {
           action: 'ai.failed',

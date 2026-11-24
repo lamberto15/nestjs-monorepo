@@ -35,7 +35,7 @@ interface Entry {
  */
 @Injectable()
 export class PresenceService {
-  private readonly logger = new Logger('Presence');
+  private readonly logger = new Logger(PresenceService.name);
 
   constructor(
     @Inject(REDIS) private readonly redis: Redis,

@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -15,7 +14,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
-import { AuthorizationService, Can } from '@nestjs/authorization';
+import { Can } from '@nestjs/authorization';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -31,7 +30,6 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
-import type { CustomFieldDefinition } from './custom-field.types.js';
 import { CustomFieldPolicy } from './custom-fields.policy.js';
 import {
   type CreateCustomFieldDto,
@@ -47,19 +45,10 @@ import {
   type UpdateCustomFieldDto,
   updateCustomFieldSchema,
 } from './custom-fields.schemas.js';
-import { CustomFieldsService } from './custom-fields.service.js';
-
-/** A definition as the API shows it (`default`, not the column's name). */
-const view = ({ defaultValue, ...field }: CustomFieldDefinition) => ({
-  ...field,
-  default: defaultValue ?? null,
-});
-
-/** `Invoice`'s names from its noun, as the search names subjects. */
-const labelOf = (noun: string) => {
-  const singular = noun[0]!.toUpperCase() + noun.slice(1);
-  return { singular, plural: `${singular}s` };
-};
+import {
+  customFieldView as view,
+  CustomFieldsService,
+} from './custom-fields.service.js';
 
 /**
  * Custom fields: what administrators add to a record's subject at runtime,
@@ -74,41 +63,25 @@ const labelOf = (noun: string) => {
 @ApiForbiddenResponse({ description: 'Not allowed by your permissions.' })
 @Controller('custom-fields')
 export class CustomFieldsController {
-  constructor(
-    private readonly fields: CustomFieldsService,
-    private readonly authorization: AuthorizationService,
-  ) {}
+  constructor(private readonly fields: CustomFieldsService) {}
 
   @Get('subjects')
-  @Can.Anyone() // Filtered below, by the same check as the list.
+  @Can.Anyone() // Filtered by the service, by the same check as the list.
   @ApiOperation({
     summary: 'The subjects that take custom fields',
     description:
       'Only those whose fields you may read (whoever may read the subject, or manages custom fields); a 403 when there are none.',
   })
   @ApiOkResponse({ standardSchema: customFieldSubjectListSchema })
-  async subjects(
+  subjects(
     @CurrentUser() user: RequestPrincipal,
     @Query({ schema: customFieldSubjectsQuerySchema }) _query: unknown,
   ) {
-    const subjects = this.fields.subjects();
-    const allowed = await Promise.all(
-      subjects.map(({ subject }) =>
-        this.authorization.can(CustomFieldPolicy, 'read', user, subject),
-      ),
-    );
-    const readable = subjects.filter((_, index) => allowed[index]);
-    if (readable.length === 0) throw new ForbiddenException();
-    return {
-      items: readable.map(({ subject, noun }) => ({
-        subject,
-        label: labelOf(noun),
-      })),
-    };
+    return this.fields.readableSubjects(user);
   }
 
   @Get()
-  @Can.Anyone() // Checked below, on the subject.
+  @Can.Anyone() // Checked by the service, on the subject.
   @ApiOperation({
     summary: "A subject's custom fields, in their order",
     description:
@@ -116,41 +89,11 @@ export class CustomFieldsController {
   })
   @ApiOkResponse({ standardSchema: customFieldListSchema })
   @ApiNotFoundResponse({ description: 'The subject takes no custom fields.' })
-  async list(
+  list(
     @CurrentUser() user: RequestPrincipal,
     @Query({ schema: customFieldListQuerySchema }) query: CustomFieldListQuery,
   ) {
-    this.fields.assertSubject(query.subject);
-    await this.authorization.authorize(
-      CustomFieldPolicy,
-      'read',
-      user,
-      query.subject,
-    );
-    // Counting reads every value of the subject: for those who change the fields.
-    if (query.include === 'counts') {
-      await this.authorization.authorize(
-        CustomFieldPolicy,
-        'manageCustomFields',
-        user,
-      );
-    }
-    const items = await this.fields.definitions(query.subject, {
-      includeInactive: query.includeInactive,
-    });
-    const counts =
-      query.include === 'counts'
-        ? await this.fields.valueCounts(query.subject, items)
-        : undefined;
-    return {
-      items: items.map((field) => ({
-        ...view(field),
-        ...(counts && {
-          valueCount: counts.get(field.key)?.records ?? 0,
-          deletedValueCount: counts.get(field.key)?.deleted ?? 0,
-        }),
-      })),
-    };
+    return this.fields.list(user, query);
   }
 
   @Post()

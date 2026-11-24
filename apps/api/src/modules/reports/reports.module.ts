@@ -10,6 +10,7 @@ import { ReportsController } from './reports.controller.js';
 import { ReportFailedMail, ReportReadyMail } from './reports.mails.js';
 import { REPORTS_PERMISSIONS } from './reports.permissions.js';
 import { ReportsRunner } from './reports.runner.js';
+import { ReportsRepository } from './reports.repository.js';
 import { ReportsService } from './reports.service.js';
 import { ReportsPersonalData } from './reports.personal-data.js';
 
@@ -31,6 +32,7 @@ import { ReportsPersonalData } from './reports.personal-data.js';
   controllers: [ReportsController],
   providers: [
     ReportsService,
+    ReportsRepository,
     ReportsRunner,
     ReportReadyMail,
     ReportFailedMail,

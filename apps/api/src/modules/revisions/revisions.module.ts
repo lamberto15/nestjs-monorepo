@@ -22,7 +22,7 @@ import {
   ApiOperation,
   ApiPreconditionFailedResponse,
 } from '@nestjs/swagger';
-import { assertUnchanged, Etag, ifMatchHeader } from '../../core/http/etag.js';
+import { Etag, ifMatchHeader } from '../../core/http/etag.js';
 import { ApiListQuery } from '../../core/http/list-docs.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { AuditModule } from '../../iam/audit/audit.module.js';
@@ -39,6 +39,7 @@ import {
   revisionPageSchema,
   revisionSchema,
 } from './revisions.schemas.js';
+import { RevisionsRepository } from './revisions.repository.js';
 import { RevisionsService } from './revisions.service.js';
 import { RevisionsPersonalData } from './revisions.personal-data.js';
 
@@ -53,7 +54,12 @@ const revisionNumber = new ParseIntPipe({ errorHttpStatusCode: 400 });
     AccessModule,
     AuditModule,
   ],
-  providers: [RevisionsService, RevisionRetentionJob, RevisionsPersonalData],
+  providers: [
+    RevisionsService,
+    RevisionsRepository,
+    RevisionRetentionJob,
+    RevisionsPersonalData,
+  ],
   exports: [RevisionsService],
 })
 class RevisionsCoreModule {}
@@ -151,7 +157,7 @@ export class RevisionsModule {
           record.subject,
           id,
           number,
-          (current) => assertUnchanged(ifMatch, current),
+          ifMatch,
         );
       }
     }

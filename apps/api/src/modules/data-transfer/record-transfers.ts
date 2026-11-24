@@ -7,8 +7,6 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { List, ListQuery } from '../../core/http/list-query.js';
 import { cursorValues } from '../../core/http/list-sort.js';
@@ -23,7 +21,6 @@ import { organizationalUnits } from '../../iam/organization/organization.tables.
 import type { Principal } from '../../iam/auth/principal.js';
 import { type AnyField, USER_KEY } from '../fields/field.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
-import { memberships, users } from '../../iam/auth/auth.tables.js';
 import {
   type RecordDeclaration,
   recordValues,
@@ -50,6 +47,7 @@ import type {
   TransferColumn,
 } from './data-transfer.types.js';
 import { TransferExtension } from './data-transfer.extension.js';
+import { DataTransferRepository } from './data-transfer.repository.js';
 import { columnsOf } from './import-columns.js';
 import { exportColumns, importSchema, matchKeys } from './record-transfer.js';
 
@@ -77,6 +75,7 @@ export class RecordTransfers implements OnModuleInit {
     private readonly authorization: AuthorizationService,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly discovery: DiscoveryService,
+    private readonly repository: DataTransferRepository,
   ) {}
 
   onModuleInit() {
@@ -263,24 +262,12 @@ export class RecordTransfers implements OnModuleInit {
     key: RecordKey,
     ids: readonly string[],
   ): Promise<Map<string, string | number>> {
-    const { table, parent } = key;
-    const rows = (await this.txHost.tx
-      .select({
-        id: table.id!,
-        key: table[key.field]!,
-        ...(parent && { parent: table[parent.field]! }),
-      })
-      .from(table as unknown as PgTable)
-      .where(
-        and(
-          inArray(table.id!, [...new Set(ids)]),
-          await this.access.sqlFilter(
-            principal,
-            key.declaration.subject,
-            'read',
-          ),
-        ),
-      )) as { id: string; key: string | number | null; parent?: unknown }[];
+    const { parent } = key;
+    const rows = await this.repository.keyRows(
+      key,
+      [...new Set(ids)],
+      await this.access.sqlFilter(principal, key.declaration.subject, 'read'),
+    );
     const parents = parent
       ? await this.keysOf(
           principal,
@@ -318,29 +305,19 @@ export class RecordTransfers implements OnModuleInit {
       k.parent ? depth(k.parent.key) + 1 : 0;
     if (parts.length !== depth(key) + 1) return null;
     const own = parts[parts.length - 1]!;
-    const { table, parent } = key;
+    const { parent } = key;
     const parentId = parent
       ? await this.idOf(principal, parent.key, parts.slice(0, -1))
       : undefined;
     if (parentId === null) return null;
     if (key.int && !/^-?\d+$/.test(own)) return null;
-    const [row] = await this.txHost.tx
-      .select({ id: table.id! })
-      .from(table as unknown as PgTable)
-      .where(
-        and(
-          eq(table[key.field]!, key.int ? Number(own) : own),
-          parent ? eq(table[parent.field]!, parentId!) : undefined,
-          table.deletedAt ? isNull(table.deletedAt) : undefined,
-          await this.access.sqlFilter(
-            principal,
-            key.declaration.subject,
-            'read',
-          ),
-        ),
-      )
-      .limit(1);
-    return (row?.id as string | undefined) ?? null;
+    const id = await this.repository.idOfKey(
+      key,
+      key.int ? Number(own) : own,
+      parentId,
+      await this.access.sqlFilter(principal, key.declaration.subject, 'read'),
+    );
+    return id ?? null;
   }
 
   /**
@@ -350,24 +327,11 @@ export class RecordTransfers implements OnModuleInit {
    * none, or two, match.
    */
   private async memberKey(value: string): Promise<string | null> {
-    const found = await this.txHost.tx
-      .select({ id: users.id })
-      .from(users)
-      .innerJoin(
-        memberships,
-        and(
-          eq(memberships.userId, users.id),
-          eq(memberships.tenantId, requireTenantId('An import')),
-          eq(memberships.active, true),
-        ),
-      )
-      .where(
-        value.includes('@')
-          ? eq(sql`lower(${users.email})`, value.trim().toLowerCase())
-          : eq(users.name, value.trim()),
-      )
-      .limit(2);
-    return found.length === 1 ? `user:${found[0]!.id}` : null;
+    const found = await this.repository.membersNamed(
+      requireTenantId('An import'),
+      value,
+    );
+    return found.length === 1 ? `user:${found[0]!}` : null;
   }
 
   /**
@@ -413,15 +377,10 @@ export class RecordTransfers implements OnModuleInit {
     ];
     if (ids.length) {
       const units = new Map(
-        (
-          await this.txHost.tx
-            .select({
-              id: organizationalUnits.id,
-              name: organizationalUnits.name,
-            })
-            .from(organizationalUnits)
-            .where(inArray(organizationalUnits.id, ids))
-        ).map((unit) => [unit.id, unit.name]),
+        (await this.repository.unitNames(ids)).map((unit) => [
+          unit.id,
+          unit.name,
+        ]),
       );
       for (const row of page) {
         for (const field of unitFields) {
@@ -644,22 +603,15 @@ export class RecordTransfers implements OnModuleInit {
     matchOn: string,
     value: string,
   ): Promise<RecordRow> {
-    const column = table[matchOn]!;
-    const db = this.txHost.tx;
     const valid = matchOn !== 'id' || UUID.test(value);
-    const [row] = valid
-      ? await db
-          .select({ id: table.id })
-          .from(table as unknown as PgTable)
-          .where(
-            and(
-              eq(column, value),
-              table.deletedAt ? isNull(table.deletedAt) : undefined,
-              await this.access.sqlFilter(principal, subject, 'read'),
-            ),
-          )
-          .limit(1)
-      : [];
+    const row = valid
+      ? await this.repository.idWhere(
+          table,
+          matchOn,
+          value,
+          await this.access.sqlFilter(principal, subject, 'read'),
+        )
+      : undefined;
     if (!row) {
       throw new NotFoundException(`No record whose ${matchOn} is "${value}".`);
     }

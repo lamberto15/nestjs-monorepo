@@ -11,6 +11,7 @@ import { RecordsModule } from '../records/records.module.js';
 import { ViewsModule } from '../views/views.module.js';
 import { FavoritesController } from './favorites.controller.js';
 import { FavoritesRegistry } from './favorites.registry.js';
+import { FavoritesRepository } from './favorites.repository.js';
 import { FavoritesService } from './favorites.service.js';
 import { FavoritesPersonalData } from './favorites.personal-data.js';
 
@@ -54,7 +55,12 @@ export class FavoritesExtension implements RecordHooks {
 @Module({
   imports: [RecordsModule, ViewsModule],
   controllers: [FavoritesController],
-  providers: [FavoritesService, FavoritesRegistry, FavoritesPersonalData],
+  providers: [
+    FavoritesService,
+    FavoritesRepository,
+    FavoritesRegistry,
+    FavoritesPersonalData,
+  ],
   exports: [FavoritesService, FavoritesRegistry],
 })
 export class FavoritesModule {

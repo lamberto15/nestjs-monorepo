@@ -7,6 +7,7 @@ import {
   AvatarController,
   PeopleAvatarController,
 } from './avatars.controller.js';
+import { AvatarsRepository } from './avatars.repository.js';
 import { AvatarsService } from './avatars.service.js';
 import { AvatarUpload } from './avatars.upload.js';
 import {
@@ -27,6 +28,7 @@ import {
   controllers: [AvatarController, PeopleAvatarController],
   providers: [
     AvatarsService,
+    AvatarsRepository,
     AvatarUpload,
     AvatarsPersonalData,
     AvatarsWhoAmI,

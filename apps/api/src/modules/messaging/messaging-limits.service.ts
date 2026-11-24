@@ -1,12 +1,8 @@
 import { createHash } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { Counter as MetricCounter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { messagingConfig } from './messaging.config.js';
@@ -16,7 +12,7 @@ import {
   utcDay,
   utcMonthStart,
 } from './messaging.policy.js';
-import { messagingUsage } from './messaging.tables.js';
+import { MessagingRepository } from './messaging.repository.js';
 
 /** Why an SMS was not sent. */
 export type SmsBlock =
@@ -77,7 +73,7 @@ export class MessagingLimits {
   private readonly blocked: MetricCounter;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: MessagingRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     @Inject(messagingConfig.KEY)
     private readonly config: ConfigType<typeof messagingConfig>,
@@ -219,35 +215,13 @@ export class MessagingLimits {
     counter,
     step = 1,
   }: Counter): Promise<number> {
-    const [row] = await this.db
-      .insert(messagingUsage)
-      .values({ day, counter, count: step })
-      .onConflictDoUpdate({
-        target: [
-          messagingUsage.tenantId,
-          messagingUsage.day,
-          messagingUsage.counter,
-        ],
-        set: { count: sql`${messagingUsage.count} + ${step}` },
-      })
-      .returning({ count: messagingUsage.count });
-    return row?.count ?? 0;
+    return this.repository.increment(day, counter, step);
   }
 
   /** Counts a refusal and logs it as an error (what an alert reads). */
   private async countBlocked(reason: SmsBlock, now: Date) {
     this.logger.error('SMS blocked by the toll-fraud caps', { reason });
     this.blocked.add(1, { reason });
-    await this.db
-      .insert(messagingUsage)
-      .values({ day: utcDay(now), counter: `blocked:${reason}`, count: 1 })
-      .onConflictDoUpdate({
-        target: [
-          messagingUsage.tenantId,
-          messagingUsage.day,
-          messagingUsage.counter,
-        ],
-        set: { count: sql`${messagingUsage.count} + 1` },
-      });
+    await this.repository.increment(utcDay(now), `blocked:${reason}`, 1);
   }
 }

@@ -1,14 +1,11 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, inArray, isNotNull, lt, or } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { DevicesService } from './notifications.devices.service.js';
 import { notificationsConfig } from './notifications.config.js';
-import { notifications } from './notifications.tables.js';
+import { NotificationsRepository } from './notifications.repository.js';
 
 const JOB = 'notification-retention';
 
@@ -30,7 +27,7 @@ export class NotificationRetentionJob {
   private readonly logger = new Logger('Notifications');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: NotificationsRepository,
     private readonly tenancy: Tenancy,
     private readonly devices: DevicesService,
     @Inject(notificationsConfig.KEY)
@@ -42,31 +39,16 @@ export class NotificationRetentionJob {
   @WithoutOverlapping()
   async run(now = new Date()) {
     const before = (days: number) => new Date(now.getTime() - days * DAY);
-    const old = or(
-      and(
-        isNotNull(notifications.readAt),
-        lt(notifications.readAt, before(this.config.retentionDays)),
-      ),
-      lt(notifications.createdAt, before(this.config.maxAgeDays)),
-    );
     const deleted = await this.tenancy.acrossTenants(JOB, async () => {
       let total = 0;
       for (;;) {
-        const rows = await this.db
-          .delete(notifications)
-          .where(
-            inArray(
-              notifications.id,
-              this.db
-                .select({ id: notifications.id })
-                .from(notifications)
-                .where(old)
-                .limit(BATCH),
-            ),
-          )
-          .returning({ id: notifications.id });
-        total += rows.length;
-        if (rows.length < BATCH) return total;
+        const gone = await this.repository.deleteOld(
+          before(this.config.retentionDays),
+          before(this.config.maxAgeDays),
+          BATCH,
+        );
+        total += gone;
+        if (gone < BATCH) return total;
       }
     });
     const devices = await this.devices.sweep(

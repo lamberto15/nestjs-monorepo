@@ -5,21 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
-import { and, desc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { RequestPrincipal } from '../../iam/auth/principal.js';
 import { defaultIssue } from './form-answers.js';
@@ -31,21 +21,16 @@ import {
   keyTypesOf,
   type SchemaIssue,
 } from './form-definition.js';
-import { FORM_LIST } from './forms.list.js';
 import { FormOptionSourcesService } from './form-option-sources.service.js';
 import { FormPolicy } from './forms.policy.js';
+import { FormsRepository } from './forms.repository.js';
 import type {
   CreateFormDto,
   PublishFormDto,
   SaveDraftDto,
   UpdateFormDto,
 } from './forms.schemas.js';
-import {
-  type FormRow,
-  forms,
-  type FormVersionRow,
-  formVersions,
-} from './forms.tables.js';
+import type { FormRow, FormVersionRow } from './forms.tables.js';
 
 export const invalid = (errors: SchemaIssue[], prefix = '') =>
   new BadRequestException({
@@ -94,11 +79,9 @@ export interface FormRights {
   readResponses: boolean;
 }
 
-/** Shown to whoever may see the form: only published, active forms unless they edit. */
-const openToReaders: SQL = and(
-  eq(forms.status, 'active'),
-  isNotNull(forms.publishedVersion),
-)!;
+/** Only published, active forms, unless they edit or read responses. */
+const publishedOnly = (rights: FormRights) =>
+  !rights.edit && !rights.readResponses;
 
 /**
  * Runtime forms (README.md): drafts edited with optimistic
@@ -109,7 +92,7 @@ const openToReaders: SQL = and(
 @Injectable()
 export class FormsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: FormsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     private readonly policy: FormPolicy,
@@ -149,20 +132,10 @@ export class FormsService {
     if (!Object.values(rights).some(Boolean)) {
       throw new ForbiddenException();
     }
-    const where = and(
-      rights.edit || rights.readResponses ? undefined : openToReaders,
-      FORM_LIST.where(query),
+    const [rows, total] = await this.repository.page(
+      query,
+      publishedOnly(rights),
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(forms)
-        .where(and(where, afterCursor(forms.id, query)))
-        .orderBy(...pageOrder(forms.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, forms, where, query),
-    ]);
     const page = toPage(rows, query, total);
     return { ...page, items: page.items.map((row) => this.view(row, rights)) };
   }
@@ -181,15 +154,9 @@ export class FormsService {
     if (!Object.values(rights).some(Boolean)) {
       throw new ForbiddenException();
     }
-    const [row] = await this.db
-      .select()
-      .from(forms)
-      .where(
-        and(
-          eq(forms.id, id),
-          rights.edit || rights.readResponses ? undefined : openToReaders,
-        ),
-      );
+    const row = await this.repository.findById(id, {
+      publishedOnly: publishedOnly(rights),
+    });
     if (!row) {
       throw new NotFoundException(`Form ${id} not found.`);
     }
@@ -203,15 +170,13 @@ export class FormsService {
       throw invalid(issues, 'definition');
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [created] = await this.db
-        .insert(forms)
-        .values({
+      const created = await this.repository
+        .insert({
           slug: dto.slug,
           name: dto.name,
           description: dto.description ?? null,
           draft: definition,
         })
-        .returning()
         .catch((error: unknown) => {
           throw databaseErrorKind(error) === 'unique_violation'
             ? slugTaken(dto.slug)
@@ -220,11 +185,11 @@ export class FormsService {
       await this.audit.record(principal, {
         action: 'form.created',
         targetType: 'form',
-        targetId: created!.id,
+        targetId: created.id,
         details: { slug: dto.slug, name: dto.name },
         ip,
       });
-      return created!;
+      return created;
     });
     return this.view(row, await this.rights(principal));
   }
@@ -247,11 +212,8 @@ export class FormsService {
       return this.view(current, await this.rights(principal));
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(forms)
-        .set(changes)
-        .where(eq(forms.id, id))
-        .returning()
+      const updated = await this.repository
+        .update(id, changes)
         .catch((error: unknown) => {
           throw databaseErrorKind(error) === 'unique_violation'
             ? slugTaken(changes.slug!)
@@ -272,7 +234,7 @@ export class FormsService {
         ),
         ip,
       });
-      return updated!;
+      return updated;
     });
     return this.view(row, await this.rights(principal));
   }
@@ -304,11 +266,11 @@ export class FormsService {
       throw invalid(issues, 'definition');
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [saved] = await this.db
-        .update(forms)
-        .set({ draft: dto.definition, revision: sql`${forms.revision} + 1` })
-        .where(and(eq(forms.id, id), eq(forms.revision, dto.revision)))
-        .returning();
+      const saved = await this.repository.saveDraft(
+        id,
+        dto.revision,
+        dto.definition,
+      );
       if (!saved) {
         throw conflict((await this.find(id, { ...NO_RIGHTS, edit: true }))!);
       }
@@ -341,11 +303,7 @@ export class FormsService {
   ) {
     await this.editable(principal, id);
     const version = await this.txHost.withTransaction(async () => {
-      const [form] = await this.db
-        .select()
-        .from(forms)
-        .where(eq(forms.id, id))
-        .for('update');
+      const form = await this.repository.lock(id);
       if (!form) {
         throw new NotFoundException(`Form ${id} not found.`);
       }
@@ -379,31 +337,29 @@ export class FormsService {
         throw invalid(issues, 'definition');
       }
       const number = (form.publishedVersion ?? 0) + 1;
-      const [created] = await this.db
-        .insert(formVersions)
-        .values({ formId: id, version: number, definition: form.draft })
-        .returning();
-      await this.db
-        .update(forms)
-        .set({
-          publishedVersion: number,
-          publishedRevision: form.revision,
-          keyTypes: { ...form.keyTypes, ...keyTypesOf(form.draft) },
-        })
-        .where(eq(forms.id, id));
+      const created = await this.repository.insertVersion({
+        formId: id,
+        version: number,
+        definition: form.draft,
+      });
+      await this.repository.update(id, {
+        publishedVersion: number,
+        publishedRevision: form.revision,
+        keyTypes: { ...form.keyTypes, ...keyTypesOf(form.draft) },
+      });
       await this.audit.record(principal, {
         action: 'form.published',
         targetType: 'form',
         targetId: id,
         details: {
           version: number,
-          versionId: created!.id,
+          versionId: created.id,
           revision: form.revision,
           fields: fieldsOf(form.draft).length,
         },
         ip,
       });
-      return created!;
+      return created;
     });
     return versionView(version);
   }
@@ -420,18 +376,14 @@ export class FormsService {
       return this.view(form, await this.rights(principal));
     }
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(forms)
-        .set({ status })
-        .where(eq(forms.id, id))
-        .returning();
+      const updated = await this.repository.update(id, { status });
       await this.audit.record(principal, {
         action: status === 'archived' ? 'form.archived' : 'form.unarchived',
         targetType: 'form',
         targetId: id,
         ip,
       });
-      return updated!;
+      return updated;
     });
     return this.view(row, await this.rights(principal));
   }
@@ -446,7 +398,7 @@ export class FormsService {
       });
     }
     await this.txHost.withTransaction(async () => {
-      await this.db.delete(forms).where(eq(forms.id, id));
+      await this.repository.delete(id);
       await this.audit.record(principal, {
         action: 'form.deleted',
         targetType: 'form',
@@ -460,11 +412,7 @@ export class FormsService {
   /** The published versions, newest first: for anyone who may see the form. */
   async versions(principal: RequestPrincipal, id: string) {
     await this.find(id, await this.rights(principal));
-    const rows = await this.db
-      .select()
-      .from(formVersions)
-      .where(eq(formVersions.formId, id))
-      .orderBy(desc(formVersions.version));
+    const rows = await this.repository.versions(id);
     return {
       items: rows.map((row) => ({
         id: row.id,
@@ -478,12 +426,7 @@ export class FormsService {
 
   async version(principal: RequestPrincipal, id: string, version: number) {
     await this.find(id, await this.rights(principal));
-    const [row] = await this.db
-      .select()
-      .from(formVersions)
-      .where(
-        and(eq(formVersions.formId, id), eq(formVersions.version, version)),
-      );
+    const row = await this.repository.findVersion(id, version);
     if (!row) {
       throw new NotFoundException(
         `Version ${version} of form ${id} not found.`,
@@ -539,15 +482,10 @@ export class FormsService {
 
   /** The published version of a form that has one. */
   async currentVersion(form: FormRow) {
-    const [version] = await this.db
-      .select()
-      .from(formVersions)
-      .where(
-        and(
-          eq(formVersions.formId, form.id),
-          eq(formVersions.version, form.publishedVersion ?? 0),
-        ),
-      );
+    const version = await this.repository.findVersion(
+      form.id,
+      form.publishedVersion ?? 0,
+    );
     if (!version) {
       throw new NotFoundException(`Form ${form.id} is not published.`);
     }

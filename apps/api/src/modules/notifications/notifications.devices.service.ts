@@ -1,12 +1,11 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, lt } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { EncryptedColumns } from '../../core/encryption/encrypted-columns.js';
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { UserPrincipal } from '../../iam/auth/principal.js';
 import type { RegisterDeviceDto } from './notifications.schemas.js';
+import { NotificationsRepository } from './notifications.repository.js';
 import { pushDevices } from './notifications.tables.js';
 
 type Row = typeof pushDevices.$inferSelect;
@@ -28,7 +27,7 @@ const view = (row: Row) => ({
 @Injectable()
 export class DevicesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: NotificationsRepository,
     private readonly encryption: EncryptionService,
     private readonly audit: AuditService,
   ) {}
@@ -48,36 +47,25 @@ export class DevicesService {
       auth: this.encryption.encrypt(pushDevices.auth, keys.auth),
       lastSeenAt: new Date(),
     };
-    const [row] = await this.db
-      .insert(pushDevices)
-      .values({ ...values, endpoint })
-      .onConflictDoUpdate({ target: pushDevices.endpoint, set: values })
-      .returning();
+    const row = await this.repository.saveDevice(endpoint, values);
     await this.audit.record(user, {
       action: 'device.registered',
       targetType: 'device',
-      targetId: row!.id,
+      targetId: row.id,
       details: { name: dto.name },
       ip,
     });
-    return view(row!);
+    return view(row);
   }
 
   async list(user: UserPrincipal) {
-    const rows = await this.db
-      .select()
-      .from(pushDevices)
-      .where(eq(pushDevices.userId, user.id))
-      .orderBy(pushDevices.createdAt);
+    const rows = await this.repository.devicesOf(user.id);
     return { items: rows.map(view) };
   }
 
   @Transactional()
   async remove(user: UserPrincipal, id: string, ip?: string) {
-    const [row] = await this.db
-      .delete(pushDevices)
-      .where(and(eq(pushDevices.id, id), eq(pushDevices.userId, user.id)))
-      .returning({ id: pushDevices.id, name: pushDevices.name });
+    const row = await this.repository.deleteDevice(id, user.id);
     if (!row) throw new NotFoundException(`Device ${id} not found.`);
     await this.audit.record(user, {
       action: 'device.removed',
@@ -90,10 +78,8 @@ export class DevicesService {
 
   /** A user's devices with their keys, for sending. */
   async forSending(userId: string) {
-    const rows = await this.db
-      .select()
-      .from(pushDevices)
-      .where(eq(pushDevices.userId, userId));
+    // Any order: each one is sent to.
+    const rows = await this.repository.devicesOf(userId);
     return rows.map((row) => this.subscription(row));
   }
 
@@ -102,27 +88,18 @@ export class DevicesService {
    * job was queued, or registered by someone else since (it moved to them).
    */
   async find(id: string, userId: string) {
-    const [row] = await this.db
-      .select()
-      .from(pushDevices)
-      .where(and(eq(pushDevices.id, id), eq(pushDevices.userId, userId)));
+    const row = await this.repository.findDevice(id, userId);
     return row && this.subscription(row);
   }
 
   /** The push service says this browser of the user's is gone: forget it (not once it moved to someone else). */
   async forget(id: string, userId: string) {
-    await this.db
-      .delete(pushDevices)
-      .where(and(eq(pushDevices.id, id), eq(pushDevices.userId, userId)));
+    await this.repository.deleteDevice(id, userId);
   }
 
   /** Forgets browsers not seen since `before`; how many. */
   async sweep(before: Date) {
-    const deleted = await this.db
-      .delete(pushDevices)
-      .where(lt(pushDevices.lastSeenAt, before))
-      .returning({ id: pushDevices.id });
-    return deleted.length;
+    return this.repository.deleteDevicesSeenBefore(before);
   }
 
   private subscription(row: Row) {

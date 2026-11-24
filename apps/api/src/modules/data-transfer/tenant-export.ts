@@ -1,20 +1,15 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { secretColumnsOf } from '../../core/database/secret-columns.js';
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, getColumns } from 'drizzle-orm';
-import { getTableConfig, PgColumn } from 'drizzle-orm/pg-core';
-import type { Database } from '../../core/database/database.js';
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
-import { afterKey, pagingKey } from '../../core/tenancy/table-paging.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import {
   type TenantTableEntry,
   tenantTables,
 } from '../../core/tenancy/tenant-tables.js';
 import { AccessService } from '../../iam/access/access.service.js';
-import { memberships, users } from '../../iam/auth/auth.tables.js';
 import { OperatorGuard } from '../../iam/auth/operator-only.js';
 import type { Principal } from '../../iam/auth/principal.js';
+import { DataTransferRepository } from './data-transfer.repository.js';
 import type { TransferColumn } from './data-transfer.types.js';
 
 /** The reserved export name of a tenant's export: never in the catalog, started only by its own route. */
@@ -53,7 +48,7 @@ const PAGE = 1000;
 @Injectable()
 export class TenantExport {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: DataTransferRepository,
     private readonly tenancy: Tenancy,
     private readonly access: AccessService,
     private readonly operators: OperatorGuard,
@@ -78,12 +73,7 @@ export class TenantExport {
     const hidden = this.encryption.properties();
     yield [this.row('tenant', tenant, hidden)];
     const members = await this.tenancy.run(null, () =>
-      this.db
-        .select({ id: users.id, email: users.email, name: users.name })
-        .from(memberships)
-        .innerJoin(users, eq(users.id, memberships.userId))
-        .where(eq(memberships.tenantId, tenantId))
-        .orderBy(asc(users.id)),
+      this.repository.members(tenantId),
     );
     if (members.length > 0) {
       yield members.map((member) => this.row('member', member, hidden));
@@ -99,43 +89,23 @@ export class TenantExport {
     { name, table }: TenantTableEntry,
     hidden: ReadonlySet<string>,
   ): AsyncIterable<TenantRow[]> {
-    const config = getTableConfig(table);
-    const properties = Object.entries(getColumns(table)) as [
-      string,
-      PgColumn,
-    ][];
-    const propertyOf = (column: PgColumn) =>
-      properties.find(([, candidate]) => candidate === column)![0];
-    const keys = pagingKey(config);
+    const keys = this.repository.pageKeys(table);
     if (keys.length === 0) {
       throw new Error(
         `${name} has a tenant_id but no primary key nor unique index on plain columns: a tenant's export pages by one.`,
       );
     }
-    const tenantColumn = properties.find(
-      ([property]) => property === 'tenantId',
-    )![1];
     let after: unknown[] | undefined;
     for (;;) {
-      const rows = (await this.tenancy.run(tenantId, () =>
-        this.db
-          .select()
-          .from(table)
-          .where(
-            and(
-              eq(tenantColumn, tenantId),
-              after ? afterKey(keys, after) : undefined,
-            ),
-          )
-          .orderBy(...keys.map((column) => asc(column)))
-          .limit(PAGE),
-      )) as Record<string, unknown>[];
+      const rows = await this.tenancy.run(tenantId, () =>
+        this.repository.tablePage(table, keys, tenantId, after, PAGE),
+      );
       if (rows.length === 0) return;
       const left = new Set([...hidden, ...secretColumnsOf(table)]);
       yield rows.map((record) => this.row(name, record, left));
       if (rows.length < PAGE) return;
       const last = rows[rows.length - 1]!;
-      after = keys.map((column) => last[propertyOf(column)]);
+      after = this.repository.keyOf(table, keys, last);
     }
   }
 

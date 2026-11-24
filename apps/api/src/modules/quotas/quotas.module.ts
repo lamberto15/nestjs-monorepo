@@ -11,6 +11,7 @@ import {
 import { QUOTA_PERMISSIONS } from './quotas.permissions.js';
 import { QuotaPolicy } from './quotas.policy.js';
 import { QuotaMetrics } from './quota.metrics.js';
+import { QuotasRepository } from './quotas.repository.js';
 import { QuotasService } from './quotas.service.js';
 
 /**
@@ -26,7 +27,7 @@ import { QuotasService } from './quotas.service.js';
     MetricsModule,
   ],
   controllers: [QuotasController, OperatorQuotasController],
-  providers: [QuotasService, QuotaPolicy, QuotaMetrics],
+  providers: [QuotasService, QuotasRepository, QuotaPolicy, QuotaMetrics],
   exports: [QuotasService],
 })
 export class QuotasModule {

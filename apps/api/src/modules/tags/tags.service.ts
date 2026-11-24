@@ -1,45 +1,23 @@
-import {
-  InjectTransaction,
-  Transactional,
-  TransactionHost,
-} from '@nestjs-cls/transactional';
+import { Transactional, TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
+  type Type,
 } from '@nestjs/common';
-import {
-  and,
-  asc,
-  count,
-  eq,
-  getColumns,
-  inArray,
-  notInArray,
-  sql,
-} from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
+import { AuthorizationService } from '@nestjs/authorization';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { Records } from '../records/records.service.js';
-import { TAG_LIST } from './tags.list.js';
+import { TagsRepository } from './tags.repository.js';
 import type { CreateTagDto, TagRef, UpdateTagDto } from './tags.schemas.js';
 import { TagsRegistry } from './tags.registry.js';
-import { recordTags, tags } from './tags.tables.js';
+import type { tags } from './tags.tables.js';
 
 type Tag = typeof tags.$inferSelect;
 
@@ -72,27 +50,17 @@ const invalid = (errors: { path: string; message: string }[]) =>
 @Injectable()
 export class TagsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: TagsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly registry: TagsRegistry,
     private readonly records: Records,
     private readonly audit: AuditService,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   /** A page of tags, newest first unless the query sorts. */
   async list(query: ListQuery) {
-    const where = TAG_LIST.where(query);
-    const [rows, total] = await Promise.all([
-      this.db
-        // With the sort values the cursor needs (lower(name)); pick() drops them.
-        .select({ ...getColumns(tags), ...TAG_LIST.sortSelect(query) })
-        .from(tags)
-        .where(and(where, afterCursor(tags.id, query)))
-        .orderBy(...pageOrder(tags.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, tags, where, query),
-    ]);
+    const [rows, total] = await this.repository.page(query);
     const page = toPage(rows, query, total);
     // How many records carry each tag: one grouped query per page.
     const usage = await this.usageOf(page.items.map((row) => row.id));
@@ -105,16 +73,12 @@ export class TagsService {
   /** Records carrying each tag, one query for all `ids`. */
   private async usageOf(ids: string[]): Promise<Map<string, number>> {
     if (ids.length === 0) return new Map();
-    const rows = await this.db
-      .select({ tagId: recordTags.tagId, count: count() })
-      .from(recordTags)
-      .where(inArray(recordTags.tagId, ids))
-      .groupBy(recordTags.tagId);
+    const rows = await this.repository.usageOf(ids);
     return new Map(rows.map((row) => [row.tagId, row.count]));
   }
 
   private async findOne(id: string): Promise<Tag> {
-    const [tag] = await this.db.select().from(tags).where(eq(tags.id, id));
+    const tag = await this.repository.findById(id);
     if (!tag) throw new NotFoundException(`Tag ${id} not found.`);
     return tag;
   }
@@ -131,23 +95,20 @@ export class TagsService {
     }
     const row = await this.txHost
       .withTransaction(async () => {
-        const [created] = await this.db
-          .insert(tags)
-          .values({
-            subject: dto.subject,
-            name: dto.name,
-            color: dto.color ?? null,
-            description: dto.description || null,
-          })
-          .returning();
+        const created = await this.repository.insert({
+          subject: dto.subject,
+          name: dto.name,
+          color: dto.color ?? null,
+          description: dto.description || null,
+        });
         await this.audit.record(principal, {
           action: 'tag.created',
           targetType: 'tag',
-          targetId: created!.id,
+          targetId: created.id,
           details: { subject: dto.subject, name: dto.name },
           ip,
         });
-        return created!;
+        return created;
       })
       .catch((error: unknown) => {
         throw this.conflict(error, dto.subject, dto.name);
@@ -172,11 +133,7 @@ export class TagsService {
     }
     const row = await this.txHost
       .withTransaction(async () => {
-        const [updated] = await this.db
-          .update(tags)
-          .set(values)
-          .where(eq(tags.id, id))
-          .returning();
+        const updated = await this.repository.update(id, values);
         await this.audit.record(principal, {
           action: 'tag.updated',
           targetType: 'tag',
@@ -191,7 +148,7 @@ export class TagsService {
           },
           ip,
         });
-        return updated!;
+        return updated;
       })
       .catch((error: unknown) => {
         throw this.conflict(error, tag.subject, values.name ?? tag.name);
@@ -203,7 +160,7 @@ export class TagsService {
   @Transactional()
   async remove(principal: Principal, id: string, ip?: string) {
     const tag = await this.findOne(id);
-    await this.db.delete(tags).where(eq(tags.id, id));
+    await this.repository.delete(id);
     await this.audit.record(principal, {
       action: 'tag.deleted',
       targetType: 'tag',
@@ -211,6 +168,33 @@ export class TagsService {
       details: { subject: tag.subject, name: tag.name },
       ip,
     });
+  }
+
+  /**
+   * PUT /<path>/{id}/tags: the record's tags set by whoever may change it.
+   * Unreadable: the 404 of a missing one; readable but not theirs to change:
+   * a 403.
+   */
+  async setRecordTags(
+    principal: Principal,
+    subject: string,
+    recordId: string,
+    tagIds: readonly string[],
+    ip?: string,
+  ) {
+    const { store, feature } = this.records.of(subject);
+    const row = await store.findOne(recordId, { visibleTo: principal });
+    await this.authorization.authorize(
+      feature.policy as unknown as Type<{
+        update(...args: unknown[]): boolean;
+      }>,
+      'update',
+      principal,
+      row,
+    );
+    return {
+      items: await this.setTags(principal, subject, recordId, tagIds, ip),
+    };
   }
 
   /**
@@ -230,21 +214,11 @@ export class TagsService {
     const wanted = [...new Set(tagIds)];
     // One change of a record's set at a time: two at once would merge their
     // sets and each audit a `to` that isn't. The record's row is the lock.
-    const table = this.records.of(subject).feature.table;
-    await this.db
-      .select({ id: table.id })
-      .from(table as unknown as PgTable)
-      .where(eq(table.id, recordId))
-      .for('update');
+    await this.repository.lockRecord(this.records.of(subject), recordId);
     // Shared locks: a tag deleted meanwhile would fail the insert (a 500, not the 400).
-    const found = wanted.length
-      ? await this.db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(and(eq(tags.subject, subject), inArray(tags.id, wanted)))
-          .for('share')
-      : [];
-    const known = new Set(found.map((row) => row.id));
+    const known = new Set(
+      wanted.length ? await this.repository.lockTags(subject, wanted) : [],
+    );
     const unknown = tagIds
       .map((id, index) => ({ id, index }))
       .filter(({ id }) => !known.has(id));
@@ -256,33 +230,14 @@ export class TagsService {
         })),
       );
     }
-    const mine = and(
-      eq(recordTags.subject, subject),
-      eq(recordTags.recordId, recordId),
-    );
-    const before = (
-      await this.db
-        .select({ tagId: recordTags.tagId })
-        .from(recordTags)
-        .where(mine)
-    ).map((row) => row.tagId);
+    const before = await this.repository.tagIdsOf(subject, recordId);
     const added = wanted.filter((id) => !before.includes(id));
     const removed = before.filter((id) => !wanted.includes(id));
     if (removed.length) {
-      await this.db
-        .delete(recordTags)
-        .where(
-          and(
-            mine,
-            wanted.length ? notInArray(recordTags.tagId, wanted) : undefined,
-          ),
-        );
+      await this.repository.unlinkExcept(subject, recordId, wanted);
     }
     if (added.length) {
-      await this.db
-        .insert(recordTags)
-        .values(added.map((tagId) => ({ subject, recordId, tagId })))
-        .onConflictDoNothing();
+      await this.repository.link(subject, recordId, added);
     }
     if (added.length || removed.length) {
       await this.audit.record(principal, {
@@ -308,22 +263,9 @@ export class TagsService {
       recordIds.map((id) => [id, []] as [string, TagRef[]]),
     );
     if (recordIds.length) {
-      const rows = await this.db
-        .select({
-          recordId: recordTags.recordId,
-          id: tags.id,
-          name: tags.name,
-          color: tags.color,
-        })
-        .from(recordTags)
-        .innerJoin(tags, eq(tags.id, recordTags.tagId))
-        .where(
-          and(
-            eq(recordTags.subject, subject),
-            inArray(recordTags.recordId, [...new Set(recordIds)]),
-          ),
-        )
-        .orderBy(asc(sql`lower(${tags.name})`), asc(tags.id));
+      const rows = await this.repository.tagsOf(subject, [
+        ...new Set(recordIds),
+      ]);
       for (const row of rows) result.get(row.recordId)?.push(ref(row));
     }
     return result;
@@ -331,40 +273,17 @@ export class TagsService {
 
   /** The ids of the records of `subject` carrying any of `tagIds`: a subquery, for a list filter. */
   idsTagged(subject: string, tagIds: string[]) {
-    return this.db
-      .select({ id: recordTags.recordId })
-      .from(recordTags)
-      .where(
-        and(eq(recordTags.subject, subject), inArray(recordTags.tagId, tagIds)),
-      );
+    return this.repository.idsTagged(subject, tagIds);
   }
 
   /** Records deleted for good take their tags with them. */
   /** A merge: the survivor gains the duplicate's tags (keeping its own). */
   async merge(subject: string, from: string, to: string) {
-    const moved = await this.db
-      .delete(recordTags)
-      .where(
-        and(eq(recordTags.subject, subject), eq(recordTags.recordId, from)),
-      )
-      .returning();
-    if (moved.length > 0) {
-      await this.db
-        .insert(recordTags)
-        .values(moved.map((tag) => ({ ...tag, recordId: to })))
-        .onConflictDoNothing();
-    }
+    await this.repository.moveLinks(subject, from, to);
   }
 
   async forget(subject: string, recordIds: readonly string[]) {
-    await this.db
-      .delete(recordTags)
-      .where(
-        and(
-          eq(recordTags.subject, subject),
-          inArray(recordTags.recordId, [...recordIds]),
-        ),
-      );
+    await this.repository.unlinkRecords(subject, recordIds);
   }
 
   private conflict(error: unknown, subject: string, name: string) {

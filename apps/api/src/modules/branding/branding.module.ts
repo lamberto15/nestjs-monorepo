@@ -18,6 +18,7 @@ import {
 } from './branding.controller.js';
 import { BRANDING_PERMISSIONS } from './branding.permissions.js';
 import { BrandingPolicy } from './branding.policy.js';
+import { BrandingRepository } from './branding.repository.js';
 import { BrandingService } from './branding.service.js';
 import { BRANDING_SETTINGS } from './branding.settings.js';
 
@@ -45,6 +46,7 @@ import { BRANDING_SETTINGS } from './branding.settings.js';
   ],
   providers: [
     BrandingService,
+    BrandingRepository,
     BrandingPolicy,
     BrandingLogoUpload,
     BrandingDarkLogoUpload,

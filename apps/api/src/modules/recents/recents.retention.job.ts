@@ -1,12 +1,9 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { inArray, lt } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { RECENTS_RETENTION_DAYS } from './recents.schemas.js';
-import { recentRecords } from './recents.tables.js';
+import { RecentsRepository } from './recents.repository.js';
 
 const JOB = 'recents-retention';
 
@@ -20,10 +17,10 @@ const BATCH = 5_000;
  */
 @Injectable()
 export class RecentsRetentionJob {
-  private readonly logger = new Logger('Recents');
+  private readonly logger = new Logger(RecentsRetentionJob.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RecentsRepository,
     private readonly tenancy: Tenancy,
   ) {}
 
@@ -37,21 +34,9 @@ export class RecentsRetentionJob {
     const deleted = await this.tenancy.acrossTenants(JOB, async () => {
       let total = 0;
       for (;;) {
-        const rows = await this.db
-          .delete(recentRecords)
-          .where(
-            inArray(
-              recentRecords.id,
-              this.db
-                .select({ id: recentRecords.id })
-                .from(recentRecords)
-                .where(lt(recentRecords.viewedAt, before))
-                .limit(BATCH),
-            ),
-          )
-          .returning({ id: recentRecords.id });
-        total += rows.length;
-        if (rows.length < BATCH) return total;
+        const gone = await this.repository.deleteViewedBefore(before, BATCH);
+        total += gone;
+        if (gone < BATCH) return total;
       }
     });
     this.logger.log('Old recent records deleted', { deleted });

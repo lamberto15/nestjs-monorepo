@@ -16,6 +16,7 @@ import { DataTransferController } from './data-transfer.controller.js';
 import { DATA_TRANSFER_PERMISSIONS } from './data-transfer.permissions.js';
 import { TransferExtension } from './data-transfer.extension.js';
 import { DataTransferProcessor } from './data-transfer.processor.js';
+import { DataTransferRepository } from './data-transfer.repository.js';
 import {
   DATA_TRANSFERS,
   DataTransferService,
@@ -67,6 +68,7 @@ import { TransferFilesSweep } from './transfer-files.sweep.js';
   ],
   providers: [
     DataTransferService,
+    DataTransferRepository,
     DataTransferProcessor,
     ImportLimits,
     ImportMappingsService,

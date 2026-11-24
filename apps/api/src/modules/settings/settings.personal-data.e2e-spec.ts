@@ -1,3 +1,4 @@
+import { SettingsRepository } from './settings.repository.js';
 import { SettingsPersonalData } from './settings.personal-data.js';
 import { settingOverrides } from './settings.tables.js';
 import { personalDataSection } from '../../../test/personal-data.js';
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `settings` section (settings.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('settings', [SettingsPersonalData], {
+personalDataSection('settings', [SettingsPersonalData, SettingsRepository], {
   seed: async (c) => {
     await c.inTenant(() =>
       c.db.insert(settingOverrides).values([

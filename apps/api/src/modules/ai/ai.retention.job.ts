@@ -1,13 +1,10 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, inArray, lt } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { aiConfig } from './ai.config.js';
-import { aiRuns } from './ai.tables.js';
+import { AiRepository } from './ai.repository.js';
 
 const JOB = 'ai-run-retention';
 
@@ -25,7 +22,7 @@ export class AiRunRetentionJob {
   private readonly logger = new Logger('Ai');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AiRepository,
     private readonly tenancy: Tenancy,
     @Inject(aiConfig.KEY)
     private readonly config: ConfigType<typeof aiConfig>,
@@ -38,28 +35,12 @@ export class AiRunRetentionJob {
   async run(now = new Date()) {
     const days = this.config.runRetentionDays;
     const before = new Date(now.getTime() - days * 86_400_000);
-    const old = and(
-      inArray(aiRuns.status, ['completed', 'failed']),
-      lt(aiRuns.createdAt, before),
-    );
     const deleted = await this.tenancy.acrossTenants(JOB, async () => {
       let total = 0;
       for (;;) {
-        const rows = await this.db
-          .delete(aiRuns)
-          .where(
-            inArray(
-              aiRuns.id,
-              this.db
-                .select({ id: aiRuns.id })
-                .from(aiRuns)
-                .where(old)
-                .limit(BATCH),
-            ),
-          )
-          .returning({ id: aiRuns.id });
-        total += rows.length;
-        if (rows.length < BATCH) return total;
+        const count = await this.repository.deleteEnded(before, BATCH);
+        total += count;
+        if (count < BATCH) return total;
       }
     });
     this.logger.log('Old AI runs deleted', { deleted, days });

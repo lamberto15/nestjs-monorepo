@@ -1,18 +1,14 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
 import { StorageDisk } from '@nestjs/storage';
-import { asc, inArray, lt } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import { ATTACHMENT_SWEEP_JOB } from './attachments.permissions.js';
-import { attachments, attachmentUploads } from './attachments.tables.js';
+import { AttachmentsRepository } from './attachments.repository.js';
 import { UPLOAD_GRACE_MS, uploadObjects } from './attachments.uploads.js';
 
 /** Uploads looked at per round. */
@@ -31,10 +27,10 @@ const BATCH = 1000;
  */
 @Injectable()
 export class AttachmentSweepJob {
-  private readonly logger = new Logger('AttachmentSweep');
+  private readonly logger = new Logger(AttachmentSweepJob.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AttachmentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly disk: StorageDisk,
     private readonly system: SystemContext,
@@ -62,36 +58,14 @@ export class AttachmentSweepJob {
       async (system) => {
         let deleted = 0;
         for (;;) {
-          const expired = await this.db
-            .select({
-              id: attachmentUploads.id,
-              key: attachmentUploads.key,
-              resumable: attachmentUploads.resumable,
-              completedAt: attachmentUploads.completedAt,
-            })
-            .from(attachmentUploads)
-            .where(
-              lt(
-                attachmentUploads.expiresAt,
-                new Date(Date.now() - UPLOAD_GRACE_MS),
-              ),
-            )
-            .orderBy(asc(attachmentUploads.id))
-            .limit(BATCH);
+          const expired = await this.repository.expiredUploads(
+            new Date(Date.now() - UPLOAD_GRACE_MS),
+            BATCH,
+          );
           if (expired.length === 0) break;
           // A key that became an attachment's file is not an orphan: keep its object.
           const used = new Set(
-            (
-              await this.db
-                .select({ key: attachments.key })
-                .from(attachments)
-                .where(
-                  inArray(
-                    attachments.key,
-                    expired.map((row) => row.key),
-                  ),
-                )
-            ).map((row) => row.key),
+            await this.repository.usedKeys(expired.map((row) => row.key)),
           );
           const abandoned = expired.filter((row) => !row.completedAt);
           // The objects first: a failure leaves the rows, and the next night tries again.
@@ -105,12 +79,7 @@ export class AttachmentSweepJob {
               .filter((key) => !used.has(key)),
           );
           await this.txHost.withTransaction(async () => {
-            await this.db.delete(attachmentUploads).where(
-              inArray(
-                attachmentUploads.id,
-                expired.map((row) => row.id),
-              ),
-            );
+            await this.repository.deleteUploads(expired.map((row) => row.id));
             if (abandoned.length > 0) {
               await this.audit.record(system, {
                 action: 'attachments.uploads-swept',

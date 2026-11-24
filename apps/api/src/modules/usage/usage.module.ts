@@ -12,6 +12,7 @@ import { UsageController } from './usage.controller.js';
 import { UsageInterceptor } from './usage.interceptor.js';
 import { USAGE_PERMISSIONS } from './usage.permissions.js';
 import { UsagePolicy } from './usage.policy.js';
+import { UsageRepository } from './usage.repository.js';
 import { UsageService } from './usage.service.js';
 import { UsageRollupJob } from './usage-rollup.job.js';
 
@@ -32,6 +33,7 @@ import { UsageRollupJob } from './usage-rollup.job.js';
   providers: [
     UsageCounters,
     UsageService,
+    UsageRepository,
     UsageRollupJob,
     UsagePolicy,
     UsageClientQuota,

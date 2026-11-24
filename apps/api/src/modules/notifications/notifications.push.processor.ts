@@ -18,7 +18,7 @@ import {
  */
 @Processor(PUSH_QUEUE, { concurrency: 10 })
 export class PushProcessor extends WorkerHost {
-  private readonly logger = new Logger('WebPush');
+  private readonly logger = new Logger(PushProcessor.name);
 
   constructor(
     private readonly devices: DevicesService,

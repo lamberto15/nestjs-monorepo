@@ -14,6 +14,7 @@ import { NamingSeriesService } from './naming-series.service.js';
 import { sequencesConfig } from './sequences.config.js';
 import { SEQUENCE_PERMISSIONS } from './sequences.permissions.js';
 import { NamingSeriesPolicy } from './sequences.policy.js';
+import { SequencesRepository } from './sequences.repository.js';
 import { SequencesService } from './sequences.service.js';
 import { NUMBERING_SETTINGS } from './sequences.settings.js';
 import type { RecordDeclaration } from '../records/record.js';
@@ -48,6 +49,7 @@ import {
   controllers: [NamingSeriesController],
   providers: [
     SequencesService,
+    SequencesRepository,
     NamingSeriesRegistry,
     NamingSeriesService,
     NamingSeriesPolicy,

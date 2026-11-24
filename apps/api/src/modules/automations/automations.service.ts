@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from 'node:util';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Transactional } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
@@ -8,17 +7,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, desc, eq, gt, inArray } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
 import { t } from '@nestjs/i18n';
-import type { Database } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -44,10 +35,7 @@ import {
   compileCondition,
   conditionVariables,
 } from './automations.conditions.js';
-import {
-  AUTOMATION_RULE_LIST,
-  AUTOMATION_RUN_LIST,
-} from './automations.lists.js';
+import { AutomationsRepository } from './automations.repository.js';
 import type {
   AutomationSimulation,
   CreateAutomationRuleDto,
@@ -57,8 +45,6 @@ import type {
 import {
   type AutomationRule,
   type AutomationRun,
-  automationRules,
-  automationRuns,
   type RunAction,
   type StoredAction,
 } from './automations.tables.js';
@@ -134,7 +120,7 @@ const invalid = (errors: ActionProblem[]) =>
 @Injectable()
 export class AutomationsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AutomationsRepository,
     private readonly records: Records,
     private readonly actions: AutomationActions,
     private readonly access: AccessService,
@@ -175,25 +161,13 @@ export class AutomationsService {
   }
 
   async page(query: ListQuery) {
-    const where = AUTOMATION_RULE_LIST.where(query);
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(automationRules)
-        .where(and(where, afterCursor(automationRules.id, query)))
-        .orderBy(...pageOrder(automationRules.id, query))
-        .limit(query.limit + 1),
-      countPage(this.db, automationRules, where, query),
-    ]);
+    const [rows, total] = await this.repository.page(query);
     const page = toPage(rows, query, total);
     return { ...page, items: page.items.map(view) };
   }
 
   private async find(id: string) {
-    const [rule] = await this.db
-      .select()
-      .from(automationRules)
-      .where(eq(automationRules.id, id));
+    const rule = await this.repository.findById(id);
     if (!rule) {
       throw new NotFoundException(t('automations.notFound', { args: { id } }));
     }
@@ -202,11 +176,7 @@ export class AutomationsService {
 
   /** The rule as it is now, or undefined (the runner's read). */
   async current(id: string) {
-    const [rule] = await this.db
-      .select()
-      .from(automationRules)
-      .where(eq(automationRules.id, id));
-    return rule;
+    return this.repository.findById(id);
   }
 
   async get(id: string) {
@@ -215,16 +185,7 @@ export class AutomationsService {
 
   async runs(id: string, query: ListQuery) {
     await this.find(id);
-    const where = and(
-      eq(automationRuns.ruleId, id),
-      AUTOMATION_RUN_LIST.where(query),
-    );
-    const rows = await this.db
-      .select()
-      .from(automationRuns)
-      .where(and(where, afterCursor(automationRuns.id, query)))
-      .orderBy(...pageOrder(automationRuns.id, query))
-      .limit(query.limit + 1);
+    const rows = await this.repository.runs(id, query);
     const page = toPage(rows, query, undefined);
     return { ...page, items: page.items.map(runView) };
   }
@@ -233,25 +194,22 @@ export class AutomationsService {
   @Transactional()
   async create(user: UserPrincipal, dto: CreateAutomationRuleDto, ip?: string) {
     const { actions } = await this.check(user, dto);
-    const [row] = await this.db
-      .insert(automationRules)
-      .values({
-        name: dto.name,
-        subject: dto.subject,
-        trigger: dto.trigger,
-        field: dto.field,
-        condition: dto.condition,
-        actions,
-      })
-      .returning();
+    const row = await this.repository.insert({
+      name: dto.name,
+      subject: dto.subject,
+      trigger: dto.trigger,
+      field: dto.field,
+      condition: dto.condition,
+      actions,
+    });
     await this.audit.record(user, {
       action: 'automation-rule.created',
       targetType: 'automationRule',
-      targetId: row!.id,
+      targetId: row.id,
       details: { name: dto.name, subject: dto.subject },
       ip,
     });
-    return view(row!);
+    return view(row);
   }
 
   /**
@@ -284,18 +242,14 @@ export class AutomationsService {
         actions: (await this.check(user, definition)).actions,
       };
     }
-    const [row] = await this.db
-      .update(automationRules)
-      .set({
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(changed && {
-          ...definition,
-          version: current.version + 1,
-          ...(current.status === 'active' && { status: 'draft' as const }),
-        }),
-      })
-      .where(eq(automationRules.id, id))
-      .returning();
+    const row = await this.repository.update(id, {
+      ...(dto.name !== undefined && { name: dto.name }),
+      ...(changed && {
+        ...definition,
+        version: current.version + 1,
+        ...(current.status === 'active' && { status: 'draft' as const }),
+      }),
+    });
     await this.audit.record(user, {
       action: 'automation-rule.updated',
       targetType: 'automationRule',
@@ -314,7 +268,7 @@ export class AutomationsService {
   @Transactional()
   async remove(user: UserPrincipal, id: string, ip?: string) {
     const rule = await this.find(id);
-    await this.db.delete(automationRules).where(eq(automationRules.id, id));
+    await this.repository.delete(id);
     await this.audit.record(user, {
       action: 'automation-rule.deleted',
       targetType: 'automationRule',
@@ -338,11 +292,7 @@ export class AutomationsService {
       });
     }
     await this.check(user, current);
-    const [row] = await this.db
-      .select({ active: count() })
-      .from(automationRules)
-      .where(eq(automationRules.status, 'active'));
-    if ((row?.active ?? 0) >= MAX_ACTIVE_RULES) {
+    if ((await this.repository.countActive()) >= MAX_ACTIVE_RULES) {
       throw invalid([
         {
           path: 'status',
@@ -352,22 +302,18 @@ export class AutomationsService {
         },
       ]);
     }
-    const [updated] = await this.db
-      .update(automationRules)
-      .set({
-        status: 'active',
-        owner: principalKey(user),
-        activatedAt: new Date(),
-        disabledReason: null,
-        failures: 0,
-      })
-      .where(eq(automationRules.id, id))
-      .returning();
+    const updated = await this.repository.update(id, {
+      status: 'active',
+      owner: principalKey(user),
+      activatedAt: new Date(),
+      disabledReason: null,
+      failures: 0,
+    });
     await this.audit.record(user, {
       action: 'automation-rule.activated',
       targetType: 'automationRule',
       targetId: id,
-      details: { version: updated!.version },
+      details: { version: updated.version },
       ip,
     });
     return view(updated!);
@@ -388,11 +334,10 @@ export class AutomationsService {
     by: Principal,
     ip?: string,
   ) {
-    const [updated] = await this.db
-      .update(automationRules)
-      .set({ status: 'disabled', disabledReason: reason })
-      .where(eq(automationRules.id, rule.id))
-      .returning();
+    const updated = await this.repository.update(rule.id, {
+      status: 'disabled',
+      disabledReason: reason,
+    });
     await this.audit.record(by, {
       action: 'automation-rule.disabled',
       targetType: 'automationRule',
@@ -400,7 +345,7 @@ export class AutomationsService {
       details: { reason, version: rule.version },
       ip,
     });
-    return updated!;
+    return updated;
   }
 
   /**
@@ -566,22 +511,15 @@ export class AutomationsService {
     principal: Principal,
     { ids, limit }: { ids?: readonly string[]; limit: number },
   ): Promise<RecordRow[]> {
-    const table = target.feature.table;
-    return (await this.db
-      .select()
-      .from(table as unknown as PgTable)
-      .where(
-        and(
-          await this.access.sqlFilter(
-            principal,
-            target.declaration.subject,
-            'read',
-          ),
-          ids ? inArray(table.id, [...ids]) : undefined,
-        ),
-      )
-      .orderBy(desc(table.updatedAt!), desc(table.id))
-      .limit(limit)) as RecordRow[];
+    return this.repository.records(
+      target.feature.table,
+      await this.access.sqlFilter(
+        principal,
+        target.declaration.subject,
+        'read',
+      ),
+      { ids, limit },
+    );
   }
 
   /**
@@ -648,16 +586,10 @@ export class AutomationsService {
 
   /** Runs of the rule in the last hour. */
   async recentRuns(ruleId: string) {
-    const [row] = await this.db
-      .select({ runs: count() })
-      .from(automationRuns)
-      .where(
-        and(
-          eq(automationRuns.ruleId, ruleId),
-          gt(automationRuns.createdAt, new Date(Date.now() - 3_600_000)),
-        ),
-      );
-    return row?.runs ?? 0;
+    return this.repository.countRunsSince(
+      ruleId,
+      new Date(Date.now() - 3_600_000),
+    );
   }
 
   /** Keeps the run, and the rule's last run, in the current transaction; returns its failures in a row. */
@@ -668,7 +600,7 @@ export class AutomationsService {
     error: string | null,
   ) {
     const status = error ? 'failed' : 'succeeded';
-    await this.db.insert(automationRuns).values({
+    await this.repository.insertRun({
       ruleId: rule.id,
       ruleVersion: rule.version,
       recordId,
@@ -677,10 +609,11 @@ export class AutomationsService {
       error,
     });
     const failures = error ? rule.failures + 1 : 0;
-    await this.db
-      .update(automationRules)
-      .set({ lastRunAt: new Date(), lastStatus: status, failures })
-      .where(eq(automationRules.id, rule.id));
+    await this.repository.update(rule.id, {
+      lastRunAt: new Date(),
+      lastStatus: status,
+      failures,
+    });
     return failures;
   }
 }

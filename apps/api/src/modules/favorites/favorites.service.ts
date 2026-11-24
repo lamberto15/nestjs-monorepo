@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -6,12 +6,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, eq, inArray, max } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
 import { Records } from '../records/records.service.js';
 import { ViewsService } from '../views/views.service.js';
@@ -21,7 +17,8 @@ import {
   type ReorderFavoritesDto,
 } from './favorites.schemas.js';
 import { FavoritesRegistry } from './favorites.registry.js';
-import { favorites } from './favorites.tables.js';
+import { FavoritesRepository } from './favorites.repository.js';
+import type { favorites } from './favorites.tables.js';
 
 type Row = typeof favorites.$inferSelect;
 
@@ -35,7 +32,7 @@ type Row = typeof favorites.$inferSelect;
 @Injectable()
 export class FavoritesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: FavoritesRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly registry: FavoritesRegistry,
@@ -44,11 +41,7 @@ export class FavoritesService {
 
   /** The principal's favorites in their order, without what they no longer see. */
   async list(principal: Principal) {
-    const rows = await this.db
-      .select()
-      .from(favorites)
-      .where(eq(favorites.owner, principalKey(principal)))
-      .orderBy(asc(favorites.position), asc(favorites.id));
+    const rows = await this.repository.listOf(principalKey(principal));
     const seen = await Promise.all(
       rows.map((row) => this.sees(principal, row)),
     );
@@ -63,20 +56,18 @@ export class FavoritesService {
     const owner = principalKey(principal);
     return this.txHost
       .withTransaction(async () => {
-        const [{ total, last }] = await this.db
-          .select({ total: count(), last: max(favorites.position) })
-          .from(favorites)
-          .where(eq(favorites.owner, owner));
+        const { total, last } = await this.repository.countOf(owner);
         if (total >= MAX_FAVORITES) {
           throw new BadRequestException(
             `At most ${MAX_FAVORITES} favorites: remove one first.`,
           );
         }
-        const [row] = await this.db
-          .insert(favorites)
-          .values({ ...dto, owner, position: (last ?? -1) + 1 })
-          .returning();
-        return this.item(row!);
+        const row = await this.repository.insert({
+          ...dto,
+          owner,
+          position: (last ?? -1) + 1,
+        });
+        return this.item(row);
       })
       .catch((error: unknown) => {
         throw databaseErrorKind(error) === 'unique_violation'
@@ -90,13 +81,8 @@ export class FavoritesService {
 
   /** Unpins one of the principal's favorites, or a 404. */
   async remove(principal: Principal, id: string) {
-    const deleted = await this.db
-      .delete(favorites)
-      .where(
-        and(eq(favorites.id, id), eq(favorites.owner, principalKey(principal))),
-      )
-      .returning({ id: favorites.id });
-    if (deleted.length === 0) {
+    const deleted = await this.repository.delete(principalKey(principal), id);
+    if (!deleted) {
       throw new NotFoundException(`Favorite ${id} not found.`);
     }
   }
@@ -105,11 +91,7 @@ export class FavoritesService {
   async reorder(principal: Principal, dto: ReorderFavoritesDto) {
     const owner = principalKey(principal);
     await this.txHost.withTransaction(async () => {
-      const rows = await this.db
-        .select({ id: favorites.id })
-        .from(favorites)
-        .where(eq(favorites.owner, owner));
-      const mine = new Set(rows.map((row) => row.id));
+      const mine = new Set(await this.repository.idsOf(owner));
       if (
         dto.ids.length !== mine.size ||
         new Set(dto.ids).size !== dto.ids.length ||
@@ -120,10 +102,7 @@ export class FavoritesService {
         );
       }
       for (const [position, id] of dto.ids.entries()) {
-        await this.db
-          .update(favorites)
-          .set({ position })
-          .where(and(eq(favorites.id, id), eq(favorites.owner, owner)));
+        await this.repository.setPosition(owner, id, position);
       }
     });
     return this.list(principal);
@@ -133,17 +112,11 @@ export class FavoritesService {
   async favoriteIds(principal: Principal, subject: string, ids: string[]) {
     const result = new Map<string, string | null>(ids.map((id) => [id, null]));
     if (ids.length === 0) return result;
-    const rows = await this.db
-      .select({ id: favorites.id, target: favorites.target })
-      .from(favorites)
-      .where(
-        and(
-          eq(favorites.owner, principalKey(principal)),
-          eq(favorites.kind, 'record'),
-          eq(favorites.subject, subject),
-          inArray(favorites.target, ids),
-        ),
-      );
+    const rows = await this.repository.recordFavorites(
+      principalKey(principal),
+      subject,
+      ids,
+    );
     for (const row of rows) result.set(row.target, row.id);
     return result;
   }
@@ -151,39 +124,16 @@ export class FavoritesService {
   /** When records are gone for good: nobody's favorites any more. */
   /** A merge: whoever pinned the duplicate has the survivor pinned instead (once). */
   async merge(subject: string, from: string, to: string) {
-    const moved = await this.db
-      .delete(favorites)
-      .where(
-        and(
-          eq(favorites.kind, 'record'),
-          eq(favorites.subject, subject),
-          eq(favorites.target, from),
-        ),
-      )
-      .returning();
+    const moved = await this.repository.deleteOfRecords(subject, [from]);
     if (moved.length > 0) {
-      await this.db
-        .insert(favorites)
-        .values(
-          moved.map(({ id: _id, ...favorite }) => ({
-            ...favorite,
-            target: to,
-          })),
-        )
-        .onConflictDoNothing();
+      await this.repository.insertMissing(
+        moved.map(({ id: _id, ...favorite }) => ({ ...favorite, target: to })),
+      );
     }
   }
 
   async forget(subject: string, recordIds: readonly string[]) {
-    await this.db
-      .delete(favorites)
-      .where(
-        and(
-          eq(favorites.kind, 'record'),
-          eq(favorites.subject, subject),
-          inArray(favorites.target, [...recordIds]),
-        ),
-      );
+    await this.repository.deleteOfRecords(subject, recordIds);
   }
 
   /** Whether the principal sees what a favorite points at (a page always: the menu gates pages). */

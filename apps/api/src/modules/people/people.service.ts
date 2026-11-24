@@ -1,20 +1,12 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, inArray, max } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
-import { escapeLike } from '../../core/http/list-query.js';
-import { afterCursor, toPage } from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { ActorNameSource } from '../../iam/audit/actor-names.js';
-import { apiClients, memberships, users } from '../../iam/auth/auth.tables.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import { UsersRepository } from '../../iam/auth/users.repository.js';
-import {
-  organizationalUnitClosure,
-  organizationalUnits,
-  type UnitType,
-} from '../../iam/organization/organization.tables.js';
+import type { UnitType } from '../../iam/organization/organization.tables.js';
 import { AvatarsService } from '../attachments/avatars/avatars.service.js';
+import { PeopleRepository } from './people.repository.js';
 import type { UnitsQuery } from './people.schemas.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -53,7 +45,7 @@ export interface UnitRef {
 @ActorNameSource() // The audit log and the revisions name who acted through it.
 export class PeopleService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: PeopleRepository,
     private readonly tenancy: Tenancy,
     private readonly users: UsersRepository,
     private readonly avatars: AvatarsService,
@@ -91,10 +83,7 @@ export class PeopleService {
     if (!ids.length || !addresses.length) {
       return new Map();
     }
-    const rows = await this.db
-      .select({ id: users.id, email: users.email })
-      .from(users)
-      .where(and(inArray(users.id, ids), inArray(users.email, addresses)));
+    const rows = await this.repository.usersByEmail(ids, addresses);
     return new Map(rows.map((row) => [row.email, `user:${row.id}`]));
   }
 
@@ -116,25 +105,8 @@ export class PeopleService {
     const clientIds = ids('client');
     const tenantId = this.tenancy.tenantId();
     const [people, clients] = await Promise.all([
-      userIds.length
-        ? this.db
-            .select({ id: users.id, name: users.name })
-            .from(users)
-            .innerJoin(
-              memberships,
-              and(
-                eq(memberships.userId, users.id),
-                eq(memberships.tenantId, tenantId),
-              ),
-            )
-            .where(inArray(users.id, userIds))
-        : [],
-      clientIds.length
-        ? this.db
-            .select({ id: apiClients.id, name: apiClients.name })
-            .from(apiClients)
-            .where(inArray(apiClients.id, clientIds))
-        : [],
+      userIds.length ? this.repository.memberNames(userIds, tenantId) : [],
+      clientIds.length ? this.repository.clientNames(clientIds) : [],
     ]);
     const found = new Map<string, string>([
       ...people.map((row) => [`user:${row.id}`, row.name] as const),
@@ -165,25 +137,11 @@ export class PeopleService {
    * by name. API clients are not people here: a mention names a user.
    */
   async directory(q: string | undefined, limit: number): Promise<Person[]> {
-    const rows = await this.db
-      .select({ id: users.id, name: users.name })
-      .from(users)
-      .innerJoin(
-        memberships,
-        and(
-          eq(memberships.userId, users.id),
-          eq(memberships.tenantId, this.tenancy.tenantId()),
-          eq(memberships.active, true),
-        ),
-      )
-      .where(
-        and(
-          eq(users.active, true),
-          q ? ilike(users.name, `%${escapeLike(q)}%`) : undefined,
-        ),
-      )
-      .orderBy(asc(users.name), asc(users.id))
-      .limit(limit);
+    const rows = await this.repository.activeMembers(
+      this.tenancy.tenantId(),
+      q,
+      limit,
+    );
     return this.withAvatars(
       rows.map((row) => ({ key: `user:${row.id}`, name: row.name })),
     );
@@ -195,37 +153,10 @@ export class PeopleService {
    * part of the name (any case, `%` and `_` themselves), `id` the ones to name.
    */
   async units(query: UnitsQuery) {
-    const rows = await this.db
-      .select({
-        id: organizationalUnits.id,
-        type: organizationalUnits.type,
-        name: organizationalUnits.name,
-        parentId: organizationalUnits.parentId,
-      })
-      .from(organizationalUnits)
-      .where(
-        and(
-          query.q
-            ? ilike(organizationalUnits.name, `%${escapeLike(query.q)}%`)
-            : undefined,
-          query.id ? inArray(organizationalUnits.id, query.id) : undefined,
-          afterCursor(organizationalUnits.id, query),
-        ),
-      )
-      .orderBy(desc(organizationalUnits.id))
-      .limit(query.limit + 1);
+    const rows = await this.repository.units(query);
     const page = toPage(rows, query);
     const ids = page.items.map((unit) => unit.id);
-    const depths = ids.length
-      ? await this.db
-          .select({
-            id: organizationalUnitClosure.descendantId,
-            depth: max(organizationalUnitClosure.depth),
-          })
-          .from(organizationalUnitClosure)
-          .where(inArray(organizationalUnitClosure.descendantId, ids))
-          .groupBy(organizationalUnitClosure.descendantId)
-      : [];
+    const depths = ids.length ? await this.repository.depths(ids) : [];
     const depthOf = new Map(depths.map((row) => [row.id, row.depth ?? 0]));
     return {
       items: page.items.map((unit): UnitRef => ({
@@ -255,10 +186,7 @@ export class PeopleService {
     if (kind !== 'client') {
       return null;
     }
-    const [client] = await this.db
-      .select()
-      .from(apiClients)
-      .where(eq(apiClients.id, id));
+    const client = await this.repository.findClient(id);
     return client?.active
       ? { kind: 'client', id: client.id, name: client.name, tenantId }
       : null;

@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   HttpException,
@@ -12,12 +12,8 @@ import {
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { t } from '@nestjs/i18n';
-import { eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { REDIS } from '../../core/redis/redis.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
@@ -31,7 +27,7 @@ import {
   type StockQuota,
 } from './quota.js';
 import type { SetTenantQuotas } from './quotas.schemas.js';
-import { quotaLocks, quotaPlans, tenantQuotas } from './quotas.tables.js';
+import { QuotasRepository } from './quotas.repository.js';
 
 /** The plan every tenant without one is on. */
 export const DEFAULT_PLAN = 'default';
@@ -53,11 +49,11 @@ export interface RateOutcome {
  */
 @Injectable()
 export class QuotasService implements OnModuleInit {
-  private readonly logger = new Logger('Quotas');
+  private readonly logger = new Logger(QuotasService.name);
   private readonly known = new Map<string, Quota>();
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: QuotasRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly tenancy: Tenancy,
@@ -83,19 +79,14 @@ export class QuotasService implements OnModuleInit {
 
   /** The tenant's limit of a quota (null: unlimited). `tenantId`: the current tenant. */
   async limitOf(quota: Quota, tenantId = requireTenantId('A quota')) {
-    const [own] = await this.db
-      .select({ plan: tenantQuotas.plan, limits: tenantQuotas.limits })
-      .from(tenantQuotas)
-      .where(eq(tenantQuotas.tenantId, tenantId));
+    const own = await this.repository.tenantLimits(tenantId);
     if (own?.limits[quota.key] !== undefined) {
       return own.limits[quota.key]!;
     }
-    const plans = await this.db
-      .select({ name: quotaPlans.name, limits: quotaPlans.limits })
-      .from(quotaPlans)
-      .where(
-        inArray(quotaPlans.name, [own?.plan ?? DEFAULT_PLAN, DEFAULT_PLAN]),
-      );
+    const plans = await this.repository.plansNamed([
+      own?.plan ?? DEFAULT_PLAN,
+      DEFAULT_PLAN,
+    ]);
     const named = plans.find((plan) => plan.name === own?.plan);
     const fallback = plans.find((plan) => plan.name === DEFAULT_PLAN);
     return (
@@ -120,16 +111,8 @@ export class QuotasService implements OnModuleInit {
     if (limit === null) {
       return;
     }
-    // One statement, race-free on the first check too: the insert, or the
-    // no-op update of the row already there, locks it.
-    await this.db
-      .insert(quotaLocks)
-      .values({ key: quota.key })
-      .onConflictDoUpdate({
-        target: [quotaLocks.tenantId, quotaLocks.key],
-        set: { key: quota.key },
-      });
-    const used = await quota.count(this.db, tenantId);
+    await this.repository.lock(quota.key);
+    const used = await this.repository.count(quota, tenantId);
     if (used + adding > limit) {
       throw new UnprocessableEntityException({
         code: 'quota_exceeded',
@@ -210,7 +193,7 @@ export class QuotasService implements OnModuleInit {
   /** What the tenant uses of a quota now, in its scope (stock quotas count there). */
   async used(quota: Quota, tenantId = requireTenantId('A quota')) {
     if (quota.kind === 'stock') {
-      return quota.count(this.db, tenantId);
+      return this.repository.count(quota, tenantId);
     }
     return Number(
       (await this.redisCall(() =>
@@ -227,10 +210,7 @@ export class QuotasService implements OnModuleInit {
       throw new NotFoundException(t('quotas.tenantNotFound'));
     }
     return this.tenancy.run(tenantId, async () => {
-      const [own] = await this.db
-        .select({ plan: tenantQuotas.plan, limits: tenantQuotas.limits })
-        .from(tenantQuotas)
-        .where(eq(tenantQuotas.tenantId, tenantId));
+      const own = await this.repository.tenantLimits(tenantId);
       const quotas = [];
       for (const quota of this.known.values()) {
         quotas.push({
@@ -272,11 +252,7 @@ export class QuotasService implements OnModuleInit {
       await this.assertPlan(changes.plan);
     }
     const entry = await this.txHost.withTransaction(async () => {
-      const [current] = await this.db
-        .select()
-        .from(tenantQuotas)
-        .where(eq(tenantQuotas.tenantId, tenantId))
-        .for('update');
+      const current = await this.repository.lockTenantLimits(tenantId);
       const limits = { ...current?.limits };
       const changed: Record<
         string,
@@ -291,17 +267,9 @@ export class QuotasService implements OnModuleInit {
       const from = current?.plan ?? null;
       const plan = changes.plan === undefined ? from : changes.plan;
       if (plan === null && Object.keys(limits).length === 0) {
-        await this.db
-          .delete(tenantQuotas)
-          .where(eq(tenantQuotas.tenantId, tenantId));
+        await this.repository.deleteTenantLimits(tenantId);
       } else {
-        await this.db
-          .insert(tenantQuotas)
-          .values({ tenantId, plan, limits })
-          .onConflictDoUpdate({
-            target: tenantQuotas.tenantId,
-            set: { plan, limits },
-          });
+        await this.repository.saveTenantLimits(tenantId, plan, limits);
       }
       const entry = {
         action: 'tenant.quotas-changed',
@@ -326,10 +294,7 @@ export class QuotasService implements OnModuleInit {
   }
 
   async plans() {
-    return this.db
-      .select({ name: quotaPlans.name, limits: quotaPlans.limits })
-      .from(quotaPlans)
-      .orderBy(quotaPlans.name);
+    return this.repository.plans();
   }
 
   /** Creates or replaces a plan's limits; audited. */
@@ -341,10 +306,7 @@ export class QuotasService implements OnModuleInit {
   ) {
     this.assertKnown(Object.keys(limits), 'limits');
     await this.txHost.withTransaction(async () => {
-      await this.db
-        .insert(quotaPlans)
-        .values({ name, limits })
-        .onConflictDoUpdate({ target: quotaPlans.name, set: { limits } });
+      await this.repository.savePlan(name, limits);
       await this.audit.record(operator, {
         action: 'quota.plan-saved',
         targetType: 'quota-plan',
@@ -359,11 +321,7 @@ export class QuotasService implements OnModuleInit {
   /** Deletes a plan: its tenants fall back to the default plan; audited. */
   async deletePlan(operator: Principal, name: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
-      const deleted = await this.db
-        .delete(quotaPlans)
-        .where(eq(quotaPlans.name, name))
-        .returning({ name: quotaPlans.name });
-      if (deleted.length === 0) {
+      if (!(await this.repository.deletePlan(name))) {
         throw new NotFoundException(t('quotas.planNotFound'));
       }
       await this.audit.record(operator, {
@@ -410,11 +368,7 @@ export class QuotasService implements OnModuleInit {
   }
 
   private async assertPlan(name: string) {
-    const [plan] = await this.db
-      .select({ name: quotaPlans.name })
-      .from(quotaPlans)
-      .where(eq(quotaPlans.name, name));
-    if (!plan) {
+    if (!(await this.repository.planExists(name))) {
       throw new BadRequestException({
         code: 'validation_failed',
         message: t('quotas.unknownPlan', { args: { name } }),

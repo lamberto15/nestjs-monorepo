@@ -33,6 +33,7 @@ import {
   bulkResultSchema,
   bulkStartedSchema,
 } from './bulk.schemas.js';
+import { BulkRepository } from './bulk.repository.js';
 import { BulkService } from './bulk.service.js';
 import { BULK, type BulkRequest } from './bulk.types.js';
 
@@ -55,7 +56,7 @@ import { BULK, type BulkRequest } from './bulk.types.js';
     }),
   ],
   controllers: [BulkController],
-  providers: [BulkService, BulkProcessor],
+  providers: [BulkService, BulkRepository, BulkProcessor],
   exports: [BulkService],
 })
 export class BulkRunsModule {}

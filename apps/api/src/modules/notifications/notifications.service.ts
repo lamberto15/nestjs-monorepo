@@ -1,31 +1,9 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import {
-  and,
-  count,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  notInArray,
-  or,
-  sql,
-} from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
-import { outboxMessages } from '../ops/outbox-store.view.js';
 import { Realtime } from '../realtime/realtime.service.js';
 import { NotificationCatalog } from './notifications.catalog.js';
 import {
@@ -40,7 +18,8 @@ import { Events } from '../../core/outbox/events.js';
 import { NOTIFICATION_LIST } from './notifications.lists.js';
 import { offered } from './notifications.preferences.js';
 import type { NotificationView } from './notifications.schemas.js';
-import { notifications } from './notifications.tables.js';
+import { NotificationsRepository } from './notifications.repository.js';
+import type { notifications } from './notifications.tables.js';
 
 /** At most this many recipients per `notify()`: a broadcast is chunked through a queue job. */
 export const MAX_RECIPIENTS = 500;
@@ -77,7 +56,7 @@ export interface NotifyInput {
 @Injectable()
 export class NotificationsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: NotificationsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly catalog: NotificationCatalog,
     private readonly events: Events,
@@ -125,39 +104,18 @@ export class NotificationsService {
     const link = input.link ?? null;
     const ids: string[] = [];
     for (const recipient of recipients) {
-      const values = { recipient, type: input.type, data, key, link };
-      // A key collapses in one statement: the older row is replaced by a new
-      // one (a new id, so it is the newest), counted up, unread and
-      // undelivered again. No lock: a concurrent notify of the same key waits
-      // on the row, then counts up.
-      const [row] = await this.db
-        .insert(notifications)
-        .values(values)
-        .onConflictDoUpdate({
-          target: [
-            notifications.tenantId,
-            notifications.recipient,
-            notifications.key,
-          ],
-          targetWhere: isNotNull(notifications.key),
-          set: {
-            // uuidv7() is the column's default; a conflict doesn't apply defaults.
-            id: sql`uuidv7()`,
-            data,
-            link,
-            count: sql`${notifications.count} + 1`,
-            readAt: null,
-            deliveredAt: null,
-            digest: null,
-            digestDueAt: null,
-            emailedAt: null,
-          },
-        })
-        .returning({ id: notifications.id });
-      ids.push(row!.id);
-      await this.events.publish(notificationStored, {
-        notificationId: row!.id,
+      // A key collapses in one statement (the repository's store()). No
+      // lock: a concurrent notify of the same key waits on the row, then
+      // counts up.
+      const id = await this.repository.store({
+        recipient,
+        type: input.type,
+        data,
+        key,
+        link,
       });
+      ids.push(id);
+      await this.events.publish(notificationStored, { notificationId: id });
     }
     return ids;
   }
@@ -176,20 +134,11 @@ export class NotificationsService {
 
   /** A page of the caller's notifications, newest first, the texts in `locale` (default: the request's). */
   async page(principal: Principal, query: ListQuery, locale?: string) {
-    const where = and(
-      eq(notifications.recipient, principalKey(principal)),
+    const [rows, total] = await this.repository.page(
+      principalKey(principal),
       NOTIFICATION_LIST.where(query),
+      query,
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(notifications)
-        .where(and(where, afterCursor(notifications.id, query)))
-        .orderBy(...pageOrder(notifications.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, notifications, where, query),
-    ]);
     const page = toPage(rows, query, total);
     return { ...page, items: page.items.map((row) => this.view(row, locale)) };
   }
@@ -220,19 +169,10 @@ export class NotificationsService {
 
   async unreadCount(principal: Pick<Principal, 'kind' | 'id'>) {
     // Capped, as countPage does: an exact count reads every unread row.
-    const unread = this.db
-      .select({ one: sql`1` })
-      .from(notifications)
-      .where(
-        and(
-          eq(notifications.recipient, principalKey(principal)),
-          isNull(notifications.readAt),
-        ),
-      )
-      .limit(UNREAD_COUNT_CAP + 1)
-      .as('unread');
-    const [row] = await this.db.select({ rows: count() }).from(unread);
-    const rows = row?.rows ?? 0;
+    const rows = await this.repository.countUnread(
+      principalKey(principal),
+      UNREAD_COUNT_CAP,
+    );
     return rows > UNREAD_COUNT_CAP
       ? { unread: UNREAD_COUNT_CAP, unreadCapped: true }
       : { unread: rows, unreadCapped: false };
@@ -248,39 +188,14 @@ export class NotificationsService {
       .declarations()
       .filter((declaration) => declaration.mandatory)
       .map((declaration) => declaration.type);
-    return and(
-      eq(notifications.recipient, recipient),
-      isNull(notifications.deliveredAt),
-      before ? lt(notifications.createdAt, before) : undefined,
-      mandatory.length > 0
-        ? notInArray(notifications.type, mandatory)
-        : undefined,
-    );
+    return { recipient, before, mandatory };
   }
 
   /** What `settle()` would touch for a recipient in this tenant: notifications and their pending outbox messages. */
   async backlog(recipient: string, before?: Date) {
-    const ids = this.db
-      .select({ id: sql<string>`${notifications.id}::text` })
-      .from(notifications)
-      .where(this.undelivered(recipient, before));
-    const [stored] = await this.db
-      .select({ rows: count() })
-      .from(notifications)
-      .where(this.undelivered(recipient, before));
-    const [messages] = await this.db
-      .select({ rows: count() })
-      .from(outboxMessages)
-      .where(
-        and(
-          eq(outboxMessages.topic, notificationStored.type),
-          inArray(
-            sql<string>`${outboxMessages.payload}->>'notificationId'`,
-            ids,
-          ),
-        ),
-      );
-    return { notifications: stored?.rows ?? 0, messages: messages?.rows ?? 0 };
+    return this.repository.countUndelivered(
+      this.undelivered(recipient, before),
+    );
   }
 
   /**
@@ -291,68 +206,27 @@ export class NotificationsService {
    * returns something.
    */
   async settle(recipient: string, before: Date | undefined, limit: number) {
-    const ids = (
-      await this.db
-        .select({ id: notifications.id })
-        .from(notifications)
-        .where(this.undelivered(recipient, before))
-        .limit(limit)
-    ).map((row) => row.id);
+    const ids = await this.repository.undeliveredIds(
+      this.undelivered(recipient, before),
+      limit,
+    );
     if (ids.length === 0) return { notifications: 0, messages: 0 };
     const now = new Date();
-    const removed = await this.db
-      .delete(outboxMessages)
-      .where(
-        and(
-          eq(outboxMessages.topic, notificationStored.type),
-          inArray(
-            sql<string>`${outboxMessages.payload}->>'notificationId'`,
-            ids,
-          ),
-          or(
-            isNull(outboxMessages.leaseUntil),
-            lt(outboxMessages.leaseUntil, now.getTime()),
-          ),
-        ),
-      )
-      .returning({ id: outboxMessages.id });
-    const settled = await this.db
-      .update(notifications)
-      .set({
-        deliveredAt: now,
-        readAt: sql`coalesce(${notifications.readAt}, ${now.toISOString()}::timestamptz)`,
-        digest: null,
-        digestDueAt: null,
-      })
-      .where(
-        and(inArray(notifications.id, ids), isNull(notifications.deliveredAt)),
-      )
-      .returning({ id: notifications.id });
-    return { notifications: settled.length, messages: removed.length };
+    const messages = await this.repository.deleteDeliveries(ids, now);
+    const settled = await this.repository.settle(ids, now);
+    return { notifications: settled, messages };
   }
 
   /** Marks one read (again: no change); the caller's connections hear `notification.read`. */
   async markRead(principal: Principal, id: string) {
-    const [found] = await this.db
-      .select()
-      .from(notifications)
-      .where(
-        and(
-          eq(notifications.id, id),
-          eq(notifications.recipient, principalKey(principal)),
-        ),
-      );
+    const found = await this.repository.findOf(principalKey(principal), id);
     if (!found) {
       throw new NotFoundException(`Notification ${id} not found.`);
     }
     if (found.readAt) {
       return this.view(found);
     }
-    const [row] = await this.db
-      .update(notifications)
-      .set({ readAt: new Date() })
-      .where(and(eq(notifications.id, id), isNull(notifications.readAt)))
-      .returning();
+    const row = await this.repository.markRead(id);
     const item = this.view(row ?? found);
     this.realtime.toPrincipal(principal, notificationRead, {
       id: item.id,
@@ -372,26 +246,14 @@ export class NotificationsService {
     const now = new Date();
     let updated = 0;
     for (;;) {
-      const batch = this.db
-        .select({ id: notifications.id })
-        .from(notifications)
-        .where(
-          and(
-            eq(notifications.recipient, principalKey(principal)),
-            isNull(notifications.readAt),
-            before ? lt(notifications.createdAt, before) : undefined,
-          ),
-        )
-        .limit(READ_ALL_BATCH);
-      const changed = await this.db
-        .update(notifications)
-        .set({ readAt: now })
-        .where(
-          and(inArray(notifications.id, batch), isNull(notifications.readAt)),
-        )
-        .returning({ id: notifications.id });
-      updated += changed.length;
-      if (changed.length < READ_ALL_BATCH) break;
+      const changed = await this.repository.markReadBatch(
+        principalKey(principal),
+        before,
+        now,
+        READ_ALL_BATCH,
+      );
+      updated += changed;
+      if (changed < READ_ALL_BATCH) break;
     }
     if (updated > 0) {
       this.realtime.toPrincipal(principal, notificationsReadAll, {
@@ -404,16 +266,7 @@ export class NotificationsService {
   }
 
   async remove(principal: Principal, id: string) {
-    const deleted = await this.db
-      .delete(notifications)
-      .where(
-        and(
-          eq(notifications.id, id),
-          eq(notifications.recipient, principalKey(principal)),
-        ),
-      )
-      .returning({ id: notifications.id });
-    if (deleted.length === 0) {
+    if (!(await this.repository.deleteOf(principalKey(principal), id))) {
       throw new NotFoundException(`Notification ${id} not found.`);
     }
     this.realtime.toPrincipal(principal, notificationRemoved, { id });
@@ -428,18 +281,7 @@ export class NotificationsService {
    * commit.
    */
   async settleType(recipient: Pick<Principal, 'kind' | 'id'>, type: string) {
-    const settled = await this.db
-      .update(notifications)
-      .set({ readAt: new Date() })
-      .where(
-        and(
-          eq(notifications.recipient, principalKey(recipient)),
-          eq(notifications.type, type),
-          isNull(notifications.readAt),
-        ),
-      )
-      .returning({ id: notifications.id });
-    return settled.length;
+    return this.repository.markTypeRead(principalKey(recipient), type);
   }
 
   async announceUnread(recipient: Pick<Principal, 'kind' | 'id'>) {

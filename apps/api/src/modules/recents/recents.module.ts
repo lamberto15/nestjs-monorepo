@@ -9,6 +9,7 @@ import {
 import { RecordsModule } from '../records/records.module.js';
 import { RecentsController } from './recents.controller.js';
 import { RecentsRegistry } from './recents.registry.js';
+import { RecentsRepository } from './recents.repository.js';
 import { RecentsRetentionJob } from './recents.retention.job.js';
 import { RecentsService } from './recents.service.js';
 import { RecentsPersonalData } from './recents.personal-data.js';
@@ -44,6 +45,7 @@ export class RecentsExtension implements RecordHooks {
   controllers: [RecentsController],
   providers: [
     RecentsService,
+    RecentsRepository,
     RecentsRegistry,
     RecentsRetentionJob,
     RecentsPersonalData,

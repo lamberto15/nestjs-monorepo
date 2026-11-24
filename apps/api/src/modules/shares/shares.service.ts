@@ -4,7 +4,7 @@ import {
   randomInt,
   timingSafeEqual,
 } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ForbiddenException,
@@ -14,13 +14,8 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
-import { and, count, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Redis } from 'ioredis';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { REDIS } from '../../core/redis/redis.js';
@@ -49,7 +44,8 @@ import {
 } from './share.schemas.js';
 import { sharesConfig } from './shares.config.js';
 import { ShareCodeMail } from './shares.mail.js';
-import { type RecordShareRow, recordShares } from './shares.tables.js';
+import { SharesRepository } from './shares.repository.js';
+import type { RecordShareRow } from './shares.tables.js';
 
 /** The record's capability name: a record that imports `SharesModule.forRecord()` can be shared. */
 export const SHARES_CAPABILITY = 'shares';
@@ -100,7 +96,7 @@ interface RecordRef {
 @Injectable()
 export class SharesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SharesRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly attachments: AttachmentsService,
@@ -133,11 +129,7 @@ export class SharesService {
   /** A record's links, newest first (revoked and expired ones too): for who may share it. */
   async list(principal: RequestPrincipal, record: RecordRef) {
     await this.assertCanShare(principal, record);
-    const rows = await this.db
-      .select()
-      .from(recordShares)
-      .where(this.ofRecord(record))
-      .orderBy(desc(recordShares.id));
+    const rows = await this.repository.ofRecord(record);
     return { items: rows.map((row) => this.view(row)) };
   }
 
@@ -193,51 +185,44 @@ export class SharesService {
     const token = `shr_${tenantId}_${randomBytes(32).toString('base64url')}`;
     const row = await this.txHost.withTransaction(async () => {
       // The record's row is the lock: two makers can't both make the 21st link.
-      const table = this.records.of(record.subject).feature.table;
-      await this.db
-        .select({ id: table.id })
-        .from(table as unknown as PgTable)
-        .where(eq(table.id, record.recordId))
-        .for('update');
-      const [{ open }] = await this.db
-        .select({ open: count() })
-        .from(recordShares)
-        .where(and(this.ofRecord(record), this.working()));
-      if (open! >= MAX_SHARES_PER_RECORD) {
+      await this.repository.lockRecord(
+        this.records.of(record.subject),
+        record.recordId,
+      );
+      if (
+        (await this.repository.countWorking(record)) >= MAX_SHARES_PER_RECORD
+      ) {
         throw new BadRequestException(
           `At most ${MAX_SHARES_PER_RECORD} working links per record: revoke one first.`,
         );
       }
-      const [created] = await this.db
-        .insert(recordShares)
-        .values({
-          subject: record.subject,
-          recordId: record.recordId,
-          fields,
-          files: dto.files,
-          tokenHash: hashOf(token),
-          recipientEmail: dto.recipientEmail
-            ? normalizeEmail(dto.recipientEmail)
-            : null,
-          createdBy: principalKey(principal),
-          expiresAt,
-        })
-        .returning();
+      const created = await this.repository.insert({
+        subject: record.subject,
+        recordId: record.recordId,
+        fields,
+        files: dto.files,
+        tokenHash: hashOf(token),
+        recipientEmail: dto.recipientEmail
+          ? normalizeEmail(dto.recipientEmail)
+          : null,
+        createdBy: principalKey(principal),
+        expiresAt,
+      });
       await this.audit.record(principal, {
         action: 'share.created',
         targetType: 'share',
-        targetId: created!.id,
+        targetId: created.id,
         details: {
           subject: record.subject,
           recordId: record.recordId,
           fields,
           files: dto.files,
-          recipientEmail: created!.recipientEmail,
+          recipientEmail: created.recipientEmail,
           expiresAt: expiresAt.toISOString(),
         },
         ip,
       });
-      return created!;
+      return created;
     });
     return {
       ...this.view(row),
@@ -256,20 +241,14 @@ export class SharesService {
     id: string,
     ip?: string,
   ) {
-    const [row] = await this.db
-      .select()
-      .from(recordShares)
-      .where(and(eq(recordShares.id, id), this.ofRecord(record)));
+    const row = await this.repository.findOfRecord(record, id);
     if (!row) throw new NotFoundException(`Share ${id} not found.`);
     if (row.createdBy !== principalKey(principal)) {
       await this.assertCanShare(principal, record);
     }
     if (row.revokedAt) return;
     await this.txHost.withTransaction(async () => {
-      await this.db
-        .update(recordShares)
-        .set({ revokedAt: new Date(), revokedBy: principalKey(principal) })
-        .where(and(eq(recordShares.id, id), isNull(recordShares.revokedAt)));
+      await this.repository.revoke(id, principalKey(principal));
       await this.audit.record(principal, {
         action: 'share.revoked',
         targetType: 'share',
@@ -291,13 +270,7 @@ export class SharesService {
           ? await this.attachments.sharedFiles(maker, share, share.fields)
           : [];
       await this.txHost.withTransaction(async () => {
-        await this.db
-          .update(recordShares)
-          .set({
-            views: sql`${recordShares.views} + 1`,
-            lastViewedAt: new Date(),
-          })
-          .where(eq(recordShares.id, share.id));
+        await this.repository.countView(share.id);
         await this.opened(share, ip);
       });
       return {
@@ -359,14 +332,11 @@ export class SharesService {
       // Past the hour's codes: the same answer, and nothing mailed.
       if (!(await this.mayMailCode(share.id))) return;
       const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
-      await this.db
-        .update(recordShares)
-        .set({
-          codeHash: codeHashOf(share.id, code),
-          codeExpiresAt: new Date(Date.now() + SHARE_CODE_MINUTES * 60_000),
-          codeAttempts: 0,
-        })
-        .where(eq(recordShares.id, share.id));
+      await this.repository.saveCode(
+        share.id,
+        codeHashOf(share.id, code),
+        new Date(Date.now() + SHARE_CODE_MINUTES * 60_000),
+      );
       await this.mailQueue.send(ShareCodeMail, {
         to: share.recipientEmail,
         data: { code, minutes: SHARE_CODE_MINUTES },
@@ -387,14 +357,7 @@ export class SharesService {
 
   /** When records are gone for good: their links too. */
   async forget(subject: string, recordIds: readonly string[]) {
-    await this.db
-      .delete(recordShares)
-      .where(
-        and(
-          eq(recordShares.subject, subject),
-          inArray(recordShares.recordId, [...recordIds]),
-        ),
-      );
+    await this.repository.deleteForRecords(subject, recordIds);
   }
 
   /**
@@ -452,10 +415,7 @@ export class SharesService {
     const tenant = await this.tenancy.find(tenantId);
     if (!tenant?.active) throw notFound();
     return this.tenancy.run(tenantId, async () => {
-      const [share] = await this.db
-        .select()
-        .from(recordShares)
-        .where(and(eq(recordShares.tokenHash, hashOf(token)), this.working()));
+      const share = await this.repository.findWorking(hashOf(token));
       if (
         !share ||
         !share.createdBy.startsWith('user:') ||
@@ -489,15 +449,7 @@ export class SharesService {
     }
     const given = Buffer.from(codeHashOf(share.id, code));
     const valid = await this.txHost.withTransaction(async () => {
-      const [current] = await this.db
-        .select({
-          codeHash: recordShares.codeHash,
-          codeExpiresAt: recordShares.codeExpiresAt,
-          codeAttempts: recordShares.codeAttempts,
-        })
-        .from(recordShares)
-        .where(eq(recordShares.id, share.id))
-        .for('update');
+      const current = await this.repository.lockCode(share.id);
       const expected = Buffer.from(current?.codeHash ?? '');
       const right =
         !!current &&
@@ -508,10 +460,7 @@ export class SharesService {
         timingSafeEqual(given, expected);
       // A try past the limit is refused uncompared, so it spends nothing.
       if (!right && current && current.codeAttempts < SHARE_CODE_ATTEMPTS) {
-        await this.db
-          .update(recordShares)
-          .set({ codeAttempts: sql`${recordShares.codeAttempts} + 1` })
-          .where(eq(recordShares.id, share.id));
+        await this.repository.countAttempt(share.id);
       }
       return right;
     });
@@ -529,21 +478,6 @@ export class SharesService {
       message: 'The request is invalid.',
       errors: [{ path, message }],
     });
-  }
-
-  private ofRecord(record: RecordRef) {
-    return and(
-      eq(recordShares.subject, record.subject),
-      eq(recordShares.recordId, record.recordId),
-    );
-  }
-
-  /** Not revoked, not expired. */
-  private working() {
-    return and(
-      isNull(recordShares.revokedAt),
-      gt(recordShares.expiresAt, new Date()),
-    );
   }
 
   private view(row: RecordShareRow): ShareView {

@@ -1,5 +1,6 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -14,8 +15,6 @@ import {
   StorageFileNotFoundError,
 } from '@nestjs/storage';
 import { DiscoveryService } from '@nestjs/core';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { MailBrand, type MailBrandData } from '../../core/mail/mail-brand.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { currentTenantScope } from '../../core/tenancy/tenant-scope.js';
@@ -49,7 +48,8 @@ import {
   HEX_COLOR,
 } from './branding.settings.js';
 import { BrandingPolicy } from './branding.policy.js';
-import { brandingLogos, type LogoVariant } from './branding.tables.js';
+import { BrandingRepository } from './branding.repository.js';
+import type { LogoVariant } from './branding.tables.js';
 
 /** What a logo may be: recognized by its bytes (the first ones), never by the name or the type the client says. */
 export const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
@@ -104,7 +104,7 @@ export class BrandingService {
   private hosts?: HostTenants;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: BrandingRepository,
     private readonly settings: SettingsService,
     private readonly disk: StorageDisk,
     private readonly files: StoredFiles,
@@ -164,10 +164,9 @@ export class BrandingService {
       this.settings.get(BRANDING_PRIMARY_COLOR),
       this.settings.get(BRANDING_DARK_PRIMARY_COLOR),
       this.settings.get(BRANDING_MAIL_FROM_NAME),
-      this.db.select({ variant: brandingLogos.variant }).from(brandingLogos),
+      this.repository.variants(),
     ]);
-    const has = (variant: LogoVariant) =>
-      logos.some((logo) => logo.variant === variant);
+    const has = (variant: LogoVariant) => logos.includes(variant);
     return {
       primaryColor: safeColor(primaryColor),
       darkPrimaryColor: safeColor(darkColor),
@@ -234,14 +233,17 @@ export class BrandingService {
    * (a damaged file is refused, metadata is stripped); the tenant's row
    * then names the new file and the old one goes. Audited. The image is
    * processed before the transaction: it takes seconds on a large one, and
-   * would hold a database connection all that time.
+   * would hold a database connection all that time. No file is a 400.
    */
   async logoUploaded(
     actor: Principal,
-    file: { contentType: string; key: string },
+    file: { contentType: string; key: string } | undefined,
     variant: LogoVariant,
     ip?: string,
   ): Promise<Branding> {
+    if (!file) {
+      throw new BadRequestException(t('branding.noFile'));
+    }
     let bytes = await this.disk.getBuffer(file.key);
     try {
       // Stripped only: a logo is shown as it is, never by a rendition.
@@ -275,18 +277,12 @@ export class BrandingService {
     ip?: string,
   ): Promise<Branding> {
     const tenantId = this.tenancy.tenantId();
-    const [old] = await this.db
-      .select({ key: brandingLogos.key })
-      .from(brandingLogos)
-      .where(eq(brandingLogos.variant, variant));
-    const values = { key: file.key, contentType: file.contentType, size };
-    await this.db
-      .insert(brandingLogos)
-      .values({ variant, ...values })
-      .onConflictDoUpdate({
-        target: [brandingLogos.tenantId, brandingLogos.variant],
-        set: { ...values, updatedAt: new Date() },
-      });
+    const old = await this.repository.findLogo(variant);
+    await this.repository.saveLogo(variant, {
+      key: file.key,
+      contentType: file.contentType,
+      size,
+    });
     await this.audit.record(actor, {
       action: 'branding.logo-changed',
       targetType: 'tenant',
@@ -306,10 +302,7 @@ export class BrandingService {
     ip?: string,
   ): Promise<void> {
     await this.assertEditable(actor);
-    const [logo] = await this.db
-      .delete(brandingLogos)
-      .where(eq(brandingLogos.variant, variant))
-      .returning({ key: brandingLogos.key });
+    const logo = await this.repository.deleteLogo(variant);
     if (!logo) {
       throw new NotFoundException(t('branding.noLogo'));
     }
@@ -325,20 +318,24 @@ export class BrandingService {
 
   /**
    * The logo of an active tenant, for the public route (a logo is not a
-   * secret: mail and the sign-in page show it), or null. An id that is not
+   * secret: mail and the sign-in page show it), or a 404. An id that is not
    * an active tenant's gets nothing, and the type is the one stored at
    * upload, from the allowlist.
    */
   async logoFile(requestedId: string, variant: LogoVariant) {
+    const file = await this.findLogoFile(requestedId, variant);
+    if (!file) {
+      throw new NotFoundException(t('branding.noLogo'));
+    }
+    return file;
+  }
+
+  private async findLogoFile(requestedId: string, variant: LogoVariant) {
     const tenant = await this.tenancy.find(requestedId);
     if (!tenant?.active) return null;
-    const logo = await this.tenancy.run(tenant.id, async () => {
-      const [row] = await this.db
-        .select()
-        .from(brandingLogos)
-        .where(eq(brandingLogos.variant, variant));
-      return row;
-    });
+    const logo = await this.tenancy.run(tenant.id, () =>
+      this.repository.findLogo(variant),
+    );
     if (!logo) return null;
     try {
       const file = await this.disk.get(logo.key);
@@ -376,13 +373,10 @@ export class BrandingService {
     const tenantId = currentTenantScope()?.tenantId;
     const none = { name: null, color: DEFAULT_BRAND_COLOR, logo: null };
     if (!tenantId) return none;
-    const [color, name, [logo]] = await Promise.all([
+    const [color, name, logo] = await Promise.all([
       this.settings.get(BRANDING_PRIMARY_COLOR),
       this.settings.get(BRANDING_MAIL_FROM_NAME),
-      this.db
-        .select({ key: brandingLogos.key })
-        .from(brandingLogos)
-        .where(eq(brandingLogos.variant, 'light')),
+      this.repository.findLogo('light'),
     ]);
     let data: string | null = null;
     if (logo) {
@@ -422,11 +416,7 @@ export class BrandingService {
   }
 
   private async hasLogo(variant: LogoVariant) {
-    const [row] = await this.db
-      .select({ variant: brandingLogos.variant })
-      .from(brandingLogos)
-      .where(eq(brandingLogos.variant, variant));
-    return !!row;
+    return !!(await this.repository.findLogo(variant));
   }
 }
 

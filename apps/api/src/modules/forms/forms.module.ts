@@ -18,6 +18,7 @@ import { FormsController } from './forms.controller.js';
 import { FORM_PERMISSIONS } from './forms.permissions.js';
 import { FormSubmissionsPersonalData } from './forms.personal-data.js';
 import { FormPolicy } from './forms.policy.js';
+import { FormsRepository } from './forms.repository.js';
 import { FormsService } from './forms.service.js';
 import { FORM_SETTINGS } from './forms.settings.js';
 import { formSubmissions } from './forms.tables.js';
@@ -54,6 +55,7 @@ import { formSubmissions } from './forms.tables.js';
   providers: [
     FormPolicy,
     FormsService,
+    FormsRepository,
     FormSubmissionsService,
     FormPublicLinksService,
     FormOptionSourcesService,

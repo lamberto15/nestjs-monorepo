@@ -60,6 +60,7 @@ import {
   acknowledgmentVersionQuerySchema,
   myAcknowledgmentListSchema,
 } from './acknowledgments.schemas.js';
+import { AcknowledgmentsRepository } from './acknowledgments.repository.js';
 import { AcknowledgmentsService } from './acknowledgments.service.js';
 import { AcknowledgmentsPersonalData } from './acknowledgments.personal-data.js';
 
@@ -126,7 +127,11 @@ export class MyAcknowledgmentsController {
     RecordsModule,
   ],
   controllers: [MyAcknowledgmentsController],
-  providers: [AcknowledgmentsService, AcknowledgmentsPersonalData],
+  providers: [
+    AcknowledgmentsService,
+    AcknowledgmentsRepository,
+    AcknowledgmentsPersonalData,
+  ],
   exports: [AcknowledgmentsService],
 })
 export class AcknowledgmentsModule {

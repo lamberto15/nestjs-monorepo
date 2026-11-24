@@ -47,6 +47,7 @@ import {
   type FindingsQuery,
   findingsQuerySchema,
 } from './data-quality.schemas.js';
+import { DataQualityRepository } from './data-quality.repository.js';
 import {
   DATA_QUALITY_QUEUE,
   DataQualityService,
@@ -75,6 +76,7 @@ import {
   providers: [
     DataQualityRegistry,
     DataQualityService,
+    DataQualityRepository,
     DataQualityPolicy,
     DataQualityProcessor,
     DataQualityRetentionJob,

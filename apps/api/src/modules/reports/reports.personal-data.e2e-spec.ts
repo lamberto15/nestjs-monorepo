@@ -1,3 +1,4 @@
+import { ReportsRepository } from './reports.repository.js';
 import { ReportsPersonalData } from './reports.personal-data.js';
 import { reportSchedules } from './reports.tables.js';
 import { personalDataSection } from '../../../test/personal-data.js';
@@ -14,7 +15,7 @@ vi.hoisted(() => {
 });
 
 /** The `reports` section (reports.personal-data.ts): what the person's export holds, and their deletion. */
-personalDataSection('reports', [ReportsPersonalData], {
+personalDataSection('reports', [ReportsPersonalData, ReportsRepository], {
   seed: async (c) => {
     const base = {
       exporter: 'test-items',

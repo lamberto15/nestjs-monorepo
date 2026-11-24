@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   ConflictException,
@@ -13,19 +13,9 @@ import type { ConfigType } from '@nestjs/config';
 import { I18nService, t } from '@nestjs/i18n';
 import { StorageDisk } from '@nestjs/storage';
 import { type Queue, UnrecoverableError } from 'bullmq';
-import { and, eq, inArray } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import {
-  afterCursor,
-  type PageQuery,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { type PageQuery, toPage } from '../../core/http/pagination.js';
 import type { TenantEnvelope } from '../../core/tenancy/tenant-job.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -46,11 +36,8 @@ import { documentFailed, documentReady } from './documents.events.js';
 import { documentsConfig } from './documents.config.js';
 import type { DocumentView, RecordDocumentView } from './documents.schemas.js';
 import { DocumentSources } from './documents.source.js';
-import {
-  type DocumentRow,
-  type DocumentStatus,
-  documents,
-} from './documents.tables.js';
+import { DocumentsRepository } from './documents.repository.js';
+import type { DocumentRow, DocumentStatus } from './documents.tables.js';
 import { PdfRejectedError, PdfRenderer } from './pdf-renderer.js';
 
 /** The queue of documents to render. */
@@ -121,7 +108,7 @@ export class DocumentsService {
   private readonly logger = new Logger('Documents');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: DocumentsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     @InjectQueue(DOCUMENTS) private readonly queue: Queue<DocumentJob>,
     private readonly sources: DocumentSources,
@@ -181,20 +168,17 @@ export class DocumentsService {
     };
     const row = await this.txHost
       .withTransaction(async () => {
-        const [row] = await this.db
-          .insert(documents)
-          .values({
-            ...pending,
-            template: source.template.name,
-            subject: request.subject,
-            timezone,
-            status: 'queued',
-          })
-          .returning();
+        const row = await this.repository.insert({
+          ...pending,
+          template: source.template.name,
+          subject: request.subject,
+          timezone,
+          status: 'queued',
+        });
         await this.audit.record(principal, {
           action: 'document.requested',
           targetType: 'document',
-          targetId: row!.id,
+          targetId: row.id,
           details: {
             source: pending.source,
             subject: request.subject,
@@ -203,22 +187,11 @@ export class DocumentsService {
           },
           ip: request.ip,
         });
-        return row!;
+        return row;
       })
       .catch(async (error: unknown) => {
         if (databaseErrorKind(error) !== 'unique_violation') throw error;
-        const [open] = await this.db
-          .select({ id: documents.id })
-          .from(documents)
-          .where(
-            and(
-              eq(documents.source, pending.source),
-              eq(documents.recordId, pending.recordId),
-              eq(documents.requestedBy, pending.requestedBy),
-              eq(documents.locale, pending.locale),
-              inArray(documents.status, OPEN),
-            ),
-          );
+        const open = await this.repository.findOpen(pending, OPEN);
         throw new ConflictException({
           code: 'document_pending',
           message: t('documents.pending'),
@@ -259,19 +232,7 @@ export class DocumentsService {
     await this.records.of(subject).store.findOne(recordId, {
       visibleTo: principal,
     });
-    const rows = await this.db
-      .select()
-      .from(documents)
-      .where(
-        and(
-          eq(documents.subject, subject),
-          eq(documents.recordId, recordId),
-          afterCursor(documents.id, query),
-        ),
-      )
-      .orderBy(...pageOrder(documents.id, query))
-      .limit(query.limit + 1)
-      .offset(pageOffset(query));
+    const rows = await this.repository.ofRecord(subject, recordId, query);
     const page = toPage(rows, query);
     const names = await this.people.names(
       page.items.map((row) => row.requestedBy),
@@ -308,10 +269,7 @@ export class DocumentsService {
   }
 
   private async readable(principal: Principal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, id));
+    const row = await this.repository.findById(id);
     if (!row) throw new NotFoundException(t('documents.notFound'));
     try {
       const found = await this.records
@@ -424,16 +382,12 @@ export class DocumentsService {
     attempt: { final: boolean },
   ): Promise<DocumentView> {
     const token = randomUUID();
-    const [row] = await this.db
-      .update(documents)
-      .set({ status: 'rendering', runToken: token })
-      .where(and(eq(documents.id, job.id), inArray(documents.status, OPEN)))
-      .returning();
+    const row = await this.repository.updateIn(job.id, OPEN, {
+      status: 'rendering',
+      runToken: token,
+    });
     if (!row) {
-      const [now] = await this.db
-        .select()
-        .from(documents)
-        .where(eq(documents.id, job.id));
+      const now = await this.repository.findById(job.id);
       if (now?.status === 'completed') return view(now); // issued by an earlier run
       throw new UnrecoverableError(
         `Document ${job.id} is ${now ? now.status : 'gone'}: not rendered.`,
@@ -471,9 +425,10 @@ export class DocumentsService {
           },
           { locked: true, fields },
         );
-        const [issued] = await this.db
-          .update(documents)
-          .set({
+        const issued = await this.repository.updateIn(
+          row.id,
+          ['rendering'],
+          {
             status: 'completed',
             fileKey: key,
             fileName,
@@ -482,15 +437,9 @@ export class DocumentsService {
             fields,
             issuedAt,
             error: null,
-          })
-          .where(
-            and(
-              eq(documents.id, row.id),
-              eq(documents.status, 'rendering'),
-              eq(documents.runToken, token),
-            ),
-          )
-          .returning();
+          },
+          token,
+        );
         if (!issued) throw new ClaimLost(row.id);
         await this.audit.record(principal, {
           action: 'document.issued',
@@ -568,17 +517,12 @@ export class DocumentsService {
     runToken?: string,
   ) {
     const failed = await this.txHost.withTransaction(async () => {
-      const [failed] = await this.db
-        .update(documents)
-        .set({ status: 'failed', error: reason })
-        .where(
-          and(
-            eq(documents.id, job.id),
-            inArray(documents.status, OPEN),
-            runToken ? eq(documents.runToken, runToken) : undefined,
-          ),
-        )
-        .returning();
+      const failed = await this.repository.updateIn(
+        job.id,
+        OPEN,
+        { status: 'failed', error: reason },
+        runToken,
+      );
       if (failed) {
         await this.audit.record(principal as Principal, {
           action: 'document.failed',
@@ -609,17 +553,9 @@ export class DocumentsService {
    * commits (StoredFiles); a rollback keeps both.
    */
   async forget(subject: string, ids: readonly string[]) {
-    const gone = await this.db
-      .delete(documents)
-      .where(
-        and(
-          eq(documents.subject, subject),
-          inArray(documents.recordId, [...ids]),
-        ),
-      )
-      .returning({ fileKey: documents.fileKey });
-    const keys = gone.flatMap((row) => (row.fileKey ? [row.fileKey] : []));
-    await this.files.release(keys);
+    await this.files.release(
+      await this.repository.deleteOfRecords(subject, ids),
+    );
   }
 }
 

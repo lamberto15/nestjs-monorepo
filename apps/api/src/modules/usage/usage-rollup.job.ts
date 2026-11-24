@@ -1,15 +1,11 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { inArray, lt, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import type { Database } from '../../core/database/database.js';
 import { REDIS } from '../../core/redis/redis.js';
 import { redisConfig } from '../../core/redis/redis.config.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
 import { usageConfig } from './usage.config.js';
 import {
   addDays,
@@ -18,7 +14,7 @@ import {
   usagePattern,
   utcDay,
 } from './usage.keys.js';
-import { apiUsage } from './usage.tables.js';
+import { UsageRepository } from './usage.repository.js';
 
 /** A live counter: its key (without the Redis prefix), tenant, client and day. */
 type UsageKey = {
@@ -46,7 +42,7 @@ export class UsageRollupJob {
     @Inject(redisConfig.KEY)
     private readonly redisSettings: ConfigType<typeof redisConfig>,
     @Inject(REDIS) private readonly redis: Redis,
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: UsageRepository,
     private readonly tenancy: Tenancy,
   ) {}
 
@@ -83,7 +79,7 @@ export class UsageRollupJob {
     try {
       await this.tenancy.forEachTenant(
         'usage-rollup',
-        () => this.db.delete(apiUsage).where(lt(apiUsage.day, cutoff)),
+        () => this.repository.deleteBefore(cutoff),
         { includeInactive: true },
       );
     } catch (error) {
@@ -127,18 +123,8 @@ export class UsageRollupJob {
   /** One tenant's counters of a day, in its scope: its clients only. */
   private async rollUpTenant(day: string, found: UsageKey[], now: Date) {
     // Counters of clients that no longer exist are dropped with the rest.
-    const existing = new Set(
-      (
-        await this.db
-          .select({ id: apiClients.id })
-          .from(apiClients)
-          .where(
-            inArray(
-              apiClients.id,
-              found.map((key) => key.clientId),
-            ),
-          )
-      ).map((client) => client.id),
+    const existing = await this.repository.existingClients(
+      found.map((key) => key.clientId),
     );
     const pipeline = this.redis.pipeline();
     for (const { key } of found) {
@@ -162,21 +148,7 @@ export class UsageRollupJob {
           count: Number(count),
         }));
     });
-    // In batches: a parameter list has its limits.
-    for (let start = 0; start < rows.length; start += 1000) {
-      await this.db
-        .insert(apiUsage)
-        .values(rows.slice(start, start + 1000))
-        .onConflictDoUpdate({
-          target: [
-            apiUsage.tenantId,
-            apiUsage.clientId,
-            apiUsage.day,
-            apiUsage.route,
-          ],
-          set: { count: sql`excluded.count`, updatedAt: new Date() },
-        });
-    }
+    await this.repository.upsertRows(rows);
     // Today's counters keep counting: the rows are a copy, the next run overwrites them.
     if (day < utcDay(now)) {
       await this.redis.del(...found.map(({ key }) => key));

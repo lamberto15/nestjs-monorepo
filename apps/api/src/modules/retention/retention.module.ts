@@ -16,6 +16,7 @@ import {
   RetentionRules,
 } from './retention.rules.js';
 import { RetentionScheduler } from './retention.scheduler.js';
+import { RetentionRepository } from './retention.repository.js';
 import { RETENTION_QUEUE, RetentionService } from './retention.service.js';
 
 /**
@@ -40,6 +41,7 @@ import { RETENTION_QUEUE, RetentionService } from './retention.service.js';
     RetentionRules,
     RecordPurges,
     RetentionService,
+    RetentionRepository,
     RetentionPolicy,
     RetentionProcessor,
     RetentionScheduler,

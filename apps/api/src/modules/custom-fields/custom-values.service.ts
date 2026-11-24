@@ -1,7 +1,4 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import {
@@ -9,11 +6,10 @@ import {
   recordKey,
   type RecordTable,
 } from '../records/record.js';
-import { customFilterFields } from './custom-field.list.js';
 import type { CustomFieldDefinition } from './custom-field.types.js';
 import { customValuesSchema } from './custom-field.values.js';
+import { CustomFieldsRepository } from './custom-fields.repository.js';
 import { CustomFieldsService } from './custom-fields.service.js';
-import { customFieldValues as v } from './custom-fields.tables.js';
 
 type Values = Record<string, unknown>;
 
@@ -25,7 +21,7 @@ type Values = Record<string, unknown>;
 @Injectable()
 export class CustomValuesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: CustomFieldsRepository,
     private readonly fields: CustomFieldsService,
     private readonly audit: AuditService,
   ) {}
@@ -59,10 +55,7 @@ export class CustomValuesService {
   async of(subject: string, ids: readonly string[]) {
     const found = new Map<string, Values>();
     if (ids.length === 0) return found;
-    const rows = await this.db
-      .select({ recordId: v.recordId, values: v.values })
-      .from(v)
-      .where(and(eq(v.subject, subject), inArray(v.recordId, [...ids])));
+    const rows = await this.repository.valuesOf(subject, ids);
     for (const row of rows) found.set(row.recordId, row.values);
     return found;
   }
@@ -72,7 +65,7 @@ export class CustomValuesService {
     const fields = await this.fields.definitions(subject);
     const values = this.parse(fields, input, 'create');
     if (Object.keys(values).length > 0) {
-      await this.db.insert(v).values({ subject, recordId, values });
+      await this.repository.insertValues(subject, recordId, values);
     }
   }
 
@@ -104,13 +97,7 @@ export class CustomValuesService {
     if (Object.keys(after).length === 0) {
       await this.forget(subject, [recordId]);
     } else {
-      await this.db
-        .insert(v)
-        .values({ subject, recordId, values: after })
-        .onConflictDoUpdate({
-          target: [v.tenantId, v.subject, v.recordId],
-          set: { values: after, updatedAt: new Date() },
-        });
+      await this.repository.saveValues(subject, recordId, after);
     }
     await this.audit.record(by, {
       action: `${recordKey(record)}.customValuesUpdated`,
@@ -123,9 +110,7 @@ export class CustomValuesService {
   /** Records gone for good: their values go too. */
   async forget(subject: string, ids: readonly string[]) {
     if (ids.length === 0) return;
-    await this.db
-      .delete(v)
-      .where(and(eq(v.subject, subject), inArray(v.recordId, [...ids])));
+    await this.repository.deleteValues(subject, ids);
   }
 
   /** Records as shown, each with `custom`: the values of active fields (a page at once). */
@@ -150,10 +135,10 @@ export class CustomValuesService {
 
   /** The subject's active fields as list fields (`custom.<key>`), for its table. */
   async listFields(subject: string, table: RecordTable) {
-    return customFilterFields(await this.fields.definitions(subject), {
-      db: this.db,
+    return this.repository.filterFields(
+      await this.fields.definitions(subject),
       subject,
       table,
-    });
+    );
   }
 }

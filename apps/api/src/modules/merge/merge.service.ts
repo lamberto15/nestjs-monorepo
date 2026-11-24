@@ -1,4 +1,4 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import { AuthorizationService } from '@nestjs/authorization';
 import {
   ForbiddenException,
@@ -7,22 +7,6 @@ import {
   UnprocessableEntityException,
   type Type,
 } from '@nestjs/common';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  ne,
-  or,
-  sql,
-  type SQL,
-} from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
-import type { Database } from '../../core/database/database.js';
 import { Events } from '../../core/outbox/events.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -33,7 +17,6 @@ import { writableFields } from '../fields/fields.js';
 import {
   type RecordDeclaration,
   recordKey,
-  type RecordRow,
   recordValues,
   recordView,
 } from '../records/record.js';
@@ -41,6 +24,7 @@ import { InjectRecord } from '../records/record-extension.js';
 import { relationsFrom, relationsTo } from '../records/record-relations.js';
 import { Records } from '../records/records.service.js';
 import { mergeEvents } from './merge.events.js';
+import { type MatchTerm, MergeRepository } from './merge.repository.js';
 import {
   type FindDuplicatesDto,
   MAX_DUPLICATES,
@@ -84,7 +68,7 @@ export class MergeService {
   constructor(
     @InjectRecord() private readonly record: RecordDeclaration,
     @Inject(MERGE_RULES) private readonly rules: readonly (readonly string[])[],
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: MergeRepository,
     private readonly records: Records,
     private readonly access: AccessService,
     private readonly authorization: AuthorizationService,
@@ -114,23 +98,22 @@ export class MergeService {
     return filled(value) && this.field(name).input.safeParse(value).success;
   }
 
-  /** One rule's condition: each of its fields equal to the value. */
-  private matches(rule: readonly string[], values: Record<string, Value>) {
-    return and(
-      ...rule.map((name) => {
-        const column = this.table[name]!;
-        const value = values[name];
-        const kind = this.field(name).kind;
-        if (TEXT_KINDS.has(kind)) {
-          // The builder has no case-insensitive trimmed equality.
-          return eq(sql`lower(trim(${column}))`, normalized(value));
-        }
-        return eq(
-          column,
-          kind === 'datetime' ? new Date(String(value)) : value,
-        );
-      }),
-    );
+  /** One rule's terms: each of its fields equal to the value, text as matching compares it. */
+  private terms(
+    rule: readonly string[],
+    values: Record<string, Value>,
+  ): MatchTerm[] {
+    return rule.map((name) => {
+      const value = values[name];
+      const kind = this.field(name).kind;
+      return TEXT_KINDS.has(kind)
+        ? { field: name, value: normalized(value), text: true }
+        : {
+            field: name,
+            value: kind === 'datetime' ? new Date(String(value)) : value,
+            text: false,
+          };
+    });
   }
 
   /**
@@ -144,20 +127,16 @@ export class MergeService {
       rule.every((name) => this.usable(name, values[name])),
     );
     if (rules.length === 0) return { items: [] };
-    const table = this.table;
-    const rows = (await this.db
-      .select()
-      .from(table as unknown as PgTable)
-      .where(
-        and(
-          await this.access.sqlFilter(principal, this.record.subject, 'read'),
-          isNull(table.deletedAt!),
-          or(...rules.map((rule) => this.matches(rule, values))),
-          excludeId ? ne(table.id, excludeId) : undefined,
-        ),
-      )
-      .orderBy(desc(table.id))
-      .limit(MAX_DUPLICATES)) as RecordRow[];
+    const rows = await this.repository.matching(this.table, {
+      rules: rules.map((rule) => this.terms(rule, values)),
+      filter: await this.access.sqlFilter(
+        principal,
+        this.record.subject,
+        'read',
+      ),
+      excludeId,
+      limit: MAX_DUPLICATES,
+    });
     const shown = await this.registration.presenter.many(principal, rows);
     const items = rows.flatMap((row, i) => {
       const record = shown[i]!;
@@ -202,12 +181,7 @@ export class MergeService {
     const { subject } = this.record;
     const { store, presenter } = this.registration;
     // Both rows locked, in id order (two merges of the same pair can't deadlock).
-    await this.db
-      .select({ id: this.table.id })
-      .from(this.table as unknown as PgTable)
-      .where(inArray(this.table.id, [id, dto.duplicateId]))
-      .orderBy(asc(this.table.id))
-      .for('update');
+    await this.repository.lock(this.table, [id, dto.duplicateId]);
     const { survivor, duplicate, changes } = await this.plan(
       principal,
       id,
@@ -392,22 +366,18 @@ export class MergeService {
   private async references(principal: Principal, duplicateId: string) {
     const found: { subject: string; field: string; count: number }[] = [];
     for (const relation of relationsTo(this.record.subject)) {
-      const table = relation.table;
       const soft = relation.from.softDelete;
       let total = 0;
       for (const deleted of soft ? [false, true] : [false]) {
-        const state = soft
-          ? deleted
-            ? isNotNull(table.deletedAt!)
-            : isNull(table.deletedAt!)
-          : undefined;
-        const referring = async (where?: SQL) => {
-          const [row] = await this.db
-            .select({ n: count() })
-            .from(table as unknown as PgTable)
-            .where(and(eq(relation.column, duplicateId), state, where));
-          return row?.n ?? 0;
-        };
+        const referring = (
+          filter?: Parameters<MergeRepository['countReferring']>[3],
+        ) =>
+          this.repository.countReferring(
+            relation,
+            duplicateId,
+            soft ? deleted : undefined,
+            filter,
+          );
         const n = await referring();
         if (n === 0) continue;
         // The reference itself is a field: one the principal may not change,
@@ -464,16 +434,12 @@ export class MergeService {
   private async moveReferences(from: string, to: string) {
     const moved: { subject: string; field: string; ids: string[] }[] = [];
     for (const relation of relationsTo(this.record.subject)) {
-      const rows = await this.db
-        .update(relation.table as unknown as PgTable)
-        .set({ [relation.field]: to })
-        .where(eq(relation.column, from))
-        .returning({ id: relation.table.id });
-      if (rows.length) {
+      const ids = await this.repository.moveReferences(relation, from, to);
+      if (ids.length) {
         moved.push({
           subject: relation.from.subject,
           field: relation.field,
-          ids: rows.map((row) => row.id as string),
+          ids,
         });
       }
     }

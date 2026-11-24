@@ -5,13 +5,14 @@ import { AuditLogModule } from '../../iam/audit-log/audit-log.module.js';
 import { RecordsModule } from '../records/records.module.js';
 import { ListPolicy } from './list.policy.js';
 import { ListsController } from './lists.controller.js';
+import { ListsRepository } from './lists.repository.js';
 import { ListsService } from './lists.service.js';
 
 /** GET /v1/lists/{subject}: each record's list described at runtime (README.md). */
 @Module({
   imports: [DiscoveryModule, RecordsModule, AccessModule, AuditLogModule],
   controllers: [ListsController],
-  providers: [ListsService, ListPolicy],
+  providers: [ListsService, ListsRepository, ListPolicy],
   exports: [ListsService],
 })
 export class ListsModule {}

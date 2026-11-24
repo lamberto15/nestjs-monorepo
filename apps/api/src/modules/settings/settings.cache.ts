@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   Inject,
   Injectable,
@@ -8,10 +7,10 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { Redis } from 'ioredis';
-import type { Database } from '../../core/database/database.js';
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
 import { closeRedis, REDIS } from '../../core/redis/redis.js';
 import { currentTenantScope } from '../../core/tenancy/tenant-scope.js';
+import { SettingsRepository } from './settings.repository.js';
 import { platformSettingValues, settingOverrides } from './settings.tables.js';
 
 /** A stored override with its secret opened: what the cache holds and the service reads. */
@@ -39,7 +38,7 @@ const PLATFORM = 'platform';
 export class SettingsCache implements OnModuleInit, OnApplicationShutdown {
   private static readonly MAX_AGE_MS = 60_000;
   private static readonly MAX_TENANTS = 1_000;
-  private readonly logger = new Logger('Settings');
+  private readonly logger = new Logger(SettingsCache.name);
   /** This instance, so it ignores its own messages coming back. */
   private readonly instanceId = randomUUID();
   /** Bumped by every invalidation: a load that began before one is not stored. */
@@ -54,7 +53,7 @@ export class SettingsCache implements OnModuleInit, OnApplicationShutdown {
   private readonly platformListeners: (() => void)[] = [];
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SettingsRepository,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly encryption: EncryptionService,
   ) {}
@@ -119,7 +118,7 @@ export class SettingsCache implements OnModuleInit, OnApplicationShutdown {
     const cached = this.tenants.get(tenantId);
     if (this.fresh(cached)) return cached.value;
     const generation = this.generation;
-    const rows = await this.db.select().from(settingOverrides);
+    const rows = await this.repository.overrides();
     const byKey = new Map<string, OverrideRow[]>();
     for (const row of rows) {
       const opened = row.secret
@@ -144,7 +143,7 @@ export class SettingsCache implements OnModuleInit, OnApplicationShutdown {
   async platformValues(): Promise<Map<string, PlatformRow>> {
     if (this.fresh(this.platform)) return this.platform.value;
     const generation = this.generation;
-    const rows = await this.db.select().from(platformSettingValues);
+    const rows = await this.repository.platformValues();
     const byKey = new Map(
       rows.map((row) => [
         row.key,

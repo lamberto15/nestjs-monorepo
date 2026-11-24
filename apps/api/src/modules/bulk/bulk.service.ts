@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  InjectTransaction,
-  Propagation,
-  TransactionHost,
-} from '@nestjs-cls/transactional';
+import { Propagation, TransactionHost } from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import { AuthorizationService } from '@nestjs/authorization';
 import {
@@ -15,13 +11,8 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import type { Job, Queue } from 'bullmq';
-import { and, inArray, isNotNull, isNull } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
 import { walkList } from '../../core/http/pagination.js';
 import { JobIndex, type JobPage } from '../../core/jobs/job-index.js';
@@ -35,6 +26,7 @@ import {
   type RequestPrincipal,
 } from '../../iam/auth/principal.js';
 import { recordValues, type RecordRow } from '../records/record.js';
+import { BulkRepository } from './bulk.repository.js';
 import { assertWritableFields } from '../records/record.routes.js';
 import {
   Records,
@@ -143,7 +135,7 @@ const isOwn = (principal: Principal, job: Job<BulkJob, BulkResult>) =>
 export class BulkService {
   constructor(
     @InjectQueue(BULK) private readonly queue: Queue<BulkJob, BulkResult>,
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: BulkRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly records: Records,
     private readonly access: AccessService,
@@ -358,35 +350,24 @@ export class BulkService {
     action: BulkAction,
     { ids, query }: Selection,
   ): AsyncGenerator<RecordRow[]> {
-    const table = feature.table;
     const deleted = action === 'restore';
-    const where = and(
-      await this.access.sqlFilter(principal, declaration.subject, action, {
-        deleted,
-      }),
-      declaration.softDelete
-        ? deleted
-          ? isNotNull(table.deletedAt!)
-          : isNull(table.deletedAt!)
-        : undefined,
-    );
+    const scope = {
+      table: feature.table,
+      allowed: await this.access.sqlFilter(
+        principal,
+        declaration.subject,
+        action,
+        { deleted },
+      ),
+      softDelete: !!declaration.softDelete,
+      deleted,
+    };
     if (ids) {
-      yield (await this.db
-        .select()
-        .from(table as unknown as PgTable)
-        .where(and(where, inArray(table.id, ids)))) as RecordRow[];
+      yield await this.repository.byIds(scope, ids);
       return;
     }
-    yield* walkList<RecordRow>(
-      table.id,
-      query!,
-      ({ after, orderBy, limit }) =>
-        this.db
-          .select()
-          .from(table as unknown as PgTable)
-          .where(and(where, list.where(query!), after))
-          .orderBy(...orderBy)
-          .limit(limit) as unknown as Promise<RecordRow[]>,
+    yield* walkList<RecordRow>(feature.table.id, query!, (page) =>
+      this.repository.page(scope, list.where(query!), page),
     );
   }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   ForbiddenException,
   Injectable,
@@ -9,21 +9,16 @@ import {
 } from '@nestjs/common';
 import { t } from '@nestjs/i18n';
 import { StorageDisk, type StoredUpload } from '@nestjs/storage';
-import { and, eq } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../../core/database/database.js';
+import type { DatabaseTransactions } from '../../../core/database/database.js';
 import { requireTenantId } from '../../../core/tenancy/tenant-scope.js';
 import { AuditService } from '../../../iam/audit/audit.service.js';
-import { memberships } from '../../../iam/auth/auth.tables.js';
 import type { Principal, UserPrincipal } from '../../../iam/auth/principal.js';
 import {
   ImageProcessor,
   ImageRejectedError,
 } from '../../images/image-processor.js';
 import { accountFileKey } from '../../storage/storage.keys.js';
-import { userAvatars } from './avatars.tables.js';
+import { AvatarsRepository } from './avatars.repository.js';
 
 /**
  * Refuses an administrator acting as the person (impersonation): the
@@ -65,10 +60,10 @@ export const avatarUrl = (userId: string, key: string) =>
  */
 @Injectable()
 export class AvatarsService {
-  private readonly logger = new Logger('Avatars');
+  private readonly logger = new Logger(AvatarsService.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AvatarsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     private readonly disk: StorageDisk,
@@ -116,10 +111,7 @@ export class AvatarsService {
 
   /** The picture's path of each of these users, for what lists people (null for none). */
   async urlOf(userId: string) {
-    const [row] = await this.db
-      .select({ key: userAvatars.key })
-      .from(userAvatars)
-      .where(eq(userAvatars.userId, userId));
+    const row = await this.repository.find(userId);
     return row ? avatarUrl(userId, row.key) : null;
   }
 
@@ -130,25 +122,12 @@ export class AvatarsService {
    */
   async keyOf(viewer: UserPrincipal, userId: string) {
     const tenantId = requireTenantId('A picture');
-    const [row] =
+    const key =
       viewer.id === userId
-        ? await this.db
-            .select({ key: userAvatars.key })
-            .from(userAvatars)
-            .where(eq(userAvatars.userId, userId))
-        : await this.db
-            .select({ key: userAvatars.key })
-            .from(userAvatars)
-            .innerJoin(
-              memberships,
-              and(
-                eq(memberships.userId, userAvatars.userId),
-                eq(memberships.tenantId, tenantId),
-              ),
-            )
-            .where(eq(userAvatars.userId, userId));
-    if (!row) throw new NotFoundException('No picture.');
-    return row.key;
+        ? (await this.repository.find(userId))?.key
+        : await this.repository.keyOfMember(userId, tenantId);
+    if (!key) throw new NotFoundException('No picture.');
+    return key;
   }
 
   /** The key change and its audit entry in one transaction; the key it replaced. */
@@ -159,20 +138,11 @@ export class AvatarsService {
     details?: Record<string, unknown>,
   ) {
     return this.txHost.withTransaction(async () => {
-      const [before] = await this.db
-        .select({ key: userAvatars.key })
-        .from(userAvatars)
-        .where(eq(userAvatars.userId, user.id))
-        .for('update');
+      const before = await this.repository.lockKey(user.id);
       if (key) {
-        await this.db
-          .insert(userAvatars)
-          .values({ userId: user.id, key })
-          .onConflictDoUpdate({ target: userAvatars.userId, set: { key } });
+        await this.repository.save(user.id, key);
       } else {
-        await this.db
-          .delete(userAvatars)
-          .where(eq(userAvatars.userId, user.id));
+        await this.repository.delete(user.id);
       }
       if (key !== null || before) {
         await this.audit.record(user, {
@@ -183,7 +153,7 @@ export class AvatarsService {
           ip,
         });
       }
-      return before?.key ?? null;
+      return before ?? null;
     });
   }
 

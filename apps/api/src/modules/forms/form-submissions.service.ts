@@ -4,20 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
-import { and, eq, getColumns } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { toPage } from '../../core/http/pagination.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import {
   principalKey,
@@ -25,16 +15,10 @@ import {
 } from '../../iam/auth/principal.js';
 import { checkAnswers } from './form-answers.js';
 import { FormOptionSourcesService } from './form-option-sources.service.js';
-import { FORM_SUBMISSION_LIST } from './forms.list.js';
 import type { SubmitFormDto } from './forms.schemas.js';
-import { type FormRow, formSubmissions, formVersions } from './forms.tables.js';
+import { FormsRepository } from './forms.repository.js';
+import type { FormRow, formSubmissions } from './forms.tables.js';
 import { FormsService, invalid } from './forms.service.js';
-
-/** A submission row with its version's number. */
-export const submissionColumns = {
-  ...getColumns(formSubmissions),
-  version: formVersions.version,
-};
 
 type SubmissionRow = typeof formSubmissions.$inferSelect & { version: number };
 
@@ -58,7 +42,7 @@ export const submissionView = (row: SubmissionRow) => ({
 @Injectable()
 export class FormSubmissionsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: FormsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly forms: FormsService,
     private readonly sources: FormOptionSourcesService,
@@ -103,16 +87,7 @@ export class FormSubmissionsService {
     const { principal, form, dto, ip } = input;
     const current = await this.forms.currentVersion(form);
     if (dto.versionId !== current.id) {
-      const [named] = await this.db
-        .select({ id: formVersions.id })
-        .from(formVersions)
-        .where(
-          and(
-            eq(formVersions.id, dto.versionId),
-            eq(formVersions.formId, form.id),
-          ),
-        );
-      if (!named) {
+      if (!(await this.repository.isVersionOf(form.id, dto.versionId))) {
         throw invalid([
           { path: 'versionId', message: 'Not a version of this form.' },
         ]);
@@ -141,19 +116,16 @@ export class FormSubmissionsService {
     }
     const row = await this.txHost.withTransaction(async () => {
       await input.during?.();
-      const [created] = await this.db
-        .insert(formSubmissions)
-        .values({
-          formId: form.id,
-          versionId: current.id,
-          submittedBy: input.submittedBy,
-          answers: checked.answers,
-        })
-        .returning();
+      const created = await this.repository.insertSubmission({
+        formId: form.id,
+        versionId: current.id,
+        submittedBy: input.submittedBy,
+        answers: checked.answers,
+      });
       await this.audit.record(principal, {
         action: 'form.submitted',
         targetType: 'form-submission',
-        targetId: created!.id,
+        targetId: created.id,
         // Never the answers: they are the person's.
         details: {
           formId: form.id,
@@ -163,7 +135,7 @@ export class FormSubmissionsService {
         },
         ip,
       });
-      return created!;
+      return created;
     });
     return submissionView({ ...row, version: current.version });
   }
@@ -175,42 +147,26 @@ export class FormSubmissionsService {
       throw new ForbiddenException();
     }
     await this.forms.find(formId, rights);
-    return and(
-      eq(formSubmissions.formId, formId),
-      rights.readResponses
-        ? undefined
-        : eq(formSubmissions.submittedBy, principalKey(principal)),
-    );
+    return {
+      formId,
+      ...(!rights.readResponses && { submittedBy: principalKey(principal) }),
+    };
   }
 
   async page(principal: RequestPrincipal, formId: string, query: ListQuery) {
-    const where = and(
+    const [rows, total] = await this.repository.submissions(
       await this.scope(principal, formId),
-      FORM_SUBMISSION_LIST.where(query),
+      query,
     );
-    const [rows, total] = await Promise.all([
-      this.db
-        .select(submissionColumns)
-        .from(formSubmissions)
-        .innerJoin(formVersions, eq(formVersions.id, formSubmissions.versionId))
-        .where(and(where, afterCursor(formSubmissions.id, query)))
-        .orderBy(...pageOrder(formSubmissions.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, formSubmissions, where, query),
-    ]);
     const page = toPage(rows, query, total);
     return { ...page, items: page.items.map(submissionView) };
   }
 
   async get(principal: RequestPrincipal, formId: string, id: string) {
-    const [row] = await this.db
-      .select(submissionColumns)
-      .from(formSubmissions)
-      .innerJoin(formVersions, eq(formVersions.id, formSubmissions.versionId))
-      .where(
-        and(await this.scope(principal, formId), eq(formSubmissions.id, id)),
-      );
+    const row = await this.repository.findSubmission(
+      await this.scope(principal, formId),
+      id,
+    );
     if (!row) {
       throw new NotFoundException(`Submission ${id} not found.`);
     }

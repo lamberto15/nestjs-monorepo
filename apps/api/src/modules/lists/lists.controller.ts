@@ -1,12 +1,6 @@
-import {
-  Controller,
-  Get,
-  NotFoundException,
-  Param,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
-import { AuthorizationService, Can } from '@nestjs/authorization';
+import { Can } from '@nestjs/authorization';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -20,7 +14,6 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { Principal } from '../../iam/auth/principal.js';
-import { ListPolicy } from './list.policy.js';
 import { listSchema } from '../../core/http/pagination.js';
 import { listMetadataSchema } from './list-metadata.schemas.js';
 import {
@@ -42,13 +35,10 @@ import { ListsService } from './lists.service.js';
 @ApiUnauthorizedResponse({ description: 'No valid API key or session.' })
 @Controller('lists')
 export class ListsController {
-  constructor(
-    private readonly lists: ListsService,
-    private readonly authorization: AuthorizationService,
-  ) {}
+  constructor(private readonly lists: ListsService) {}
 
   @Get(':subject')
-  @Can.Anyone() // Checked below, on the subject.
+  @Can.Anyone() // ListsService checks it, on the subject.
   @ApiOperation({
     summary: "A subject's list: its filters, operators, sorts and fields",
     description:
@@ -66,14 +56,11 @@ export class ListsController {
     @CurrentUser() user: Principal,
     @Param('subject') subject: string,
   ) {
-    // An unknown subject is a 404 before any permission is asked.
-    this.lists.source(subject);
-    await this.authorization.authorize(ListPolicy, 'read', user, subject);
-    return this.lists.describe(user, subject);
+    return this.lists.describeFor(user, subject);
   }
 
   @Get(':subject/options')
-  @Can.Anyone() // Checked below, on the subject; the rows by the caller's read conditions.
+  @Can.Anyone() // ListsService checks it, on the subject; the rows by the caller's read conditions.
   @ApiOperation({
     summary: "A record's options for a picker: ids and titles",
     description:
@@ -101,10 +88,6 @@ export class ListsController {
     @Param('subject') subject: string,
     @Query({ schema: recordOptionsQuerySchema }) query: RecordOptionsQuery,
   ) {
-    if (!this.lists.source(subject).record) {
-      throw new NotFoundException(`${subject} is no record.`);
-    }
-    await this.authorization.authorize(ListPolicy, 'read', user, subject);
-    return { items: await this.lists.options(user, subject, query) };
+    return this.lists.optionsFor(user, subject, query);
   }
 }

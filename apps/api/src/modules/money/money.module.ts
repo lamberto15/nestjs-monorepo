@@ -6,6 +6,7 @@ import { switchFeature } from '../../core/http/feature.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { ECB_RATES, ExchangeRatesJob } from './exchange-rates.job.js';
 import { ExchangeRatesMetrics } from './exchange-rates.metrics.js';
+import { ExchangeRatesRepository } from './exchange-rates.repository.js';
 import { ExchangeRatesService } from './exchange-rates.service.js';
 import { moneyConfig } from './money.config.js';
 import { MoneyController } from './money.controller.js';
@@ -40,6 +41,7 @@ import './money.errors.js';
   controllers: [MoneyController],
   providers: [
     ExchangeRatesService,
+    ExchangeRatesRepository,
     ExchangeRatesJob,
     ExchangeRatesMetrics,
     switchFeature(
