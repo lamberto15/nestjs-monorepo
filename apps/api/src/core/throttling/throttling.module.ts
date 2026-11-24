@@ -40,6 +40,9 @@ import { throttlingConfig } from './throttling.config.js';
       }),
     }),
   ],
-  providers: [{ provide: APP_GUARD, useClass: ScaledThrottlerGuard }],
+  providers: [
+    ScaledThrottlerGuard,
+    { provide: APP_GUARD, useExisting: ScaledThrottlerGuard },
+  ],
 })
 export class ThrottlingModule {}

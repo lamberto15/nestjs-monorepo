@@ -24,7 +24,8 @@ import { MODE_SETTINGS } from './mode.setting.js';
   providers: [
     ModeService,
     ModeFeature,
-    { provide: APP_GUARD, useClass: ModeGuard },
+    ModeGuard,
+    { provide: APP_GUARD, useExisting: ModeGuard },
   ],
   exports: [ModeService],
 })

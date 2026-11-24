@@ -88,7 +88,8 @@ csrfExclusions.set('sso.saml-acs', {
       provide: SSO_TXT_RESOLVER,
       useFactory: () => new Resolver({ timeout: 5000, tries: 2 }),
     },
-    { provide: APP_GUARD, useClass: SsoRequiredGuard },
+    SsoRequiredGuard,
+    { provide: APP_GUARD, useExisting: SsoRequiredGuard },
   ],
   exports: [SsoPolicyService],
 })
