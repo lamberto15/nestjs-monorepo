@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ForbiddenException,
@@ -13,22 +13,18 @@ import {
   TokenService,
 } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
-import { and, eq, isNull } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { users } from '../auth/auth.tables.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { DeletionCancelLinks } from './deletion-cancel-links.js';
 import { personalDataConfig } from './personal-data.config.js';
 import { AccountDeletionMail } from './personal-data.mails.js';
-import { accountDeletions } from './personal-data.tables.js';
-
-type Deletion = typeof accountDeletions.$inferSelect;
+import {
+  AccountDeletionRepository,
+  type Deletion,
+} from './account-deletion.repository.js';
 
 /**
  * A person's request to delete their account (README.md): carried out by
@@ -40,7 +36,7 @@ type Deletion = typeof accountDeletions.$inferSelect;
 @Injectable()
 export class AccountDeletionService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AccountDeletionRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -55,19 +51,7 @@ export class AccountDeletionService {
 
   /** The account's pending deletion, or undefined. */
   async pending(userId: string): Promise<Deletion | undefined> {
-    const [row] = await this.accountLevel(() =>
-      this.db
-        .select()
-        .from(accountDeletions)
-        .where(
-          and(
-            eq(accountDeletions.userId, userId),
-            isNull(accountDeletions.cancelledAt),
-            isNull(accountDeletions.completedAt),
-          ),
-        ),
-    );
-    return row;
+    return this.accountLevel(() => this.repository.findPending(userId));
   }
 
   /**
@@ -88,11 +72,8 @@ export class AccountDeletionService {
     if (pending) {
       return view(pending);
     }
-    const [account] = await this.accountLevel(() =>
-      this.db
-        .select({ passwordHash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, user.id)),
+    const account = await this.accountLevel(() =>
+      this.repository.findAccount(user.id),
     );
     if (account?.passwordHash) {
       if (!password) {
@@ -121,10 +102,10 @@ export class AccountDeletionService {
     );
     const row = await this.accountLevel(() =>
       this.txHost.withTransaction(async () => {
-        const [created] = await this.db
-          .insert(accountDeletions)
-          .values({ userId: user.id, scheduledFor })
-          .returning();
+        const created = await this.repository.insert({
+          userId: user.id,
+          scheduledFor,
+        });
         await this.audit.record(user, {
           action: 'account.deletion-requested',
           targetType: 'user',
@@ -132,7 +113,7 @@ export class AccountDeletionService {
           details: { scheduledFor: scheduledFor.toISOString() },
           ip,
         });
-        return created!;
+        return created;
       }),
     );
     // After the commit (the package's stores), as a password change does.
@@ -197,12 +178,9 @@ export class AccountDeletionService {
           claims.deletionId,
           claims.userId,
         );
-        const [user] = cancelled
-          ? await this.db
-              .select({ id: users.id, email: users.email })
-              .from(users)
-              .where(eq(users.id, claims.userId))
-          : [];
+        const user = cancelled
+          ? await this.repository.findAccount(claims.userId)
+          : undefined;
         if (!user) {
           throw invalid(); // rolls the update back
         }
@@ -223,21 +201,8 @@ export class AccountDeletionService {
    * when it did.
    */
   private async cancelPending(id: string, userId: string) {
-    await lockAccount(this.db, userId);
-    const rows = await this.db
-      .update(accountDeletions)
-      .set({ cancelledAt: new Date() })
-      .where(
-        and(
-          eq(accountDeletions.id, id),
-          eq(accountDeletions.userId, userId),
-          isNull(accountDeletions.cancelledAt),
-          isNull(accountDeletions.startedAt),
-          isNull(accountDeletions.completedAt),
-        ),
-      )
-      .returning({ id: accountDeletions.id });
-    return rows.length > 0;
+    await this.repository.lockAccount(userId);
+    return this.repository.cancelPending(id, userId);
   }
 
   /** In no tenant: the account's own entries belong to no tenant's log. */
@@ -245,20 +210,6 @@ export class AccountDeletionService {
     return this.tenancy.run(null, work);
   }
 }
-
-/** The account's row, locked until the transaction ends: deletions, cancels and the job one at a time. */
-export async function lockAccount(db: Database, userId: string) {
-  if (!UUID.test(userId)) {
-    return;
-  }
-  await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, userId))
-    .for('update');
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const view = (row: Deletion) => ({
   requestedAt: row.requestedAt.toISOString(),

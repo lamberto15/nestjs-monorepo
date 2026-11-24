@@ -62,7 +62,7 @@ export class LegalHoldsController {
   })
   @ApiOkResponse({ standardSchema: legalHoldPageSchema })
   async list(@Query({ schema: LEGAL_HOLD_LIST.schema }) query: ListQuery) {
-    return LEGAL_HOLD_LIST.pick(await this.holds.list(query), query);
+    return this.holds.list(query);
   }
 
   @Get(':id')

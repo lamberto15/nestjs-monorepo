@@ -1,22 +1,19 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable, Logger } from '@nestjs/common';
 import { SessionService, TokenService } from '@nestjs/authentication';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, eq, isNull, lte, sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { SystemContext } from '../access/system-context.js';
 import type { SystemPrincipal } from '../auth/principal.js';
 import { AuditService } from '../audit/audit.service.js';
-import { memberships, users } from '../auth/auth.tables.js';
 import { LegalHoldsService } from '../holds/holds.service.js';
-import { lockAccount } from './account-deletion.service.js';
+import {
+  AccountDeletionRepository,
+  type Deletion,
+} from './account-deletion.repository.js';
 import { ACCOUNT_DELETION_JOB } from './personal-data.permissions.js';
 import { PersonalDataService } from './personal-data.service.js';
-import { accountDeletions } from './personal-data.tables.js';
 
 /** How an erased account is named from then on (its audit entries keep the actor key). */
 export const DELETED_USER_NAME = 'Deleted user';
@@ -43,7 +40,7 @@ export class AccountDeletionJob {
   private readonly logger = new Logger(AccountDeletionJob.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AccountDeletionRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly system: SystemContext,
     private readonly holds: LegalHoldsService,
@@ -64,18 +61,7 @@ export class AccountDeletionJob {
   async deleteDue(now = new Date()): Promise<number> {
     const failures: unknown[] = [];
     let deleted = 0;
-    const due = await this.inNoTenant(() =>
-      this.db
-        .select()
-        .from(accountDeletions)
-        .where(
-          and(
-            lte(accountDeletions.scheduledFor, now),
-            isNull(accountDeletions.cancelledAt),
-            isNull(accountDeletions.completedAt),
-          ),
-        ),
-    );
+    const due = await this.inNoTenant(() => this.repository.due(now));
     for (const request of due) {
       try {
         if (await this.carryOut(request, now)) {
@@ -118,38 +104,26 @@ export class AccountDeletionJob {
   ): Promise<boolean> {
     const request = await this.inNoTenant(() =>
       this.txHost.withTransaction(async () => {
-        await lockAccount(this.db, userId);
-        const [pending] = await this.db
-          .select()
-          .from(accountDeletions)
-          .where(
-            and(
-              eq(accountDeletions.userId, userId),
-              isNull(accountDeletions.cancelledAt),
-              isNull(accountDeletions.completedAt),
-            ),
-          );
+        await this.repository.lockAccount(userId);
+        const pending = await this.repository.findPending(userId);
         if (pending) return pending;
-        const [created] = await this.db
-          .insert(accountDeletions)
-          .values({ userId, scheduledFor: now })
-          .returning();
+        const created = await this.repository.insert({
+          userId,
+          scheduledFor: now,
+        });
         await this.audit.record(actor, {
           action: 'account.deletion-requested',
           targetType: 'user',
           targetId: userId,
           details: { ...details, scheduledFor: now.toISOString() },
         });
-        return created!;
+        return created;
       }),
     );
     return this.carryOut(request, now);
   }
 
-  private async carryOut(
-    request: typeof accountDeletions.$inferSelect,
-    now: Date,
-  ) {
+  private async carryOut(request: Deletion, now: Date) {
     const userId = request.userId;
     const tenantIds = await this.personalData.tenantsOf(userId);
     if (await this.heldInAnyTenant(userId, tenantIds)) {
@@ -169,28 +143,11 @@ export class AccountDeletionJob {
     await this.system.run(
       ACCOUNT_DELETION_JOB,
       async (system) => {
-        await lockAccount(this.db, userId);
+        await this.repository.lockAccount(userId);
         await this.personalData.erase(userId, null);
-        await this.db
-          .update(users)
-          .set({
-            email: `deleted-${userId}@anonymized.invalid`,
-            name: DELETED_USER_NAME,
-            passwordHash: null,
-            emailVerified: false,
-            locale: null,
-            timezone: null,
-            active: false,
-            onboardingEmail: false,
-            onboardingPassword: false,
-          })
-          .where(eq(users.id, userId));
-        // Its roles and units in every tenant go with them (cascade).
-        await this.db.delete(memberships).where(eq(memberships.userId, userId));
-        await this.db
-          .update(accountDeletions)
-          .set({ completedAt: now })
-          .where(eq(accountDeletions.id, request.id));
+        // Its roles and units in every tenant go with its memberships (cascade).
+        await this.repository.anonymise(userId, DELETED_USER_NAME);
+        await this.repository.complete(request.id, now);
         await this.audit.record(system, {
           action: 'account.deleted',
           targetType: 'user',
@@ -227,25 +184,12 @@ export class AccountDeletionJob {
 
   /** Claimed under the account's row lock: from here on no cancel takes it back. */
   private async claim(id: string, userId: string) {
-    const claimed = await this.inNoTenant(() =>
+    return this.inNoTenant(() =>
       this.txHost.withTransaction(async () => {
-        await lockAccount(this.db, userId);
-        return this.db
-          .update(accountDeletions)
-          .set({
-            startedAt: sql`coalesce(${accountDeletions.startedAt}, now())`,
-          })
-          .where(
-            and(
-              eq(accountDeletions.id, id),
-              isNull(accountDeletions.cancelledAt),
-              isNull(accountDeletions.completedAt),
-            ),
-          )
-          .returning({ id: accountDeletions.id });
+        await this.repository.lockAccount(userId);
+        return this.repository.claim(id);
       }),
     );
-    return claimed.length > 0;
   }
 
   private inNoTenant<T>(work: () => Promise<T>) {

@@ -1,3 +1,4 @@
+import { gt, isNull, or } from 'drizzle-orm';
 import {
   boolean,
   foreignKey,
@@ -124,3 +125,7 @@ export const apiClientRoles = tenantTable(
     ),
   ],
 );
+
+/** A role grant still running: no end, or one still to come (an ended one is gone). */
+export const liveGrant = (grants: typeof userRoles | typeof apiClientRoles) =>
+  or(isNull(grants.expiresAt), gt(grants.expiresAt, new Date()));

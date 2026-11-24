@@ -1,16 +1,12 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, eq, exists, lt, not, sql } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { TenantRunsFailed } from '../../core/tenancy/tenancy.service.js';
-import { type Tenant, tenants } from '../../core/tenancy/tenancy.tables.js';
+import type { Tenant } from '../../core/tenancy/tenancy.tables.js';
 import { SystemContext } from '../access/system-context.js';
-import { memberships, users } from '../auth/auth.tables.js';
 import { SIGN_UP_SWEEP_JOB } from './tenants.permissions.js';
 import { TenantsService } from './tenants.service.js';
-import { tenantLifecycle } from './tenants.tables.js';
+import { TenantsRepository } from './tenants.repository.js';
 
 /** How long a tenant made by a sign-up nobody verified is kept. */
 export const UNVERIFIED_SIGN_UP_GRACE_DAYS = 7;
@@ -34,7 +30,7 @@ export class SignUpSweepJob {
   private readonly logger = new Logger(SignUpSweepJob.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: TenantsRepository,
     private readonly system: SystemContext,
     private readonly tenants: TenantsService,
   ) {}
@@ -56,14 +52,17 @@ export class SignUpSweepJob {
       async (system) => {
         let deleted = 0;
         const failures: { tenant: Tenant; error: unknown }[] = [];
-        for (const tenant of await this.candidates(cutoff)) {
+        for (const tenant of await this.repository.unverifiedSignUps(
+          cutoff,
+          BATCH,
+        )) {
           try {
             const purged = await this.tenants.purge(
               system,
               tenant.id,
               'sign-up-unverified',
               { days: UNVERIFIED_SIGN_UP_GRACE_DAYS },
-              async () => !(await this.anyVerified(tenant.id)),
+              async () => !(await this.repository.anyMemberVerified(tenant.id)),
             );
             if (purged) deleted++;
           } catch (error) {
@@ -84,51 +83,5 @@ export class SignUpSweepJob {
       throw new TenantRunsFailed(SIGN_UP_SWEEP_JOB.key, failures);
     }
     return deleted;
-  }
-
-  private verifiedMember(tenantId: typeof tenants.id | string) {
-    return this.db
-      .select({ one: sql`1` })
-      .from(memberships)
-      .innerJoin(users, eq(users.id, memberships.userId))
-      .where(
-        and(eq(memberships.tenantId, tenantId), eq(users.emailVerified, true)),
-      );
-  }
-
-  /** The sign-ups' tenants past the grace whose members all are unverified. */
-  private candidates(cutoff: Date) {
-    return this.db
-      .select({
-        id: tenants.id,
-        slug: tenants.slug,
-        name: tenants.name,
-        active: tenants.active,
-        frozenAt: tenants.frozenAt,
-        createdAt: tenants.createdAt,
-        updatedAt: tenants.updatedAt,
-      })
-      .from(tenants)
-      .innerJoin(tenantLifecycle, eq(tenantLifecycle.tenantId, tenants.id))
-      .where(
-        and(
-          eq(tenantLifecycle.createdBySignUp, true),
-          lt(tenants.createdAt, cutoff),
-          not(exists(this.verifiedMember(tenants.id))),
-        ),
-      )
-      .orderBy(tenants.createdAt)
-      .limit(BATCH);
-  }
-
-  /** In the purge's transaction: the members locked, any of them verified since? */
-  private async anyVerified(tenantId: string) {
-    const members = await this.db
-      .select({ verified: users.emailVerified })
-      .from(memberships)
-      .innerJoin(users, eq(users.id, memberships.userId))
-      .where(eq(memberships.tenantId, tenantId))
-      .for('update', { of: users });
-    return members.some(({ verified }) => verified);
   }
 }

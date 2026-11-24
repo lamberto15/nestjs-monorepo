@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Ip,
-  Post,
-  Res,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Ip, Post, Res } from '@nestjs/common';
 import {
   CurrentSession,
   CurrentUser,
@@ -24,7 +15,8 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { z } from 'zod';
+import type { z } from 'zod';
+import { myTenantSchema, switchSchema } from './tenants.schemas.js';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
 import { listSchema } from '../../core/http/pagination.js';
 import { DuringMfaEnrollment } from '../auth/mfa-enrollment.guard.js';
@@ -33,22 +25,6 @@ import type { UserPrincipal } from '../auth/principal.js';
 import { WithoutSso } from '../auth/sign-in-gate.js';
 import { SessionOnly, UserOnly } from '../auth/user-only.decorator.js';
 import { TenantSwitchService } from './tenant-switch.service.js';
-
-const myTenantSchema = z.object({
-  id: z.uuid(),
-  slug: z.string(),
-  name: z.string(),
-  operator: z
-    .boolean()
-    .describe(
-      "The operators' tenant (OPERATOR_TENANT): its members run the deployment.",
-    ),
-  current: z.boolean().describe('The tenant this session or token acts in.'),
-});
-
-const switchSchema = z.object({
-  tenantId: z.uuid().describe('One of GET /auth/tenants.'),
-});
 
 /**
  * A user's tenants and the switch between them. Token clients pick a
@@ -103,9 +79,6 @@ export class TenantSwitchController {
     @Ip() ip: string,
   ) {
     const issued = await this.switcher.switch(user, session, body.tenantId, ip);
-    if (!issued) {
-      throw new UnauthorizedException(); // signed out meanwhile
-    }
     res.append('Set-Cookie', issued.cookie);
   }
 }

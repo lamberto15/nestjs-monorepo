@@ -53,7 +53,7 @@ export class PrincipalGuard
   extends AuthenticationGuard
   implements OnModuleInit
 {
-  private readonly logger = new Logger('Authentication');
+  private readonly logger = new Logger(PrincipalGuard.name);
   private grants?: BreakGlassGrants;
 
   constructor(

@@ -1,18 +1,12 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { AccessService } from '../access/access.service.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { OrganizationService } from '../organization/organization.service.js';
-import {
-  organizationalUnitMemberships,
-  organizationalUnits,
-} from '../organization/organization.tables.js';
+import { InvitationsRepository } from './invitations.repository.js';
 
 /**
  * What an invitation does with organizational units: checks the ones it
@@ -23,7 +17,7 @@ import {
 @Injectable()
 export class InvitationUnits {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: InvitationsRepository,
     private readonly access: AccessService,
     private readonly organization: OrganizationService,
   ) {}
@@ -31,11 +25,7 @@ export class InvitationUnits {
   /** Those of `ids` that are this tenant's units now. */
   async existing(ids: readonly string[]) {
     if (!ids.length) return [];
-    const found = await this.db
-      .select({ id: organizationalUnits.id })
-      .from(organizationalUnits)
-      .where(inArray(organizationalUnits.id, [...new Set(ids)]));
-    return found.map((row) => row.id);
+    return this.repository.existingUnitIds([...new Set(ids)]);
   }
 
   /** 400 for an id that isn't one of the tenant's units. */
@@ -70,28 +60,15 @@ export class InvitationUnits {
   async place(userId: string, ids: readonly string[]) {
     const units = await this.existing(ids);
     if (!units.length) return;
-    const open = await this.db
-      .select({ unitId: organizationalUnitMemberships.unitId })
-      .from(organizationalUnitMemberships)
-      .where(
-        and(
-          eq(organizationalUnitMemberships.userId, userId),
-          inArray(organizationalUnitMemberships.unitId, units),
-          isNull(organizationalUnitMemberships.validTo),
-        ),
-      );
-    const joined = units.filter(
-      (unitId) => !open.some((row) => row.unitId === unitId),
-    );
+    const open = await this.repository.openUnitIds(userId, units);
+    const joined = units.filter((unitId) => !open.includes(unitId));
     if (joined.length) {
       // Dated by the app's clock, as every other writer of memberships and
       // every `currentMembership()` reader is: the column's default is the
       // database's clock, and one running ahead of the app's would leave
       // the new member out of their units until it caught up.
       const validFrom = new Date();
-      await this.db
-        .insert(organizationalUnitMemberships)
-        .values(joined.map((unitId) => ({ unitId, userId, validFrom })));
+      await this.repository.insertUnitMemberships(userId, joined, validFrom);
     }
   }
 }

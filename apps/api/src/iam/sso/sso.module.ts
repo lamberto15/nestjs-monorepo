@@ -16,6 +16,7 @@ import { SamlSso } from './saml-sso.service.js';
 import { ScimGroupsService } from './scim/scim-groups.service.js';
 import { ScimUsersService } from './scim/scim-users.service.js';
 import { ScimController } from './scim/scim.controller.js';
+import { SsoSignIn } from './sso-sign-in.service.js';
 import { SsoAccounts } from './sso-accounts.service.js';
 import {
   SsoAuthController,
@@ -74,6 +75,7 @@ csrfExclusions.set('sso.saml-acs', {
     SsoPolicyService,
     SsoDiscovery,
     SsoAccounts,
+    SsoSignIn,
     OidcSso,
     Oauth2Sso,
     SamlSso,

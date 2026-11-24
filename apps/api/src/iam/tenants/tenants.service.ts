@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -9,24 +9,14 @@ import {
 import type { ConfigType } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
-import { and, asc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
+import { assertUnchanged } from '../../core/http/etag.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  countMatching,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
 import { Events } from '../../core/outbox/events.js';
 import { tenancyConfig } from '../../core/tenancy/tenancy.config.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
-import { type Tenant, tenants } from '../../core/tenancy/tenancy.tables.js';
-import { roles, userRoles } from '../access/access.tables.js';
+import type { Tenant } from '../../core/tenancy/tenancy.tables.js';
 import { ADMINISTRATOR_ROLE, RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { InvitationsService } from '../invitations/invitations.service.js';
@@ -36,17 +26,13 @@ import {
   type SessionEndedEvent,
   type TokenSessionEndedEvent,
 } from '../auth/auth.events.js';
-import { memberships, refreshTokens, sessions } from '../auth/auth.tables.js';
 import { isOperatorSlug } from '../auth/operator-only.js';
 import type {
   Principal,
   SystemPrincipal,
   UserPrincipal,
 } from '../auth/principal.js';
-import {
-  distinctTokenSessionIds,
-  tokenSessionId,
-} from '../auth/token-session.js';
+import { distinctTokenSessionIds } from '../auth/token-session.js';
 import {
   type PurgeReason,
   TENANT_EVENTS,
@@ -57,9 +43,9 @@ import {
   tenantPurged,
   tenantReactivated,
 } from './tenants.events.js';
-import { tenantList } from './tenants.lists.js';
 import { tenantsConfig } from './tenants.config.js';
-import { tenantLifecycle } from './tenants.tables.js';
+import { TENANT_LIST } from './tenants.lists.js';
+import { TenantsRepository } from './tenants.repository.js';
 
 /** What an operator may change of a tenant (`PATCH /v1/tenants/{id}`). */
 export interface TenantChanges {
@@ -96,11 +82,8 @@ const operatorTenant = () =>
  */
 @Injectable()
 export class TenantsService {
-  private readonly list: ReturnType<typeof tenantList>;
-  private readonly operator: SQL;
-
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: TenantsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly roles: RolesService,
@@ -114,29 +97,7 @@ export class TenantsService {
     private readonly auth: ConfigType<typeof authConfig>,
     @Inject(tenancyConfig.KEY)
     private readonly tenancyMode: ConfigType<typeof tenancyConfig>,
-  ) {
-    this.operator = this.operatorCondition();
-    this.list = tenantList(this.operator);
-  }
-
-  /**
-   * Which tenant is the operators' (as OperatorGuard decides): with
-   * TENANCY=single the oldest (the one), else the one OPERATOR_TENANT names,
-   * else none.
-   */
-  private operatorCondition(): SQL {
-    if (this.tenancyMode.mode === 'single') {
-      const oldest = this.db
-        .select({ id: tenants.id })
-        .from(tenants)
-        .orderBy(asc(tenants.createdAt), asc(tenants.id))
-        .limit(1);
-      return inArray(tenants.id, oldest);
-    }
-    return this.auth.operatorTenant
-      ? eq(tenants.slug, this.auth.operatorTenant)
-      : sql`false`;
-  }
+  ) {}
 
   /**
    * Whether a slug is what makes a tenant the operators' (OPERATOR_TENANT;
@@ -148,55 +109,14 @@ export class TenantsService {
     );
   }
 
-  private columns() {
-    return {
-      id: tenants.id,
-      slug: tenants.slug,
-      name: tenants.name,
-      active: tenants.active,
-      operator: sql<boolean>`(${this.operator})`,
-      createdBySignUp: sql<boolean>`coalesce(${tenantLifecycle.createdBySignUp}, false)`,
-      deletionRequestedAt: tenantLifecycle.deletionRequestedAt,
-      deletionScheduledFor: tenantLifecycle.deletionScheduledFor,
-      deletionStartedAt: tenantLifecycle.deletionStartedAt,
-      createdAt: tenants.createdAt,
-      updatedAt: tenants.updatedAt,
-    };
-  }
-
   /** A page of the tenants, newest first unless sorted. Global: nothing for row-level security to narrow. */
   async page(query: ListQuery) {
-    const joined = () =>
-      this.db
-        .select({ ...this.columns(), ...this.list.sortSelect(query) })
-        .from(tenants)
-        .leftJoin(tenantLifecycle, eq(tenantLifecycle.tenantId, tenants.id));
-    const [rows, total] = await Promise.all([
-      joined()
-        .where(this.list.where(query, tenants.id))
-        .orderBy(...pageOrder(tenants.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countMatching(
-        this.db,
-        this.db
-          .select({ one: sql`1` })
-          .from(tenants)
-          .leftJoin(tenantLifecycle, eq(tenantLifecycle.tenantId, tenants.id))
-          .where(this.list.where(query)),
-        query,
-      ),
-    ]);
-    return toPage(rows, query, total);
+    return TENANT_LIST.pick(await this.repository.page(query), query);
   }
 
   /** One tenant, active or not; a 404 when there is none. */
   async get(id: string) {
-    const [tenant] = await this.db
-      .select(this.columns())
-      .from(tenants)
-      .leftJoin(tenantLifecycle, eq(tenantLifecycle.tenantId, tenants.id))
-      .where(eq(tenants.id, id));
+    const tenant = await this.repository.findView(id);
     if (!tenant) {
       throw new NotFoundException(t('tenants.notFound'));
     }
@@ -205,7 +125,7 @@ export class TenantsService {
 
   /**
    * Renames a tenant, changes its slug, or (de)activates it, under its
-   * row's lock (`check`, the caller's If-Match, runs there), audited in
+   * row's lock (the caller's `ifMatch` is checked there), audited in
    * both tenants. Deactivated: a session, token, API key or job in it
    * stops (every check reads `tenants.active`); here, after the commit,
    * its sessions and token families end and `tenancy.tenant-deactivated`
@@ -220,11 +140,12 @@ export class TenantsService {
     id: string,
     changes: TenantChanges,
     ip?: string,
-    check?: (current: TenantView) => void,
+    ifMatch?: string,
   ) {
     const { before, after } = await this.txHost.withTransaction(async () => {
       const before = await this.locked(id);
-      check?.(before);
+      // If-Match under the tenant's lock: two operators can't both win.
+      if (ifMatch) assertUnchanged(ifMatch, before);
       if (changes.active === false && before.operator) {
         throw operatorTenant();
       }
@@ -244,15 +165,11 @@ export class TenantsService {
           message: t('tenants.deletionPending'),
         });
       }
-      await this.db
-        .update(tenants)
-        .set(changes)
-        .where(eq(tenants.id, id))
-        .catch((error: unknown) => {
-          throw databaseErrorKind(error) === 'unique_violation'
-            ? slugTaken(changes.slug ?? before.slug)
-            : error;
-        });
+      await this.repository.update(id, changes).catch((error: unknown) => {
+        throw databaseErrorKind(error) === 'unique_violation'
+          ? slugTaken(changes.slug ?? before.slug)
+          : error;
+      });
       const after = await this.get(id);
       await this.audit.record(operator, updatedEntry(before, after, ip));
       if (before.active !== after.active) {
@@ -302,21 +219,8 @@ export class TenantsService {
       const scheduledFor = new Date(
         now.getTime() + this.config.deletionGraceDays * 86_400_000,
       );
-      await this.db
-        .update(tenants)
-        .set({ active: false })
-        .where(eq(tenants.id, id));
-      await this.db
-        .insert(tenantLifecycle)
-        .values({
-          tenantId: id,
-          deletionRequestedAt: now,
-          deletionScheduledFor: scheduledFor,
-        })
-        .onConflictDoUpdate({
-          target: tenantLifecycle.tenantId,
-          set: { deletionRequestedAt: now, deletionScheduledFor: scheduledFor },
-        });
+      await this.repository.update(id, { active: false });
+      await this.repository.scheduleDeletion(id, now, scheduledFor);
       const after = await this.get(id);
       await this.audit.record(
         operator,
@@ -367,10 +271,7 @@ export class TenantsService {
           message: t('tenants.deletionStarted'),
         });
       }
-      await this.db
-        .update(tenantLifecycle)
-        .set({ deletionRequestedAt: null, deletionScheduledFor: null })
-        .where(eq(tenantLifecycle.tenantId, id));
+      await this.repository.unscheduleDeletion(id);
       await this.audit.record(
         operator,
         deletionEntry('tenant.deletion-cancelled', before, before, ip),
@@ -407,12 +308,10 @@ export class TenantsService {
     const { tenant, result: invitation } = await this.makeTenant(
       { name: input.name, slug: input.slug },
       async (tenant) => {
-        const [administrator] = await this.db
-          .select({ id: roles.id })
-          .from(roles)
-          .where(eq(roles.key, ADMINISTRATOR_ROLE));
+        const administrator =
+          await this.repository.roleIdByKey(ADMINISTRATOR_ROLE);
         const invitation = await this.invitations.create(
-          { email: input.administratorEmail, roleIds: [administrator!.id] },
+          { email: input.administratorEmail, roleIds: [administrator!] },
           operator,
         );
         await this.audit.record(operator, entry(tenant));
@@ -471,18 +370,14 @@ export class TenantsService {
         this.txHost.withTransaction(async () => {
           await this.roles.seedTenantRoles();
           if (createdBySignUp) {
-            await this.db
-              .insert(tenantLifecycle)
-              .values({ tenantId: tenant.id, createdBySignUp: true });
+            await this.repository.markCreatedBySignUp(tenant.id);
           }
           return work(tenant);
         }),
       );
       return { tenant, result };
     } catch (error) {
-      await this.tenancy.run(null, () =>
-        this.db.delete(tenants).where(eq(tenants.id, tenant.id)),
-      );
+      await this.tenancy.run(null, () => this.repository.delete(tenant.id));
       throw error;
     }
   }
@@ -510,15 +405,9 @@ export class TenantsService {
    * (sign-up). Nothing else grants Administrator without an administrator.
    */
   async addAdministrator(userId: string) {
-    await this.db
-      .insert(memberships)
-      .values({ tenantId: this.tenancy.tenantId(), userId })
-      .onConflictDoNothing();
-    const [role] = await this.db
-      .select({ id: roles.id })
-      .from(roles)
-      .where(eq(roles.key, ADMINISTRATOR_ROLE));
-    await this.db.insert(userRoles).values({ userId, roleId: role!.id });
+    await this.repository.insertMembership(userId, { ifAbsent: true });
+    const role = await this.repository.roleIdByKey(ADMINISTRATOR_ROLE);
+    await this.repository.insertGrants(userId, [role!]);
   }
 
   /**
@@ -527,25 +416,13 @@ export class TenantsService {
    * sockets), then `tenancy.tenant-deactivated` (realtime closes the rest).
    */
   async afterDeactivation(tenantId: string) {
-    const ended = await this.db
-      .delete(sessions)
-      .where(sql`${sessions.metadata} ->> 'tenantId' = ${tenantId}`)
-      .returning({ id: sessions.id });
+    const ended = await this.repository.deleteSessionsIn(tenantId);
     for (const { id } of ended) {
       await this.emitter.emitAsync(AUTH_EVENTS.sessionEnded, {
         sessionId: id,
       } satisfies SessionEndedEvent);
     }
-    const revoked = await this.db
-      .update(refreshTokens)
-      .set({ revoked: true })
-      .where(
-        and(
-          eq(refreshTokens.revoked, false),
-          sql`${refreshTokens.claims} ->> 'tid' = ${tenantId}`,
-        ),
-      )
-      .returning({ sid: tokenSessionId });
+    const revoked = await this.repository.revokeRefreshTokensIn(tenantId);
     for (const sid of distinctTokenSessionIds(revoked)) {
       await this.emitter.emitAsync(AUTH_EVENTS.tokenSessionEnded, {
         sid,
@@ -575,21 +452,14 @@ export class TenantsService {
   ) {
     return this.tenancy.run(null, () =>
       this.txHost.withTransaction(async () => {
-        const [locked] = await this.db
-          .select({ id: tenants.id, operator: this.columns().operator })
-          .from(tenants)
-          .where(eq(tenants.id, tenantId))
-          .for('update');
+        const locked = await this.repository.lockForPurge(tenantId);
         if (!locked || locked.operator || (check && !(await check()))) {
           return undefined;
         }
         await this.emitter.emitAsync(TENANT_EVENTS.erasing, {
           tenantId,
         } satisfies TenantErasingEvent);
-        const [row] = await this.db
-          .delete(tenants)
-          .where(eq(tenants.id, tenantId))
-          .returning();
+        const row = await this.repository.delete(tenantId);
         await this.audit.record(system, {
           action: 'tenant.purged',
           targetType: 'tenant',
@@ -657,12 +527,7 @@ export class TenantsService {
 
   /** The tenant as shown, its row locked for the transaction; a 404 when there is none. */
   private async locked(id: string) {
-    const [row] = await this.db
-      .select({ id: tenants.id })
-      .from(tenants)
-      .where(eq(tenants.id, id))
-      .for('update');
-    if (!row) {
+    if (!(await this.repository.lock(id))) {
       throw new NotFoundException(t('tenants.notFound'));
     }
     return this.get(id);

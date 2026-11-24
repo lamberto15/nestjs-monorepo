@@ -12,6 +12,7 @@ import {
 } from './invitations.controller.js';
 import { invitationsConfig } from './invitations.config.js';
 import { TenantInvitationMail } from './invitations.mail.js';
+import { InvitationsRepository } from './invitations.repository.js';
 import { InvitationsService } from './invitations.service.js';
 
 /**
@@ -32,7 +33,12 @@ import { InvitationsService } from './invitations.service.js';
     ConfigModule.forFeature(httpConfig),
   ],
   controllers: [InvitationsController, AcceptInvitationController],
-  providers: [InvitationsService, InvitationUnits, TenantInvitationMail],
+  providers: [
+    InvitationsService,
+    InvitationsRepository,
+    InvitationUnits,
+    TenantInvitationMail,
+  ],
   exports: [InvitationsService],
 })
 export class InvitationsModule {}

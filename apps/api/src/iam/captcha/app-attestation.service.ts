@@ -6,11 +6,8 @@ import {
 } from '@nestjs/common';
 import { type ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
-import { InjectTransaction } from '@nestjs-cls/transactional';
-import { and, eq, lt } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { createHash, createPublicKey, randomBytes } from 'node:crypto';
-import type { Database } from '../../core/database/database.js';
 import { REDIS } from '../../core/redis/redis.js';
 import {
   androidApp,
@@ -20,7 +17,7 @@ import {
   verifyPlayIntegrity,
 } from './app-attestation.js';
 import { captchaConfig } from './captcha.config.js';
-import { appAttestKeys } from './captcha.tables.js';
+import { CaptchaRepository } from './captcha.repository.js';
 
 /** Long enough to get a verdict from Play or the Secure Enclave, and no longer. */
 const CHALLENGE_TTL_SECONDS = 300;
@@ -48,7 +45,7 @@ export class AppAttestationService {
   constructor(
     @Inject(captchaConfig.KEY)
     private readonly config: ConfigType<typeof captchaConfig>,
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: CaptchaRepository,
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(APP_ATTEST_ROOTS) private readonly roots: string[],
   ) {}
@@ -92,15 +89,11 @@ export class AppAttestationService {
         development: this.config.attestation.development,
         roots: this.roots,
       });
-      const [stored] = await this.db
-        .insert(appAttestKeys)
-        .values({
-          keyId: keyId.toString('base64url'),
-          appId,
-          publicKey: publicKey.toString('base64url'),
-        })
-        .onConflictDoNothing()
-        .returning({ id: appAttestKeys.id });
+      const stored = await this.repository.insertAppleKey({
+        keyId: keyId.toString('base64url'),
+        appId,
+        publicKey: publicKey.toString('base64url'),
+      });
       if (!stored) {
         throw new AttestationRefused('key'); // attested before: once per key
       }
@@ -133,12 +126,8 @@ export class AppAttestationService {
     keyId: string,
     assertion: string,
   ) {
-    const db = this.db;
     const id = Buffer.from(keyId, 'base64url').toString('base64url');
-    const [key] = await db
-      .select()
-      .from(appAttestKeys)
-      .where(eq(appAttestKeys.keyId, id));
+    const key = await this.repository.findAppleKey(id);
     if (!key) {
       throw new AttestationRefused('key');
     }
@@ -150,14 +139,7 @@ export class AppAttestationService {
       counter: key.counter,
     });
     // Conditional: of two assertions with one counter, one counts.
-    const [counted] = await db
-      .update(appAttestKeys)
-      .set({ counter, updatedAt: new Date() })
-      .where(
-        and(eq(appAttestKeys.id, key.id), lt(appAttestKeys.counter, counter)),
-      )
-      .returning({ id: appAttestKeys.id });
-    if (!counted) {
+    if (!(await this.repository.countUp(key.id, counter))) {
       throw new AttestationRefused('counter');
     }
   }

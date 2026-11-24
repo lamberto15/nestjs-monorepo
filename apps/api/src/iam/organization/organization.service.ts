@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -9,45 +9,20 @@ import {
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { t } from '@nestjs/i18n';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  getColumns,
-  inArray,
-  lt,
-  or,
-} from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessService } from '../access/access.service.js';
 import { MembersService } from '../access/members.service.js';
 import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { memberships, users } from '../auth/auth.tables.js';
 import { discoverOne } from '../auth/discover.js';
 import type { SystemPrincipal, UserPrincipal } from '../auth/principal.js';
-import {
-  currentMembership,
-  openMembership,
-  unitIdsOf,
-  type UnitsOfOptions,
-} from './memberships.js';
-import {
-  organizationalUnitClosure,
-  organizationalUnitMemberships,
-  organizationalUnits,
-  type UnitRole,
-  type UnitType,
-} from './organization.tables.js';
+import type { UnitsOfOptions } from './memberships.js';
+import { OrganizationRepository } from './organization.repository.js';
+import type { UnitRole, UnitType } from './organization.tables.js';
 import { ScimUnits } from './scim-units.js';
-import { TreeCycleError, UnitTree } from './tree.js';
+import { TreeCycleError } from './tree.js';
 import { OrganizationUnitDirectory } from './unit-directory.provider.js';
 
 /** The 409 of a name a sibling already has (any case). */
@@ -115,11 +90,10 @@ export interface Impact {
  */
 @Injectable()
 export class OrganizationService implements OnModuleInit {
-  private readonly tree = new UnitTree();
   private scim?: ScimUnits;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: OrganizationRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -142,19 +116,9 @@ export class OrganizationService implements OnModuleInit {
   async list() {
     const now = new Date();
     const [rows, depths, counts] = await Promise.all([
-      this.db
-        .select()
-        .from(organizationalUnits)
-        .orderBy(asc(organizationalUnits.name)),
-      this.db
-        .select({ id: organizationalUnitClosure.descendantId, depth: count() })
-        .from(organizationalUnitClosure)
-        .groupBy(organizationalUnitClosure.descendantId),
-      this.db
-        .select({ id: organizationalUnitMemberships.unitId, members: count() })
-        .from(organizationalUnitMemberships)
-        .where(currentMembership(now))
-        .groupBy(organizationalUnitMemberships.unitId),
+      this.repository.units(),
+      this.repository.ancestorCounts(),
+      this.repository.memberCounts(now),
     ]);
     const scim = await this.scimManaged(rows.map((unit) => unit.id));
     return rows
@@ -176,24 +140,22 @@ export class OrganizationService implements OnModuleInit {
   ) {
     const unit = await this.txHost.withTransaction(async () => {
       if (input.parentId) await this.find(input.parentId);
-      const [row] = await this.db
-        .insert(organizationalUnits)
-        .values({
+      const row = await this.repository
+        .insert({
           type: input.type,
           name: input.name,
           parentId: input.parentId ?? null,
         })
-        .returning()
         .catch(rethrowNameTaken(input.name));
-      await this.tree.add(this.db, row!.id, row!.parentId);
+      await this.repository.addToTree(row.id, row.parentId);
       await this.audit.record(actor, {
         action: 'organizationalUnit.created',
         targetType: 'organizationalUnit',
-        targetId: row!.id,
-        details: { type: row!.type, name: row!.name, parentId: row!.parentId },
+        targetId: row.id,
+        details: { type: row.type, name: row.name, parentId: row.parentId },
         ip,
       });
-      return row!;
+      return row;
     });
     this.access.invalidate(this.tenancy.tenantId());
     return unit;
@@ -214,7 +176,7 @@ export class OrganizationService implements OnModuleInit {
       if (moved) {
         if (changes.parentId) await this.find(changes.parentId);
         try {
-          await this.tree.move(this.db, id, changes.parentId ?? null);
+          await this.repository.moveInTree(id, changes.parentId ?? null);
         } catch (error) {
           if (error instanceof TreeCycleError) {
             throw new ConflictException(
@@ -224,15 +186,12 @@ export class OrganizationService implements OnModuleInit {
           throw error;
         }
       }
-      const [row] = await this.db
-        .update(organizationalUnits)
-        .set({
+      const row = await this.repository
+        .update(id, {
           ...(changes.type !== undefined && { type: changes.type }),
           ...(changes.name !== undefined && { name: changes.name }),
           ...(changes.parentId !== undefined && { parentId: changes.parentId }),
         })
-        .where(eq(organizationalUnits.id, id))
-        .returning()
         .catch(rethrowNameTaken(changes.name ?? before.name));
       await this.audit.record(actor, {
         action: 'organizationalUnit.updated',
@@ -251,7 +210,7 @@ export class OrganizationService implements OnModuleInit {
         },
         ip,
       });
-      return row!;
+      return row;
     });
     this.access.invalidate(this.tenancy.tenantId());
     return unit;
@@ -265,32 +224,14 @@ export class OrganizationService implements OnModuleInit {
    * of it and the units under it reach above (`inMyUnitsAndAbove`).
    */
   previewUpdate(actor: UserPrincipal, id: string, changes: UnitChanges) {
-    const member = organizationalUnitMemberships;
     return this.impactOf(
       () =>
-        this.db
-          .selectDistinct({ id: member.userId })
-          .from(member)
-          .where(
-            and(
-              currentMembership(),
-              or(
-                inArray(member.unitId, this.tree.ancestors(id)),
-                changes.parentId !== undefined
-                  ? inArray(member.unitId, this.tree.descendants(id))
-                  : undefined,
-                changes.parentId
-                  ? inArray(
-                      member.unitId,
-                      this.tree.ancestors(changes.parentId),
-                    )
-                  : undefined,
-              ),
-            ),
-          )
-          .orderBy(member.userId)
-          .limit(IMPACT_USERS_LIMIT + 1)
-          .then((rows) => rows.map((row) => row.id)),
+        this.repository.affectedByUnitChange(
+          id,
+          changes.parentId !== undefined,
+          changes.parentId,
+          IMPACT_USERS_LIMIT + 1,
+        ),
       () => this.update(actor, id, changes),
     );
   }
@@ -305,33 +246,17 @@ export class OrganizationService implements OnModuleInit {
       const unit = await this.find(id);
       await this.assertNotScimManaged(id);
       // One after the other: a transaction is one connection.
-      const [children] = await this.db
-        .select({ count: count() })
-        .from(organizationalUnits)
-        .where(eq(organizationalUnits.parentId, id));
-      const [open] = await this.db
-        .select({ count: count() })
-        .from(organizationalUnitMemberships)
-        .where(
-          and(eq(organizationalUnitMemberships.unitId, id), openMembership()),
-        );
-      if (children!.count > 0 || open!.count > 0) throw notEmpty();
+      const children = await this.repository.countChildren(id);
+      const open = await this.repository.countOpenMemberships(id);
+      if (children > 0 || open > 0) throw notEmpty();
       // Ended memberships and the unit's own paths go with it; what other
       // modules' tables refer to it is theirs to know: their keys restrict.
-      await this.db
-        .delete(organizationalUnitMemberships)
-        .where(eq(organizationalUnitMemberships.unitId, id));
-      await this.db
-        .delete(organizationalUnitClosure)
-        .where(eq(organizationalUnitClosure.descendantId, id));
-      await this.db
-        .delete(organizationalUnits)
-        .where(eq(organizationalUnits.id, id))
-        .catch((error: unknown) => {
-          throw databaseErrorKind(error) === 'foreign_key_violation'
-            ? notEmpty()
-            : error;
-        });
+      await this.repository.deleteMembershipsAndPaths(id);
+      await this.repository.delete(id).catch((error: unknown) => {
+        throw databaseErrorKind(error) === 'foreign_key_violation'
+          ? notEmpty()
+          : error;
+      });
       await this.audit.record(actor, {
         action: 'organizationalUnit.deleted',
         targetType: 'organizationalUnit',
@@ -348,11 +273,7 @@ export class OrganizationService implements OnModuleInit {
    * that role in), and with `below` every unit under them.
    */
   async unitsOf(userId: string, options: UnitsOfOptions = {}) {
-    const rows = await this.db
-      .select({ id: organizationalUnits.id })
-      .from(organizationalUnits)
-      .where(inArray(organizationalUnits.id, unitIdsOf(userId, options)));
-    return rows.map((row) => row.id);
+    return this.repository.unitIdsOf(userId, options);
   }
 
   /** A unit of the tenant, or a 404. */
@@ -366,11 +287,7 @@ export class OrganizationService implements OnModuleInit {
    */
   async ancestry(unitIds: readonly string[]): Promise<string[][]> {
     if (!unitIds.length) return [];
-    const tree = organizationalUnitClosure;
-    const rows = await this.db
-      .selectDistinct({ id: tree.ancestorId, depth: tree.depth })
-      .from(tree)
-      .where(inArray(tree.descendantId, [...unitIds]));
+    const rows = await this.repository.ancestorsOf([...unitIds]);
     const levels: string[][] = [];
     for (const { id, depth } of rows) (levels[depth] ??= []).push(id);
     return levels;
@@ -379,30 +296,13 @@ export class OrganizationService implements OnModuleInit {
   /** The accounts that are current members of any of these units. */
   async currentMembers(unitIds: readonly string[]): Promise<string[]> {
     if (!unitIds.length) return [];
-    const member = organizationalUnitMemberships;
-    const rows = await this.db
-      .selectDistinct({ id: member.userId })
-      .from(member)
-      .where(and(inArray(member.unitId, [...unitIds]), currentMembership()));
-    return rows.map((row) => row.id);
+    return this.repository.currentMemberIds([...unitIds]);
   }
 
   /** A unit's memberships, current and past, latest first, with each member's name and email. */
   async membersOf(unitId: string) {
     await this.find(unitId);
-    return this.db
-      .select({
-        ...getColumns(organizationalUnitMemberships),
-        name: users.name,
-        email: users.email,
-      })
-      .from(organizationalUnitMemberships)
-      .innerJoin(users, eq(users.id, organizationalUnitMemberships.userId))
-      .where(eq(organizationalUnitMemberships.unitId, unitId))
-      .orderBy(
-        desc(organizationalUnitMemberships.validFrom),
-        asc(organizationalUnitMemberships.userId),
-      );
+    return this.repository.membershipsOf(unitId);
   }
 
   /**
@@ -427,17 +327,9 @@ export class OrganizationService implements OnModuleInit {
     const row = await this.txHost.withTransaction(async () => {
       await this.find(unitId);
       await this.assertNotScimManaged(unitId);
-      const [member] = await this.db
-        .select({ userId: memberships.userId })
-        .from(memberships)
-        .where(
-          and(
-            eq(memberships.tenantId, this.tenancy.tenantId()),
-            eq(memberships.userId, input.userId),
-          ),
-        );
-      if (!member) throw new BadRequestException('Unknown user.');
-      if (await this.openMembershipOf(unitId, input.userId)) {
+      if (!(await this.repository.isTenantMember(input.userId)))
+        throw new BadRequestException('Unknown user.');
+      if (await this.repository.openMembershipOf(unitId, input.userId)) {
         throw new ConflictException(
           'The user is already a member of this unit: change their role or end it first.',
         );
@@ -449,29 +341,26 @@ export class OrganizationService implements OnModuleInit {
       if (validTo && validTo <= validFrom) {
         throw new BadRequestException('validTo must be after validFrom.');
       }
-      const [created] = await this.db
-        .insert(organizationalUnitMemberships)
-        .values({
-          unitId,
-          userId: input.userId,
-          role: input.role ?? 'member',
-          validFrom,
-          validTo,
-        })
-        .returning();
+      const created = await this.repository.insertMembership({
+        unitId,
+        userId: input.userId,
+        role: input.role ?? 'member',
+        validFrom,
+        validTo,
+      });
       await this.audit.record(actor, {
         action: 'organizationalUnit.member-added',
         targetType: 'organizationalUnit',
         targetId: unitId,
         details: {
-          userId: created!.userId,
-          role: created!.role,
-          validFrom: created!.validFrom,
-          validTo: created!.validTo,
+          userId: created.userId,
+          role: created.role,
+          validFrom: created.validFrom,
+          validTo: created.validTo,
         },
         ip,
       });
-      return created!;
+      return created;
     });
     this.access.invalidate(this.tenancy.tenantId());
     return row;
@@ -491,7 +380,7 @@ export class OrganizationService implements OnModuleInit {
     const row = await this.txHost.withTransaction(async () => {
       await this.find(unitId);
       await this.assertNotScimManaged(unitId);
-      const open = await this.openMembershipOf(unitId, userId);
+      const open = await this.repository.openMembershipOf(unitId, userId);
       if (!open)
         throw new NotFoundException('The user is not a member of this unit.');
       if (open.role === role) return open;
@@ -499,23 +388,16 @@ export class OrganizationService implements OnModuleInit {
       let changed: typeof open | undefined;
       if (open.validFrom >= now) {
         // Not started yet: nothing to keep as history.
-        [changed] = await this.db
-          .update(organizationalUnitMemberships)
-          .set({ role })
-          .where(eq(organizationalUnitMemberships.id, open.id))
-          .returning();
+        changed = await this.repository.setMembershipRole(open.id, role);
       } else {
         await this.end(open.id, now);
-        [changed] = await this.db
-          .insert(organizationalUnitMemberships)
-          .values({
-            unitId,
-            userId,
-            role,
-            validFrom: now,
-            validTo: open.validTo,
-          })
-          .returning();
+        changed = await this.repository.insertMembership({
+          unitId,
+          userId,
+          role,
+          validFrom: now,
+          validTo: open.validTo,
+        });
       }
       await this.audit.record(actor, {
         action: 'organizationalUnit.member-role-changed',
@@ -555,7 +437,7 @@ export class OrganizationService implements OnModuleInit {
     await this.txHost.withTransaction(async () => {
       await this.find(unitId);
       await this.assertNotScimManaged(unitId);
-      const open = await this.openMembershipOf(unitId, userId);
+      const open = await this.repository.openMembershipOf(unitId, userId);
       if (!open)
         throw new NotFoundException('The user is not a member of this unit.');
       await this.end(open.id, new Date());
@@ -595,12 +477,7 @@ export class OrganizationService implements OnModuleInit {
         const before = await reach();
         await apply();
         const after = await reach();
-        const people = ids.length
-          ? await this.db
-              .select({ id: users.id, name: users.name, email: users.email })
-              .from(users)
-              .where(inArray(users.id, ids))
-          : [];
+        const people = ids.length ? await this.repository.people(ids) : [];
         const diff = (from: readonly string[], to: readonly string[]) => ({
           gains: to.filter((unit) => !from.includes(unit)),
           loses: from.filter((unit) => !to.includes(unit)),
@@ -693,39 +570,10 @@ export class OrganizationService implements OnModuleInit {
     }
   }
 
-  /** The user's membership of the unit that hasn't ended (current, or dated ahead). */
-  private async openMembershipOf(unitId: string, userId: string) {
-    const [row] = await this.db
-      .select()
-      .from(organizationalUnitMemberships)
-      .where(
-        and(
-          eq(organizationalUnitMemberships.unitId, unitId),
-          eq(organizationalUnitMemberships.userId, userId),
-          openMembership(),
-        ),
-      )
-      .orderBy(desc(organizationalUnitMemberships.validFrom))
-      .limit(1);
-    return row;
-  }
-
   /** Ends a membership at `at`; one that hadn't started by then never counted, and goes. */
   private async end(id: string, at: Date) {
-    const ended = await this.db
-      .update(organizationalUnitMemberships)
-      .set({ validTo: at })
-      .where(
-        and(
-          eq(organizationalUnitMemberships.id, id),
-          lt(organizationalUnitMemberships.validFrom, at),
-        ),
-      )
-      .returning({ id: organizationalUnitMemberships.id });
-    if (!ended.length) {
-      await this.db
-        .delete(organizationalUnitMemberships)
-        .where(eq(organizationalUnitMemberships.id, id));
+    if (!(await this.repository.endMembership(id, at))) {
+      await this.repository.deleteMembership(id);
     }
   }
 
@@ -742,10 +590,7 @@ export class OrganizationService implements OnModuleInit {
   }
 
   private async find(id: string) {
-    const [unit] = await this.db
-      .select()
-      .from(organizationalUnits)
-      .where(eq(organizationalUnits.id, id));
+    const unit = await this.repository.findById(id);
     if (!unit)
       throw new NotFoundException(`Organizational unit ${id} not found.`);
     return unit;

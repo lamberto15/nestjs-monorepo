@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -9,21 +9,10 @@ import {
 import { DiscoveryService } from '@nestjs/core';
 import { z } from 'zod';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { and, eq, inArray, isNotNull, or, type SQL, sql } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  countMatching,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { memberships, users } from '../auth/auth.tables.js';
 import { discoverOne } from '../auth/discover.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import {
@@ -31,11 +20,11 @@ import {
   type MemberDeactivatedEvent,
   type MemberReactivatedEvent,
 } from './access.events.js';
-import { NO_MEMBERS, userList } from './access.lists.js';
+import { NO_MEMBERS, USER_LIST, userList } from './access.lists.js';
 import { AccessService } from './access.service.js';
-import { rolePermissions, roles, userRoles } from './access.tables.js';
 import { MemberAvatars } from './member-avatars.js';
-import { liveGrant, RolesService } from './roles.service.js';
+import { MembersRepository } from './members.repository.js';
+import { RolesService } from './roles.service.js';
 import { ScimMembers } from './scim-members.js';
 import { UnitDirectory } from './unit-directory.js';
 
@@ -46,21 +35,6 @@ export interface MemberChanges {
   /** When grants end, by role id (temporary access). */
   roleExpiresAt?: Record<string, string>;
 }
-
-/** A member as the users routes show them. */
-const memberColumns = {
-  id: users.id,
-  email: users.email,
-  name: users.name,
-  emailVerified: users.emailVerified,
-  locale: users.locale,
-  timezone: users.timezone,
-  // The membership in this tenant and the account, together.
-  active: sql<boolean>`(${users.active} and ${memberships.active})`,
-  hasPassword: isNotNull(users.passwordHash),
-  createdAt: users.createdAt,
-  updatedAt: users.updatedAt,
-};
 
 /**
  * The tenant's members as access administration sees them: their
@@ -77,7 +51,7 @@ export class MembersService implements OnModuleInit {
   private list = userList(NO_MEMBERS);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: MembersRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly access: AccessService,
@@ -111,30 +85,13 @@ export class MembersService implements OnModuleInit {
     }
   }
 
-  /** A page of the tenant's members, with their grants and units. */
+  /** A page of the tenant's members, with their grants and units, with the fields it picks. */
   async page(query: ListQuery) {
-    const where = and(this.ofTenant(), this.list.where(query));
-    const [rows, total] = await Promise.all([
-      this.db
-        .select({ ...memberColumns, ...this.list.sortSelect(query) })
-        .from(users)
-        .innerJoin(memberships, eq(memberships.userId, users.id))
-        .where(and(this.ofTenant(), this.list.where(query, users.id)))
-        .orderBy(...pageOrder(users.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countMatching(
-        this.db,
-        this.db
-          .select({ one: sql`1` })
-          .from(users)
-          .innerJoin(memberships, eq(memberships.userId, users.id))
-          .where(where),
-        query,
-      ),
-    ]);
-    const page = toPage(rows, query, total);
-    return { ...page, items: await this.withGrants(page.items) };
+    const page = await this.repository.page(query, this.list);
+    return USER_LIST.pick(
+      { ...page, items: await this.withGrants(page.items) },
+      query,
+    );
   }
 
   /** One member of the tenant, as the list shows them; anyone else is a 404. */
@@ -144,11 +101,7 @@ export class MembersService implements OnModuleInit {
 
   /** A member of the tenant (name and address), or a 404. */
   async find(id: string) {
-    const [member] = await this.db
-      .select(memberColumns)
-      .from(users)
-      .innerJoin(memberships, eq(memberships.userId, users.id))
-      .where(and(this.ofTenant(), eq(users.id, id)));
+    const member = await this.repository.findMember(id);
     if (!member) {
       throw new NotFoundException(`User ${id} not found.`);
     }
@@ -186,20 +139,13 @@ export class MembersService implements OnModuleInit {
     let deactivated = false;
     await this.txHost.withTransaction(async () => {
       // One change to the membership at a time.
-      const [membership] = await this.db
-        .select({ active: memberships.active })
-        .from(memberships)
-        .where(and(this.ofTenant(), eq(memberships.userId, id)))
-        .for('update');
+      const membership = await this.repository.lockMembership(id);
       if (changes.active !== undefined) {
-        await this.db
-          .update(memberships)
-          .set({ active: changes.active })
-          .where(and(this.ofTenant(), eq(memberships.userId, id)));
+        await this.repository.setActive(id, changes.active);
       }
       if (changes.roleIds && grants) {
         // Ended grants not given again are deleted here, never rewritten.
-        await this.db.delete(userRoles).where(eq(userRoles.userId, id));
+        await this.repository.deleteGrants(id);
         await this.writeRoles(id, changes.roleIds, grants.expiries);
       }
       await this.roles.assertAnAdministratorRemains();
@@ -246,21 +192,13 @@ export class MembersService implements OnModuleInit {
     }
   }
 
-  /** The current tenant's memberships: users are global, so the tenant is named here. */
-  private ofTenant(): SQL {
-    return eq(memberships.tenantId, this.tenancy.tenantId());
-  }
-
   /** Members with their role grants still running, their current units, whether SCIM manages them and their picture. */
   private async withGrants<T extends { id: string }>(items: T[]) {
     const ids = items.map((user) => user.id);
     const [assignments, units, scim, avatars] = ids.length
       ? await Promise.all([
           // An ended grant is gone: never reported, so never echoed back.
-          this.db
-            .select()
-            .from(userRoles)
-            .where(and(inArray(userRoles.userId, ids), liveGrant(userRoles))),
+          this.repository.liveGrantsOf(ids),
           this.units?.unitIdsOf(ids) ?? new Map<string, string[]>(),
           this.scim?.managedUserIds(ids) ?? new Set<string>(),
           this.avatars?.avatarUrls(ids) ?? new Map<string, string>(),
@@ -288,19 +226,7 @@ export class MembersService implements OnModuleInit {
   /** Of these accounts, the ones that are active members of the current tenant. */
   async active(ids: readonly string[]): Promise<string[]> {
     if (!ids.length) return [];
-    const rows = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .innerJoin(memberships, eq(memberships.userId, users.id))
-      .where(
-        and(
-          inArray(users.id, [...ids]),
-          eq(users.active, true),
-          eq(memberships.tenantId, this.tenancy.tenantId()),
-          eq(memberships.active, true),
-        ),
-      );
-    return rows.map((row) => row.id);
+    return this.repository.activeAmong([...ids]);
   }
 
   /**
@@ -310,20 +236,12 @@ export class MembersService implements OnModuleInit {
    */
   async withRole(role: string, among?: readonly string[]): Promise<string[]> {
     if (among && !among.length) return [];
-    const rows = await this.db
-      .selectDistinct({ id: userRoles.userId })
-      .from(userRoles)
-      .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .where(
-        and(
-          z.uuid().safeParse(role).success
-            ? or(eq(roles.key, role), eq(roles.id, role))
-            : eq(roles.key, role),
-          liveGrant(userRoles),
-          among ? inArray(userRoles.userId, [...among]) : undefined,
-        ),
-      );
-    return this.active(rows.map((row) => row.id));
+    const holders = await this.repository.holdersOf(
+      role,
+      z.uuid().safeParse(role).success,
+      among && [...among],
+    );
+    return this.active(holders);
   }
 
   /**
@@ -338,29 +256,13 @@ export class MembersService implements OnModuleInit {
     record: Record<string, unknown>,
     limit = 2000,
   ): Promise<string[]> {
-    const holders = await this.db
-      .selectDistinct({ id: userRoles.userId })
-      .from(userRoles)
-      .innerJoin(rolePermissions, eq(rolePermissions.roleId, userRoles.roleId))
-      .where(
-        and(
-          or(
-            and(
-              eq(rolePermissions.subject, subject),
-              eq(rolePermissions.action, action),
-            ),
-            and(
-              eq(rolePermissions.subject, 'all'),
-              eq(rolePermissions.action, 'manage'),
-            ),
-          ),
-          liveGrant(userRoles),
-        ),
-      )
-      .orderBy(userRoles.userId)
-      .limit(limit);
+    const holders = await this.repository.holdersOfPermission(
+      action,
+      subject,
+      limit,
+    );
     const allowed: string[] = [];
-    for (const id of await this.active(holders.map((row) => row.id))) {
+    for (const id of await this.active(holders)) {
       // The ability reads only the principal's kind and id.
       const principal = { kind: 'user', id } as UserPrincipal;
       if (await this.access.can(principal, action, subject, record)) {
@@ -372,10 +274,7 @@ export class MembersService implements OnModuleInit {
 
   /** A member's grants still running: role id → end (null: never). */
   private async liveGrantsOf(userId: string) {
-    const rows = await this.db
-      .select({ roleId: userRoles.roleId, expiresAt: userRoles.expiresAt })
-      .from(userRoles)
-      .where(and(eq(userRoles.userId, userId), liveGrant(userRoles)));
+    const rows = await this.repository.liveGrantsOf([userId]);
     return new Map(rows.map((row) => [row.roleId, row.expiresAt]));
   }
 
@@ -392,11 +291,10 @@ export class MembersService implements OnModuleInit {
       (roleId) => (end(roleId)?.getTime() ?? Infinity) > now,
     );
     if (unique.length) {
-      await this.db
-        .insert(userRoles)
-        .values(
-          unique.map((roleId) => ({ userId, roleId, expiresAt: end(roleId) })),
-        );
+      await this.repository.insertGrants(
+        userId,
+        unique.map((roleId) => ({ roleId, expiresAt: end(roleId) })),
+      );
     }
   }
 }

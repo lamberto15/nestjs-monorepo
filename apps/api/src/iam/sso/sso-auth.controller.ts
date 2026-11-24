@@ -34,17 +34,16 @@ import type {
   NodeResponse as Response,
 } from '@nestjs/platform-node';
 import { ClsServiceManager } from 'nestjs-cls';
-import { z } from 'zod';
-import { httpConfig } from '../../core/http/http.config.js';
-import { redirectPath, webAppUrl } from '../../core/http/redirect-path.js';
+import type { z } from 'zod';
 import { TENANT_SCOPE, tenantScope } from '../../core/tenancy/tenant-scope.js';
 import { authConfig } from '../auth/auth.config.js';
-import { Oauth2Sso } from './oauth2-sso.service.js';
-import { OidcSso } from './oidc-sso.service.js';
-import { SamlSso } from './saml-sso.service.js';
-import { SsoAccounts } from './sso-accounts.service.js';
-import { SsoRefused } from './sso-refused.js';
 import { SSO_HANDOFF_TTL_MS, ssoCookie } from './sso-browser.js';
+import {
+  samlAcsBodySchema,
+  ssoCallbackQuerySchema,
+  ssoLoginQuerySchema,
+} from './sso.schemas.js';
+import { SsoSignIn } from './sso-sign-in.service.js';
 import {
   type SsoConnection,
   SsoConnectionsService,
@@ -90,30 +89,6 @@ export class SsoConnectionGuard implements CanActivate {
 const connectionOf = (request: Request) =>
   (request as Request & { [CONNECTION]: SsoConnection })[CONNECTION];
 
-const loginQuerySchema = z.object({
-  redirectTo: redirectPath
-    .optional()
-    .catch(undefined)
-    .describe(
-      'A path of the web app to land on (one leading `/`, printable ASCII, no `\\`); anything else is ignored.',
-    ),
-});
-
-/** What an OpenID Connect or OAuth 2.0 provider sends back: each a string (a repeated one is a 400, not a 500). */
-const callbackQuerySchema = z.object({
-  code: z.string().optional(),
-  state: z.string().optional(),
-  error: z.string().optional(),
-  iss: z.string().optional(),
-  session_state: z.string().optional(),
-});
-
-/** The SAML HTTP-POST binding's form. */
-const acsBodySchema = z.object({
-  SAMLResponse: z.string().min(1).max(1_000_000),
-  RelayState: z.string().max(2048).optional(),
-});
-
 /**
  * Signing in through a tenant's SSO connection (README.md). The browser navigates to `login`; the IdP sends it back to the
  * OIDC or OAuth 2.0 callback, or POSTs its SAML response to the ACS, which hands over to
@@ -128,12 +103,7 @@ const acsBodySchema = z.object({
 @Controller('auth/sso/:tenantId/:connectionId')
 export class SsoAuthController {
   constructor(
-    private readonly oidc: OidcSso,
-    private readonly oauth2: Oauth2Sso,
-    private readonly saml: SamlSso,
-    private readonly accounts: SsoAccounts,
-    @Inject(httpConfig.KEY)
-    private readonly http: ConfigType<typeof httpConfig>,
+    private readonly signIn: SsoSignIn,
     @Inject(authConfig.KEY)
     private readonly auth: ConfigType<typeof authConfig>,
   ) {}
@@ -154,26 +124,18 @@ export class SsoAuthController {
   })
   async login(
     @Req() request: Request,
-    @Query({ schema: loginQuerySchema })
-    { redirectTo }: z.infer<typeof loginQuerySchema>,
+    @Query({ schema: ssoLoginQuerySchema })
+    { redirectTo }: z.infer<typeof ssoLoginQuerySchema>,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const connection = connectionOf(request);
-    try {
-      const { url, binding } =
-        connection.protocol === 'oidc'
-          ? await this.oidc.start(connection, redirectTo)
-          : connection.protocol === 'oauth2'
-            ? await this.oauth2.start(connection, redirectTo)
-            : await this.saml.start(connection, redirectTo);
+    const { url, binding } = await this.signIn.start(
+      connectionOf(request),
+      redirectTo,
+    );
+    if (binding !== undefined) {
       res.append('Set-Cookie', this.cookie().set(binding));
-      return { url };
-    } catch (error) {
-      if (error instanceof SsoRefused) {
-        return { url: this.backToWebApp('sso_unavailable') };
-      }
-      throw error;
     }
+    return { url };
   }
 
   @Get('oidc/callback')
@@ -191,8 +153,8 @@ export class SsoAuthController {
   })
   oidcCallback(
     @Req() request: Request,
-    @Query({ schema: callbackQuerySchema })
-    query: z.infer<typeof callbackQuerySchema>,
+    @Query({ schema: ssoCallbackQuerySchema })
+    query: z.infer<typeof ssoCallbackQuerySchema>,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string | undefined,
     @Res({ passthrough: true }) res: Response,
@@ -215,8 +177,8 @@ export class SsoAuthController {
   })
   oauth2Callback(
     @Req() request: Request,
-    @Query({ schema: callbackQuerySchema })
-    query: z.infer<typeof callbackQuerySchema>,
+    @Query({ schema: ssoCallbackQuerySchema })
+    query: z.infer<typeof ssoCallbackQuerySchema>,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string | undefined,
     @Res({ passthrough: true }) res: Response,
@@ -224,11 +186,11 @@ export class SsoAuthController {
     return this.codeCallback('oauth2', request, query, ip, userAgent, res);
   }
 
-  /** The authorization code flow's return (OpenID Connect or OAuth 2.0), to the connection's own protocol only. */
+  /** The authorization code flow's return, to the connection's own protocol only; the cookie is spent whatever the outcome. */
   private async codeCallback(
     protocol: 'oidc' | 'oauth2',
     request: Request,
-    query: z.infer<typeof callbackQuerySchema>,
+    query: z.infer<typeof ssoCallbackQuerySchema>,
     ip: string,
     userAgent: string | undefined,
     res: Response,
@@ -239,33 +201,15 @@ export class SsoAuthController {
     }
     const cookie = this.cookie();
     res.append('Set-Cookie', cookie.clear());
-    const binding = cookie.read(request.headers.cookie);
-    let label = 'sso';
-    try {
-      const { identity, redirectTo } = await (
-        protocol === 'oidc' ? this.oidc : this.oauth2
-      ).finish(
+    return {
+      url: await this.signIn.finishCode(
+        protocol,
         connection,
-        Object.fromEntries(
-          Object.entries(query).filter(([, value]) => value !== undefined),
-        ) as Record<string, string>,
-        binding,
-      );
-      label = identity.email ?? identity.subject;
-      const userId = await this.accounts.resolve(connection, identity);
-      await this.accounts.signIn(connection, userId, {
-        ip,
-        userAgent,
-        authenticatedAt: identity.authenticatedAt,
-      });
-      return { url: this.webApp(redirectTo).toString() };
-    } catch (error) {
-      if (error instanceof SsoRefused) {
-        await this.accounts.refused(connection, label, error.reason, ip);
-        return { url: this.backToWebApp('sso_failed') };
-      }
-      throw error;
-    }
+        query,
+        cookie.read(request.headers.cookie),
+        { ip, userAgent },
+      ),
+    };
   }
 
   @Throttle({ default: { limit: 30, ttl: minutes(1) } })
@@ -284,41 +228,26 @@ export class SsoAuthController {
   })
   async acs(
     @Req() request: Request,
-    @Body({ schema: acsBodySchema }) body: z.infer<typeof acsBodySchema>,
+    @Body({ schema: samlAcsBodySchema })
+    body: z.infer<typeof samlAcsBodySchema>,
     @Ip() ip: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const connection = connectionOf(request);
     const cookie = this.cookie();
-    const loginBinding = cookie.read(request.headers.cookie);
-    let label = 'sso';
-    try {
-      const { identity, requestId, redirectTo } = await this.saml.consume(
-        connection,
-        body.SAMLResponse,
-        loginBinding,
-      );
-      label = identity.email ?? identity.subject;
-      const userId = await this.accounts.resolve(connection, identity);
-      const { binding } = await this.saml.handOver(
-        connection,
-        userId,
-        identity.authenticatedAt,
-        requestId,
-        redirectTo,
-      );
-      if (binding) {
-        res.append('Set-Cookie', cookie.set(binding, SSO_HANDOFF_TTL_MS));
-      }
-      return { url: this.urlOf(request, 'saml/complete') };
-    } catch (error) {
-      if (error instanceof SsoRefused) {
-        res.append('Set-Cookie', cookie.clear());
-        await this.accounts.refused(connection, label, error.reason, ip);
-        return { url: this.backToWebApp('sso_failed') };
-      }
-      throw error;
+    const { url, binding, failed } = await this.signIn.consumeSaml(
+      connectionOf(request),
+      body.SAMLResponse,
+      cookie.read(request.headers.cookie),
+      ip,
+      request.params as { tenantId: string; connectionId: string },
+    );
+    if (binding) {
+      res.append('Set-Cookie', cookie.set(binding, SSO_HANDOFF_TTL_MS));
     }
+    if (failed) {
+      res.append('Set-Cookie', cookie.clear());
+    }
+    return { url };
   }
 
   @Get('saml/complete')
@@ -335,27 +264,15 @@ export class SsoAuthController {
     @Headers('user-agent') userAgent: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const connection = connectionOf(request);
     const cookie = this.cookie();
     res.append('Set-Cookie', cookie.clear());
-    try {
-      const handed = await this.saml.takeHandOver(
-        connection,
+    return {
+      url: await this.signIn.completeSaml(
+        connectionOf(request),
         cookie.read(request.headers.cookie),
-      );
-      await this.accounts.signIn(connection, handed.userId, {
-        ip,
-        userAgent,
-        authenticatedAt: handed.authenticatedAt,
-      });
-      return { url: this.webApp(handed.redirectTo).toString() };
-    } catch (error) {
-      if (error instanceof SsoRefused) {
-        await this.accounts.refused(connection, 'sso', error.reason, ip);
-        return { url: this.backToWebApp('sso_failed') };
-      }
-      throw error;
-    }
+        { ip, userAgent },
+      ),
+    };
   }
 
   @Get('saml/metadata')
@@ -372,33 +289,11 @@ export class SsoAuthController {
       'No such tenant or connection, it is off, or it is not a SAML connection.',
   })
   samlMetadata(@Req() request: Request) {
-    const connection = connectionOf(request);
-    if (connection.protocol !== 'saml') {
-      throw new NotFoundException('Not a SAML connection.');
-    }
-    return this.saml.metadata(connection);
+    return this.signIn.samlMetadata(connectionOf(request));
   }
 
   /** Secure (and `__Host-`) as the session's cookie (SESSION_COOKIE_SECURE). */
   private cookie() {
     return ssoCookie(this.auth.sessionCookieSecure);
-  }
-
-  /** A sibling route of this connection, on this API. */
-  private urlOf(request: Request, path: string) {
-    const { tenantId, connectionId } = request.params as Record<string, string>;
-    const base = this.http.appUrl;
-    return `${base}/v1/auth/sso/${tenantId}/${connectionId}/${path}`;
-  }
-
-  /** `value` on the web app (a stored path checked again), else its root. */
-  private webApp(value: unknown) {
-    return webAppUrl(value, this.http.webUrl);
-  }
-
-  private backToWebApp(error: string) {
-    const url = this.webApp(undefined);
-    url.searchParams.set('error', error);
-    return url.toString();
   }
 }

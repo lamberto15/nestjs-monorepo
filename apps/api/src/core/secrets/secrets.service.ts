@@ -1,19 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, eq } from 'drizzle-orm';
-import type { Database } from '../database/database.js';
 import { EncryptionService } from '../encryption/encryption.service.js';
+import { SecretsRepository } from './secrets.repository.js';
 import { appSecrets } from './secrets.tables.js';
 
 /**
  * Secrets the app generates once and shares through the database
- * (README.md). Outside any transaction (`@InjectDrizzle()`): a key made at
- * boot must stay made, whatever rolls back around it.
+ * (README.md), outside any transaction (SecretsRepository).
  */
 @Injectable()
 export class Secrets {
   constructor(
-    @InjectDrizzle() private readonly db: Database,
+    private readonly repository: SecretsRepository,
     private readonly encryption: EncryptionService,
   ) {}
 
@@ -25,15 +22,8 @@ export class Secrets {
    * or under an older key is rewritten under the current one.
    */
   async loadOrCreate(name: string, generate: () => string): Promise<string> {
-    await this.db
-      .insert(appSecrets)
-      .values({ name, value: this.seal(generate()) })
-      .onConflictDoNothing({ target: appSecrets.name });
-    const [row] = await this.db
-      .select({ value: appSecrets.value })
-      .from(appSecrets)
-      .where(eq(appSecrets.name, name));
-    const stored = row!.value;
+    await this.repository.insertIfAbsent(name, this.seal(generate()));
+    const stored = (await this.repository.valueOf(name))!;
     const sealed = this.encryption.keyIdOf(stored) !== undefined;
     const plaintext = sealed
       ? this.encryption.decrypt(appSecrets.value, stored)
@@ -41,10 +31,7 @@ export class Secrets {
     const current = this.encryption.currentKeyId;
     if (current && this.encryption.keyIdOf(stored) !== current) {
       // Conditional: of two instances doing it at once, one writes.
-      await this.db
-        .update(appSecrets)
-        .set({ value: this.seal(plaintext) })
-        .where(and(eq(appSecrets.name, name), eq(appSecrets.value, stored)));
+      await this.repository.replace(name, stored, this.seal(plaintext));
     }
     return plaintext;
   }

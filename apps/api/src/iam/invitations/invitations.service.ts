@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ForbiddenException,
@@ -12,23 +12,17 @@ import type { ConfigType } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { PasswordHasher } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
-import { and, desc, eq, gt, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { BreachedPasswordsService } from '../account/breached-passwords.service.js';
 import { AccessService } from '../access/access.service.js';
 import { regrant } from '../access/members.service.js';
-import { roles, userRoles } from '../access/access.tables.js';
 import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuthPolicy } from '../auth/auth-policy.js';
-import { memberships, users } from '../auth/auth.tables.js';
 import {
   actorOf,
   principalKey,
@@ -39,7 +33,10 @@ import { normalizeEmail } from '../auth/users.repository.js';
 import { InvitationUnits } from './invitation-units.js';
 import { invitationsConfig } from './invitations.config.js';
 import { TenantInvitationMail } from './invitations.mail.js';
-import { invitations } from './invitations.tables.js';
+import {
+  type Invitation,
+  InvitationsRepository,
+} from './invitations.repository.js';
 
 /** What an invitation grants once accepted. */
 export interface InvitationInput {
@@ -60,8 +57,6 @@ export interface InvitationChanges {
   roleExpiresAt?: Record<string, string>;
   unitIds?: string[];
 }
-
-type Invitation = typeof invitations.$inferSelect;
 
 /** `inv_<tenant id>_<secret>`: the tenant, so the invitation is read in its scope. */
 const TOKEN =
@@ -105,7 +100,7 @@ const view = (invitation: Invitation) => ({
 @Injectable()
 export class InvitationsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: InvitationsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -168,23 +163,20 @@ export class InvitationsService {
     if (send && !email) throw emailRequired();
     const link = send ? this.newLink() : null;
     if (email) await this.replacePendingTo(email);
-    const [invitation] = await this.db
-      .insert(invitations)
-      .values({
-        email,
-        name: input.name ?? null,
-        roleIds: [...new Set(input.roleIds)],
-        roleExpiresAt: input.roleExpiresAt ?? {},
-        unitIds: [...new Set(input.unitIds ?? [])],
-        invitedBy: principalKey(inviter),
-        ...(link && {
-          tokenHash: link.tokenHash,
-          expiresAt: link.expiresAt,
-          sentAt: new Date(),
-        }),
-      })
-      .returning();
-    return { invitation: invitation!, token: link?.token ?? null };
+    const invitation = await this.repository.insert({
+      email,
+      name: input.name ?? null,
+      roleIds: [...new Set(input.roleIds)],
+      roleExpiresAt: input.roleExpiresAt ?? {},
+      unitIds: [...new Set(input.unitIds ?? [])],
+      invitedBy: principalKey(inviter),
+      ...(link && {
+        tokenHash: link.tokenHash,
+        expiresAt: link.expiresAt,
+        sentAt: new Date(),
+      }),
+    });
+    return { invitation, token: link?.token ?? null };
   }
 
   /**
@@ -223,39 +215,35 @@ export class InvitationsService {
           : changes.email && normalizeEmail(changes.email);
       const moved = email !== current.email;
       if (moved && email) await this.replacePendingTo(email, current.id);
-      const [invitation] = await this.db
-        .update(invitations)
-        .set({
-          email,
-          ...(changes.name !== undefined && { name: changes.name }),
-          ...(changes.roleIds && { roleIds: [...new Set(roleIds)] }),
-          roleExpiresAt,
-          ...(changes.unitIds && { unitIds: [...new Set(changes.unitIds)] }),
-          ...(moved && { tokenHash: null, expiresAt: null, sentAt: null }),
-        })
-        .where(eq(invitations.id, id))
-        .returning();
+      const invitation = await this.repository.update(id, {
+        email,
+        ...(changes.name !== undefined && { name: changes.name }),
+        ...(changes.roleIds && { roleIds: [...new Set(roleIds)] }),
+        roleExpiresAt,
+        ...(changes.unitIds && { unitIds: [...new Set(changes.unitIds)] }),
+        ...(moved && { tokenHash: null, expiresAt: null, sentAt: null }),
+      });
       await this.audit.record(actor, {
         action: 'invitation.updated',
         targetType: 'invitation',
         targetId: id,
         details: {
-          email: invitation!.email,
+          email: invitation.email,
           ...(moved && { emailFrom: current.email }),
           ...(changes.roleIds && {
-            roleIds: { from: current.roleIds, to: invitation!.roleIds },
+            roleIds: { from: current.roleIds, to: invitation.roleIds },
           }),
           ...(changes.roleExpiresAt && {
-            roleExpiresAt: invitation!.roleExpiresAt,
+            roleExpiresAt: invitation.roleExpiresAt,
           }),
           ...(changes.unitIds && {
-            unitIds: { from: current.unitIds, to: invitation!.unitIds },
+            unitIds: { from: current.unitIds, to: invitation.unitIds },
           }),
           ...(moved && current.tokenHash !== null && { linkWithdrawn: true }),
         },
         ip,
       });
-      return invitation!;
+      return invitation;
     });
     return view(updated);
   }
@@ -274,27 +262,23 @@ export class InvitationsService {
         if (!current.email) throw emailRequired();
         await this.assertAuthorityOver(actor, current);
         const link = this.newLink();
-        const [renewed] = await this.db
-          .update(invitations)
-          .set({
-            tokenHash: link.tokenHash,
-            expiresAt: link.expiresAt,
-            sentAt: new Date(),
-          })
-          .where(eq(invitations.id, id))
-          .returning();
+        const renewed = await this.repository.update(id, {
+          tokenHash: link.tokenHash,
+          expiresAt: link.expiresAt,
+          sentAt: new Date(),
+        });
         await this.audit.record(actor, {
           action: current.tokenHash ? 'invitation.resent' : 'invitation.sent',
           targetType: 'invitation',
           targetId: id,
           details: {
-            email: renewed!.email,
-            roleIds: renewed!.roleIds,
-            unitIds: renewed!.unitIds,
+            email: renewed.email,
+            roleIds: renewed.roleIds,
+            unitIds: renewed.unitIds,
           },
           ip,
         });
-        return { invitation: renewed!, token: link.token };
+        return { invitation: renewed, token: link.token };
       },
     );
     await this.deliver(invitation, token, actor);
@@ -326,23 +310,7 @@ export class InvitationsService {
    * `status`: `prepared` (no link yet), `sent`, or `expired` (its link).
    */
   async pending() {
-    const rows = await this.db
-      .select({
-        id: invitations.id,
-        email: invitations.email,
-        name: invitations.name,
-        roleIds: invitations.roleIds,
-        roleExpiresAt: invitations.roleExpiresAt,
-        unitIds: invitations.unitIds,
-        invitedBy: invitations.invitedBy,
-        tokenHash: invitations.tokenHash,
-        sentAt: invitations.sentAt,
-        expiresAt: invitations.expiresAt,
-        createdAt: invitations.createdAt,
-      })
-      .from(invitations)
-      .where(isNull(invitations.acceptedAt))
-      .orderBy(desc(invitations.id));
+    const rows = await this.repository.pending();
     return rows.map(({ tokenHash, ...row }) => ({
       ...row,
       status: invitationStatus(tokenHash !== null, row.expiresAt),
@@ -352,13 +320,7 @@ export class InvitationsService {
   /** Withdraws a pending invitation: its link stops working. */
   async revoke(actor: UserPrincipal, id: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
-      const [gone] = await this.db
-        .delete(invitations)
-        .where(and(eq(invitations.id, id), isNull(invitations.acceptedAt)))
-        .returning({
-          email: invitations.email,
-          roleIds: invitations.roleIds,
-        });
+      const gone = await this.repository.deletePending(id);
       if (!gone) throw notFound(id);
       await this.audit.record(actor, {
         action: 'invitation.revoked',
@@ -403,23 +365,14 @@ export class InvitationsService {
     caller: UserPrincipal | null,
     ip: string,
   ) {
-    const [invitation] = await this.db
-      .select()
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.tokenHash, hashOf(token)),
-          isNull(invitations.acceptedAt),
-          gt(invitations.expiresAt, new Date()),
-        ),
-      );
+    const invitation = await this.repository.findByLink(
+      hashOf(token),
+      new Date(),
+    );
     // A prepared one has no token (nor address): nothing matches it.
     if (!invitation?.email) throw invalid();
     const email = invitation.email;
-    const [account] = await this.db
-      .select()
-      .from(users)
-      .where(eq(users.email, email));
+    const account = await this.repository.findAccountByEmail(email);
     if (account && !account.active) throw invalid();
     let passwordHash: string | undefined;
     if (!account) {
@@ -459,41 +412,25 @@ export class InvitationsService {
     const user = await this.txHost.withTransaction(async () => {
       const row =
         account ??
-        (await this.db
-          .insert(users)
-          .values({
+        (await this.repository
+          .insertAccount({
             email,
             name: input.name ?? invitation.name ?? email,
             passwordHash: passwordHash!,
             // The link reached this mailbox: the address is proved.
             emailVerified: true,
           })
-          .returning()
           .catch((error: unknown) => {
             // The address got an account meanwhile: start again, signed in.
             throw databaseErrorKind(error) === 'unique_violation'
               ? invalid()
               : error;
-          })
-          .then(([created]) => created!));
+          }));
       // Under the account's lock (its deletion can't slip in between) and
       // the membership's (a deactivation neither).
-      const [locked] = await this.db
-        .select({ active: users.active })
-        .from(users)
-        .where(eq(users.id, row.id))
-        .for('update');
+      const locked = await this.repository.lockAccount(row.id);
       if (!locked?.active) throw invalid();
-      const [membership] = await this.db
-        .select({ active: memberships.active })
-        .from(memberships)
-        .where(
-          and(
-            eq(memberships.tenantId, tenantId),
-            eq(memberships.userId, row.id),
-          ),
-        )
-        .for('update');
+      const membership = await this.repository.lockMembership(tenantId, row.id);
       if (membership && !membership.active) {
         throw new ForbiddenException({
           code: 'membership_inactive',
@@ -504,27 +441,18 @@ export class InvitationsService {
       // accept of the same link, or one an administrator's change withdrew
       // meanwhile (a new address), finds nothing. What is granted is what
       // the invitation holds now.
-      const [taken] = await this.db
-        .update(invitations)
-        .set({ acceptedAt: new Date(), acceptedBy: row.id })
-        .where(
-          and(
-            eq(invitations.id, invitation.id),
-            isNull(invitations.acceptedAt),
-            eq(invitations.tokenHash, hashOf(token)),
-            eq(invitations.email, email),
-          ),
-        )
-        .returning();
+      const taken = await this.repository.take(
+        invitation.id,
+        hashOf(token),
+        email,
+        row.id,
+      );
       if (!taken) throw invalid();
       if (!membership) {
-        await this.db.insert(memberships).values({ tenantId, userId: row.id });
+        await this.repository.insertMembership(tenantId, row.id);
       }
       if (!row.emailVerified) {
-        await this.db
-          .update(users)
-          .set({ emailVerified: true })
-          .where(eq(users.id, row.id));
+        await this.repository.verifyEmail(row.id);
       }
       await this.grant(row.id, taken);
       await this.audit.record(
@@ -565,25 +493,17 @@ export class InvitationsService {
    * invitation would otherwise demote an administrator).
    */
   private async grant(userId: string, invitation: Invitation) {
-    const existing = invitation.roleIds.length
-      ? await this.db
-          .select({ id: roles.id })
-          .from(roles)
-          .where(inArray(roles.id, invitation.roleIds))
-      : [];
+    const existing = await this.repository.existingRoleIds(invitation.roleIds);
     const now = Date.now();
     const grants = existing
-      .map(({ id }) => {
+      .map((id) => {
         const end = invitation.roleExpiresAt[id];
         return { roleId: id, expiresAt: end ? new Date(end) : null };
       })
       .filter(({ expiresAt }) => !expiresAt || expiresAt.getTime() > now);
     if (grants.length) {
       // A role already held stays as it is, its expiry included.
-      await this.db
-        .insert(userRoles)
-        .values(grants.map((grant) => ({ userId, ...grant })))
-        .onConflictDoNothing();
+      await this.repository.insertGrants(userId, grants);
     }
     await this.units.place(userId, invitation.unitIds);
   }
@@ -600,15 +520,9 @@ export class InvitationsService {
    * there; deleted ones are left out, as the acceptance does).
    */
   private async assertAuthorityOver(actor: UserPrincipal, current: Invitation) {
-    const existing = current.roleIds.length
-      ? await this.db
-          .select({ id: roles.id })
-          .from(roles)
-          .where(inArray(roles.id, current.roleIds))
-      : [];
     await this.roles.checkRoleGrant(
       actor,
-      existing.map((role) => role.id),
+      await this.repository.existingRoleIds(current.roleIds),
     );
     await this.units.assertAuthority(
       actor,
@@ -618,27 +532,14 @@ export class InvitationsService {
 
   /** A pending invitation, locked until the transaction ends (one change at a time); 404 otherwise. */
   private async lockPending(id: string) {
-    const [invitation] = await this.db
-      .select()
-      .from(invitations)
-      .where(and(eq(invitations.id, id), isNull(invitations.acceptedAt)))
-      .for('update');
+    const invitation = await this.repository.lockPending(id);
     if (!invitation) throw notFound(id);
     return invitation;
   }
 
   /** One pending invitation per address: the newest replaces the others. */
   private async replacePendingTo(email: string, keep?: string) {
-    await this.db
-      .delete(invitations)
-      .where(
-        and(
-          eq(invitations.email, email),
-          isNull(invitations.acceptedAt),
-          keep ? ne(invitations.id, keep) : undefined,
-          isNotNull(invitations.email),
-        ),
-      );
+    await this.repository.deletePendingTo(email, keep);
   }
 
   /** A link's token (`inv_<tenant>_<secret>`), its stored hash, and when it ends. */

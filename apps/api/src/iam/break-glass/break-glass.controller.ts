@@ -20,43 +20,18 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { z } from 'zod';
+import type { z } from 'zod';
 import { OperatorOnly } from '../auth/operator-only.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { RecentAuthentication } from '../auth/recent-authentication.js';
 import { SessionOnly } from '../auth/user-only.decorator.js';
 import { BreakGlassPolicy } from './break-glass.policy.js';
 import {
-  BREAK_GLASS_MAX_MINUTES,
-  BreakGlassService,
-} from './break-glass.service.js';
-
-const grantSchema = z.object({
-  id: z.uuid(),
-  tenantId: z.uuid(),
-  reason: z.string(),
-  createdAt: z.iso.datetime(),
-  expiresAt: z.iso.datetime(),
-  endedAt: z.iso.datetime().nullable(),
-});
-
-const startSchema = z.strictObject({
-  reason: z
-    .string()
-    .trim()
-    .min(10)
-    .max(1000)
-    .describe('Why: kept with the grant and in both tenants’ logs.'),
-  minutes: z
-    .number()
-    .int()
-    .min(1)
-    .max(BREAK_GLASS_MAX_MINUTES)
-    .optional()
-    .describe(
-      `At most ${BREAK_GLASS_MAX_MINUTES}, the default; never extended.`,
-    ),
-});
+  breakGlassGrantSchema,
+  breakGlassGrantsSchema,
+  startBreakGlassSchema,
+} from './break-glass.schemas.js';
+import { BreakGlassService } from './break-glass.service.js';
 
 /**
  * Break-glass grants, the operators' (`Platform.breakGlass`, from their own
@@ -79,7 +54,7 @@ export class BreakGlassController {
     description:
       'Audited in both tenants and the tenant’s sign-in log; its administrators are told. Send `Break-Glass: <grant id>` on reads.',
   })
-  @ApiCreatedResponse({ standardSchema: grantSchema })
+  @ApiCreatedResponse({ standardSchema: breakGlassGrantSchema })
   @ApiNotFoundResponse()
   @ApiForbiddenResponse({ description: '`break_glass_not_allowed`.' })
   @ApiConflictResponse({
@@ -89,7 +64,8 @@ export class BreakGlassController {
   start(
     @CurrentUser() user: UserPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body({ schema: startSchema }) body: z.infer<typeof startSchema>,
+    @Body({ schema: startBreakGlassSchema })
+    body: z.infer<typeof startBreakGlassSchema>,
     @Ip() ip: string,
   ) {
     return this.breakGlass.start(user, id, body, ip);
@@ -99,7 +75,7 @@ export class BreakGlassController {
   @Can(BreakGlassPolicy, 'breakGlass')
   @ApiOperation({ summary: 'Your break-glass grants to this tenant' })
   @ApiOkResponse({
-    standardSchema: z.object({ items: z.array(grantSchema) }),
+    standardSchema: breakGlassGrantsSchema,
   })
   async list(
     @CurrentUser() user: UserPrincipal,
@@ -111,7 +87,7 @@ export class BreakGlassController {
   @Delete(':grantId')
   @Can(BreakGlassPolicy, 'breakGlass')
   @ApiOperation({ summary: 'End your break-glass grant now' })
-  @ApiOkResponse({ standardSchema: grantSchema })
+  @ApiOkResponse({ standardSchema: breakGlassGrantSchema })
   @ApiNotFoundResponse()
   end(
     @CurrentUser() user: UserPrincipal,

@@ -1,20 +1,17 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { t } from '@nestjs/i18n';
-import { and, desc, eq, isNull } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { CONSENT_KIND_PATTERN, ConsentKinds } from './consent-kinds.js';
-import { consents } from './personal-data.tables.js';
+import { PersonalDataRepository } from './personal-data.repository.js';
+import type { consents } from './personal-data.tables.js';
 
 type Consent = typeof consents.$inferSelect;
 
@@ -26,7 +23,7 @@ type Consent = typeof consents.$inferSelect;
 @Injectable()
 export class ConsentsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: PersonalDataRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -36,11 +33,7 @@ export class ConsentsService {
   /** Each kind the person accepted, as its latest acceptance tells it. */
   async latest(userId: string) {
     const rows = await this.tenancy.run(null, () =>
-      this.db
-        .select()
-        .from(consents)
-        .where(eq(consents.userId, userId))
-        .orderBy(desc(consents.acceptedAt), desc(consents.id)),
+      this.repository.consentsByLatest(userId),
     );
     const byKind = new Map<string, Consent>();
     for (const row of rows) {
@@ -58,10 +51,12 @@ export class ConsentsService {
   ) {
     this.kinds.assertAcceptable(kind, version);
     const row = await this.inAccount(async () => {
-      const [saved] = await this.db
-        .insert(consents)
-        .values({ userId: user.id, kind, version, ip })
-        .returning();
+      const saved = await this.repository.insertConsent({
+        userId: user.id,
+        kind,
+        version,
+        ip,
+      });
       await this.audit.record(user, {
         action: 'account.consented',
         targetType: 'user',
@@ -69,7 +64,7 @@ export class ConsentsService {
         details: { kind, version },
         ip,
       });
-      return saved!;
+      return saved;
     });
     return view(row);
   }
@@ -92,17 +87,10 @@ export class ConsentsService {
       });
     }
     const last = await this.inAccount(async () => {
-      const withdrawn = await this.db
-        .update(consents)
-        .set({ withdrawnAt: new Date(), withdrawalIp: ip ?? null })
-        .where(
-          and(
-            eq(consents.userId, user.id),
-            eq(consents.kind, kind),
-            isNull(consents.withdrawnAt),
-          ),
-        )
-        .returning();
+      const withdrawn = await this.repository.withdrawConsents(user.id, kind, {
+        withdrawnAt: new Date(),
+        withdrawalIp: ip ?? null,
+      });
       if (withdrawn.length === 0) {
         throw notGiven();
       }

@@ -1,10 +1,6 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
-import { memberships } from '../auth/auth.tables.js';
 import {
   PersonalData,
   type PersonalDataOptions,
@@ -12,6 +8,7 @@ import {
   type PersonalDataSubject,
   type PersonalRow,
 } from './personal-data.js';
+import { PersonalDataRepository } from './personal-data.repository.js';
 
 interface Found {
   options: PersonalDataOptions;
@@ -37,7 +34,7 @@ export class PersonalDataService implements OnModuleInit {
   constructor(
     private readonly discovery: DiscoveryService,
     private readonly tenancy: Tenancy,
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: PersonalDataRepository,
   ) {}
 
   onModuleInit() {
@@ -65,13 +62,7 @@ export class PersonalDataService implements OnModuleInit {
 
   /** The tenants a person belongs to, active or not: each holds some of their data. */
   async tenantsOf(userId: string) {
-    const rows = await this.tenancy.run(null, () =>
-      this.db
-        .select({ tenantId: memberships.tenantId })
-        .from(memberships)
-        .where(eq(memberships.userId, userId)),
-    );
-    return rows.map((row) => row.tenantId);
+    return this.tenancy.run(null, () => this.repository.tenantIdsOf(userId));
   }
 
   /**

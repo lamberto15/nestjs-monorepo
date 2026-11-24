@@ -48,6 +48,7 @@ import { ProfileService } from './profile.service.js';
 import { PasswordController } from './password.controller.js';
 import { PasswordHashLimiter } from './password-hashing.js';
 import { PasswordHistoryService } from './password-history.service.js';
+import { OidcSignIn } from './oidc-sign-in.service.js';
 import { ProviderSignIn } from './provider-sign-in.service.js';
 import { ReauthenticationController } from './reauthentication.controller.js';
 import { ReauthenticationService } from './reauthentication.service.js';
@@ -131,6 +132,7 @@ const accountFeature = ConfigModule.forFeature(accountConfig);
     PasskeysService,
     ProviderReauthentications,
     ProviderSignIn,
+    OidcSignIn,
     NativeHandoffs,
     NativeSignIn,
     SignUpMail,

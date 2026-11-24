@@ -53,7 +53,7 @@ export class ScimException extends HttpException {
  */
 @Catch()
 export class ScimErrorFilter implements ExceptionFilter {
-  private readonly logger = new Logger('Scim');
+  private readonly logger = new Logger(ScimErrorFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
     if (host.getType() !== 'http') {

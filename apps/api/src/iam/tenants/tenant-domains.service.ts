@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { resolveTxt } from 'node:dns/promises';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
@@ -15,15 +15,10 @@ import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
 import type { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
-import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { REDIS } from '../../core/redis/redis.js';
-import { tenants } from '../../core/tenancy/tenancy.tables.js';
 import { withTenant } from '../../core/tenancy/tenant-job.js';
 import { AuditService } from '../audit/audit.service.js';
 import { discoverOne } from '../auth/discover.js';
@@ -35,11 +30,8 @@ import {
 } from './domain-change-guard.js';
 import { normalizeHostname } from './hostname.js';
 import { tenantsConfig } from './tenants.config.js';
-import {
-  type TenantDomain,
-  tenantDomainRoutes,
-  tenantDomains,
-} from './tenants.tables.js';
+import { TenantDomainsRepository } from './tenant-domains.repository.js';
+import type { TenantDomain } from './tenants.tables.js';
 
 /** Where the TXT record goes, under the hostname. */
 export const DOMAIN_VERIFICATION_RECORD = '_app-verification';
@@ -83,7 +75,7 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
   private guard?: DomainChangeGuarded;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: TenantDomainsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     @Inject(tenantsConfig.KEY)
@@ -115,10 +107,7 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
   }
 
   async list() {
-    const rows = await this.db
-      .select()
-      .from(tenantDomains)
-      .orderBy(asc(tenantDomains.hostname));
+    const rows = await this.repository.list();
     return { enabled: this.enabled, items: rows.map(view) };
   }
 
@@ -137,13 +126,11 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
     }
     const { hostname } = checked;
     return this.txHost.withTransaction(async () => {
-      const [created] = await this.db
-        .insert(tenantDomains)
-        .values({
+      const created = await this.repository
+        .insert({
           hostname,
           verificationToken: `${VALUE_PREFIX}${randomBytes(24).toString('base64url')}`,
         })
-        .returning()
         .catch((error: unknown) => {
           throw databaseErrorKind(error) === 'unique_violation'
             ? new ConflictException({
@@ -158,11 +145,11 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
       await this.audit.record(actor, {
         action: 'tenant.domain-added',
         targetType: 'tenant-domain',
-        targetId: created!.id,
+        targetId: created.id,
         details: { hostname },
         ip,
       });
-      return view(created!);
+      return view(created);
     });
   }
 
@@ -173,22 +160,12 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
    */
   async remove(actor: Principal, id: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
-      const [row] = await this.db
-        .delete(tenantDomains)
-        .where(eq(tenantDomains.id, id))
-        .returning();
+      const row = await this.repository.delete(id);
       if (!row) {
         throw notFound();
       }
       // Global: narrowed to the tenant here (no row-level security).
-      await this.db
-        .delete(tenantDomainRoutes)
-        .where(
-          and(
-            eq(tenantDomainRoutes.hostname, row.hostname),
-            eq(tenantDomainRoutes.tenantId, row.tenantId),
-          ),
-        );
+      await this.repository.unroute(row.hostname, row.tenantId);
       await this.audit.record(actor, {
         action: 'tenant.domain-removed',
         targetType: 'tenant-domain',
@@ -219,10 +196,7 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
    * changes nothing but the error: a DNS outage takes no domain away.
    */
   async verify(actor: Principal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(tenantDomains)
-      .where(eq(tenantDomains.id, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       return;
     }
@@ -248,47 +222,27 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
     const routed = await this.txHost.withTransaction(async () => {
       // Locked and read again: a domain removed while the lookup ran must
       // not get its route back.
-      const [current] = await this.db
-        .select({ verifiedAt: tenantDomains.verifiedAt })
-        .from(tenantDomains)
-        .where(eq(tenantDomains.id, id))
-        .for('update');
+      const current = await this.repository.lockVerification(id);
       if (!current) {
         return false;
       }
       let verified = current.verifiedAt !== null;
       if (outcome === 'found') {
-        await this.db
-          .insert(tenantDomainRoutes)
-          .values({ hostname: row.hostname, tenantId: row.tenantId })
-          .onConflictDoNothing();
-        const [route] = await this.db
-          .select({ tenantId: tenantDomainRoutes.tenantId })
-          .from(tenantDomainRoutes)
-          .where(eq(tenantDomainRoutes.hostname, row.hostname));
-        verified = route?.tenantId === row.tenantId;
+        verified =
+          (await this.repository.route(row.hostname, row.tenantId)) ===
+          row.tenantId;
         if (!verified) {
           error = 'Another tenant uses this domain.';
         }
       } else if (outcome === 'gone') {
         verified = false;
-        await this.db
-          .delete(tenantDomainRoutes)
-          .where(
-            and(
-              eq(tenantDomainRoutes.hostname, row.hostname),
-              eq(tenantDomainRoutes.tenantId, row.tenantId),
-            ),
-          );
+        await this.repository.unroute(row.hostname, row.tenantId);
       }
-      await this.db
-        .update(tenantDomains)
-        .set({
-          lastCheckedAt: new Date(),
-          lastError: error,
-          verifiedAt: verified ? (current.verifiedAt ?? new Date()) : null,
-        })
-        .where(eq(tenantDomains.id, id));
+      await this.repository.recordCheck(id, {
+        lastCheckedAt: new Date(),
+        lastError: error,
+        verifiedAt: verified ? (current.verifiedAt ?? new Date()) : null,
+      });
       if (verified !== (current.verifiedAt !== null)) {
         await this.audit.record(actor, {
           action: verified
@@ -308,19 +262,12 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
 
   /** The current tenant's verified domains: what the nightly check looks up again. */
   async verifiedIds() {
-    const rows = await this.db
-      .select({ id: tenantDomains.id })
-      .from(tenantDomains)
-      .where(isNotNull(tenantDomains.verifiedAt));
-    return rows.map((row) => row.id);
+    return this.repository.verifiedIds();
   }
 
   /** The tenants that route a hostname (global): whose domains the nightly check walks. */
   async routedTenants() {
-    const rows = await this.db
-      .selectDistinct({ tenantId: tenantDomainRoutes.tenantId })
-      .from(tenantDomainRoutes);
-    return rows.map((row) => row.tenantId);
+    return this.repository.routedTenantIds();
   }
 
   /**
@@ -342,23 +289,14 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
     if (await this.redis.exists(key).catch(() => 0)) {
       return null;
     }
-    const [route] = await this.db
-      .select({ tenantId: tenantDomainRoutes.tenantId })
-      .from(tenantDomainRoutes)
-      .innerJoin(tenants, eq(tenants.id, tenantDomainRoutes.tenantId))
-      .where(
-        and(
-          eq(tenantDomainRoutes.hostname, checked.hostname),
-          eq(tenants.active, true),
-        ),
-      );
+    const route = await this.repository.activeTenantOf(checked.hostname);
     if (!route) {
       await this.redis
         .set(key, '1', 'EX', UNKNOWN_HOST_SECONDS)
         .catch(() => undefined);
       return null;
     }
-    return route.tenantId;
+    return route;
   }
 
   private assertEnabled() {
@@ -371,10 +309,7 @@ export class TenantDomainsService implements HostTenants, OnModuleInit {
   }
 
   private async find(id: string) {
-    const [row] = await this.db
-      .select({ id: tenantDomains.id })
-      .from(tenantDomains)
-      .where(eq(tenantDomains.id, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       throw notFound();
     }

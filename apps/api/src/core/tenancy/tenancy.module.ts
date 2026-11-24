@@ -5,6 +5,7 @@ import { EncryptionTenant } from '../encryption/encryption.service.js';
 import './tenancy-errors.js';
 import { tenancyConfig } from './tenancy.config.js';
 import { TenancyFeature } from './tenancy.feature.js';
+import { TenancyRepository } from './tenancy.repository.js';
 import { Tenancy } from './tenancy.service.js';
 import { currentTenantScope } from './tenant-scope.js';
 
@@ -23,6 +24,7 @@ import { currentTenantScope } from './tenant-scope.js';
   ],
   providers: [
     Tenancy,
+    TenancyRepository,
     TenancyFeature,
     {
       provide: EncryptionTenant,

@@ -1,6 +1,7 @@
 import { X509Certificate } from 'node:crypto';
 import { z } from 'zod';
 import { listSchema } from '../../core/http/pagination.js';
+import { redirectPath } from '../../core/http/redirect-path.js';
 import {
   OAUTH2_AUTH_METHODS,
   oauth2MappingSchema,
@@ -388,3 +389,27 @@ export const acceptedSchema = z.object({ accepted: z.literal(true) });
 
 export const connectionListSchema = listSchema(connectionSchema);
 export const domainListSchema = listSchema(domainViewSchema);
+
+export const ssoLoginQuerySchema = z.object({
+  redirectTo: redirectPath
+    .optional()
+    .catch(undefined)
+    .describe(
+      'A path of the web app to land on (one leading `/`, printable ASCII, no `\\`); anything else is ignored.',
+    ),
+});
+
+/** What an OpenID Connect or OAuth 2.0 provider sends back: each a string (a repeated one is a 400, not a 500). */
+export const ssoCallbackQuerySchema = z.object({
+  code: z.string().optional(),
+  state: z.string().optional(),
+  error: z.string().optional(),
+  iss: z.string().optional(),
+  session_state: z.string().optional(),
+});
+
+/** The SAML HTTP-POST binding's form. */
+export const samlAcsBodySchema = z.object({
+  SAMLResponse: z.string().min(1).max(1_000_000),
+  RelayState: z.string().max(2048).optional(),
+});

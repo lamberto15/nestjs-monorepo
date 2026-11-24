@@ -9,27 +9,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle, minutes } from '@nestjs/throttler';
-import { z } from 'zod';
+import type { z } from 'zod';
+import {
+  appleKeySchema,
+  attestationChallengeSchema,
+} from './captcha.schemas.js';
 import { AppAttestationService } from './app-attestation.service.js';
-
-const base64url = z.string().regex(/^[A-Za-z0-9_-]+$/);
-const challengeSchema = z.object({
-  challenge: z
-    .string()
-    .describe(
-      'One-time: bind one proof to it (App Attest: its SHA-256 as clientDataHash; Play Integrity: the nonce).',
-    ),
-  expiresIn: z.number().int().describe('Seconds until it expires.'),
-});
-const keySchema = z.object({
-  keyId: base64url
-    .max(64)
-    .describe("App Attest's key id (`generateKey()`), base64url."),
-  attestation: base64url
-    .max(16_384)
-    .describe("`attestKey()`'s attestation object, base64url."),
-  challenge: base64url.max(64),
-});
 
 /**
  * App attestation (APP_ATTESTATION):
@@ -46,7 +31,7 @@ export class AppAttestationController {
   @Post('challenge')
   @HttpCode(200)
   @ApiOperation({ summary: 'A one-time challenge for an app attestation' })
-  @ApiOkResponse({ standardSchema: challengeSchema })
+  @ApiOkResponse({ standardSchema: attestationChallengeSchema })
   @ApiNotFoundResponse({ description: 'App attestation is off.' })
   challenge() {
     return this.attestation.challenge();
@@ -66,7 +51,9 @@ export class AppAttestationController {
       '`attestation_invalid` (`reason`: `challenge`, `format`, `certificate`, `nonce`, `key`, `app`, `authenticator`).',
   })
   @ApiNotFoundResponse({ description: 'App attestation is off.' })
-  async register(@Body({ schema: keySchema }) body: z.infer<typeof keySchema>) {
+  async register(
+    @Body({ schema: appleKeySchema }) body: z.infer<typeof appleKeySchema>,
+  ) {
     await this.attestation.registerAppleKey(body);
   }
 }

@@ -23,7 +23,7 @@
     "count": 1,
     "why": "keep: pg_db_role_setting (a system catalog)"
   },
-  "apps/api/src/iam/access/access.seeder.ts": {
+  "apps/api/src/iam/access/access-seeder.repository.ts": {
     "count": 1,
     "why": "keep: advisory lock"
   },

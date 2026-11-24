@@ -19,6 +19,7 @@ import { captchaConfig } from './captcha.config.js';
 import { CaptchaController } from './captcha.controller.js';
 import { CaptchaGuard } from './captcha.guard.js';
 import { createCaptchaVerifier, verifyEndpoint } from './captcha.providers.js';
+import { CaptchaRepository } from './captcha.repository.js';
 import { CaptchaService } from './captcha.service.js';
 import { TURNSTILE_HTTP } from './turnstile.verifier.js';
 
@@ -58,6 +59,7 @@ import { TURNSTILE_HTTP } from './turnstile.verifier.js';
     },
     CaptchaService,
     AppAttestationService,
+    CaptchaRepository,
     { provide: APP_ATTEST_ROOTS, useValue: [APPLE_APP_ATTESTATION_ROOT] },
     CaptchaGuard,
     { provide: APP_GUARD, useExisting: CaptchaGuard },

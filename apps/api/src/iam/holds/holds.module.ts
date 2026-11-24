@@ -4,6 +4,7 @@ import { AuditModule } from '../audit/audit.module.js';
 import { LegalHoldsController } from './holds.controller.js';
 import { HOLD_PERMISSIONS } from './holds.permissions.js';
 import { LegalHoldPolicy } from './holds.policy.js';
+import { LegalHoldsRepository } from './holds.repository.js';
 import { LegalHoldsService } from './holds.service.js';
 
 /**
@@ -14,7 +15,7 @@ import { LegalHoldsService } from './holds.service.js';
 @Module({
   imports: [AccessModule.forFeature(HOLD_PERMISSIONS), AuditModule],
   controllers: [LegalHoldsController],
-  providers: [LegalHoldsService, LegalHoldPolicy],
+  providers: [LegalHoldsService, LegalHoldsRepository, LegalHoldPolicy],
   exports: [LegalHoldsService],
 })
 export class HoldsModule {}

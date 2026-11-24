@@ -7,6 +7,7 @@ import { OrganizationModule } from '../organization/organization.module.js';
 import { AuthPolicyController } from './auth-policy.controller.js';
 import { AUTH_POLICY_PERMISSIONS } from './auth-policy.permissions.js';
 import { AuthPolicyPolicy } from './auth-policy.policy.js';
+import { AuthPolicyRepository } from './auth-policy.repository.js';
 import { TenantAuthPolicies } from './auth-policy.service.js';
 
 /**
@@ -24,6 +25,6 @@ import { TenantAuthPolicies } from './auth-policy.service.js';
     ConfigModule.forFeature(accountConfig),
   ],
   controllers: [AuthPolicyController],
-  providers: [TenantAuthPolicies, AuthPolicyPolicy],
+  providers: [TenantAuthPolicies, AuthPolicyRepository, AuthPolicyPolicy],
 })
 export class AuthPolicyModule {}

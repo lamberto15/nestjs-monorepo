@@ -198,7 +198,7 @@ const fromBase64url = (text: string) =>
  */
 @Injectable()
 export class PasskeysService implements OnModuleInit {
-  private readonly logger = new Logger('Passkeys');
+  private readonly logger = new Logger(PasskeysService.name);
   readonly settings: PasskeySettings;
   private decoyKey = Buffer.alloc(0);
 

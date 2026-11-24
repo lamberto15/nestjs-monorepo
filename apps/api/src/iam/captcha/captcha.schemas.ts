@@ -13,3 +13,26 @@ export const captchaSettingsSchema = z
   })
   .nullable()
   .describe('null: bot protection is off.');
+
+const base64url = z.string().regex(/^[A-Za-z0-9_-]+$/);
+
+export const attestationChallengeSchema = z.object({
+  challenge: z
+    .string()
+    .describe(
+      'One-time: bind one proof to it (App Attest: its SHA-256 as clientDataHash; Play Integrity: the nonce).',
+    ),
+  expiresIn: z.number().int().describe('Seconds until it expires.'),
+});
+
+export const appleKeySchema = z.object({
+  keyId: base64url
+    .max(64)
+    .describe("App Attest's key id (`generateKey()`), base64url."),
+  attestation: base64url
+    .max(16_384)
+    .describe("`attestKey()`'s attestation object, base64url."),
+  challenge: base64url.max(64),
+});
+
+export const captchaSchema = z.object({ captcha: captchaSettingsSchema });

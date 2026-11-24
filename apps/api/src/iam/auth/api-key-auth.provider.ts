@@ -8,20 +8,16 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { ApiKeyProvider, AuthenticationRegistry } from '@nestjs/authentication';
-import { InjectDrizzle } from '@nestjs/drizzle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
 import type { NodeRequest as Request } from '@nestjs/platform-node';
-import { and, eq, isNull, lt, or } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import type { Database } from '../../core/database/database.js';
 import { REDIS } from '../../core/redis/redis.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
-import { tenants } from '../../core/tenancy/tenancy.tables.js';
 import { API_KEY_PREFIX } from './api-keys.js';
+import { ApiKeysRepository } from './api-keys.repository.js';
 import { authConfig } from './auth.config.js';
 import { AUTH_EVENTS, type ClientIpDeniedEvent } from './auth.events.js';
-import { apiClients, apiKeys } from './auth.tables.js';
 import { ipAllowed } from './client-ip.js';
 import type { ClientPrincipal, RequestPrincipal } from './principal.js';
 
@@ -45,7 +41,7 @@ const DENIED_EVERY_SECONDS = 3600;
  */
 @Injectable()
 export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
-  private readonly logger = new Logger('ApiKeys');
+  private readonly logger = new Logger(ApiKeyAuth.name);
   /** What findKey read with the principal it returned, read back by authenticate (the same object). */
   private readonly found = new WeakMap<
     object,
@@ -53,7 +49,7 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
   >();
 
   constructor(
-    @InjectDrizzle() private readonly db: Database,
+    private readonly repository: ApiKeysRepository,
     @Inject(authConfig.KEY)
     private readonly config: ConfigType<typeof authConfig>,
     private readonly tenancy: Tenancy,
@@ -72,11 +68,7 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
     if (!this.config.apiClients) {
       return null;
     }
-    const [key] = await this.db
-      .select({ key: apiKeys, tenantActive: tenants.active })
-      .from(apiKeys)
-      .innerJoin(tenants, eq(tenants.id, apiKeys.tenantId))
-      .where(eq(apiKeys.keyId, id));
+    const key = await this.repository.findKey(id);
     const now = new Date();
     if (
       !key?.tenantActive ||
@@ -85,11 +77,8 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
     ) {
       return null;
     }
-    const [client] = await this.tenancy.run(key.key.tenantId, () =>
-      this.db
-        .select()
-        .from(apiClients)
-        .where(eq(apiClients.id, key.key.clientId)),
+    const client = await this.tenancy.run(key.key.tenantId, () =>
+      this.repository.findClient(key.key.clientId),
     );
     if (!client?.active) {
       return null;
@@ -184,21 +173,8 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
    * `lastUsedAt`, write it once.
    */
   private touch(keyId: string, now: Date) {
-    void this.db
-      .update(apiKeys)
-      .set({ lastUsedAt: now })
-      .where(
-        and(
-          eq(apiKeys.keyId, keyId),
-          or(
-            isNull(apiKeys.lastUsedAt),
-            lt(
-              apiKeys.lastUsedAt,
-              new Date(now.getTime() - LAST_USED_EVERY_MS),
-            ),
-          ),
-        ),
-      )
+    void this.repository
+      .touch(keyId, now, new Date(now.getTime() - LAST_USED_EVERY_MS))
       .catch((error: Error) =>
         this.logger.warn(`Last use not recorded: ${error.message}`),
       );

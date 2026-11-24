@@ -11,7 +11,7 @@ import { DrizzleAuthenticationStore } from './drizzle-authentication.store.js';
  */
 @Injectable()
 export class SessionPruneJob {
-  private readonly logger = new Logger('Sessions');
+  private readonly logger = new Logger(SessionPruneJob.name);
 
   constructor(
     private readonly store: DrizzleAuthenticationStore,

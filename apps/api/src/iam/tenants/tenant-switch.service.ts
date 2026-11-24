@@ -4,20 +4,20 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { type SessionRecord, SessionService } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
-import { and, eq } from 'drizzle-orm';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import { tenancyConfig } from '../../core/tenancy/tenancy.config.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { authConfig } from '../auth/auth.config.js';
-import { memberships } from '../auth/auth.tables.js';
 import { isOperatorSlug } from '../auth/operator-only.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { UsersRepository } from '../auth/users.repository.js';
+import { TenantsRepository } from './tenants.repository.js';
 
 /**
  * A user's tenants and the switch between them: one origin, the session
@@ -29,6 +29,7 @@ export class TenantSwitchService {
   constructor(
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly users: UsersRepository,
+    private readonly repository: TenantsRepository,
     private readonly sessions: SessionService,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -92,15 +93,7 @@ export class TenantSwitchService {
     }
     await this.tenancy.run(tenantId, () =>
       this.txHost.withTransaction(async () => {
-        await this.txHost.tx
-          .update(memberships)
-          .set({ selectedAt: new Date() })
-          .where(
-            and(
-              eq(memberships.userId, user.id),
-              eq(memberships.tenantId, tenantId),
-            ),
-          );
+        await this.repository.selectMembership(user.id, tenantId);
         await this.audit.record(
           { ...user, tenantId },
           {
@@ -114,8 +107,12 @@ export class TenantSwitchService {
       }),
     );
     const { authenticatedAt: _stepUp, ...metadata } = session.metadata ?? {};
-    return this.sessions.rotate(session, {
+    const issued = await this.sessions.rotate(session, {
       metadata: { ...metadata, tenantId },
     });
+    if (!issued) {
+      throw new UnauthorizedException(); // signed out meanwhile
+    }
+    return issued;
   }
 }

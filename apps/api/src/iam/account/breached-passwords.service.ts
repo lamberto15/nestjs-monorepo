@@ -64,7 +64,7 @@ export function countInRange(body: string, suffix: string) {
  */
 @Injectable()
 export class BreachedPasswordsService {
-  private readonly logger = new Logger('BreachedPasswords');
+  private readonly logger = new Logger(BreachedPasswordsService.name);
 
   constructor(
     @InjectHttpClient(PWNED_PASSWORDS) private readonly http: HttpClient,

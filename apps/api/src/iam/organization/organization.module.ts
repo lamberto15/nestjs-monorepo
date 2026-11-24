@@ -5,6 +5,7 @@ import { AuditModule } from '../audit/audit.module.js';
 import { OrganizationController } from './organization.controller.js';
 import { ORGANIZATION_PERMISSIONS } from './organization.permissions.js';
 import { OrganizationPolicy } from './organization.policy.js';
+import { OrganizationRepository } from './organization.repository.js';
 import { OrganizationService } from './organization.service.js';
 import { OrganizationUnitDirectory } from './unit-directory.provider.js';
 
@@ -24,6 +25,7 @@ import { OrganizationUnitDirectory } from './unit-directory.provider.js';
   controllers: [OrganizationController],
   providers: [
     OrganizationService,
+    OrganizationRepository,
     OrganizationPolicy,
     OrganizationUnitDirectory,
   ],

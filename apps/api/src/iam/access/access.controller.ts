@@ -31,9 +31,8 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
-  assertUnchanged,
   Etag,
   etagOf,
   ifMatchHeader,
@@ -52,7 +51,9 @@ import {
   explainQuerySchema,
   explanationSchema,
   principalSchema,
+  roleInputSchema,
   roleViewSchema,
+  updateMemberSchema,
   userViewSchema,
 } from './access.schemas.js';
 import { ExplanationService } from './explanation.service.js';
@@ -60,48 +61,6 @@ import { MembersService } from './members.service.js';
 import { PermissionCatalog } from './permission-catalog.js';
 import { PrincipalsService } from './principals.service.js';
 import { RolesService } from './roles.service.js';
-
-const permissionSchema = z.object({
-  subject: z.string().min(1).meta({ example: 'Note' }),
-  action: z.string().min(1).meta({ example: 'read' }),
-  conditions: z
-    .array(
-      z.object({
-        key: z.string().min(1).meta({ example: 'mine' }),
-        params: z.record(z.string(), z.unknown()).optional(),
-      }),
-    )
-    .max(10),
-  fields: z
-    .array(z.string().min(1))
-    .max(50)
-    .optional()
-    .describe(
-      'Only these restrictable fields of the subject (GET /access/catalog); [] for none of them; leave out for all.',
-    ),
-});
-
-const roleSchema = z.object({
-  name: z.string().trim().min(1).max(80),
-  description: z.string().max(500).optional(),
-  permissions: z.array(permissionSchema).max(100),
-});
-
-// Strict: a `password` or `name` is refused, not ignored: administrators
-// never set another person's account.
-const updateUserSchema = z.strictObject({
-  active: z
-    .boolean()
-    .optional()
-    .describe('The membership in this tenant, not the account.'),
-  roleIds: z.array(z.uuid()).optional(),
-  roleExpiresAt: z
-    .record(z.uuid(), z.iso.datetime({ offset: true }))
-    .optional()
-    .describe(
-      'When each grant ends, by role id (temporary access); the others never do.',
-    ),
-});
 
 /**
  * Access administration: the catalog, roles, members' roles and
@@ -175,7 +134,7 @@ export class AccessController {
   @ApiConflictResponse({ description: 'A role with this name exists.' })
   createRole(
     @CurrentUser() user: UserPrincipal,
-    @Body({ schema: roleSchema }) body: z.infer<typeof roleSchema>,
+    @Body({ schema: roleInputSchema }) body: z.infer<typeof roleInputSchema>,
     @Ip() ip: string,
   ) {
     return this.roles.create(user, body, ip);
@@ -199,19 +158,13 @@ export class AccessController {
   async updateRole(
     @CurrentUser() user: UserPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body({ schema: roleSchema }) body: z.infer<typeof roleSchema>,
+    @Body({ schema: roleInputSchema }) body: z.infer<typeof roleInputSchema>,
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
     @Res({ passthrough: true }) response: Response,
   ) {
     // If-Match under the role's lock: two administrators can't both win.
-    await this.roles.update(
-      user,
-      id,
-      body,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    await this.roles.update(user, id, body, ip, ifMatch);
     // The tag GET would now send, so the next write needs no read first.
     response.setHeader('ETag', etagOf(await this.roles.get(id)));
   }
@@ -233,12 +186,7 @@ export class AccessController {
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
   ) {
-    await this.roles.remove(
-      user,
-      id,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    await this.roles.remove(user, id, ip, ifMatch);
   }
 
   @Get('users')
@@ -250,7 +198,7 @@ export class AccessController {
   })
   @ApiOkResponse({ standardSchema: pageSchema(userViewSchema) })
   async users(@Query({ schema: USER_LIST.schema }) query: ListQuery) {
-    return USER_LIST.pick(await this.members.page(query), query);
+    return this.members.page(query);
   }
 
   @Get('users/:id')
@@ -309,7 +257,8 @@ export class AccessController {
   async updateUser(
     @CurrentUser() user: UserPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body({ schema: updateUserSchema }) body: z.infer<typeof updateUserSchema>,
+    @Body({ schema: updateMemberSchema })
+    body: z.infer<typeof updateMemberSchema>,
     @Ip() ip: string,
   ) {
     await this.members.update(user, id, body, ip);
@@ -331,6 +280,6 @@ export class AccessController {
   async principalList(
     @Query({ schema: PRINCIPAL_LIST.schema }) query: ListQuery,
   ) {
-    return PRINCIPAL_LIST.pick(await this.principals.page(query), query);
+    return this.principals.page(query);
   }
 }

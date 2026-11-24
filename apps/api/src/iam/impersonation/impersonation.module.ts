@@ -7,6 +7,7 @@ import { impersonationConfig } from './impersonation.config.js';
 import { ImpersonationController } from './impersonation.controller.js';
 import { IMPERSONATION_PERMISSIONS } from './impersonation.permissions.js';
 import { ImpersonationPolicy } from './impersonation.policy.js';
+import { ImpersonationRepository } from './impersonation.repository.js';
 import { ImpersonationService } from './impersonation.service.js';
 
 /**
@@ -25,6 +26,7 @@ longer holds.
   controllers: [ImpersonationController],
   providers: [
     ImpersonationService,
+    ImpersonationRepository,
     ImpersonationPolicy,
     switchFeature(
       'impersonation',

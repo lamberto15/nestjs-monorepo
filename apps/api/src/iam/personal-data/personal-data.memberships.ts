@@ -1,17 +1,10 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
-import { roles, userRoles } from '../access/access.tables.js';
-import {
-  organizationalUnitMemberships,
-  organizationalUnits,
-} from '../organization/organization.tables.js';
 import {
   PersonalData,
   type PersonalDataSection,
   type PersonalDataSubject,
 } from './personal-data.js';
+import { PersonalDataRepository } from './personal-data.repository.js';
 
 /**
  * The roles the person holds in each tenant, for their export. Nothing to
@@ -20,19 +13,10 @@ import {
 @PersonalData({ name: 'roles', scopes: ['tenant'] })
 @Injectable()
 export class RolesSection implements PersonalDataSection {
-  constructor(@InjectTransaction() private readonly db: Database) {}
+  constructor(private readonly repository: PersonalDataRepository) {}
 
   async rows({ userId }: PersonalDataSubject) {
-    return this.db
-      .select({
-        id: roles.id,
-        key: roles.key,
-        name: roles.name,
-        expiresAt: userRoles.expiresAt,
-      })
-      .from(userRoles)
-      .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .where(eq(userRoles.userId, userId));
+    return this.repository.rolesOf(userId);
   }
 }
 
@@ -43,22 +27,9 @@ export class RolesSection implements PersonalDataSection {
 @PersonalData({ name: 'organizational-units', scopes: ['tenant'] })
 @Injectable()
 export class UnitsSection implements PersonalDataSection {
-  constructor(@InjectTransaction() private readonly db: Database) {}
+  constructor(private readonly repository: PersonalDataRepository) {}
 
   async rows({ userId }: PersonalDataSubject) {
-    return this.db
-      .select({
-        id: organizationalUnits.id,
-        name: organizationalUnits.name,
-        role: organizationalUnitMemberships.role,
-        validFrom: organizationalUnitMemberships.validFrom,
-        validTo: organizationalUnitMemberships.validTo,
-      })
-      .from(organizationalUnitMemberships)
-      .innerJoin(
-        organizationalUnits,
-        eq(organizationalUnits.id, organizationalUnitMemberships.unitId),
-      )
-      .where(eq(organizationalUnitMemberships.userId, userId));
+    return this.repository.unitsOf(userId);
   }
 }

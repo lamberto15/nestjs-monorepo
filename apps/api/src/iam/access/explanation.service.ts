@@ -1,4 +1,3 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   Injectable,
@@ -6,18 +5,16 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { asc, eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import {
   AccessRecordFinder,
   type RecordFinder,
 } from './access-record-finder.js';
 import { AccessService } from './access.service.js';
-import { roles, userRoles } from './access.tables.js';
 import { MembersService } from './members.service.js';
 import { PermissionCatalog } from './permission-catalog.js';
 import { isAll } from './permissions.js';
+import { RolesRepository } from './roles.repository.js';
 
 /**
  * Why a member may or may not act on a subject or one of its records
@@ -32,7 +29,7 @@ export class ExplanationService implements OnModuleInit {
   private readonly finders = new Map<string, RecordFinder>();
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RolesRepository,
     private readonly access: AccessService,
     private readonly catalog: PermissionCatalog,
     private readonly members: MembersService,
@@ -103,16 +100,7 @@ export class ExplanationService implements OnModuleInit {
         record,
         hidden,
       ),
-      this.db
-        .select({
-          id: roles.id,
-          name: roles.name,
-          expiresAt: userRoles.expiresAt,
-        })
-        .from(userRoles)
-        .innerJoin(roles, eq(roles.id, userRoles.roleId))
-        .where(eq(userRoles.userId, userId))
-        .orderBy(asc(roles.name)),
+      this.repository.rolesOfUser(userId),
     ]);
     const now = Date.now();
     return {

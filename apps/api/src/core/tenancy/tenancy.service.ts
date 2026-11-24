@@ -7,12 +7,11 @@ import {
   type OnApplicationBootstrap,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { and, asc, eq, gt, inArray } from 'drizzle-orm';
 import { CLS_REQ, ClsService } from 'nestjs-cls';
-import type { Database, DatabaseTransactions } from '../database/database.js';
+import type { DatabaseTransactions } from '../database/database.js';
 import { tenancyConfig } from './tenancy.config.js';
-import { type Tenant, tenants } from './tenancy.tables.js';
-import { isolation } from './tenant-isolation.js';
+import { TenancyRepository } from './tenancy.repository.js';
+import type { Tenant } from './tenancy.tables.js';
 import {
   ACROSS_TENANTS,
   currentTenantScope,
@@ -37,13 +36,14 @@ export const TENANT_PAGE = 500;
  */
 @Injectable()
 export class Tenancy implements OnApplicationBootstrap {
-  private readonly logger = new Logger('Tenancy');
+  private readonly logger = new Logger(Tenancy.name);
   /** The jobs whose cross-tenant run this process already logged (acrossTenants()). */
   private readonly acrossJobsLogged = new Set<string>();
 
   constructor(
     private readonly cls: ClsService,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
+    private readonly repository: TenancyRepository,
     @Inject(tenancyConfig.KEY)
     private readonly config: ConfigType<typeof tenancyConfig>,
   ) {}
@@ -57,14 +57,10 @@ export class Tenancy implements OnApplicationBootstrap {
     if (this.config.mode !== 'single') {
       return;
     }
-    if (this.config.seed && (await this.all()).length === 0) {
-      // Instances starting together: the slug's unique key keeps it one.
-      await this.db
-        .insert(tenants)
-        .values({ slug: 'default', name: 'Default' })
-        .onConflictDoNothing();
+    if (this.config.seed && (await this.repository.all()).length === 0) {
+      await this.repository.insertDefault();
     }
-    const all = await this.all();
+    const all = await this.repository.all();
     if (all.length === 0) {
       return;
     }
@@ -195,21 +191,12 @@ export class Tenancy implements OnApplicationBootstrap {
     for (let round = 0; ; round++) {
       const among = ids?.slice(round * TENANT_PAGE, (round + 1) * TENANT_PAGE);
       if (among?.length === 0) break;
-      const page = await this.db
-        .select()
-        .from(tenants)
-        .where(
-          and(
-            includeInactive ? undefined : eq(tenants.active, true),
-            among
-              ? inArray(tenants.id, among)
-              : after
-                ? gt(tenants.id, after)
-                : undefined,
-          ),
-        )
-        .orderBy(asc(tenants.id))
-        .limit(TENANT_PAGE);
+      const page = await this.repository.page({
+        includeInactive,
+        among,
+        after,
+        limit: TENANT_PAGE,
+      });
       let next = 0;
       await Promise.all(
         Array.from({ length: Math.min(concurrency, page.length) }, async () => {
@@ -231,15 +218,18 @@ export class Tenancy implements OnApplicationBootstrap {
    */
   async create(values: { slug: string; name: string }): Promise<Tenant> {
     return this.txHost.withTransaction(async () => {
-      if (this.config.mode === 'single' && (await this.all()).length > 0) {
+      if (
+        this.config.mode === 'single' &&
+        (await this.repository.all()).length > 0
+      ) {
         throw new ConflictException({
           code: 'single_tenant',
           message: 'This deployment has one tenant (TENANCY=single).',
         });
       }
-      const [tenant] = await this.db.insert(tenants).values(values).returning();
-      await isolation.provision(this.db, tenant!.id);
-      return tenant!;
+      const tenant = await this.repository.insert(values);
+      await this.repository.provision(tenant.id);
+      return tenant;
     });
   }
 
@@ -252,18 +242,21 @@ export class Tenancy implements OnApplicationBootstrap {
    */
   async restore(tenant: Tenant): Promise<Tenant> {
     return this.txHost.withTransaction(async () => {
-      if (this.config.mode === 'single' && (await this.all()).length > 0) {
+      if (
+        this.config.mode === 'single' &&
+        (await this.repository.all()).length > 0
+      ) {
         throw new ConflictException({
           code: 'single_tenant',
           message: 'This deployment has one tenant (TENANCY=single).',
         });
       }
-      const [restored] = await this.db
-        .insert(tenants)
-        .values({ ...tenant, frozenAt: null })
-        .returning();
-      await isolation.provision(this.db, restored!.id);
-      return restored!;
+      const restored = await this.repository.insert({
+        ...tenant,
+        frozenAt: null,
+      });
+      await this.repository.provision(restored.id);
+      return restored;
     });
   }
 
@@ -273,45 +266,24 @@ export class Tenancy implements OnApplicationBootstrap {
    * frozen tenant's own transactions can't write, this one included.
    * Returns the tenant, or undefined when there is none.
    */
-  async setFrozen(id: string, frozen: boolean): Promise<Tenant | undefined> {
-    const [tenant] = await this.db
-      .update(tenants)
-      .set({ frozenAt: frozen ? new Date() : null })
-      .where(eq(tenants.id, id))
-      .returning();
-    return tenant;
+  setFrozen(id: string, frozen: boolean): Promise<Tenant | undefined> {
+    return this.repository.setFrozenAt(id, frozen ? new Date() : null);
   }
 
   /** One tenant by id, active or not. */
-  async find(id: string): Promise<Tenant | undefined> {
-    const [tenant] = await this.db
-      .select()
-      .from(tenants)
-      .where(eq(tenants.id, id));
-    return tenant;
+  find(id: string): Promise<Tenant | undefined> {
+    return this.repository.findById(id);
   }
 
   /** With TENANCY=single, the tenant: what sign-in enters, since nothing asks which. */
   async soleTenant(): Promise<Tenant> {
-    const [tenant] = await this.all();
+    const [tenant] = await this.repository.all();
     if (this.config.mode !== 'single' || !tenant) {
       throw new Error(
         'Tenancy.soleTenant() is for TENANCY=single, once its tenant exists.',
       );
     }
     return tenant;
-  }
-
-  private get db(): Database {
-    return this.txHost.tx;
-  }
-
-  /** Every tenant, oldest first. Global: readable in any scope. */
-  private all() {
-    return this.db
-      .select()
-      .from(tenants)
-      .orderBy(asc(tenants.createdAt), asc(tenants.id));
   }
 
   private runIn<T>(asked: TenantScope, work: () => Promise<T>): Promise<T> {

@@ -1,22 +1,11 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
 import { AuditService } from '../audit/audit.service.js';
 import { type Principal, principalKey } from '../auth/principal.js';
 import { LEGAL_HOLD_LIST } from './holds.lists.js';
@@ -24,7 +13,8 @@ import type {
   PlaceLegalHoldDto,
   ReleaseLegalHoldDto,
 } from './holds.schemas.js';
-import { type LegalHoldRow, legalHolds } from './holds.tables.js';
+import { LegalHoldsRepository } from './holds.repository.js';
+import type { LegalHoldRow } from './holds.tables.js';
 
 const view = (hold: LegalHoldRow) => ({
   id: hold.id,
@@ -49,33 +39,22 @@ const view = (hold: LegalHoldRow) => ({
 @Injectable()
 export class LegalHoldsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: LegalHoldsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
   ) {}
 
-  /** A page of holds, newest first unless the query sorts. */
+  /** A page of holds, newest first unless the query sorts, with the fields it picks. */
   async list(query: ListQuery) {
-    const where = LEGAL_HOLD_LIST.where(query);
-    const [rows, total] = await Promise.all([
-      this.db
-        .select()
-        .from(legalHolds)
-        .where(and(where, afterCursor(legalHolds.id, query)))
-        .orderBy(...pageOrder(legalHolds.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, legalHolds, where, query),
-    ]);
-    const page = toPage(rows, query, total);
-    return { ...page, items: page.items.map(view) };
+    const page = await this.repository.page(query);
+    return LEGAL_HOLD_LIST.pick(
+      { ...page, items: page.items.map(view) },
+      query,
+    );
   }
 
   private async find(id: string) {
-    const [hold] = await this.db
-      .select()
-      .from(legalHolds)
-      .where(eq(legalHolds.id, id));
+    const hold = await this.repository.findById(id);
     if (!hold) {
       throw new NotFoundException(`Legal hold ${id} not found.`);
     }
@@ -89,19 +68,16 @@ export class LegalHoldsService {
   /** Holds a record, or every record of a subject (no `recordId`). */
   async place(principal: Principal, dto: PlaceLegalHoldDto, ip?: string) {
     const row = await this.txHost.withTransaction(async () => {
-      const [hold] = await this.db
-        .insert(legalHolds)
-        .values({
-          subject: dto.subject,
-          recordId: dto.recordId ?? null,
-          reason: dto.reason,
-          placedBy: principalKey(principal),
-        })
-        .returning();
+      const hold = await this.repository.insert({
+        subject: dto.subject,
+        recordId: dto.recordId ?? null,
+        reason: dto.reason,
+        placedBy: principalKey(principal),
+      });
       await this.audit.record(principal, {
         action: 'legal-hold.placed',
         targetType: 'legalHold',
-        targetId: hold!.id,
+        targetId: hold.id,
         details: {
           subject: dto.subject,
           recordId: dto.recordId ?? null,
@@ -109,7 +85,7 @@ export class LegalHoldsService {
         },
         ip,
       });
-      return hold!;
+      return hold;
     });
     return view(row);
   }
@@ -122,15 +98,11 @@ export class LegalHoldsService {
     ip?: string,
   ) {
     const row = await this.txHost.withTransaction(async () => {
-      const [released] = await this.db
-        .update(legalHolds)
-        .set({
-          releasedAt: new Date(),
-          releasedBy: principalKey(principal),
-          releaseNote: dto.note ?? null,
-        })
-        .where(and(eq(legalHolds.id, id), isNull(legalHolds.releasedAt)))
-        .returning();
+      const released = await this.repository.release(id, {
+        releasedAt: new Date(),
+        releasedBy: principalKey(principal),
+        releaseNote: dto.note ?? null,
+      });
       if (!released) {
         await this.find(id); // a 404 when it is not there at all
         throw new ConflictException({
@@ -162,19 +134,7 @@ export class LegalHoldsService {
     if (ids.length === 0) {
       return new Set();
     }
-    const holds = await this.db
-      .select({ recordId: legalHolds.recordId })
-      .from(legalHolds)
-      .where(
-        and(
-          eq(legalHolds.subject, subject),
-          isNull(legalHolds.releasedAt),
-          or(
-            isNull(legalHolds.recordId),
-            inArray(legalHolds.recordId, [...ids]),
-          ),
-        ),
-      );
+    const holds = await this.repository.activeHoldsOn(subject, [...ids]);
     if (holds.some((hold) => hold.recordId === null)) {
       return new Set(ids);
     }

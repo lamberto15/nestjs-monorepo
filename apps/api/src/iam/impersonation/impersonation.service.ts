@@ -1,4 +1,3 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   ForbiddenException,
@@ -14,10 +13,7 @@ import {
   SessionService,
 } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
-import { and, eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
-import { roles, userRoles } from '../access/access.tables.js';
-import { liveGrant, RolesService } from '../access/roles.service.js';
+import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { splitAuthentication } from '../auth/authentication-method.js';
 import {
@@ -28,6 +24,7 @@ import {
 } from '../auth/impersonation.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { UsersRepository } from '../auth/users.repository.js';
+import { ImpersonationRepository } from './impersonation.repository.js';
 import { impersonationConfig } from './impersonation.config.js';
 import { ImpersonationPolicy } from './impersonation.policy.js';
 
@@ -51,7 +48,7 @@ import { ImpersonationPolicy } from './impersonation.policy.js';
 @ImpersonationRules()
 export class ImpersonationService implements ImpersonationEligibility {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ImpersonationRepository,
     private readonly sessions: SessionService,
     private readonly storage: AuthenticationStorage,
     private readonly users: UsersRepository,
@@ -200,19 +197,7 @@ export class ImpersonationService implements ImpersonationEligibility {
   }
 
   /** Holds the tenant's built-in Administrator role (a grant still running). */
-  private async isAdministrator(userId: string) {
-    const [row] = await this.db
-      .select({ roleId: roles.id })
-      .from(userRoles)
-      .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .where(
-        and(
-          eq(userRoles.userId, userId),
-          eq(roles.system, true),
-          liveGrant(userRoles),
-        ),
-      )
-      .limit(1);
-    return !!row;
+  private isAdministrator(userId: string) {
+    return this.repository.holdsSystemRole(userId);
   }
 }

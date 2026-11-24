@@ -4,6 +4,7 @@ import { DiscoveryModule } from '@nestjs/core';
 import { auditConfig } from './audit.config.js';
 import { AuditListeners } from './audit.listeners.js';
 import { AuditRetentionJob } from './audit-retention.job.js';
+import { AuditRepository } from './audit.repository.js';
 import { AuditService } from './audit.service.js';
 
 /**
@@ -15,7 +16,7 @@ import { AuditService } from './audit.service.js';
  */
 @Module({
   imports: [ConfigModule.forFeature(auditConfig), DiscoveryModule],
-  providers: [AuditService, AuditListeners, AuditRetentionJob],
+  providers: [AuditService, AuditRepository, AuditListeners, AuditRetentionJob],
   exports: [AuditService],
 })
 export class AuditModule {}

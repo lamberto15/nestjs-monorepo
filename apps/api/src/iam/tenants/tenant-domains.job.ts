@@ -45,7 +45,7 @@ export class TenantDomainsProcessor extends TenantWorkerHost<DomainCheckJob> {
  */
 @Injectable()
 export class TenantDomainsCheckJob {
-  private readonly logger = new Logger('TenantDomains');
+  private readonly logger = new Logger(TenantDomainsCheckJob.name);
 
   constructor(
     private readonly system: SystemContext,

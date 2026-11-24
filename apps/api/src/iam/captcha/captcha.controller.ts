@@ -1,11 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 import { Public } from '@nestjs/authentication';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { z } from 'zod';
-import { captchaSettingsSchema } from './captcha.schemas.js';
+import { captchaSchema } from './captcha.schemas.js';
 import { CaptchaService } from './captcha.service.js';
-
-const captchaSchema = z.object({ captcha: captchaSettingsSchema });
 
 /** What a page needs to render the challenge widget. */
 @ApiTags('auth')

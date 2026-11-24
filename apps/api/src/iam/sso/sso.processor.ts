@@ -60,7 +60,7 @@ export class SsoProcessor extends TenantWorkerHost<SsoJob> {
  */
 @Injectable()
 export class SsoDomainsCheckJob {
-  private readonly logger = new Logger('SsoDomains');
+  private readonly logger = new Logger(SsoDomainsCheckJob.name);
 
   constructor(
     private readonly system: SystemContext,

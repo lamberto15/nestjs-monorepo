@@ -12,19 +12,17 @@ import type { ConfigType } from '@nestjs/config';
 import { PasswordHasher } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
-import { inArray } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Events } from '../../core/outbox/events.js';
 import { tenancyConfig } from '../../core/tenancy/tenancy.config.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { slugOf } from '../access/access.seeder.js';
-import { roles, userRoles } from '../access/access.tables.js';
 import { PermissionCatalog } from '../access/permission-catalog.js';
 import { AuditService } from '../audit/audit.service.js';
 import { z } from 'zod';
 import { AuthPolicy } from '../auth/auth-policy.js';
-import { memberships, users } from '../auth/auth.tables.js';
+import type { users } from '../auth/auth.tables.js';
 import {
   SignInMethodsPart,
   type SignInMethodsProvider,
@@ -33,6 +31,7 @@ import type { UserPrincipal } from '../auth/principal.js';
 import { normalizeEmail } from '../auth/users.repository.js';
 import { tenantCreated } from './tenants.events.js';
 import { tenantsConfig } from './tenants.config.js';
+import { TenantsRepository } from './tenants.repository.js';
 import { TenantsService } from './tenants.service.js';
 
 /** What a sign-up asks for. */
@@ -89,12 +88,13 @@ const ATTEMPTS = 3;
 export class SignUpService
   implements OnApplicationBootstrap, SignInMethodsProvider
 {
-  private readonly logger = new Logger('Tenancy');
+  private readonly logger = new Logger(SignUpService.name);
 
   constructor(
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly tenants: TenantsService,
+    private readonly repository: TenantsRepository,
     private readonly audit: AuditService,
     private readonly hasher: PasswordHasher,
     private readonly catalog: PermissionCatalog,
@@ -254,18 +254,18 @@ export class SignUpService
     values: typeof users.$inferInsert,
     ip?: string,
   ): Promise<UserPrincipal> {
-    const [row] = await this.txHost.tx
-      .insert(users)
-      .values({ ...values, emailVerified: false })
-      .returning();
+    const row = await this.repository.insertUser({
+      ...values,
+      emailVerified: false,
+    });
     const user: UserPrincipal = {
       kind: 'user',
-      id: row!.id,
-      email: row!.email,
-      name: row!.name,
+      id: row.id,
+      email: row.email,
+      name: row.name,
       emailVerified: false,
-      locale: row!.locale,
-      timezone: row!.timezone,
+      locale: row.locale,
+      timezone: row.timezone,
       tenantId: null,
     };
     await this.audit.record(user, {
@@ -280,19 +280,12 @@ export class SignUpService
   /** TENANCY=single: the account joins the tenant with SIGN_UP_ROLES. */
   private async joinSoleTenant(user: UserPrincipal, ip?: string) {
     const tenantId = this.tenancy.tenantId();
-    await this.txHost.tx
-      .insert(memberships)
-      .values({ tenantId, userId: user.id });
+    await this.repository.insertMembership(user.id);
     const granted = this.config.signUpRoles.length
-      ? await this.txHost.tx
-          .select({ id: roles.id })
-          .from(roles)
-          .where(inArray(roles.key, this.config.signUpRoles))
+      ? await this.repository.roleIdsByKeys(this.config.signUpRoles)
       : [];
     if (granted.length) {
-      await this.txHost.tx
-        .insert(userRoles)
-        .values(granted.map(({ id }) => ({ userId: user.id, roleId: id })));
+      await this.repository.insertGrants(user.id, granted);
     }
     await this.audit.record(
       { ...user, tenantId },
@@ -300,7 +293,7 @@ export class SignUpService
         action: 'user.joined',
         targetType: 'user',
         targetId: user.id,
-        details: { via: 'sign-up', roleIds: granted.map(({ id }) => id) },
+        details: { via: 'sign-up', roleIds: granted },
         ip,
       },
     );

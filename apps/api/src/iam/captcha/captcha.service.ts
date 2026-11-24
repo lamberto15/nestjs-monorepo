@@ -95,7 +95,7 @@ return 0`;
  */
 @Injectable()
 export class CaptchaService {
-  private readonly logger = new Logger('Captcha');
+  private readonly logger = new Logger(CaptchaService.name);
   private readonly policy: ResiliencePolicy;
   private readonly verifications: Counter;
 

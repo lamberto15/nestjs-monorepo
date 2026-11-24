@@ -5,6 +5,7 @@ import { OperatorGuard } from '../auth/operator-only.js';
 import { BreakGlassController } from './break-glass.controller.js';
 import { BREAK_GLASS_PERMISSIONS } from './break-glass.permissions.js';
 import { BreakGlassPolicy } from './break-glass.policy.js';
+import { BreakGlassRepository } from './break-glass.repository.js';
 import { BreakGlassService } from './break-glass.service.js';
 
 /**
@@ -16,6 +17,11 @@ import { BreakGlassService } from './break-glass.service.js';
 @Module({
   imports: [AccessModule.forFeature(BREAK_GLASS_PERMISSIONS), AuditModule],
   controllers: [BreakGlassController],
-  providers: [BreakGlassService, BreakGlassPolicy, OperatorGuard],
+  providers: [
+    BreakGlassService,
+    BreakGlassRepository,
+    BreakGlassPolicy,
+    OperatorGuard,
+  ],
 })
 export class BreakGlassModule {}

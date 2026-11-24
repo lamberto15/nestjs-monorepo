@@ -249,3 +249,45 @@ export const explanationSchema = z.object({
     }),
   ),
 });
+
+const permissionSchema = z.object({
+  subject: z.string().min(1).meta({ example: 'Note' }),
+  action: z.string().min(1).meta({ example: 'read' }),
+  conditions: z
+    .array(
+      z.object({
+        key: z.string().min(1).meta({ example: 'mine' }),
+        params: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .max(10),
+  fields: z
+    .array(z.string().min(1))
+    .max(50)
+    .optional()
+    .describe(
+      'Only these restrictable fields of the subject (GET /access/catalog); [] for none of them; leave out for all.',
+    ),
+});
+
+export const roleInputSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().max(500).optional(),
+  permissions: z.array(permissionSchema).max(100),
+});
+
+// Strict: a `password` or `name` is refused, not ignored: administrators
+// never set another person's account.
+export const updateMemberSchema = z.strictObject({
+  active: z
+    .boolean()
+    .optional()
+    .describe('The membership in this tenant, not the account.'),
+  roleIds: z.array(z.uuid()).optional(),
+  roleExpiresAt: z
+    .record(z.uuid(), z.iso.datetime({ offset: true }))
+    .optional()
+    .describe(
+      'When each grant ends, by role id (temporary access); the others never do.',
+    ),
+});

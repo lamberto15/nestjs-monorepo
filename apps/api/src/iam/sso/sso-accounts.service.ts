@@ -74,7 +74,7 @@ export const ssoProvider = (connectionId: string) => `sso:${connectionId}`;
  */
 @Injectable()
 export class SsoAccounts {
-  private readonly logger = new Logger('SSO');
+  private readonly logger = new Logger(SsoAccounts.name);
 
   constructor(
     @InjectTransaction() private readonly db: Database,

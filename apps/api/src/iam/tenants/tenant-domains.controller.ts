@@ -23,38 +23,17 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { z } from 'zod';
+import type { z } from 'zod';
+import {
+  createDomainSchema,
+  domainSchema,
+  domainsSchema,
+} from './tenants.schemas.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { RecentAuthentication } from '../auth/recent-authentication.js';
 import { UserOnly } from '../auth/user-only.decorator.js';
 import { TenantDomainsService } from './tenant-domains.service.js';
 import { TenantsPolicy } from './tenants.policy.js';
-
-const domainSchema = z.object({
-  id: z.uuid(),
-  hostname: z.string(),
-  verified: z.boolean(),
-  verifiedAt: z.iso.datetime().nullable(),
-  lastCheckedAt: z.iso.datetime().nullable(),
-  lastError: z.string().nullable(),
-  record: z
-    .object({
-      type: z.literal('TXT'),
-      name: z.string(),
-      value: z.string(),
-    })
-    .describe('The DNS record to publish, then ask for the check.'),
-  createdAt: z.iso.datetime(),
-});
-
-const domainsSchema = z.object({
-  enabled: z.boolean().describe('CUSTOM_DOMAINS is on in this deployment.'),
-  items: z.array(domainSchema),
-});
-
-const createSchema = z.object({
-  hostname: z.string().min(1).max(300).meta({ example: 'app.acme.com' }),
-});
 
 /**
  * The tenant's own domains (CUSTOM_DOMAINS), for its administrators
@@ -93,7 +72,8 @@ export class TenantDomainsController {
   @ApiNotFoundResponse({ description: '`feature_off`: CUSTOM_DOMAINS=off.' })
   create(
     @CurrentUser() user: UserPrincipal,
-    @Body({ schema: createSchema }) body: z.infer<typeof createSchema>,
+    @Body({ schema: createDomainSchema })
+    body: z.infer<typeof createDomainSchema>,
     @Ip() ip: string,
   ) {
     return this.domains.create(user, body.hostname, ip);

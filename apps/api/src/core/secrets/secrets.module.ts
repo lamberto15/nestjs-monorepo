@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { SecretsRepository } from './secrets.repository.js';
 import { Secrets } from './secrets.service.js';
 
 /**
@@ -8,7 +9,7 @@ import { Secrets } from './secrets.service.js';
  */
 @Global()
 @Module({
-  providers: [Secrets],
+  providers: [Secrets, SecretsRepository],
   exports: [Secrets],
 })
 export class SecretsModule {}

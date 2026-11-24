@@ -31,6 +31,7 @@ import { SessionPruneJob } from './session-prune.job.js';
 import { SessionAuth } from './session-auth.provider.js';
 import { SignInGates } from './sign-in-gate.js';
 import { SignInContext, signInMetadata } from './sign-in-context.js';
+import { ApiKeysRepository } from './api-keys.repository.js';
 import { UsersRepository } from './users.repository.js';
 import { WhoAmIController } from './who-am-i.controller.js';
 import { UserThrottlerGuard } from './user-throttle.guard.js';
@@ -128,6 +129,7 @@ const JWT_KEY_SECRET = 'jwt-signing-key';
   controllers: [AuthController, WhoAmIController],
   providers: [
     UsersRepository,
+    ApiKeysRepository,
     DrizzleAuthenticationStore,
     AuthPolicy,
     SessionLifetime,

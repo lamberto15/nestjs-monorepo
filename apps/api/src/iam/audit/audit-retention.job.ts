@@ -3,13 +3,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { inArray, lt } from 'drizzle-orm';
 import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { systemPrincipal } from '../auth/principal.js';
 import { auditConfig } from './audit.config.js';
 import { AuditService } from './audit.service.js';
-import { auditLog } from './audit.tables.js';
+import { AuditRepository } from './audit.repository.js';
 
 /** The job's principal: `system:audit-retention` in the log. */
 export const AUDIT_RETENTION = systemPrincipal({
@@ -40,6 +39,7 @@ export class AuditRetentionJob {
     @Inject(auditConfig.KEY)
     private readonly config: ConfigType<typeof auditConfig>,
     private readonly audit: AuditService,
+    private readonly repository: AuditRepository,
     private readonly tenancy: Tenancy,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
   ) {}
@@ -77,15 +77,7 @@ export class AuditRetentionJob {
     let total = 0;
     for (;;) {
       const deleted = await this.txHost.withTransaction(async () => {
-        const old = this.txHost.tx
-          .select({ id: auditLog.id })
-          .from(auditLog)
-          .where(lt(auditLog.at, before))
-          .limit(BATCH);
-        const rows = await this.txHost.tx
-          .delete(auditLog)
-          .where(inArray(auditLog.id, old))
-          .returning({ id: auditLog.id });
+        const rows = await this.repository.deleteOlderThan(before, BATCH);
         if (rows.length > 0) {
           // Who removed history, and how much: never itself pruned this run.
           await this.audit.record(AUDIT_RETENTION, {

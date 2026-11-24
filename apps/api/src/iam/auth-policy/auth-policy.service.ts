@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -8,12 +8,8 @@ import {
 import type { ConfigType } from '@nestjs/config';
 import { MfaService } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
-import { and, eq, inArray } from 'drizzle-orm';
 import { ClsService } from 'nestjs-cls';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { accountConfig } from '../account/account.config.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -25,11 +21,7 @@ import type {
   AuthPolicyChanges,
   AuthPolicyView,
 } from './auth-policy.schemas.js';
-import {
-  authPolicies,
-  authPolicyPlatform,
-  authPolicyUnits,
-} from './auth-policy.tables.js';
+import { AuthPolicyRepository } from './auth-policy.repository.js';
 
 const DEFAULTS: AuthPolicyView = {
   requireMfa: false,
@@ -54,7 +46,7 @@ const POLICIES = Symbol('auth-policy.read');
 @Injectable()
 export class TenantAuthPolicies implements AuthPolicySource {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: AuthPolicyRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     private readonly mfa: MfaService,
@@ -86,10 +78,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
   }
 
   private async read(tenantId: string): Promise<AuthPolicyView> {
-    const [row] = await this.db
-      .select()
-      .from(authPolicies)
-      .where(eq(authPolicies.tenantId, tenantId));
+    const row = await this.repository.findTenantPolicy(tenantId);
     if (!row) {
       return { ...DEFAULTS };
     }
@@ -148,13 +137,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
       // Read fresh, and forgotten for the rest of the request: it changes.
       this.cls.get<Map<string, unknown>>(POLICIES)?.delete(tenantId);
       const next = { ...(await this.read(tenantId)), ...changes };
-      await this.db
-        .insert(authPolicies)
-        .values({ tenantId, ...next })
-        .onConflictDoUpdate({
-          target: authPolicies.tenantId,
-          set: { ...next, updatedAt: new Date() },
-        });
+      await this.repository.saveTenantPolicy(tenantId, next);
       await this.audit.record(user, {
         action: 'auth-policy.updated',
         targetType: 'auth-policy',
@@ -186,10 +169,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
   /** The unit's own requirement of two-factor (not the tree's above it). */
   async unitPolicy(unitId: string) {
     await this.organization.get(unitId);
-    const [row] = await this.db
-      .select({ requireMfa: authPolicyUnits.requireMfa })
-      .from(authPolicyUnits)
-      .where(eq(authPolicyUnits.unitId, unitId));
+    const row = await this.repository.findUnitPolicy(unitId);
     return { requireMfa: row?.requireMfa ?? false };
   }
 
@@ -209,14 +189,9 @@ export class TenantAuthPolicies implements AuthPolicySource {
     }
     return this.txHost.withTransaction(async () => {
       if (requireMfa) {
-        await this.db
-          .insert(authPolicyUnits)
-          .values({ tenantId: this.tenancy.tenantId(), unitId })
-          .onConflictDoNothing();
+        await this.repository.insertUnitPolicy(unitId);
       } else {
-        await this.db
-          .delete(authPolicyUnits)
-          .where(eq(authPolicyUnits.unitId, unitId));
+        await this.repository.deleteUnitPolicy(unitId);
       }
       await this.audit.record(user, {
         action: 'auth-policy.unit-updated',
@@ -231,9 +206,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
 
   /** The operators' requirement for every tenant. */
   async platformPolicy() {
-    const [row] = await this.db
-      .select({ requireMfa: authPolicyPlatform.requireMfa })
-      .from(authPolicyPlatform);
+    const row = await this.repository.findPlatformPolicy();
     return { requireMfa: row?.requireMfa ?? false };
   }
 
@@ -244,17 +217,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
       await this.assertMayRequireMfa(user, true);
     }
     return this.txHost.withTransaction(async () => {
-      await this.db
-        .insert(authPolicyPlatform)
-        .values({ requireMfa, updatedBy: `user:${user.id}` })
-        .onConflictDoUpdate({
-          target: authPolicyPlatform.id,
-          set: {
-            requireMfa,
-            updatedBy: `user:${user.id}`,
-            updatedAt: new Date(),
-          },
-        });
+      await this.repository.savePlatformPolicy(requireMfa, `user:${user.id}`);
       await this.audit.record(user, {
         action: 'auth-policy.platform-updated',
         targetType: 'auth-policy',
@@ -282,9 +245,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
    */
   async requireMfa(user: UserPrincipal) {
     if (!this.account.mfa || !user.tenantId) return false;
-    const [platform] = await this.db
-      .select({ requireMfa: authPolicyPlatform.requireMfa })
-      .from(authPolicyPlatform);
+    const platform = await this.repository.findPlatformPolicy();
     if (platform?.requireMfa) return true;
     if ((await this.get(user.tenantId)).requireMfa) return true;
     return this.tenancy.run(user.tenantId, async () => {
@@ -294,17 +255,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
         )
       ).flat();
       if (!units.length) return false;
-      const [row] = await this.db
-        .select({ unitId: authPolicyUnits.unitId })
-        .from(authPolicyUnits)
-        .where(
-          and(
-            inArray(authPolicyUnits.unitId, units),
-            eq(authPolicyUnits.requireMfa, true),
-          ),
-        )
-        .limit(1);
-      return Boolean(row);
+      return this.repository.anyUnitRequiresMfa(units);
     });
   }
 

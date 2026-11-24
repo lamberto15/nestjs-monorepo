@@ -7,9 +7,11 @@ import { accessConfig } from './access.config.js';
 import { AccessController } from './access.controller.js';
 import { ACCESS_PERMISSIONS } from './access.permissions.js';
 import { AccessPolicy } from './access.policy.js';
+import { AccessSeederRepository } from './access-seeder.repository.js';
 import { AccessSeeder } from './access.seeder.js';
 import { AccessService } from './access.service.js';
 import { ExplanationService } from './explanation.service.js';
+import { MembersRepository } from './members.repository.js';
 import { MembersService } from './members.service.js';
 import {
   PermissionCatalog,
@@ -17,6 +19,7 @@ import {
 } from './permission-catalog.js';
 import type { PermissionsDefinition } from './permissions.js';
 import { PrincipalsService } from './principals.service.js';
+import { RolesRepository } from './roles.repository.js';
 import { RolesService } from './roles.service.js';
 import { SystemContext } from './system-context.js';
 
@@ -43,11 +46,14 @@ import { SystemContext } from './system-context.js';
     AccessService,
     AccessPolicy,
     RolesService,
+    RolesRepository,
     MembersService,
+    MembersRepository,
     PrincipalsService,
     ExplanationService,
     SystemContext,
     AccessSeeder,
+    AccessSeederRepository,
     {
       provide: PermissionsRegistration,
       useValue: new PermissionsRegistration(ACCESS_PERMISSIONS),

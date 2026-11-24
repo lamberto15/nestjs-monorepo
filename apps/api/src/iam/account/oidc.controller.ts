@@ -1,40 +1,27 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  HttpException,
   Delete,
   Inject,
   Ip,
   Get,
   HttpCode,
-  NotFoundException,
   Param,
   Post,
   Query,
   Redirect,
   Req,
   Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type {
   NodeRequest as Request,
   NodeResponse as Response,
 } from '@nestjs/platform-node';
-import {
-  CurrentSession,
-  CurrentUser,
-  OidcService,
-  Public,
-} from '@nestjs/authentication';
+import { CurrentSession, CurrentUser, Public } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import type { ConfigType } from '@nestjs/config';
-import { httpConfig } from '../../core/http/http.config.js';
 import { authConfig } from '../auth/auth.config.js';
-import { isRecent, authenticationOf } from '../auth/authentication-method.js';
 import { SessionOnly } from '../auth/user-only.decorator.js';
-import { accountConfig } from './account.config.js';
-import { oidcProviders } from './oidc.providers.js';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
@@ -48,139 +35,24 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle, minutes } from '@nestjs/throttler';
-import { z } from 'zod';
+import type { z } from 'zod';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
 import { listSchema } from '../../core/http/pagination.js';
-import { redirectPath, webAppUrl } from '../../core/http/redirect-path.js';
 import { ProviderSignIn } from './provider-sign-in.service.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { RecentAuthentication } from '../auth/recent-authentication.js';
 import { UserOnly } from '../auth/user-only.decorator.js';
-import { notWhileImpersonating, verifiedEmailOnly } from './account.schemas.js';
 import {
-  ReauthenticationRefused,
-  reauthenticationCookie,
-} from './oidc-reauthentication.js';
-import { NativeSignIn } from './native-sign-in.service.js';
-import {
-  codeChallenge,
-  codeVerifier,
-  nativeLoginQuery,
-} from './native-redirect.js';
-
-const identitySchema = z.object({
-  provider: z.string(),
-  email: z.string().nullable(),
-  createdAt: z.iso.datetime(),
-});
-
-/**
- * The login route's query. A query parameter sent twice
- * (`?redirectTo=/a&redirectTo=//evil`) reaches the handler as an array, and
- * a string method on it throws (a 500, CodeQL
- * js/type-confusion-through-parameter-tampering): the schema makes each one a
- * string or, when it isn't one, absent (`catch`), since the browser is
- * navigating here and a problem response would be its landing page. So is
- * a `redirectTo` that isn't a path of the web app (`isSafeRedirectPath`):
- * dropped, never stored with the login, and the browser lands on the web
- * app's root.
- */
-const loginQuerySchema = z.object({
-  redirectTo: redirectPath
-    .optional()
-    .catch(undefined)
-    .describe(
-      'A path of the web app to land on (one leading `/`, printable ASCII, no `\\`); anything else is ignored.',
-    ),
-  link: z
-    .string()
-    .optional()
-    .catch(undefined)
-    .describe('`true`: connect the provider to the signed-in account.'),
-  reauthenticate: z
-    .string()
-    .optional()
-    .catch(undefined)
-    .describe(
-      '`true`: re-authenticate the signed-in user through the provider (step-up), with a fresh login there.',
-    ),
-  ...nativeLoginQuery,
-  ticket: z
-    .string()
-    .max(128)
-    .optional()
-    .catch(undefined)
-    .describe(
-      "A signed-in app's link or step-up: the `url` of POST /auth/identities/{provider}/native carries it.",
-    ),
-});
-
-const nativeTicketSchema = z.object({
-  purpose: z
-    .enum(['link', 'reauthenticate'])
-    .describe(
-      "`link`: connect the provider to your account (wants a recent sign-in, as the browser's). `reauthenticate`: step up through a provider already connected.",
-    ),
-  redirectUri: z
-    .string()
-    .max(2048)
-    .describe(
-      'One of NATIVE_REDIRECT_URIS: where the browser hands back `?code=` or `?error=`.',
-    ),
-  codeChallenge,
-});
-
-const nativeCompleteSchema = z.object({
-  handoffCode: z
-    .string()
-    .min(1)
-    .max(128)
-    .describe("The `code` the ticket's `redirectUri` was handed."),
-  codeVerifier: codeVerifier.describe(
-    "The PKCE verifier of the ticket's `codeChallenge`.",
-  ),
-  code: z
-    .string()
-    .regex(/^\d{6}$/)
-    .optional()
-    .describe('A step-up with two-factor on: a code from the app.'),
-  recoveryCode: z.string().max(64).optional(),
-  refreshToken: z
-    .string()
-    .min(1)
-    .max(512)
-    .optional()
-    .describe(
-      'A step-up: your current refresh token, revoked once the new pair is issued.',
-    ),
-});
-
-const nativeCompletedSchema = z.discriminatedUnion('purpose', [
-  z.object({ purpose: z.literal('link'), identity: identitySchema }),
-  z.object({
-    purpose: z.literal('reauthenticate'),
-    accessToken: z
-      .string()
-      .describe('A JWT with `auth_time` now: `Authorization: Bearer …`.'),
-    refreshToken: z.string().describe('Single use: POST /auth/token/refresh.'),
-    expiresIn: z
-      .number()
-      .int()
-      .describe('Seconds until the access token expires.'),
-  }),
-]);
-
-/**
- * What the provider sends back, and all that `OidcService.finish` reads
- * (`state`; `code`, `error` and `iss` in its client): each a string, so a
- * repeated parameter is a 400, not a 500. Anything else is dropped.
- */
-const callbackQuerySchema = z.object({
-  code: z.string().optional(),
-  state: z.string().optional(),
-  error: z.string().optional(),
-  iss: z.string().optional(),
-});
+  nativeCompletedSchema,
+  nativeCompleteSchema,
+  nativeTicketSchema,
+  nativeTicketUrlSchema,
+  oidcCallbackQuerySchema,
+  oidcIdentitySchema,
+  oidcLoginQuerySchema,
+} from './account.schemas.js';
+import { reauthenticationCookie } from './oidc-reauthentication.js';
+import { OidcSignIn } from './oidc-sign-in.service.js';
 
 /**
  * Sign in with Google, Microsoft or GitHub (OidcService: PKCE, nonce, state
@@ -192,23 +64,11 @@ const callbackQuerySchema = z.object({
 @Controller('auth')
 export class OidcController {
   constructor(
-    private readonly oidc: OidcService,
+    private readonly flows: OidcSignIn,
     private readonly providers: ProviderSignIn,
-    private readonly native: NativeSignIn,
-    @Inject(accountConfig.KEY)
-    private readonly config: ConfigType<typeof accountConfig>,
     @Inject(authConfig.KEY)
     private readonly auth: ConfigType<typeof authConfig>,
-    @Inject(httpConfig.KEY)
-    private readonly http: ConfigType<typeof httpConfig>,
   ) {}
-
-  /** 404 for a provider without credentials (and when none is configured at all). */
-  private configured(provider: string) {
-    if (!Object.hasOwn(oidcProviders(this.config), provider)) {
-      throw new NotFoundException(`No provider named "${provider}".`);
-    }
-  }
 
   // Optional session: a link flow (?link=true) needs one (401), and not an
   // impersonation (403), and a recent sign-in: a provider linked by a stolen
@@ -239,108 +99,20 @@ export class OidcController {
     @CurrentUser() user: UserPrincipal | null,
     @CurrentSession() session: unknown,
     @Param('provider') provider: string,
-    @Query({ schema: loginQuerySchema })
-    {
-      redirectTo,
-      link,
-      reauthenticate,
-      redirectUri,
-      codeChallenge,
-      ticket,
-    }: z.infer<typeof loginQuerySchema>,
+    @Query({ schema: oidcLoginQuerySchema })
+    query: z.infer<typeof oidcLoginQuerySchema>,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (ticket !== undefined) {
-      // A signed-in app's link or step-up: the ticket says whose, and how.
-      this.configured(provider);
-      return this.native.startTicket(provider, ticket);
-    }
-    const native = this.native.nativeLogin({ redirectUri, codeChallenge });
-    if (native) {
-      // A native app's sign-in (no session here: its code, then tokens).
-      if (link === 'true' || reauthenticate === 'true') {
-        throw new BadRequestException(
-          'A native sign-in neither links nor re-authenticates.',
-        );
-      }
-      this.configured(provider);
-      const redirect = await this.oidc.start(provider, {});
-      await this.native.remember(
-        new URL(redirect.url).searchParams.get('state')!,
-        native,
-      );
-      return redirect;
-    }
-    if (reauthenticate === 'true') {
-      if (link === 'true') {
-        throw new BadRequestException(
-          '`link` and `reauthenticate` are two flows: one at a time.',
-        );
-      }
-      if (!user) {
-        throw new UnauthorizedException();
-      }
-      notWhileImpersonating(user);
-      // As linking: an address the person proved (an invitation, the link).
-      verifiedEmailOnly(user);
-      this.configured(provider);
-      const redirect = await this.providers.startReauthentication(
-        user,
-        provider,
-        redirectTo,
-      );
-      // This browser started a step-up for this state: its callback is one.
-      res.append(
-        'Set-Cookie',
-        this.stepUpCookie().set(
-          new URL(redirect.url).searchParams.get('state')!,
-        ),
-      );
-      return redirect;
-    }
-    if (link === 'true') {
-      if (!user) {
-        throw new UnauthorizedException();
-      }
-      notWhileImpersonating(user);
-      verifiedEmailOnly(user);
-      if (!this.isRecent(session)) {
-        return {
-          url: this.backToWebApp(redirectTo, 'reauthentication_required'),
-        };
-      }
-    }
-    this.configured(provider);
-    return this.oidc.start(provider, { redirectTo, link: link === 'true' });
-  }
-
-  /**
-   * `redirectTo` (a path of the web app, else its root: `webAppUrl`, the
-   * one rule for every redirect target) with `?error=`.
-   */
-  private backToWebApp(redirectTo: string | undefined, error: string) {
-    const url = this.webApp(redirectTo);
-    url.searchParams.set('error', error);
-    return url.toString();
-  }
-
-  /** `value` on the web app (WEB_URL, else APP_URL), else its root. */
-  private webApp(value: unknown) {
-    return webAppUrl(value, this.http.webUrl);
-  }
-
-  /** Whether the session's sign-in is within REAUTHENTICATION_MAX_AGE_MINUTES. */
-  private isRecent(session: unknown) {
-    const authentication = authenticationOf(session);
-    const at = authentication?.authenticatedAt;
-    return isRecent(
-      authentication,
-      at
-        ? new Date(
-            at.getTime() + this.auth.reauthenticationMaxAgeMinutes * 60_000,
-          )
-        : null,
+    const { redirect, stepUpState } = await this.flows.login(
+      user,
+      session,
+      provider,
+      query,
     );
+    if (stepUpState !== undefined) {
+      res.append('Set-Cookie', this.stepUpCookie().set(stepUpState));
+    }
+    return redirect;
   }
 
   @Public()
@@ -354,68 +126,26 @@ export class OidcController {
   })
   async callback(
     @Param('provider') provider: string,
-    @Query({ schema: callbackQuerySchema })
-    query: z.infer<typeof callbackQuerySchema>,
+    @Query({ schema: oidcCallbackQuerySchema })
+    query: z.infer<typeof oidcCallbackQuerySchema>,
     @Ip() ip: string,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    this.configured(provider);
-    const native = await this.native.login(query.state);
-    if (native) {
-      try {
-        const { url, cookies } = await this.native.finishProvider(
-          provider,
-          query,
-          native,
-          ip,
-        );
-        for (const cookie of cookies) {
-          res.append('Set-Cookie', cookie);
-        }
-        return { url };
-      } catch (error) {
-        // The app's browser lands back in the app, never on a problem page.
-        if (
-          error instanceof HttpException ||
-          error instanceof ReauthenticationRefused
-        ) {
-          return { url: this.native.failed(native) };
-        }
-        throw error;
-      }
-    }
     const cookie = this.stepUpCookie();
-    const stepUpExpected =
-      query.state !== undefined &&
-      cookie.read(req.headers.cookie) === query.state;
-    try {
-      const redirect = await this.providers.signIn(
-        provider,
-        query,
-        { ip, userAgent: firstHeader(req.headers['user-agent']) },
-        { stepUpExpected },
-      );
-      if (stepUpExpected) {
-        res.append('Set-Cookie', cookie.clear());
-      }
-      // The login's `redirectTo` (a path, else the package's
-      // `redirectAfterLogin`) checked again and made the web app's: a login
-      // stored before the rule lands on its root, and a path lands on the
-      // web app, not on this API's origin.
-      return {
-        ...redirect,
-        url: this.webApp(redirect.url).toString(),
-      };
-    } catch (error) {
-      if (error instanceof ReauthenticationRefused) {
-        res.append('Set-Cookie', cookie.clear());
-        return {
-          url: this.backToWebApp(error.redirectTo, 'reauthentication_failed'),
-        };
-      }
-      throw error;
+    const { redirect, cookies, clearStepUp } = await this.flows.callback(
+      provider,
+      query,
+      { ip, userAgent: firstHeader(req.headers['user-agent']) },
+      cookie.read(req.headers.cookie),
+    );
+    for (const value of cookies) {
+      res.append('Set-Cookie', value);
     }
+    if (clearStepUp) {
+      res.append('Set-Cookie', cookie.clear());
+    }
+    return redirect;
   }
 
   /** The step-up cookie, Secure (and `__Host-`) as the session's (SESSION_COOKIE_SECURE). */
@@ -430,7 +160,7 @@ export class OidcController {
   @ApiBearerAuth('user-token')
   @ApiTags('account')
   @ApiOperation({ summary: 'The providers connected to your account' })
-  @ApiOkResponse({ standardSchema: listSchema(identitySchema) })
+  @ApiOkResponse({ standardSchema: listSchema(oidcIdentitySchema) })
   async identities(@CurrentUser() user: UserPrincipal) {
     return { items: await this.providers.identities(user.id) };
   }
@@ -453,13 +183,7 @@ export class OidcController {
       'For an app signed in with tokens (a browser session: 400 `token_session_required`; use `?link=true` / `?reauthenticate=true`). Answers the `url` to open in the system browser: a one-time ticket, for five minutes, bound to you, this token session, the purpose, `redirectUri` (one of NATIVE_REDIRECT_URIS) and `codeChallenge`. A step-up asks the provider to authenticate you again. The browser lands on `redirectUri?code=…` (or `?error=link_failed` / `reauthentication_failed`): POST /auth/identities/native/complete with the verifier.',
   })
   @ApiCreatedResponse({
-    standardSchema: z.object({
-      url: z
-        .string()
-        .describe(
-          'The login route with the ticket: open it in the system browser.',
-        ),
-    }),
+    standardSchema: nativeTicketUrlSchema,
   })
   async nativeTicket(
     @CurrentUser() user: UserPrincipal,
@@ -468,11 +192,7 @@ export class OidcController {
     @Body({ schema: nativeTicketSchema })
     body: z.infer<typeof nativeTicketSchema>,
   ) {
-    notWhileImpersonating(user);
-    // As the browser's: an address the person proved.
-    verifiedEmailOnly(user);
-    this.configured(provider);
-    return this.native.ticket(user, session, provider, body);
+    return this.flows.nativeTicket(user, session, provider, body);
   }
 
   // The code is 256 random bits, bound to its verifier and this session.
@@ -500,7 +220,7 @@ export class OidcController {
     body: z.infer<typeof nativeCompleteSchema>,
     @Ip() ip: string,
   ) {
-    const done = await this.native.complete(
+    return this.flows.nativeComplete(
       user,
       session,
       {
@@ -511,13 +231,6 @@ export class OidcController {
       },
       ip,
     );
-    if (done.purpose === 'reauthenticate') {
-      return done;
-    }
-    const identity = (await this.providers.identities(user.id)).find(
-      (item) => item.provider === done.provider,
-    );
-    return { purpose: done.purpose, identity };
   }
 
   @UserOnly()
@@ -538,8 +251,7 @@ export class OidcController {
     @CurrentUser() user: UserPrincipal,
     @Param('provider') provider: string,
   ) {
-    notWhileImpersonating(user);
-    await this.providers.unlink(user, provider);
+    await this.flows.unlink(user, provider);
   }
 }
 

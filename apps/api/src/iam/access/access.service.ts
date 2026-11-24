@@ -6,7 +6,6 @@ import {
   subject as asSubject,
 } from '@casl/ability';
 import { permittedFieldsOf } from '@casl/ability/extra';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   ForbiddenException,
   Inject,
@@ -19,7 +18,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   and,
   eq,
-  gt,
   inArray,
   isNotNull,
   isNull,
@@ -28,7 +26,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import type { Database } from '../../core/database/database.js';
+import { RolesRepository } from './roles.repository.js';
 import {
   type ListQuery,
   queryMatches,
@@ -43,7 +41,6 @@ import {
   principalKey,
 } from '../auth/principal.js';
 import { ACCESS_EVENTS, type AbilitiesChangedEvent } from './access.events.js';
-import { apiClientRoles, rolePermissions, userRoles } from './access.tables.js';
 import {
   type FieldComparison,
   PermissionCatalog,
@@ -299,7 +296,7 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
   private units?: UnitDirectory;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RolesRepository,
     private readonly catalog: PermissionCatalog,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly discovery: DiscoveryService,
@@ -795,26 +792,11 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
             : [],
       };
     }
-    const grants = principal.kind === 'user' ? userRoles : apiClientRoles;
-    const holder =
-      principal.kind === 'user' ? userRoles.userId : apiClientRoles.clientId;
-    const rows = await this.db
-      .select({
-        subject: rolePermissions.subject,
-        action: rolePermissions.action,
-        conditions: rolePermissions.conditions,
-        fields: rolePermissions.fields,
-        roleId: rolePermissions.roleId,
-        expiresAt: grants.expiresAt,
-      })
-      .from(rolePermissions)
-      .innerJoin(grants, eq(grants.roleId, rolePermissions.roleId))
-      .where(
-        and(
-          eq(holder, principal.id),
-          or(isNull(grants.expiresAt), gt(grants.expiresAt, now)),
-        ),
-      );
+    const rows = await this.repository.grantedPermissions(
+      principal.kind,
+      principal.id,
+      now,
+    );
     const expiries = rows.flatMap((row) =>
       row.expiresAt ? [row.expiresAt.getTime()] : [],
     );

@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   ForbiddenException,
@@ -7,19 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { t } from '@nestjs/i18n';
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Events } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
-import { roles, userRoles } from '../access/access.tables.js';
 import { AccessService } from '../access/access.service.js';
-import { liveGrant } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { SIGN_IN_ACTIONS } from '../audit/sign-in-actions.js';
-import { memberships } from '../auth/auth.tables.js';
 import { AuthPolicy } from '../auth/auth-policy.js';
 import {
   BreakGlassGrantSource,
@@ -29,10 +22,8 @@ import {
 import { OperatorGuard } from '../auth/operator-only.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { breakGlassStarted } from './break-glass.events.js';
-import {
-  type BreakGlassGrant,
-  breakGlassGrants,
-} from './break-glass.tables.js';
+import { BreakGlassRepository } from './break-glass.repository.js';
+import type { BreakGlassGrant } from './break-glass.tables.js';
 
 /** The longest a grant lasts, and its default: an hour. */
 export const BREAK_GLASS_MAX_MINUTES = 60;
@@ -70,10 +61,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 @BreakGlassGrantSource()
 @Injectable()
 export class BreakGlassService implements BreakGlassGrants {
-  private readonly logger = new Logger('BreakGlass');
+  private readonly logger = new Logger(BreakGlassService.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: BreakGlassRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -119,19 +110,7 @@ export class BreakGlassService implements BreakGlassGrants {
       throw disabled();
     }
     const now = new Date();
-    const [running] = await this.db
-      .select({ id: breakGlassGrants.id })
-      .from(breakGlassGrants)
-      .where(
-        and(
-          eq(breakGlassGrants.userId, operator.id),
-          eq(breakGlassGrants.targetTenantId, target.id),
-          isNull(breakGlassGrants.endedAt),
-          gt(breakGlassGrants.expiresAt, now),
-        ),
-      )
-      .limit(1);
-    if (running) {
+    if (await this.repository.hasRunningGrant(operator.id, target.id, now)) {
       throw new ConflictException({
         code: 'break_glass_active',
         message: t('breakGlass.active'),
@@ -175,7 +154,7 @@ export class BreakGlassService implements BreakGlassGrants {
             operator: { id: operator.id, email: operator.email },
             reason: input.reason,
             expiresAt: expiresAt.toISOString(),
-            administrators: await this.administrators(target.id),
+            administrators: await this.repository.administratorIds(target.id),
             ...(ip && { ip }),
           },
           { key: grantId },
@@ -185,16 +164,13 @@ export class BreakGlassService implements BreakGlassGrants {
 
     // The operators' side: the grant, and their own log.
     const grant = await this.txHost.withTransaction(async () => {
-      const [row] = await this.db
-        .insert(breakGlassGrants)
-        .values({
-          id: grantId,
-          userId: operator.id,
-          targetTenantId: target.id,
-          reason: input.reason,
-          expiresAt,
-        })
-        .returning();
+      const row = await this.repository.insert({
+        id: grantId,
+        userId: operator.id,
+        targetTenantId: target.id,
+        reason: input.reason,
+        expiresAt,
+      });
       await this.audit.record(operator, {
         action: 'tenant.break-glass-started',
         targetType: 'tenant',
@@ -202,24 +178,14 @@ export class BreakGlassService implements BreakGlassGrants {
         details,
         ip,
       });
-      return row!;
+      return row;
     });
     return view(grant);
   }
 
   /** The operator's grants to `targetId`, newest first (theirs only). */
   async list(operator: UserPrincipal, targetId: string) {
-    const rows = await this.db
-      .select()
-      .from(breakGlassGrants)
-      .where(
-        and(
-          eq(breakGlassGrants.userId, operator.id),
-          eq(breakGlassGrants.targetTenantId, targetId),
-        ),
-      )
-      .orderBy(desc(breakGlassGrants.createdAt))
-      .limit(50);
+    const rows = await this.repository.listOf(operator.id, targetId);
     return rows.map(view);
   }
 
@@ -236,30 +202,20 @@ export class BreakGlassService implements BreakGlassGrants {
   ) {
     const now = new Date();
     const outcome = await this.txHost.withTransaction(async () => {
-      const [grant] = await this.db
-        .select()
-        .from(breakGlassGrants)
-        .where(
-          and(
-            eq(breakGlassGrants.id, grantId),
-            eq(breakGlassGrants.userId, operator.id),
-            eq(breakGlassGrants.targetTenantId, targetId),
-          ),
-        )
-        .for('update');
+      const grant = await this.repository.lockGrant(
+        grantId,
+        operator.id,
+        targetId,
+      );
       if (!grant) {
         throw new NotFoundException(t('breakGlass.grantNotFound'));
       }
       if (grant.endedAt || grant.expiresAt <= now) {
         return { grant, ended: false };
       }
-      const [updated] = await this.db
-        .update(breakGlassGrants)
-        .set({ endedAt: now })
-        .where(eq(breakGlassGrants.id, grantId))
-        .returning();
-      await this.audit.record(operator, endedEntry(updated!, ip));
-      return { grant: updated!, ended: true };
+      const updated = await this.repository.end(grantId, now);
+      await this.audit.record(operator, endedEntry(updated, ip));
+      return { grant: updated, ended: true };
     });
     if (outcome.ended) {
       await this.tenancy.run(targetId, () =>
@@ -326,15 +282,7 @@ export class BreakGlassService implements BreakGlassGrants {
     ) {
       throw invalid();
     }
-    const [grant] = await this.db
-      .select()
-      .from(breakGlassGrants)
-      .where(
-        and(
-          eq(breakGlassGrants.id, grantId),
-          eq(breakGlassGrants.userId, user.id),
-        ),
-      );
+    const grant = await this.repository.findOf(grantId, user.id);
     if (!grant || grant.endedAt) {
       throw invalid();
     }
@@ -349,29 +297,6 @@ export class BreakGlassService implements BreakGlassGrants {
       throw disabled();
     }
     return { tenantId: target.id, expiresAt: grant.expiresAt };
-  }
-
-  /** In the tenant's scope: active members holding its built-in Administrator role, live. */
-  private async administrators(tenantId: string) {
-    const rows = await this.db
-      .selectDistinct({ userId: userRoles.userId })
-      .from(userRoles)
-      .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .innerJoin(
-        memberships,
-        and(
-          eq(memberships.userId, userRoles.userId),
-          eq(memberships.tenantId, tenantId),
-        ),
-      )
-      .where(
-        and(
-          eq(roles.system, true),
-          eq(memberships.active, true),
-          liveGrant(userRoles),
-        ),
-      );
-    return rows.map((row) => row.userId);
   }
 }
 

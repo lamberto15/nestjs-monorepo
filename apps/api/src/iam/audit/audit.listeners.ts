@@ -22,7 +22,7 @@ import { SIGN_IN_ACTIONS } from './sign-in-actions.js';
  */
 @Injectable()
 export class AuditListeners implements OnApplicationShutdown {
-  private readonly logger = new Logger('Audit');
+  private readonly logger = new Logger(AuditListeners.name);
   /** Tenants' entries of failed sign-ins being written (see signInFailed). */
   private readonly inFlight = new Set<Promise<void>>();
 

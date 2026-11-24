@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
 import {
   Inject,
   Injectable,
@@ -8,23 +7,17 @@ import {
 } from '@nestjs/common';
 import { PasswordHasher } from '@nestjs/authentication';
 import type { ConfigType } from '@nestjs/config';
-import { and, asc, eq, sql } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
 import { tenancyConfig } from '../../core/tenancy/tenancy.config.js';
-import { type Tenant, tenants } from '../../core/tenancy/tenancy.tables.js';
+import type { Tenant } from '../../core/tenancy/tenancy.tables.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { authConfig } from '../auth/auth.config.js';
-import { memberships, users } from '../auth/auth.tables.js';
 import { isPlaceholderEmail } from '../auth/onboarding.js';
 import { normalizeEmail } from '../auth/users.repository.js';
 import { accessConfig } from './access.config.js';
 import { SEED_JOB } from './access.permissions.js';
-import { userRoles } from './access.tables.js';
+import { AccessSeederRepository } from './access-seeder.repository.js';
 import { RolesService } from './roles.service.js';
 import { SystemContext } from './system-context.js';
 
@@ -44,8 +37,7 @@ export class AccessSeeder implements OnApplicationBootstrap {
   private readonly logger = new Logger('Access');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
-    private readonly txHost: TransactionHost<DatabaseTransactions>,
+    private readonly repository: AccessSeederRepository,
     private readonly tenancy: Tenancy,
     private readonly system: SystemContext,
     private readonly roles: RolesService,
@@ -81,38 +73,25 @@ export class AccessSeeder implements OnApplicationBootstrap {
       async (system) => {
         // Every process of a first start runs this at once: exactly one
         // seeds, the others find it done.
-        await this.db.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended('access:seed', 0))`,
-        );
-        const taken = await this.db
-          .select({ id: users.id })
-          .from(users)
-          .limit(1);
-        if (taken.length > 0) return false;
+        await this.repository.lockSeed();
+        if (await this.repository.anyUser()) return false;
         const { administratorId } = await this.roles.seedTenantRoles();
-        const [user] = await this.db
-          .insert(users)
-          .values({
-            email,
-            name: 'Administrator',
-            passwordHash,
-            emailVerified: true,
-            // The first sign-in must replace a placeholder address and a
-            // generated password (OnboardingGuard).
-            onboardingEmail: onboarding && isPlaceholderEmail(email),
-            onboardingPassword: onboarding && !configured,
-          })
-          .returning({ id: users.id });
-        await this.db
-          .insert(memberships)
-          .values({ tenantId: tenant.id, userId: user!.id });
-        await this.db
-          .insert(userRoles)
-          .values({ userId: user!.id, roleId: administratorId });
+        const userId = await this.repository.insertUser({
+          email,
+          name: 'Administrator',
+          passwordHash,
+          emailVerified: true,
+          // The first sign-in must replace a placeholder address and a
+          // generated password (OnboardingGuard).
+          onboardingEmail: onboarding && isPlaceholderEmail(email),
+          onboardingPassword: onboarding && !configured,
+        });
+        await this.repository.insertMembership(tenant.id, userId);
+        await this.repository.insertGrant(userId, administratorId);
         await this.audit.record(system, {
           action: 'user.seeded',
           targetType: 'user',
-          targetId: user!.id,
+          targetId: userId,
           details: { email, tenant: tenant.slug },
         });
         return true;
@@ -146,13 +125,9 @@ export class AccessSeeder implements OnApplicationBootstrap {
       : (this.auth.operatorTenant ?? slugOf(this.config.adminTenantName));
     return this.tenancy.run(null, async () => {
       const existing = single
-        ? await this.db
-            .select()
-            .from(tenants)
-            .orderBy(asc(tenants.createdAt))
-            .limit(1)
-        : await this.db.select().from(tenants).where(eq(tenants.slug, slug));
-      if (existing[0]) return existing[0];
+        ? await this.repository.oldestTenant()
+        : await this.repository.tenantBySlug(slug);
+      if (existing) return existing;
       try {
         return await this.tenancy.create({
           slug,
@@ -160,11 +135,7 @@ export class AccessSeeder implements OnApplicationBootstrap {
         });
       } catch (error) {
         if (databaseErrorKind(error) !== 'unique_violation') throw error;
-        const [made] = await this.db
-          .select()
-          .from(tenants)
-          .where(eq(tenants.slug, slug));
-        return made!;
+        return (await this.repository.tenantBySlug(slug))!;
       }
     });
   }
@@ -181,18 +152,8 @@ export class AccessSeeder implements OnApplicationBootstrap {
     const flagged = await this.system.run(
       SEED_JOB,
       async (system) => {
-        const rows = await this.db
-          .update(users)
-          .set({ onboardingEmail: true })
-          .where(
-            and(
-              eq(users.email, email),
-              eq(users.emailVerified, true),
-              eq(users.onboardingEmail, false),
-            ),
-          )
-          .returning({ id: users.id });
-        for (const { id } of rows) {
+        const ids = await this.repository.requireEmailOnboarding(email);
+        for (const id of ids) {
           await this.audit.record(system, {
             action: 'user.onboarding-required',
             targetType: 'user',
@@ -200,7 +161,7 @@ export class AccessSeeder implements OnApplicationBootstrap {
             details: { email },
           });
         }
-        return rows.length;
+        return ids.length;
       },
       { tenantId: null },
     );
@@ -213,10 +174,7 @@ export class AccessSeeder implements OnApplicationBootstrap {
 
   /** Whether any account exists: one row read, not a count. */
   private async anyUser() {
-    const rows = await this.tenancy.run(null, () =>
-      this.db.select({ id: users.id }).from(users).limit(1),
-    );
-    return rows.length > 0;
+    return this.tenancy.run(null, () => this.repository.anyUser());
   }
 }
 

@@ -1,8 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { ConflictException } from '@nestjs/common';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { ClsService, ClsServiceManager } from 'nestjs-cls';
 import type { Tenant } from './tenancy.tables.js';
+import { TenancyRepository } from './tenancy.repository.js';
 import { TENANT_PAGE, Tenancy, TenantRunsFailed } from './tenancy.service.js';
 import { currentTenantScope } from './tenant-scope.js';
 
@@ -36,9 +38,11 @@ function walking(count: number) {
       }),
     }),
   };
+  // The repository's real queries on a stubbed database: their SQL is what is checked.
   const tenancy = new Tenancy(
     cls,
-    { tx: db, isTransactionActive: () => false } as never,
+    { isTransactionActive: () => false } as never,
+    new TenancyRepository(db as never),
     { mode: 'multi' } as never,
   );
   return { tenancy, queries, all };
@@ -109,5 +113,41 @@ describe('Tenancy.forEachTenant()', () => {
         .size,
     ).toBe(0);
     expect(queries).toHaveLength(0);
+  });
+});
+
+/** Tenancy's rules on a stubbed repository: no database. */
+describe('Tenancy.create()', () => {
+  const repository = {
+    all: vi.fn(),
+    insert: vi.fn(),
+    provision: vi.fn(),
+  };
+  const make = (mode: 'single' | 'multi') =>
+    new Tenancy(
+      new ClsService(new AsyncLocalStorage()),
+      { withTransaction: (work: () => unknown) => work() } as never,
+      repository as never,
+      { mode } as never,
+    );
+
+  beforeEach(() => vi.resetAllMocks());
+
+  it('makes the row, then its storage', async () => {
+    repository.all.mockResolvedValue([]);
+    const made = tenant(1);
+    repository.insert.mockResolvedValue(made);
+    await expect(
+      make('multi').create({ slug: 't1', name: 'T1' }),
+    ).resolves.toBe(made);
+    expect(repository.provision).toHaveBeenCalledWith(id(1));
+  });
+
+  it('refuses a second tenant with TENANCY=single', async () => {
+    repository.all.mockResolvedValue([tenant(1)]);
+    await expect(
+      make('single').create({ slug: 't2', name: 'T2' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(repository.insert).not.toHaveBeenCalled();
   });
 });

@@ -8,38 +8,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { minutes } from '@nestjs/throttler';
-import { z } from 'zod';
+import type { z } from 'zod';
+import { signedUpSchema, signUpSchema } from './tenants.schemas.js';
 import { AddressThrottle } from '../auth/address-throttle.guard.js';
 import { Captcha } from '../captcha/captcha.decorator.js';
 import { SignUpService } from './sign-up.service.js';
-
-const signUpSchema = z.object({
-  email: z.string().trim().pipe(z.email()).meta({ example: 'ada@example.com' }),
-  name: z.string().trim().min(1).max(120),
-  password: z.string().min(12).max(128),
-  locale: z.string().min(2).max(35).optional(),
-  timezone: z.string().min(1).max(64).optional(),
-  tenantName: z
-    .string()
-    .trim()
-    .min(1)
-    .max(120)
-    .optional()
-    .describe(
-      'With TENANT_SIGN_UP: the name of the tenant you make (your name without one).',
-    ),
-});
-
-const signedUpSchema = z.object({
-  id: z.uuid(),
-  email: z.string(),
-  name: z.string(),
-  emailVerified: z.boolean(),
-  tenantId: z
-    .uuid()
-    .nullable()
-    .describe('The tenant it joined (TENANCY=single), else null.'),
-});
 
 /** Self sign-up (AUTH_SIGN_UP). */
 @ApiTags('auth')

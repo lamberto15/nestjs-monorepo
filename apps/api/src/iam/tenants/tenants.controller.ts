@@ -26,9 +26,15 @@ import {
   ApiPreconditionFailedResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
-  assertUnchanged,
+  createdTenantSchema,
+  createTenantSchema,
+  requestDeletionSchema,
+  tenantSchema,
+  updateTenantSchema,
+} from './tenants.schemas.js';
+import {
   Etag,
   ifMatchHeader,
   ifNoneMatchHeader,
@@ -42,81 +48,6 @@ import { UserOnly } from '../auth/user-only.decorator.js';
 import { TENANT_LIST } from './tenants.lists.js';
 import { TenantsPolicy } from './tenants.policy.js';
 import { TenantsService } from './tenants.service.js';
-
-const tenantSchema = z.object({
-  id: z.uuid(),
-  slug: z.string(),
-  name: z.string(),
-  active: z.boolean(),
-  operator: z.boolean().describe("The operators' tenant."),
-  createdBySignUp: z
-    .boolean()
-    .describe('Made by a self sign-up (TENANT_SIGN_UP), not by the operators.'),
-  deletionRequestedAt: z.iso
-    .datetime()
-    .nullable()
-    .describe('An operator asked for its deletion; null: none pending.'),
-  deletionScheduledFor: z.iso
-    .datetime()
-    .nullable()
-    .describe('When it is erased, unless cancelled before.'),
-  deletionStartedAt: z.iso
-    .datetime()
-    .nullable()
-    .describe('The erase began: it can no longer be cancelled.'),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
-});
-
-const tenantName = z.string().trim().min(1).max(120);
-const tenantSlug = z
-  .string()
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  .max(48)
-  .describe('A short handle: lowercase letters, digits and dashes (`acme`).');
-
-const createTenantSchema = z.object({
-  name: tenantName,
-  slug: tenantSlug,
-  administratorEmail: z
-    .email()
-    .describe('Its first administrator, invited at this address.'),
-});
-
-const createdTenantSchema = tenantSchema.extend({
-  administrator: z.object({
-    email: z.string(),
-    status: z
-      .enum(['invited'])
-      .describe(
-        'Always `invited`: whether the address has an account is never read here, so never told.',
-      ),
-    expiresAt: z.iso.datetime().describe('When the link stops working.'),
-  }),
-});
-
-const updateTenantSchema = z
-  .strictObject({
-    name: tenantName.optional(),
-    slug: tenantSlug.optional(),
-    active: z
-      .boolean()
-      .optional()
-      .describe(
-        'false: nobody acts in it (its sessions end, API keys stop, connections close, jobs are skipped); true: its data, members and keys are back. Never for the operator tenant.',
-      ),
-  })
-  .refine((body) => Object.keys(body).length > 0, {
-    message: 'Send at least one of name, slug, active.',
-  });
-
-const requestDeletionSchema = z.object({
-  slug: z
-    .string()
-    .min(1)
-    .max(48)
-    .describe("The tenant's slug, typed again: what you mean to delete."),
-});
 
 /**
  * The deployment's tenants, for its operators: the members of the
@@ -141,7 +72,7 @@ export class TenantsController {
   })
   @ApiOkResponse({ standardSchema: pageSchema(tenantSchema) })
   async list(@Query({ schema: TENANT_LIST.schema }) query: ListQuery) {
-    return TENANT_LIST.pick(await this.tenants.page(query), query);
+    return this.tenants.page(query);
   }
 
   @Get(':id')
@@ -200,14 +131,7 @@ export class TenantsController {
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
   ) {
-    // If-Match under the tenant's lock: two operators can't both win.
-    return this.tenants.update(
-      user,
-      id,
-      body,
-      ip,
-      ifMatch ? (shown) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    return this.tenants.update(user, id, body, ip, ifMatch);
   }
 
   @Post(':id/deletion')

@@ -28,6 +28,8 @@ import { tenantsConfig } from './tenants.config.js';
 import { TenantsController } from './tenants.controller.js';
 import { TENANT_PERMISSIONS } from './tenants.permissions.js';
 import { TenantsPolicy } from './tenants.policy.js';
+import { TenantDomainsRepository } from './tenant-domains.repository.js';
+import { TenantsRepository } from './tenants.repository.js';
 import { TenantsService } from './tenants.service.js';
 
 /**
@@ -58,12 +60,14 @@ import { TenantsService } from './tenants.service.js';
   ],
   providers: [
     TenantsService,
+    TenantsRepository,
     TenantsPolicy,
     TenantSwitchService,
     SignUpService,
     TenantDeletionJob,
     SignUpSweepJob,
     TenantDomainsService,
+    TenantDomainsRepository,
     TenantDomainsProcessor,
     TenantDomainsCheckJob,
     { provide: TXT_RESOLVER, useValue: systemTxtResolver },

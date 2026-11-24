@@ -8,6 +8,7 @@ import { AccessModule } from '../access/access.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { HoldsModule } from '../holds/holds.module.js';
 import { AccountDeletionJob } from './account-deletion.job.js';
+import { AccountDeletionRepository } from './account-deletion.repository.js';
 import { AccountDeletionService } from './account-deletion.service.js';
 import { ConsentKinds } from './consent-kinds.js';
 import { ConsentsService } from './consents.service.js';
@@ -26,6 +27,7 @@ import {
   ConsentsSection,
 } from './personal-data.sections.js';
 import { RolesSection, UnitsSection } from './personal-data.memberships.js';
+import { PersonalDataRepository } from './personal-data.repository.js';
 import { PersonalDataService } from './personal-data.service.js';
 
 /**
@@ -53,7 +55,9 @@ import { PersonalDataService } from './personal-data.service.js';
   ],
   providers: [
     PersonalDataService,
+    PersonalDataRepository,
     AccountDeletionService,
+    AccountDeletionRepository,
     AccountDeletionJob,
     AccountDeletionMail,
     DeletionCancelLinks,

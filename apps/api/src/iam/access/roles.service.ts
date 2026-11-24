@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -6,24 +6,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
-import { untagged } from '../../core/http/etag.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
+import { assertUnchanged, untagged } from '../../core/http/etag.js';
 import { currentTenantScope } from '../../core/tenancy/tenant-scope.js';
 import { AuditService } from '../audit/audit.service.js';
-import { memberships, users } from '../auth/auth.tables.js';
 import type { Principal, UserPrincipal } from '../auth/principal.js';
 import { AccessService } from './access.service.js';
-import {
-  apiClientRoles,
-  rolePermissions,
-  roles,
-  userRoles,
-} from './access.tables.js';
+import { type Role, RolesRepository } from './roles.repository.js';
 import { PermissionCatalog } from './permission-catalog.js';
 import { ALL, isAll, type PermissionInput } from './permissions.js';
 
@@ -36,9 +26,8 @@ export interface RoleInput {
   permissions: PermissionInput[];
 }
 
-/** A role grant still running: no end, or one still to come (an ended one is gone). */
-export const liveGrant = (grants: typeof userRoles | typeof apiClientRoles) =>
-  or(isNull(grants.expiresAt), gt(grants.expiresAt, new Date()));
+// Where it was first written: the repositories of other modules import it from here.
+export { liveGrant } from './access.tables.js';
 
 /** A role's name taken: 409. */
 const nameTaken = (error: unknown) => {
@@ -68,7 +57,7 @@ const nameTaken = (error: unknown) => {
 @Injectable()
 export class RolesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: RolesRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly access: AccessService,
     private readonly catalog: PermissionCatalog,
@@ -76,9 +65,7 @@ export class RolesService {
   ) {}
 
   async list() {
-    return this.views(
-      await this.db.select().from(roles).orderBy(asc(roles.name)),
-    );
+    return this.views(await this.repository.list());
   }
 
   /** One role of the tenant, as the list shows it (another tenant's is a 404). */
@@ -90,19 +77,19 @@ export class RolesService {
     const permissions = await this.checkGrant(actor, input.permissions);
     const id = await this.txHost
       .withTransaction(async () => {
-        const [role] = await this.db
-          .insert(roles)
-          .values({ name: input.name, description: input.description ?? '' })
-          .returning({ id: roles.id });
-        await this.writePermissions(role!.id, permissions);
+        const roleId = await this.repository.insert({
+          name: input.name,
+          description: input.description ?? '',
+        });
+        await this.writePermissions(roleId, permissions);
         await this.audit.record(actor, {
           action: 'role.created',
           targetType: 'role',
-          targetId: role!.id,
+          targetId: roleId,
           details: { name: input.name, permissions },
           ip,
         });
-        return role!.id;
+        return roleId;
       })
       .catch(nameTaken);
     this.access.invalidate(currentTenantScope()?.tenantId ?? null);
@@ -110,8 +97,8 @@ export class RolesService {
   }
 
   /**
-   * Replaces a role's name, description and permissions. `check` gets the
-   * role as GET shows it, under its lock: the If-Match comparison, so two
+   * Replaces a role's name, description and permissions. `ifMatch` is
+   * compared with the role as GET shows it, under its lock, so two
    * administrators can't both save over one version.
    */
   async update(
@@ -119,7 +106,7 @@ export class RolesService {
     id: string,
     input: RoleInput,
     ip?: string,
-    check?: (shown: object) => void,
+    ifMatch?: string,
   ) {
     const role = await this.find(id);
     if (role.system) {
@@ -130,16 +117,14 @@ export class RolesService {
     const permissions = await this.checkGrant(actor, input.permissions);
     await this.txHost
       .withTransaction(async () => {
-        await this.lock(id, check);
+        await this.lock(id, ifMatch);
         // Replacing takes the old permissions away: read under the lock.
         await this.checkTakeAway(actor, id);
-        await this.db
-          .update(roles)
-          .set({ name: input.name, description: input.description ?? '' })
-          .where(eq(roles.id, id));
-        await this.db
-          .delete(rolePermissions)
-          .where(eq(rolePermissions.roleId, id));
+        await this.repository.update(id, {
+          name: input.name,
+          description: input.description ?? '',
+        });
+        await this.repository.deletePermissions(id);
         await this.writePermissions(id, permissions);
         await this.audit.record(actor, {
           action: 'role.updated',
@@ -157,7 +142,7 @@ export class RolesService {
     actor: UserPrincipal,
     id: string,
     ip?: string,
-    check?: (shown: object) => void,
+    ifMatch?: string,
   ) {
     const role = await this.find(id);
     if (role.system) {
@@ -166,9 +151,9 @@ export class RolesService {
       );
     }
     await this.txHost.withTransaction(async () => {
-      await this.lock(id, check);
+      await this.lock(id, ifMatch);
       await this.checkTakeAway(actor, id);
-      await this.db.delete(roles).where(eq(roles.id, id));
+      await this.repository.delete(id);
       await this.audit.record(actor, {
         action: 'role.deleted',
         targetType: 'role',
@@ -188,19 +173,20 @@ export class RolesService {
    */
   async seedTenantRoles() {
     const administrator = this.catalog.seedRoleTexts(ADMINISTRATOR_ROLE);
-    const [admin] = await this.db
-      .insert(roles)
-      .values({ key: ADMINISTRATOR_ROLE, system: true, ...administrator })
-      .returning({ id: roles.id });
-    await this.writePermissions(admin!.id, [ALL]);
+    const adminId = await this.repository.insert({
+      key: ADMINISTRATOR_ROLE,
+      system: true,
+      ...administrator,
+    });
+    await this.writePermissions(adminId, [ALL]);
     for (const seed of this.catalog.seedRoles) {
-      const [role] = await this.db
-        .insert(roles)
-        .values({ key: seed.key, ...this.catalog.seedRoleTexts(seed.key) })
-        .returning({ id: roles.id });
-      await this.writePermissions(role!.id, seed.permissions);
+      const roleId = await this.repository.insert({
+        key: seed.key,
+        ...this.catalog.seedRoleTexts(seed.key),
+      });
+      await this.writePermissions(roleId, seed.permissions);
     }
-    return { administratorId: admin!.id };
+    return { administratorId: adminId };
   }
 
   /** The keys of the declared seed roles, in order. */
@@ -274,10 +260,7 @@ export class RolesService {
   /** The roles exist in this tenant (400 otherwise) and the actor may grant each (403). */
   async checkRoleGrant(actor: Principal, roleIds: readonly string[]) {
     if (!roleIds.length) return;
-    const found = await this.db
-      .select({ id: roles.id })
-      .from(roles)
-      .where(inArray(roles.id, [...roleIds]));
+    const found = await this.repository.existingIds([...roleIds]);
     if (found.length !== new Set(roleIds).size) {
       throw new BadRequestException('Unknown role.');
     }
@@ -291,16 +274,10 @@ export class RolesService {
    */
   async assertAuthorityOver(actor: UserPrincipal, userId: string, who: string) {
     if (userId === actor.id) return;
-    const held = await this.db
-      .select({ roleId: userRoles.roleId })
-      .from(userRoles)
-      .where(eq(userRoles.userId, userId));
+    const held = await this.repository.roleIdsOfUser(userId);
     try {
       // Ended grants too: the stricter answer.
-      await this.checkGrant(
-        actor,
-        await this.permissionsOf(held.map((row) => row.roleId)),
-      );
+      await this.checkGrant(actor, await this.permissionsOf(held));
     } catch (error) {
       if (
         error instanceof ForbiddenException ||
@@ -319,32 +296,8 @@ export class RolesService {
   async assertAnAdministratorRemains() {
     // One at a time: two administrators demoting each other at once can't
     // both see "one left". The built-in role's row is the lock.
-    await this.db
-      .select({ id: roles.id })
-      .from(roles)
-      .where(eq(roles.key, ADMINISTRATOR_ROLE))
-      .for('update');
-    const [row] = await this.db
-      .select({ admins: count() })
-      .from(userRoles)
-      .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .innerJoin(users, eq(users.id, userRoles.userId))
-      .innerJoin(
-        memberships,
-        and(
-          eq(memberships.tenantId, userRoles.tenantId),
-          eq(memberships.userId, userRoles.userId),
-        ),
-      )
-      .where(
-        and(
-          eq(roles.system, true),
-          eq(users.active, true),
-          eq(memberships.active, true),
-          liveGrant(userRoles),
-        ),
-      );
-    if (!row?.admins) {
+    await this.repository.lockByKey(ADMINISTRATOR_ROLE);
+    if (!(await this.repository.countActiveAdministrators())) {
       throw new ConflictException(
         'At least one active administrator must remain.',
       );
@@ -354,31 +307,16 @@ export class RolesService {
   /** The permissions of these roles. */
   async permissionsOf(roleIds: readonly string[]): Promise<PermissionInput[]> {
     if (!roleIds.length) return [];
-    return this.db
-      .select({
-        subject: rolePermissions.subject,
-        action: rolePermissions.action,
-        conditions: rolePermissions.conditions,
-        fields: rolePermissions.fields,
-      })
-      .from(rolePermissions)
-      .where(inArray(rolePermissions.roleId, [...roleIds]));
+    return this.repository.permissionsOf([...roleIds]);
   }
 
   /** Roles with their permissions and how many hold them (grants still running). */
-  private async views(rows: (typeof roles.$inferSelect)[]) {
+  private async views(rows: Role[]) {
     const ids = rows.map((role) => role.id);
     if (!ids.length) return [];
     // One after the other: get() runs in the write's transaction (one connection).
-    const permissions = await this.db
-      .select()
-      .from(rolePermissions)
-      .where(inArray(rolePermissions.roleId, ids));
-    const members = await this.db
-      .select({ roleId: userRoles.roleId, members: count() })
-      .from(userRoles)
-      .where(and(inArray(userRoles.roleId, ids), liveGrant(userRoles)))
-      .groupBy(userRoles.roleId);
+    const permissions = await this.repository.permissionRowsOf(ids);
+    const members = await this.repository.memberCounts(ids);
     return rows.map((role) =>
       // The ETag is the role's definition: a grant to someone (`members`)
       // doesn't make an editor's If-Match stale.
@@ -401,21 +339,17 @@ export class RolesService {
   }
 
   private async find(id: string) {
-    const [role] = await this.db.select().from(roles).where(eq(roles.id, id));
+    const role = await this.repository.findById(id);
     if (!role) {
       throw new NotFoundException(`Role ${id} not found.`);
     }
     return role;
   }
 
-  /** Locks the role until the transaction ends, and hands `check` the role as GET shows it. */
-  private async lock(id: string, check?: (shown: object) => void) {
-    await this.db
-      .select({ id: roles.id })
-      .from(roles)
-      .where(eq(roles.id, id))
-      .for('update');
-    if (check) check(await this.get(id));
+  /** Locks the role until the transaction ends, and compares `ifMatch` with the role as GET shows it. */
+  private async lock(id: string, ifMatch?: string) {
+    await this.repository.lock(id);
+    if (ifMatch) assertUnchanged(ifMatch, await this.get(id));
   }
 
   private async writePermissions(
@@ -423,15 +357,7 @@ export class RolesService {
     permissions: PermissionInput[],
   ) {
     if (permissions.length) {
-      await this.db.insert(rolePermissions).values(
-        permissions.map(({ subject, action, conditions, fields }) => ({
-          roleId,
-          subject,
-          action,
-          conditions,
-          fields: fields ?? null,
-        })),
-      );
+      await this.repository.insertPermissions(roleId, permissions);
     }
   }
 }
