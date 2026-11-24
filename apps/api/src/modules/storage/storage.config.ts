@@ -29,6 +29,13 @@ export const schema = z.object({
   S3_ENDPOINT: optional(),
   /** Garage and most self-hosted stores. */
   S3_FORCE_PATH_STYLE: flag('off'),
+  /**
+   * `on` when STORAGE_ROOT is one disk every process mounts (a shared
+   * volume): what a split deployment (APP_ROLE `api` and `worker`) needs to
+   * use the local driver, or the worker would not find the API's uploads.
+   */
+  STORAGE_SHARED: flag('off'),
+  APP_ROLE: optional(),
 });
 
 /**
@@ -37,6 +44,12 @@ export const schema = z.object({
  */
 export const storageConfig = registerAs('storage', () => {
   const env = readEnv(schema);
+  const split = env.APP_ROLE === 'api' || env.APP_ROLE === 'worker';
+  if (env.STORAGE_DRIVER === 'local' && split && !env.STORAGE_SHARED) {
+    throw new Error(
+      `Invalid environment:\nSTORAGE_DRIVER: local with APP_ROLE=${env.APP_ROLE} needs STORAGE_SHARED=on (STORAGE_ROOT on a volume every process mounts), or STORAGE_DRIVER=s3`,
+    );
+  }
   return {
     driver: env.STORAGE_DRIVER,
     root: env.STORAGE_ROOT,
