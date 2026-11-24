@@ -177,6 +177,27 @@ repository.
 
 ## Changed on the way
 
+- The audit against NestJS's guidance (the owner, 2026-11-25):
+  - Layers: a controller does HTTP, a service holds the rules, a
+    repository holds the queries (`<name>.repository.ts`; root AGENTS.md,
+    rule 7); `src/module-graph.spec.ts` checks it.
+  - Every JSON response is run through the schema its route documents: an
+    undeclared key is dropped, a response off its schema is a 500.
+  - A unique key two requests raced for is 409 `conflict`; a malformed id
+    in a path is 400 `invalid_id`.
+  - Every route is limited per signed-in user or API client
+    (`RATE_LIMIT_PER_CALLER`, 600 a minute) after the limit per address
+    (`RATE_LIMIT_PER_IP`, now 1200).
+  - Realtime takes WebSockets only (no long-polling), so the balancer
+    needs no sticky sessions.
+  - A quota check locks that quota's row of the tenant (`quota_locks`),
+    not the tenant's row.
+  - Run logs and findings that only grew are pruned
+    (`AUTOMATIONS_RUN_RETENTION_DAYS`, `AI_RUN_RETENTION_DAYS`,
+    `RECURRENCE_RUN_RETENTION_DAYS`, `DATA_QUALITY_FINDING_RETENTION_DAYS`).
+  - Local file storage refuses to start in a split deployment unless
+    `STORAGE_SHARED` says the disk is shared.
+
 - `GET /metrics` (prom-client, `METRICS_TOKEN`) is removed (the owner,
   2026-11-25): metrics go through the OpenTelemetry API and out over OTLP
   with the registered MeterProvider (Nestrix's). Counters lose `_total`
@@ -254,7 +275,8 @@ repository.
   record's path; there is no JSON format (csv, xlsx). The operators'
   `POST /v1/tenants/{id}/export` needs `Access.exportTenants` and leaves out
   hashes, secrets and encrypted columns.
-- Bulk: `POST /v1/<path>/bulk`, one transaction per record; a run names its
+- Bulk: `POST /v1/<path>/bulk`, 100 records a transaction, each in a
+  savepoint so a refused one rolls back alone (2026-11-25); a run names its
   subject. Its audit entries carry its id (`runId`; the audit page shows
   the run as one line, `bulk.started`, and lists its entries in its dialog);
   a watcher gets one `record.bulk-changed` per run, linking to

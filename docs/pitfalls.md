@@ -153,6 +153,17 @@ what to do.
 
 ## Processes and shutdown
 
+- **The OpenTelemetry API has no proxy meter provider.** A meter taken
+  before a provider is registered stays a no-op for good, and Nestrix
+  registers its provider after boot. Record through `MetricsService`
+  (core/metrics), which remakes its instruments when the provider changes;
+  never cache an instrument from `metrics.getMeter()` yourself.
+- **A BullMQ job id may not contain `:`.** `onceJob()` ids join their
+  parts with `-` (`retention-{tenant}-{rule}-{day}-{batch}`).
+- **A global guard given to `APP_GUARD` with `useClass` can't be replaced
+  in a test.** Register the class and `{ provide: APP_GUARD, useExisting }`,
+  as every guard here is.
+
 - **Shutdown hangs when Redis is gone.** The shared ioredis clients queue commands
   while Redis is away (`maxRetriesPerRequest: null`, which BullMQ's workers need),
   so `quit()` waits behind them for ever. Close a client with `closeRedis()`

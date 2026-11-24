@@ -137,6 +137,10 @@ The logger masks them.
   OpenTelemetry endpoint such as the Nestrix server
   (`OTEL_EXPORTER_OTLP_ENDPOINT`)
   ([core/observability](../apps/api/src/core/observability/README.md)).
+  The app only records and sends: the Nestrix server, its dashboard and
+  its database are a service of their own, which every API and worker
+  instance sends to and which is sized and scaled on its own, like
+  PostgreSQL and Redis.
 - Logs go to standard output, one JSON object per line, with secrets masked
   and the trace id when tracing is on
   ([core/logging](../apps/api/src/core/logging/README.md)).
