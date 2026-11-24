@@ -2,7 +2,12 @@ import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { tenantItems } from '../../../test/fixtures/tenant-items.tables.js';
 import type { Principal } from '../auth/principal.js';
-import { abilityOf, caslCondition, sqlCondition } from './access.service.js';
+import {
+  AccessService,
+  abilityOf,
+  caslCondition,
+  sqlCondition,
+} from './access.service.js';
 import { regrant } from './members.service.js';
 import { PermissionCatalog } from './permission-catalog.js';
 import { ALL, definePermissions, NO_UNITS } from './permissions.js';
@@ -99,5 +104,44 @@ describe('regrant', () => {
     expect(() =>
       regrant(new Map(), ['a'], { a: new Date(0).toISOString() }),
     ).toThrow(/already have ended/);
+  });
+});
+
+describe('the ability cache', () => {
+  type Entry = { loaded: { version: number }; until: number };
+  const service = () => {
+    const access = new AccessService(
+      ...([{}, {}, {}, {}, {}] as unknown as ConstructorParameters<
+        typeof AccessService
+      >),
+    );
+    const internals = access as unknown as {
+      cache: Map<string, Entry>;
+      version: number;
+      makeRoom(): void;
+    };
+    return internals;
+  };
+
+  it('keeps at most MAX_ENTRIES: the expired go first, then the oldest', () => {
+    const access = service();
+    const live = Date.now() + 60_000;
+    for (let i = 0; i < AccessService.MAX_ENTRIES; i++) {
+      access.cache.set(`k${i}`, {
+        loaded: { version: access.version },
+        until: i === 5 ? 0 : live,
+      });
+    }
+    access.makeRoom();
+    expect(access.cache.size).toBe(AccessService.MAX_ENTRIES - 1);
+    expect(access.cache.has('k5')).toBe(false);
+    expect(access.cache.has('k0')).toBe(true);
+    access.cache.set('k5', {
+      loaded: { version: access.version },
+      until: live,
+    });
+    access.makeRoom();
+    expect(access.cache.size).toBe(AccessService.MAX_ENTRIES - 1);
+    expect(access.cache.has('k0')).toBe(false);
   });
 });
