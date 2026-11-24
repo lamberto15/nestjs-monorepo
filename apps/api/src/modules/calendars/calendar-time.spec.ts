@@ -4,7 +4,6 @@ import {
   minuteOf,
   NoWorkingTimeError,
   spansProblem,
-  zonedMoment,
 } from './calendar-time.js';
 
 const weekdays = (start: string, end: string) =>
@@ -108,30 +107,6 @@ describe('addWorkingMinutes', () => {
         10,
       ),
     ).toThrow(NoWorkingTimeError);
-  });
-});
-
-describe('zonedMoment', () => {
-  it('moves a time the clock skips to the moment after the gap', () => {
-    // 02:30 on 2026-03-08 does not exist in New York: 03:30 EDT.
-    expect(
-      new Date(
-        zonedMoment('2026-03-08', 150, 'America/New_York'),
-      ).toISOString(),
-    ).toBe('2026-03-08T07:30:00.000Z');
-  });
-
-  it('takes the first of a time the clock repeats', () => {
-    // 01:30 on 2026-11-01 happens twice: the EDT one.
-    expect(
-      new Date(zonedMoment('2026-11-01', 90, 'America/New_York')).toISOString(),
-    ).toBe('2026-11-01T05:30:00.000Z');
-  });
-
-  it('reads 24:00 as the next midnight', () => {
-    expect(new Date(zonedMoment('2026-10-23', 1440, 'UTC')).toISOString()).toBe(
-      '2026-10-24T00:00:00.000Z',
-    );
   });
 });
 

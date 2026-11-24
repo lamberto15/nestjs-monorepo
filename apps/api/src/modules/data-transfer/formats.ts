@@ -27,7 +27,7 @@ import {
   type ImportMapping,
   renameHeaders,
 } from './import-mapping.js';
-import { instantOf, localDateTime, wallClock } from './zoned-time.js';
+import { fileClock, instantOf, localDateTime } from './zoned-time.js';
 
 /**
  * The file formats, streamed both ways through turbosheet (the owner's
@@ -78,7 +78,7 @@ const cell = (value: unknown): CellValue => {
 
 /** A moment as an Excel date cell: the wall clock of the zone, given as UTC (Excel dates have none). */
 const excelMoment = (date: Date, timeZone: string) => {
-  const { date: day, time, ms } = wallClock(date, timeZone);
+  const { date: day, time, ms } = fileClock(date, timeZone);
   return new Date(`${day}T${time}.${ms}Z`);
 };
 

@@ -1,46 +1,15 @@
-/**
- * Moments as a reader's wall clock and back, for files: Intl, no date
- * library (Node has no Temporal yet). Kept apart from calendars' helpers:
- * a file needs the seconds, the milliseconds and the offset, and the way
- * back from a cell.
- */
+import { wallClock, zonedInstant } from '../../core/time/zoned-time.js';
 
-const formats = new Map<string, Intl.DateTimeFormat>();
+/** Moments as a reader's wall clock and back, for files (core/time's clock). */
+const two = (n: number) => String(n).padStart(2, '0');
 
-/** Whether `zone` is an IANA time zone this runtime knows. */
-export function isTimeZone(zone: string) {
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: zone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The wall-clock day, time and milliseconds of a moment in `timeZone`. */
-export function wallClock(date: Date, timeZone: string) {
-  let format = formats.get(timeZone);
-  if (!format) {
-    format = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      fractionalSecondDigits: 3,
-      hourCycle: 'h23',
-    });
-    formats.set(timeZone, format);
-  }
-  const part = Object.fromEntries(
-    format.formatToParts(date).map(({ type, value }) => [type, value]),
-  ) as Record<Intl.DateTimeFormatPartTypes, string>;
+/** The wall-clock day, `HH:MM:SS` and milliseconds (`123`) of a moment in `timeZone`. */
+export function fileClock(date: Date, timeZone: string) {
+  const clock = wallClock(date, timeZone);
   return {
-    date: `${part.year}-${part.month}-${part.day}`,
-    time: `${part.hour}:${part.minute}:${part.second}`,
-    ms: part.fractionalSecond,
+    date: clock.date,
+    time: `${two(clock.hour)}:${two(clock.minute)}:${two(clock.second)}`,
+    ms: String(clock.ms).padStart(3, '0'),
   };
 }
 
@@ -50,14 +19,8 @@ export function wallClock(date: Date, timeZone: string) {
  * The zone goes in the column's header.
  */
 export function localDateTime(date: Date, timeZone: string) {
-  const { date: day, time } = wallClock(date, timeZone);
+  const { date: day, time } = fileClock(date, timeZone);
   return `${day} ${time}`;
-}
-
-/** The milliseconds `timeZone` is ahead of UTC at `time`. */
-function offsetAt(time: number, timeZone: string) {
-  const { date, time: clock, ms } = wallClock(new Date(time), timeZone);
-  return Date.parse(`${date}T${clock}.${ms}Z`) - time;
 }
 
 const WALL_CLOCK =
@@ -86,14 +49,5 @@ export function instantOf(text: string, timeZone: string) {
   if (date.getUTCDate() !== +day! || date.getUTCHours() !== +hour!) {
     return undefined; // 2026-02-30, 25:00
   }
-  const DAY = 86_400_000;
-  const candidates = [
-    asUtc - offsetAt(asUtc - DAY, timeZone),
-    asUtc - offsetAt(asUtc + DAY, timeZone),
-  ];
-  const real = candidates.filter(
-    (moment) => moment + offsetAt(moment, timeZone) === asUtc,
-  );
-  const time = real.length ? Math.min(...real) : Math.max(...candidates);
-  return new Date(time).toISOString();
+  return new Date(zonedInstant(asUtc, timeZone)).toISOString();
 }

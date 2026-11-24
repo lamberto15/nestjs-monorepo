@@ -1,5 +1,5 @@
 import type { ImportColumn } from './data-transfer.types.js';
-import { isTimeZone } from './zoned-time.js';
+import { isTimeZone } from '../../core/time/zoned-time.js';
 
 /**
  * How an import's file columns map to the record's: each file header to a

@@ -1,8 +1,5 @@
-import {
-  minuteOf,
-  wallClock,
-  zonedMoment,
-} from '../calendars/calendar-time.js';
+import { wallClock, zonedMoment } from '../../core/time/zoned-time.js';
+import { minuteOf } from '../calendars/calendar-time.js';
 
 /** Most records one schedule may create; also the ceiling of `COUNT`. */
 export const MAX_OCCURRENCES = 1000;

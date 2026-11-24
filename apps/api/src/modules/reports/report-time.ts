@@ -1,4 +1,4 @@
-import { wallClock, zonedMoment } from '../calendars/calendar-time.js';
+import { wallClock, zonedMoment } from '../../core/time/zoned-time.js';
 
 /** When a report runs: an hour of a day, a weekday (0 Sunday) or a day of the month (1-28), in its zone. */
 export type ReportSchedule =

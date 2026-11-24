@@ -1,3 +1,5 @@
+import { wallClock, zonedMoment } from '../../core/time/zoned-time.js';
+
 /** A span of one day's clock, `HH:MM`; `end` may be `24:00`. */
 export interface DayHours {
   start: string;
@@ -56,54 +58,6 @@ export function spansProblem(spans: readonly DayHours[]) {
   return sorted.some((span, i) => i > 0 && span[0]! < sorted[i - 1]![1]!)
     ? 'Spans of one day must not overlap.'
     : null;
-}
-
-/** The wall-clock date and time of `time` in `timeZone`. */
-export function wallClock(time: number, timeZone: string) {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    })
-      .formatToParts(new Date(time))
-      .map(({ type, value }) => [type, value]),
-  ) as Record<Intl.DateTimeFormatPartTypes, string>;
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    hour: +parts.hour,
-    minute: +parts.minute,
-  };
-}
-
-const wallString = (time: number, timeZone: string) => {
-  const { date, hour, minute } = wallClock(time, timeZone);
-  return `${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-};
-
-const offsetAt = (time: number, timeZone: string) =>
-  Date.parse(`${wallString(time, timeZone)}:00Z`) -
-  Math.floor(time / MINUTE) * MINUTE;
-
-/**
- * The moment the clock of `timeZone` shows `minute` (since midnight, up
- * to 1440) on `date`. The offset is read at the moment itself, so a
- * daylight-saving change is followed: a time the clock repeats gives its
- * first occurrence, one it skips the moment after the gap (as Temporal's
- * "compatible" does).
- */
-export function zonedMoment(date: string, minute: number, timeZone: string) {
-  const asUtc = Date.parse(`${date}T00:00:00Z`) + minute * MINUTE;
-  const wanted = new Date(asUtc).toISOString().slice(0, 16);
-  const before = offsetAt(asUtc - DAY, timeZone);
-  const candidates = [before, offsetAt(asUtc + DAY, timeZone)]
-    .map((offset) => asUtc - offset)
-    .filter((moment) => wallString(moment, timeZone) === wanted);
-  return candidates.length > 0 ? Math.min(...candidates) : asUtc - before;
 }
 
 const nextDate = (date: string) =>

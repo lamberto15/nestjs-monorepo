@@ -6,7 +6,7 @@ import {
   TRANSFER_KEPT_MS,
   TRANSFER_LINK_TTL_MS,
 } from './transfer-retention.js';
-import { isTimeZone } from './zoned-time.js';
+import { isTimeZone } from '../../core/time/zoned-time.js';
 
 /** At most this many saved mappings per import, and columns in one. */
 export const MAX_MAPPINGS_PER_IMPORT = 50;

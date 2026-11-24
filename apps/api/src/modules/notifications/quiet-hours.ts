@@ -1,4 +1,4 @@
-import { atHour, wallClock } from './digest-time.js';
+import { wallClock, zonedMoment } from '../../core/time/zoned-time.js';
 
 /**
  * A user's quiet hours: push and SMS are held back between `start` and
@@ -20,8 +20,7 @@ const minutes = (time: string) => {
 
 /** The moment the clock of `timeZone` reads `time` on `date` (YYYY-MM-DD). */
 const at = (date: string, time: string, timeZone: string) =>
-  atHour(date, Math.floor(minutes(time) / 60), timeZone) +
-  (minutes(time) % 60) * 60_000;
+  zonedMoment(date, minutes(time), timeZone);
 
 /**
  * When the quiet hours that cover `now` end, or null when `now` is outside

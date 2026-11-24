@@ -2,7 +2,7 @@ import { registerAs } from '@nestjs/config';
 import { z } from 'zod';
 import { integer, withDefault } from '../../core/config/env.helpers.js';
 import { readEnv } from '../../core/config/env.js';
-import { isTimeZone } from './zoned-time.js';
+import { isTimeZone } from '../../core/time/zoned-time.js';
 
 export const schema = z.object({
   /** The largest import file the deployment accepts, in bytes; the `dataTransfer.importMaxMiB` setting may only lower it. */
