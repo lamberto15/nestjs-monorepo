@@ -178,7 +178,10 @@ Run several API instances and several workers freely. What they share:
   session cookie needs no stickiness: sessions are in the database.
 
 Behind a proxy, the client address comes from `X-Forwarded-For`
-([API conventions, "Rate limits"](api-conventions.md#rate-limits)).
+([API conventions, "Rate limits"](api-conventions.md#rate-limits)). Set
+`TRUST_PROXY` to the proxy's address or subnet: unset, any host on a private
+network may name its own address, past rate limits and API clients'
+allowlists.
 
 ## The operator CLI
 

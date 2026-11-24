@@ -1,13 +1,10 @@
 import { registerAs } from '@nestjs/config';
 import { z } from 'zod';
-import {
-  baseUrl,
-  flag,
-  list,
-  optional,
-  secret,
-} from '../config/env.helpers.js';
+import { baseUrl, list, optional, secret } from '../config/env.helpers.js';
 import { readEnv } from '../config/env.js';
+
+/** TRUST_PROXY unset: loopback and private networks. */
+export const DEFAULT_TRUSTED_PROXIES = ['loopback', 'linklocal', 'uniquelocal'];
 
 export const schema = z.object({
   /** The public origin of this API, for the links it hands out (signed file URLs, mails). */
@@ -30,8 +27,21 @@ export const schema = z.object({
    * so every instance reads the same.
    */
   CURSOR_KEYS: secret(list()),
-  /** The OpenAPI document and Swagger UI at /api. */
-  OPENAPI: flag('on'),
+  /**
+   * The proxies whose `X-Forwarded-For` is believed (comma-separated
+   * addresses, subnets, or `loopback`, `linklocal`, `uniquelocal`): the
+   * client address of rate limits, API clients' allowlists and the audit.
+   * The default trusts every private network, which suits a proxy on a
+   * container network; behind a known proxy, name only its address or
+   * subnet (`10.0.3.7`, `172.18.0.0/16`), so another host on the network
+   * can't pick its own address.
+   */
+  TRUST_PROXY: list(),
+  /**
+   * The OpenAPI document and Swagger UI at /api: on by default outside
+   * production, where it would publish every route to anyone.
+   */
+  OPENAPI: optional().pipe(z.enum(['on', 'off']).optional()),
   /** `production` sends the strict Content-Security-Policy as it is. */
   NODE_ENV: optional(),
 });
@@ -43,7 +53,8 @@ export const httpConfig = registerAs('http', () => {
     webUrl: (env.WEB_URL ?? env.APP_URL)!,
     corsOrigins: env.CORS_ORIGINS,
     cursorKeys: env.CURSOR_KEYS,
-    openApi: env.OPENAPI,
+    openApi:
+      (env.OPENAPI ?? (env.NODE_ENV === 'production' ? 'off' : 'on')) === 'on',
     production: env.NODE_ENV === 'production',
   };
 });

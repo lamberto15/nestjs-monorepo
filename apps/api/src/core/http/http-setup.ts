@@ -3,7 +3,12 @@ import type { ConfigType } from '@nestjs/config';
 import { type NestNodeApplication, NodeAdapter } from '@nestjs/platform-node';
 import compression from 'compression';
 import { JSON_BODY_LIMIT } from './body-limit.js';
-import { httpConfig } from './http.config.js';
+import { readEnv } from '../config/env.js';
+import {
+  DEFAULT_TRUSTED_PROXIES,
+  httpConfig,
+  schema as httpSchema,
+} from './http.config.js';
 import { assignRequestId } from './request-id.js';
 import { recordMatchedRoutes } from './route-key.js';
 
@@ -26,13 +31,16 @@ export const MAX_PARAM_LENGTH = 2048;
  * constructor options, so they can't be applied to an app afterwards.
  *
  * Behind a proxy: the client's address (rate limits, audit) comes from
- * X-Forwarded-For, trusted from loopback and private networks only.
- * Addresses, never a hop count: the adapter trusts no proxy for a number (it
- * can't tell a proxy from a client sending its own header).
+ * X-Forwarded-For, trusted from TRUST_PROXY's addresses only (loopback and
+ * private networks when unset). Addresses, never a hop count: the adapter
+ * trusts no proxy for a number (it can't tell a proxy from a client sending
+ * its own header). Read here, not from the config module: the adapter is
+ * made before the app.
  */
 export function createHttpAdapter() {
+  const { TRUST_PROXY } = readEnv(httpSchema.pick({ TRUST_PROXY: true }));
   const adapter = new NodeAdapter({
-    trustProxy: 'loopback, linklocal, uniquelocal',
+    trustProxy: TRUST_PROXY.length > 0 ? TRUST_PROXY : DEFAULT_TRUSTED_PROXIES,
     // A path parameter longer than this is a 414 (the adapter's default is
     // 100): the one-click unsubscribe link carries a signed JWT in its path,
     // a few hundred characters.
