@@ -21,6 +21,7 @@ import { tenants } from '../../core/tenancy/tenancy.tables.js';
 import { RolesService } from '../access/roles.service.js';
 import { AccountModule } from '../account/account.module.js';
 import { AuthPolicyModule } from './auth-policy.module.js';
+import { TenantAuthPolicies } from './auth-policy.service.js';
 
 const OPS = vi.hoisted(() => `ops-${process.pid}-${Date.now()}`);
 
@@ -95,6 +96,24 @@ describe('auth policy (e2e)', () => {
     expect((await change(plain.headers, { requireMfa: true })).statusCode).toBe(
       403,
     );
+  });
+
+  it("reads a tenant's policy once a request, and again after a change", async () => {
+    const { tenantId, admin } = await tenantWithAdmin(app);
+    const read = vi.spyOn(
+      app.get(TenantAuthPolicies) as unknown as {
+        read: (tenantId: string) => Promise<unknown>;
+      },
+      'read',
+    );
+    const reads = () =>
+      read.mock.calls.filter(([id]) => id === tenantId).length;
+    // Its session limits, its two-factor rule and the page itself: one read.
+    expect((await policyOf(admin.headers)).statusCode).toBe(200);
+    expect(reads()).toBe(1);
+    const changed = await change(admin.headers, { passwordMinLength: 14 });
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect((await policyOf(admin.headers)).json().passwordMinLength).toBe(14);
   });
 
   it('requires two-factor: refused to a caller who has none, then members are held to enrolment', async () => {

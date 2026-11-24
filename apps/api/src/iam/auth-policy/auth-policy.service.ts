@@ -9,6 +9,7 @@ import type { ConfigType } from '@nestjs/config';
 import { MfaService } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
 import { and, eq, inArray } from 'drizzle-orm';
+import { ClsService } from 'nestjs-cls';
 import type {
   Database,
   DatabaseTransactions,
@@ -39,6 +40,9 @@ const DEFAULTS: AuthPolicyView = {
   allowBreakGlass: true,
 };
 
+/** The policies read in this request, by tenant (CLS). */
+const POLICIES = Symbol('auth-policy.read');
+
 /**
  * The tenants' sign-in policies (README.md): stored here, applied by
  * iam/auth through `@AuthPolicySource()` under the environment's ceiling
@@ -55,6 +59,7 @@ export class TenantAuthPolicies implements AuthPolicySource {
     private readonly audit: AuditService,
     private readonly mfa: MfaService,
     private readonly tenancy: Tenancy,
+    private readonly cls: ClsService,
     private readonly organization: OrganizationService,
     @Inject(authConfig.KEY)
     private readonly auth: ConfigType<typeof authConfig>,
@@ -62,8 +67,25 @@ export class TenantAuthPolicies implements AuthPolicySource {
     private readonly account: ConfigType<typeof accountConfig>,
   ) {}
 
-  /** The tenant's policy, its defaults where it chose nothing. */
-  async get(tenantId: string): Promise<AuthPolicyView> {
+  /**
+   * The tenant's policy, its defaults where it chose nothing. Read once per
+   * request (CLS): a request's session limits and two-factor check ask it
+   * several times.
+   */
+  get(tenantId: string): Promise<AuthPolicyView> {
+    if (!this.cls.isActive()) return this.read(tenantId);
+    let read = this.cls.get<Map<string, Promise<AuthPolicyView>>>(POLICIES);
+    if (!read) this.cls.set(POLICIES, (read = new Map()));
+    let found = read.get(tenantId);
+    if (!found) {
+      found = this.read(tenantId);
+      read.set(tenantId, found);
+      found.catch(() => read.delete(tenantId));
+    }
+    return found.then((policy) => ({ ...policy }));
+  }
+
+  private async read(tenantId: string): Promise<AuthPolicyView> {
     const [row] = await this.db
       .select()
       .from(authPolicies)
@@ -123,7 +145,9 @@ export class TenantAuthPolicies implements AuthPolicySource {
       );
     }
     return this.txHost.withTransaction(async () => {
-      const next = { ...(await this.get(tenantId)), ...changes };
+      // Read fresh, and forgotten for the rest of the request: it changes.
+      this.cls.get<Map<string, unknown>>(POLICIES)?.delete(tenantId);
+      const next = { ...(await this.read(tenantId)), ...changes };
       await this.db
         .insert(authPolicies)
         .values({ tenantId, ...next })
