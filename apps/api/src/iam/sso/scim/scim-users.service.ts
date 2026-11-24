@@ -282,10 +282,25 @@ export class ScimUsersService implements ScimMembers {
   }
 
   /** PUT: the IdP's whole representation replaces what was kept. */
-  async replace(
+  replace(
     actor: ClientPrincipal,
     id: string,
     input: ScimUserInput,
+    ip?: string,
+  ) {
+    return this.write(actor, id, () => Promise.resolve(input), ip);
+  }
+
+  /**
+   * Writes the representation `next` makes, under the account's and the
+   * membership's locks: a PATCH reads the user it applies to only once it
+   * holds them, so two at once never write back each other's stale copy
+   * (a rename undoing a deactivation).
+   */
+  private async write(
+    actor: ClientPrincipal,
+    id: string,
+    next: () => Promise<ScimUserInput>,
     ip?: string,
   ) {
     const tenantId = this.tenancy.tenantId();
@@ -297,6 +312,7 @@ export class ScimUsersService implements ScimMembers {
         // other way round (a deadlock).
         await this.lockAccount(id);
         await this.lockMembership(tenantId, id);
+        const input = await next();
         const before = await this.find(id);
         if (input.externalId && input.externalId !== before.externalId) {
           await this.assertExternalIdFree(input.externalId);
@@ -347,6 +363,14 @@ export class ScimUsersService implements ScimMembers {
    */
   async patch(actor: ClientPrincipal, id: string, body: unknown, ip?: string) {
     const operations = patchOperations(body);
+    return this.write(actor, id, () => this.patched(id, operations), ip);
+  }
+
+  /** The user as it is now (read under write()'s locks), with `operations` applied. */
+  private async patched(
+    id: string,
+    operations: ReturnType<typeof patchOperations>,
+  ): Promise<ScimUserInput> {
     const current = await this.get(id);
     let patched: Record<string, unknown>;
     try {
@@ -379,7 +403,7 @@ export class ScimUsersService implements ScimMembers {
         'invalidValue',
       );
     }
-    return this.replace(actor, id, parsed.data, ip);
+    return parsed.data;
   }
 
   /**

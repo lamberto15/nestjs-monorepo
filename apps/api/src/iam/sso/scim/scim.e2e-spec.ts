@@ -441,6 +441,47 @@ describe('SCIM provisioning (e2e)', () => {
     );
   });
 
+  it('applies PATCHes sent at once one after the other, never from a stale copy', async () => {
+    const people = await Promise.all([provision(), provision(), provision()]);
+    const created = await send('POST', '/Groups', scim, {
+      schemas: [GROUP],
+      displayName: `Parallel ${randomUUID().slice(0, 6)}`,
+      members: [],
+    });
+    const group = created.json<{ id: string }>();
+    // IdPs push each member change as its own PATCH, at the same time.
+    const adds = await Promise.all(
+      people.map(({ id }) =>
+        send('PATCH', `/Groups/${group.id}`, scim, {
+          schemas: [PATCH],
+          Operations: [{ op: 'add', path: 'members', value: [{ value: id }] }],
+        }),
+      ),
+    );
+    expect(adds.map((add) => add.statusCode)).toEqual([200, 200, 200]);
+    const members = (await send('GET', `/Groups/${group.id}`, scim))
+      .json<{ members: { value: string }[] }>()
+      .members.map((m) => m.value)
+      .sort();
+    expect(members).toEqual(people.map(({ id }) => id).sort());
+
+    // A rename racing a deactivation can't turn the member back on.
+    const user = await provision();
+    await Promise.all([
+      send('PATCH', `/Users/${user.id}`, scim, {
+        schemas: [PATCH],
+        Operations: [{ op: 'replace', path: 'active', value: false }],
+      }),
+      send('PATCH', `/Users/${user.id}`, scim, {
+        schemas: [PATCH],
+        Operations: [
+          { op: 'replace', path: 'name.givenName', value: 'Renamed' },
+        ],
+      }),
+    ]);
+    expect((await membership(user.id))?.active).toBe(false);
+  });
+
   it('announces a deprovisioned membership, its actor the IdP’s client', async () => {
     const user = await provision();
     expect((await send('DELETE', `/Users/${user.id}`, scim)).statusCode).toBe(

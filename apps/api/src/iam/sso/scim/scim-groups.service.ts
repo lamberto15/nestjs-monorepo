@@ -172,14 +172,31 @@ export class ScimGroupsService implements ScimUnits {
   }
 
   /** PUT: its name, externalId and members are what the IdP sent. */
-  async replace(
+  replace(
     actor: ClientPrincipal,
     id: string,
     input: ScimGroupInput,
     ip?: string,
   ) {
+    return this.write(actor, id, () => Promise.resolve(input), ip);
+  }
+
+  /**
+   * Writes the representation `next` makes, under the group's lock: a
+   * PATCH reads the members it applies to only once it holds it, so two at
+   * once (an IdP pushes each change on its own) never write back each
+   * other's stale member list.
+   */
+  private async write(
+    actor: ClientPrincipal,
+    id: string,
+    next: () => Promise<ScimGroupInput>,
+    ip?: string,
+  ) {
     await this.unique(() =>
       this.txHost.withTransaction(async () => {
+        await this.lock(id);
+        const input = await next();
         const before = await this.find(id);
         if (input.externalId && input.externalId !== before.externalId) {
           await this.assertExternalIdFree(input.externalId);
@@ -214,6 +231,14 @@ export class ScimGroupsService implements ScimUnits {
   /** PATCH: scim-patch applies the operations (members added or removed by filter) to the group as answered. */
   async patch(actor: ClientPrincipal, id: string, body: unknown, ip?: string) {
     const operations = patchOperations(body);
+    return this.write(actor, id, () => this.patched(id, operations), ip);
+  }
+
+  /** The group as it is now (read under write()'s lock), with `operations` applied. */
+  private async patched(
+    id: string,
+    operations: ReturnType<typeof patchOperations>,
+  ): Promise<ScimGroupInput> {
     const current = await this.get(id);
     let patched: unknown;
     try {
@@ -235,12 +260,13 @@ export class ScimGroupsService implements ScimUnits {
         'invalidValue',
       );
     }
-    return this.replace(actor, id, parsed.data, ip);
+    return parsed.data;
   }
 
   /** DELETE: the unit goes, with its memberships (not the members). */
   async remove(actor: ClientPrincipal, id: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
+      await this.lock(id);
       const before = await this.find(id);
       const [under] = await this.db
         .select({ children: count() })
@@ -407,6 +433,16 @@ export class ScimGroupsService implements ScimUnits {
         eq(organizationalUnits.id, scimGroups.unitId),
       )
       .where(where);
+  }
+
+  /** The group's row locked until the transaction ends: its writes one at a time. */
+  private async lock(id: string) {
+    if (!z.uuid().safeParse(id).success) return;
+    await this.db
+      .select({ unitId: scimGroups.unitId })
+      .from(scimGroups)
+      .where(eq(scimGroups.unitId, id))
+      .for('update');
   }
 
   private async find(id: string) {
