@@ -71,7 +71,10 @@ const MAX_ERRORS = 10_000;
  * its file): on completion here, on a failure for good in `onFailed`,
  * which also hears a job BullMQ fails itself (its worker died mid-run).
  */
-@Processor(DATA_TRANSFERS, { concurrency: 2 })
+// maxStalledCount 0: an import whose worker was lost (a redeploy mid-way)
+// fails instead of starting over from row 1 and creating its committed
+// groups again; onFailed then reports it.
+@Processor(DATA_TRANSFERS, { concurrency: 2, maxStalledCount: 0 })
 export class DataTransferProcessor extends TenantWorkerHost<
   TransferJob,
   TransferResult
@@ -273,12 +276,18 @@ export class DataTransferProcessor extends TenantWorkerHost<
     const seen = new Set<string>();
     let rows = 0;
     let imported = 0;
+    // Why reading stopped early (a limit). Not a failure: groups already
+    // written stay, so the import finishes and its result and errors file
+    // say what went in, rather than a bare failure inviting a re-import.
+    let stopped: ImportRowError | undefined;
     const refuse = (refused: ImportRowError[]) => {
       errors.push(...refused);
-      if (errors.length > MAX_ERRORS) {
-        throw new TransferRefused(
-          `More than ${MAX_ERRORS} errors: check the file's format and columns.`,
-        );
+      if (errors.length > MAX_ERRORS && !stopped) {
+        stopped = {
+          row: refused[0]!.row,
+          path: '',
+          message: `More than ${MAX_ERRORS} errors: the rows after this one were not read. Check the file's format and columns.`,
+        };
       }
     };
     const flush = async () => {
@@ -315,10 +324,14 @@ export class DataTransferProcessor extends TenantWorkerHost<
         dateColumns,
         mapping,
       })) {
+        if (stopped) break;
         if (row > limits.maxRows) {
-          throw new TransferRefused(
-            `The file has more than the ${limits.maxRows} row limit.`,
-          );
+          stopped = {
+            row,
+            path: '',
+            message: `The file has more than the ${limits.maxRows} row limit: this row and the ones after it were not read.`,
+          };
+          break;
         }
         rows = row;
         if (row === 1 && matchOn && !Object.hasOwn(record, matchOn)) {
@@ -408,6 +421,7 @@ export class DataTransferProcessor extends TenantWorkerHost<
         }
       }
       await flush();
+      if (stopped) errors.push(stopped);
     } finally {
       // The upload was only a means: it goes, whatever happened.
       await this.disk.delete(key).catch(() => undefined);

@@ -99,7 +99,9 @@ answers 404 for it.
 `IMPORT_MAX_BYTES` and `IMPORT_MAX_ROWS` are the deployment's ceilings. The
 tenant settings `dataTransfer.importMaxMiB` and `dataTransfer.importMaxRows`
 may only lower them. The limits are resolved when the upload arrives and
-kept with the job.
+kept with the job. An import that reaches the row limit, or more than 10,000
+refused rows, stops reading there and finishes: what was written stays and is
+counted, and the errors CSV's last line says where and why it stopped.
 
 ## Status
 

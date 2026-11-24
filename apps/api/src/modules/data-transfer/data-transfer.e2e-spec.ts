@@ -576,13 +576,23 @@ describe('data transfer (e2e)', () => {
     expect(row[header!.indexOf('unit')]).not.toBe(unitId);
   });
 
-  it('stops an import past the row limit, and refuses what it cannot read', async () => {
+  it('stops an import at the row limit, keeping and reporting what went in, and refuses what it cannot read', async () => {
     const rows = Array.from({ length: 21 }, (_, i) => `Row ${i}`).join('\n');
     const tooMany = await settled(
       (await importOf(`title\n${rows}\n`)).json<{ id: string }>().id,
     );
-    expect(tooMany).toMatchObject({ status: 'failed' });
-    expect(tooMany.error).toMatch(/row limit/);
+    // The limit is 20 here: the first 20 are written, the 21st is the report's.
+    expect(tooMany).toMatchObject({
+      status: 'completed',
+      result: { rows: 20, imported: 20, failed: 1 },
+    });
+    const report = (
+      await app.inject({
+        method: 'GET',
+        url: local(tooMany.result!.errorsUrl!),
+      })
+    ).body;
+    expect(report).toMatch(/^21,,.*row limit/m);
 
     const body = multipart(
       { name: 'test-items' },
