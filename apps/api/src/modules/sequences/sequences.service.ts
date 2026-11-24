@@ -108,38 +108,20 @@ export class SequencesService {
     key: string,
     { carryFrom }: { carryFrom?: string } = {},
   ) {
-    const [value] = await this.takeMany(name, key, 1, { carryFrom });
-    return value!;
-  }
-
-  /** Reserves a contiguous range for one counter key with a single UPSERT. */
-  async takeMany(
-    name: string,
-    key: string,
-    count: number,
-    { carryFrom }: { carryFrom?: string } = {},
-  ) {
     this.assertTransaction();
-    if (!Number.isSafeInteger(count) || count < 1) {
-      throw new RangeError('A sequence batch needs a positive integer count.');
-    }
-    // Without a counter to carry on, the first row holds `count` itself; params of an untyped sum would not resolve.
+    // Without a counter to carry on, the first row holds 1; params of an untyped sum would not resolve.
     const initial = carryFrom
-      ? sql`1 + coalesce((select ${sequences.value} from ${sequences} where ${and(eq(sequences.name, name), eq(sequences.scope, carryFrom))}), 0) + ${count - 1}`
-      : count;
+      ? sql`1 + coalesce((select ${sequences.value} from ${sequences} where ${and(eq(sequences.name, name), eq(sequences.scope, carryFrom))}), 0)`
+      : 1;
     const [row] = await this.db
       .insert(sequences)
       .values({ name, scope: key, value: initial })
       .onConflictDoUpdate({
         target: [sequences.tenantId, sequences.name, sequences.scope],
-        set: { value: sql`${sequences.value} + ${count}` },
+        set: { value: sql`${sequences.value} + 1` },
       })
       .returning({ value: sequences.value });
-    const last = Number(row!.value);
-    return Array.from(
-      { length: count },
-      (_, index) => last - count + index + 1,
-    );
+    return Number(row!.value);
   }
 
   /** A naming series counter's last value (0 when none), `carryFrom` as in `take()`. */
