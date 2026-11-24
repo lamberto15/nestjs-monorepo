@@ -140,7 +140,7 @@ export class RecordPresenter {
   ) {
     const [shown] = await this.many(user, [row]);
     if (include.length === 0) return shown!;
-    const included = await this.included(user, [row], include);
+    const included = await this.included(user, [row], [shown!], include);
     return withIncluded(shown!, included);
   }
 
@@ -154,12 +154,10 @@ export class RecordPresenter {
       include = [],
     }: { list: List; query: ListQuery; include?: RecordInclude },
   ) {
-    const picked = list.pick(
-      { ...page, items: await this.many(user, page.items) },
-      query,
-    );
+    const shown = await this.many(user, page.items);
+    const picked = list.pick({ ...page, items: shown }, query);
     if (include.length === 0) return picked;
-    const included = await this.included(user, page.items, include);
+    const included = await this.included(user, page.items, shown, include);
     return {
       ...picked,
       items: picked.items.map((item) =>
@@ -168,10 +166,15 @@ export class RecordPresenter {
     };
   }
 
-  /** What `include` asked for, by name, then by record id. */
+  /**
+   * What `include` asked for, by name, then by record id. `shown` are the
+   * rows as the caller may see them (many()): a reference is followed only
+   * where its field is shown.
+   */
   private async included(
     user: Principal,
     rows: Record<string, unknown>[],
+    shown: Record<string, unknown>[],
     include: RecordInclude,
   ) {
     const ids = rows.map((row) => row.id as string);
@@ -182,7 +185,7 @@ export class RecordPresenter {
     for (const relation of relationsFrom(this.declaration)) {
       const name = includeNameOf(relation.field);
       if (include.includes(name)) {
-        found.set(name, await this.referenced(user, rows, relation));
+        found.set(name, await this.referenced(user, shown, relation));
       }
     }
     for (const hooks of this.registration.extensions) {
@@ -195,8 +198,9 @@ export class RecordPresenter {
 
   /**
    * The records a page's rows refer to through `relation` (`?include=parent`),
-   * by row id: `{ id, title }` of one the caller may read, else null (as a
-   * field they may not read is).
+   * by row id: `{ id, title }` of one the caller may read, else null. Read
+   * from the rows as shown, so a reference whose field is hidden on a row
+   * (a field the caller reads on some records only) stays hidden: null.
    */
   private async referenced(
     user: Principal,
@@ -204,11 +208,6 @@ export class RecordPresenter {
     relation: ReturnType<typeof relationsFrom>[number],
   ) {
     const subject = relation.target();
-    const denied = await this.access.deniedFields(
-      user,
-      'read',
-      this.declaration.subject,
-    );
     const ids = [
       ...new Set(
         rows.flatMap((row) => {
@@ -218,7 +217,7 @@ export class RecordPresenter {
       ),
     ];
     const found = new Map<string, { id: string; title: string | null }>();
-    if (subject && ids.length > 0 && !denied.includes(relation.field)) {
+    if (subject && ids.length > 0) {
       // The titles pickers show (RecordTitles), of the live ones the caller may read.
       const titles = await this.titles.of(user, subject, ids);
       for (const [id, title] of titles) found.set(id, { id, title });

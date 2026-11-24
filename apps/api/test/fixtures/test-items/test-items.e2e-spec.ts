@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { and, eq, inArray } from 'drizzle-orm';
-import { tenantWithAdmin } from '../../access.js';
+import { member, tenantWithAdmin } from '../../access.js';
 import { apiClient } from '../../auth.js';
 import { bootModules } from '../../boot.js';
 import {
@@ -551,6 +551,52 @@ describe('records: test items (e2e)', () => {
       expect(children.items.map((i: { id: string }) => i.id)).toEqual([
         child.id,
       ]);
+    });
+
+    it('includes a reference only where its field is shown', async () => {
+      // Reads every record, but the reference only on their own.
+      const role = await call('POST', '/v1/access/roles', admin.headers, {
+        name: `Own references ${randomUUID().slice(0, 6)}`,
+        permissions: [
+          { subject: 'TestItem', action: 'create', conditions: [] },
+          { subject: 'TestItem', action: 'read', conditions: [], fields: [] },
+          {
+            subject: 'TestItem',
+            action: 'read',
+            conditions: [{ key: 'mine' }],
+          },
+        ],
+      });
+      expect(role.statusCode, role.body).toBe(201);
+      const reader = await member(app, tenantId, [role.json().id]);
+      const parent = await create(editor.headers, { title: 'Parent' });
+      const theirs = await create(editor.headers, { parentId: parent.id });
+      const mine = await create(reader.headers, { parentId: parent.id });
+      const read = async (id: string) =>
+        (
+          await call(
+            'GET',
+            `/v1/test-items/${id}?include=parent`,
+            reader.headers,
+          )
+        ).json();
+      expect(await read(mine.id)).toMatchObject({
+        parentId: parent.id,
+        parent: { id: parent.id, title: 'Parent' },
+      });
+      const hidden = await read(theirs.id);
+      expect(hidden.parentId).toBeUndefined();
+      expect(hidden.parent).toBeNull();
+      const page = (
+        await call(
+          'GET',
+          `/v1/test-items?limit=100&include=parent`,
+          reader.headers,
+        )
+      ).json<{ items: { id: string; parent: unknown }[] }>();
+      expect(page.items.find((item) => item.id === theirs.id)?.parent).toBe(
+        null,
+      );
     });
 
     it('refuses deleting a record live ones refer to (409); restoring one whose parent is in the bin (409)', async () => {
