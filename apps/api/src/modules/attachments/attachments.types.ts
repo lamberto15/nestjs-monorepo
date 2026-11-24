@@ -104,7 +104,8 @@ export function assertDeclaredType(declared: string, detected: string) {
   );
 }
 
-const essence = (type: string | undefined) =>
+/** A content type without its parameters: `text/plain; charset=utf-8` → `text/plain`. */
+export const essence = (type: string | undefined) =>
   (type ?? '').split(';')[0]!.trim().toLowerCase();
 
 /** Whether `type`, parameters aside, is one of `allowed` (ATTACHMENT_ALLOWED_TYPES). */

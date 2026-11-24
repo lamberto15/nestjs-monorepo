@@ -23,6 +23,7 @@ import {
 } from '../auth/auth.events.js';
 import {
   authenticationOf,
+  deviceOfClaims,
   tokenClaims,
 } from '../auth/authentication-method.js';
 import type { UserPrincipal } from '../auth/principal.js';
@@ -573,10 +574,4 @@ function tokenSessionOf(session: unknown) {
   }
   const sid = (session as { sid?: unknown }).sid;
   return typeof sid === 'string' && sid ? sid : undefined;
-}
-
-/** The `dev` claim of a token client's claims (tokenClaims()), if any. */
-function deviceOfClaims(session: unknown) {
-  const device = (session as { dev?: unknown } | undefined)?.dev;
-  return typeof device === 'string' ? device : undefined;
 }

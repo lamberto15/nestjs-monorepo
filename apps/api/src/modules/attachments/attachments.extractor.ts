@@ -1,6 +1,7 @@
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
+import { essence } from './attachments.types.js';
 
 /**
  * The detected types whose text is extracted, as attachments store them
@@ -12,10 +13,6 @@ export const EXTRACTABLE_TYPES: readonly string[] = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
-
-/** A content type without its parameters: `text/plain; charset=utf-8` → `text/plain`. */
-const essence = (contentType: string) =>
-  contentType.split(';')[0]!.trim().toLowerCase();
 
 const EXTRACTABLE: ReadonlySet<string> = new Set(
   EXTRACTABLE_TYPES.map(essence),

@@ -251,13 +251,13 @@ export class DrizzleAuthenticationStore
 }
 
 /** A row without its NULL columns: the package's records leave optional fields out. */
-type WithoutNulls<T> = {
+export type WithoutNulls<T> = {
   [K in keyof T as null extends T[K] ? never : K]: T[K];
 } & {
   [K in keyof T as null extends T[K] ? K : never]?: Exclude<T[K], null>;
 };
 
-function withoutNulls<T extends object>(row: T): WithoutNulls<T> {
+export function withoutNulls<T extends object>(row: T): WithoutNulls<T> {
   return Object.fromEntries(
     Object.entries(row).filter(([, value]) => value !== null),
   ) as WithoutNulls<T>;

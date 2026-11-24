@@ -164,7 +164,8 @@ export function guardedLookup(allowPrivateNetworks = false): LookupFunction {
 }
 
 /** The URL's host as a socket would use it: without IPv6 brackets. */
-const socketHost = (url: URL) => url.hostname.replace(/^\[(.*)\]$/, '$1');
+export const socketHost = (url: URL) =>
+  url.hostname.replace(/^\[(.*)\]$/, '$1');
 
 /**
  * Why `url` is refused before anything is resolved, or undefined: not

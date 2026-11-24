@@ -96,6 +96,12 @@ export const tokenClaims = (
   ...(device && { dev: device }),
 });
 
+/** The `dev` claim of a token client's claims (tokenClaims()), if any. */
+export function deviceOfClaims(session: unknown) {
+  const device = (session as { dev?: unknown } | undefined)?.dev;
+  return typeof device === 'string' ? device : undefined;
+}
+
 /** The metadata without its authentication keys, and those keys apart. */
 export function splitAuthentication(
   metadata: Record<string, unknown> | undefined,

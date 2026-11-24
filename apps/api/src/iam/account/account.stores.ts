@@ -24,6 +24,7 @@ import {
   mfaRecoveryCodes,
   oidcLogins,
 } from './account.tables.js';
+import { withoutNulls } from '../auth/drizzle-authentication.store.js';
 
 /** Past this many pending links or logins of a kind, the ones expiring first go. */
 const MAX_PENDING = 100_000;
@@ -283,17 +284,4 @@ export class AccountStores
       await this.db.delete(table).where(lte(table.expiresAt, cutoff.expiresAt));
     }
   }
-}
-
-/** A row without its NULL columns: the package's records leave optional fields out. */
-type WithoutNulls<T> = {
-  [K in keyof T as null extends T[K] ? never : K]: T[K];
-} & {
-  [K in keyof T as null extends T[K] ? K : never]?: Exclude<T[K], null>;
-};
-
-function withoutNulls<T extends object>(row: T): WithoutNulls<T> {
-  return Object.fromEntries(
-    Object.entries(row).filter(([, value]) => value !== null),
-  ) as WithoutNulls<T>;
 }

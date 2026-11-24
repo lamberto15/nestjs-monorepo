@@ -14,7 +14,7 @@ import {
   type WebhookTransportSendOptions,
 } from '@nestjs/webhooks';
 import type { Database } from '../../core/database/database.js';
-import { addressAllowed } from '../../core/http/safe-fetch.js';
+import { addressAllowed, socketHost } from '../../core/http/safe-fetch.js';
 import { webhooksConfig } from './webhooks.config.js';
 import {
   type SigningSecret,
@@ -35,10 +35,6 @@ export const deliveryOptions = (config: Config) => ({
   allowHttp: config.allowLoopback,
   allowedAddresses: config.allowLoopback ? [`${LOOPBACK}/32`] : [],
 });
-
-/** The URL's host as a socket uses it: without IPv6 brackets. */
-const hostOf = (url: string) =>
-  new URL(url).hostname.replace(/^\[(.*)\]$/, '$1');
 
 /** Every address `hostname` resolves to, or a WebhookDestinationBlockedError for the first refused one. */
 async function resolveAllowed(
@@ -74,7 +70,7 @@ export async function destinationRefusal(
 ): Promise<string | undefined> {
   let host: string;
   try {
-    host = hostOf(url);
+    host = socketHost(new URL(url));
   } catch {
     return undefined; // not a URL: the package refuses it with its own message
   }
@@ -135,7 +131,7 @@ export class SafeWebhookTransport extends WebhookTransport {
     request: WebhookRequest,
     options: WebhookTransportSendOptions,
   ): Promise<WebhookTransportResponse> {
-    const host = hostOf(request.url);
+    const host = socketHost(new URL(request.url));
     if (isIP(host) && !destinationAllowed(host, this.config)) {
       throw new WebhookDestinationBlockedError(
         request.url,

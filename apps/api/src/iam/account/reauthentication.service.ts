@@ -28,6 +28,7 @@ import { sessions, users } from '../auth/auth.tables.js';
 import {
   authenticationOf,
   isRecent,
+  deviceOfClaims,
   tokenClaims,
 } from '../auth/authentication-method.js';
 import type { UserPrincipal } from '../auth/principal.js';
@@ -386,10 +387,4 @@ export class ReauthenticationService implements ReauthenticationMethodSource {
     const passwordHash = row?.passwordHash ?? null;
     return { passwordHash, hasPassword: passwordHash !== null, mfaOn };
   }
-}
-
-/** The `dev` claim of a token client's claims (tokenClaims()), if any. */
-function deviceOfClaims(session: unknown) {
-  const device = (session as { dev?: unknown } | undefined)?.dev;
-  return typeof device === 'string' ? device : undefined;
 }
