@@ -21,6 +21,7 @@ import { auditLog } from '../../iam/audit/audit.tables.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { AttachmentsModule } from './attachments.module.js';
 import { AttachmentRetryJob } from './attachments.jobs.js';
+import { AttachmentScanService } from './attachments.scan.js';
 import {
   EICAR,
   MalwareScanner,
@@ -177,11 +178,24 @@ describe('attachments: malware scanning (e2e)', () => {
     ).toEqual([pending.id]);
 
     scanner.down = false;
+    // A tenant with nothing pending is never visited.
+    const tenancy = app.get(Tenancy);
+    const idle = await tenancy.create({ slug: 'idle-scans', name: 'Idle' });
+    const visited: string[] = [];
+    const scans = app.get(AttachmentScanService);
+    const retried = scans.retryPending.bind(scans);
+    const spy = vi.spyOn(scans, 'retryPending').mockImplementation((now) => {
+      visited.push(tenancy.tenantId());
+      return retried(now);
+    });
     // Five minutes on, it is stuck: the job queues its scan again.
     const handled = await app
       .get(AttachmentRetryJob)
-      .run(new Date(Date.now() + 10 * 60_000));
+      .run(new Date(Date.now() + 10 * 60_000))
+      .finally(() => spy.mockRestore());
     expect(handled.scans).toBeGreaterThanOrEqual(1);
+    expect(visited).toEqual([tenantId]);
+    expect(visited).not.toContain(idle.id);
     await settled(pending.id, 'clean');
   });
 

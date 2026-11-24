@@ -36,7 +36,9 @@ is one however many records take files.
   `attachment_scan_pending`); infected files are deleted, audited
   `attachment.rejected` and the uploader notified. A failing scanner never
   means clean: the job is retried, then `AttachmentRetryJob` (every five
-  minutes) queues it again. Scanning switched off releases what is pending (`attachments.released`).
+  minutes) queues it again. The retry jobs visit only the tenants with
+  something waiting, found by one read across every tenant (the worker's
+  DATABASE_MAINTENANCE_URL). Scanning switched off releases what is pending (`attachments.released`).
 - **Images** (IMAGE_PROCESSING): JPEG, PNG, WebP and GIF get a thumbnail and a
   preview (`modules/images`) and an original with metadata is replaced by a
   copy without it; `renditionStatus` `pending`, `ready` or `failed`. Waits for

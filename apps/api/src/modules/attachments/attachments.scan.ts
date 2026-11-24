@@ -146,12 +146,7 @@ export class AttachmentScanService {
         const stale = await this.db
           .select({ id: attachments.id })
           .from(attachments)
-          .where(
-            and(
-              eq(attachments.scanStatus, 'pending'),
-              lt(attachments.createdAt, new Date(now.getTime() - RETRY_MS)),
-            ),
-          )
+          .where(this.retried(now))
           .orderBy(asc(attachments.createdAt))
           .limit(BATCH);
         const period = String(Math.floor(now.getTime() / RETRY_MS));
@@ -160,6 +155,26 @@ export class AttachmentScanService {
       },
       { transaction: false },
     );
+  }
+
+  /** The tenants `retryPending()` has work in, read across every tenant (the retry job, in `acrossTenants()`). */
+  async pendingTenants(now: Date) {
+    const rows = await this.db
+      .selectDistinct({ tenantId: attachments.tenantId })
+      .from(attachments)
+      .where(this.retried(now));
+    return rows.map((row) => row.tenantId);
+  }
+
+  /** What `retryPending()` handles: with scanning on the uploads pending past `RETRY_MS`, off every pending one (released). */
+  private retried(now: Date) {
+    const pending = eq(attachments.scanStatus, 'pending');
+    return this.scanner.enabled
+      ? and(
+          pending,
+          lt(attachments.createdAt, new Date(now.getTime() - RETRY_MS)),
+        )
+      : pending;
   }
 
   /** Scanning is off: the pending files become `clean` (a round of `BATCH` at a time), audited. */

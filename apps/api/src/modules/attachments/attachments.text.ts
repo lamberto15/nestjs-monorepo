@@ -41,6 +41,16 @@ export const TEXT_RETRY_MS = 5 * 60 * 1000;
 /** Rows per round. */
 const BATCH = 1000;
 
+/** The files `retryPending()` queues: attachments_text_pending_idx's predicate, changed more than `TEXT_RETRY_MS` ago. */
+const retried = (now: Date) =>
+  and(
+    eq(attachments.textPending, true),
+    eq(attachments.scanStatus, 'clean'),
+    eq(attachments.locked, false),
+    isNull(attachments.fields),
+    lt(attachments.updatedAt, new Date(now.getTime() - TEXT_RETRY_MS)),
+  );
+
 /**
  * The text of uploaded files, for the search inside files
  * (ATTACHMENT_TEXT_SEARCH). A queue job on a worker reads a clean upload of an
@@ -164,19 +174,7 @@ export class AttachmentTextService {
         const stale = await this.db
           .select({ id: attachments.id })
           .from(attachments)
-          .where(
-            and(
-              // attachments_text_pending_idx's predicate.
-              eq(attachments.textPending, true),
-              eq(attachments.scanStatus, 'clean'),
-              eq(attachments.locked, false),
-              isNull(attachments.fields),
-              lt(
-                attachments.updatedAt,
-                new Date(now.getTime() - TEXT_RETRY_MS),
-              ),
-            ),
-          )
+          .where(retried(now))
           .orderBy(asc(attachments.updatedAt))
           .limit(BATCH);
         const period = String(Math.floor(now.getTime() / TEXT_RETRY_MS));
@@ -185,6 +183,16 @@ export class AttachmentTextService {
       },
       { transaction: false },
     );
+  }
+
+  /** The tenants `retryPending()` has work in, read across every tenant (the retry job, in `acrossTenants()`). */
+  async pendingTenants(now: Date) {
+    if (!this.queue.enabled) return [];
+    const rows = await this.db
+      .selectDistinct({ tenantId: attachments.tenantId })
+      .from(attachments)
+      .where(retried(now));
+    return rows.map((row) => row.tenantId);
   }
 
   /**
@@ -248,8 +256,8 @@ export class AttachmentTextProcessor extends TenantWorkerHost<AttachmentJob> {
 
 /**
  * Queues the text extraction of the clean, extractable files that have no
- * text for their current file, every five minutes on one instance, one tenant
- * at a time. `run(now)` lets a test choose the moment; it returns how many it
+ * text for their current file, every five minutes on one instance, in the
+ * tenants that have one (found across every tenant). `run(now)` lets a test choose the moment; it returns how many it
  * queued.
  */
 @Injectable()
@@ -263,9 +271,15 @@ export class AttachmentTextRetryJob {
   @OnOneInstance({ key: 'attachments:text-retry' })
   @WithoutOverlapping()
   async run(now = new Date()) {
+    // Only the tenants with a file waiting: one indexed read across them, not a visit to each.
+    const pending = await this.tenancy.acrossTenants(
+      'attachment-text-retry',
+      () => this.texts.pendingTenants(now),
+    );
     const handled = await this.tenancy.forEachTenant(
       'attachment-text-retry',
       () => this.texts.retryPending(now),
+      { tenantIds: pending },
     );
     return [...handled.values()].reduce((sum, count) => sum + count, 0);
   }

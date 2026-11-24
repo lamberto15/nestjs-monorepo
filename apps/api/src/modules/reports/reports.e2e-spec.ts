@@ -23,6 +23,7 @@ import { DATA_TRANSFERS } from '../data-transfer/data-transfer.service.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { ReportsModule } from './reports.module.js';
 import { ReportsRunner } from './reports.runner.js';
+import { ReportsService } from './reports.service.js';
 import { reportSchedules } from './reports.tables.js';
 
 vi.hoisted(() => {
@@ -246,10 +247,26 @@ describe('scheduled reports (e2e)', () => {
       })
     ).json<Report>();
     const due = new Date(report.nextRunAt);
+    // A tenant with nothing due is never visited: only the tenants a read across them names.
+    const tenancy = app.get(Tenancy);
+    const idle = await tenancy.create({ slug: 'idle-reports', name: 'Idle' });
+    const visited: string[] = [];
+    const reports = app.get(ReportsService);
+    const looked = reports.due.bind(reports);
+    const spy = vi.spyOn(reports, 'due').mockImplementation((...args) => {
+      visited.push(tenancy.tenantId());
+      return looked(...args);
+    });
     const runner = app.get(ReportsRunner);
-    expect(await runner.run(due)).toBe(1);
-    // Claimed: a second pass at the same moment starts nothing.
-    expect(await runner.run(due)).toBe(0);
+    try {
+      expect(await runner.run(due)).toBe(1);
+      // Claimed: a second pass at the same moment starts nothing, and visits no tenant.
+      expect(await runner.run(due)).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(visited).toEqual([team.tenantId]);
+    expect(visited).not.toContain(idle.id);
 
     const [row] = await app
       .get(Tenancy)

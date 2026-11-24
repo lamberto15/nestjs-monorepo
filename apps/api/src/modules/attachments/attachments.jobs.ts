@@ -89,8 +89,8 @@ export class AttachmentImagesProcessor extends TenantWorkerHost<AttachmentJob> {
 /**
  * Gets the uploads stuck `pending` scanned (or released) again, and the
  * images stuck `pending` processed again, every five minutes on one
- * instance, one tenant at a time (deactivated ones too, so nothing stays
- * pending for good). `run(now)` lets a test choose the moment; it returns how
+ * instance, in the tenants that have one (found across every tenant;
+ * deactivated ones too, so nothing stays pending for good). `run(now)` lets a test choose the moment; it returns how
  * many files and images it handled.
  */
 @Injectable()
@@ -105,13 +105,21 @@ export class AttachmentRetryJob {
   @OnOneInstance({ key: 'attachments:retry' })
   @WithoutOverlapping()
   async run(now = new Date()) {
+    // Only the tenants with an upload or an image waiting: indexed reads across them, not a visit to each.
+    const pending = await this.tenancy.acrossTenants(
+      'attachment-retry',
+      async () => [
+        ...(await this.scans.pendingTenants(now)),
+        ...(await this.images.pendingTenants(now)),
+      ],
+    );
     const handled = await this.tenancy.forEachTenant(
       'attachment-retry',
       async () => ({
         scans: await this.scans.retryPending(now),
         images: await this.images.retryPending(now),
       }),
-      { includeInactive: true },
+      { includeInactive: true, tenantIds: pending },
     );
     return [...handled.values()].reduce(
       (total, { scans, images }) => ({

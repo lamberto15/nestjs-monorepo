@@ -13,8 +13,10 @@ list export.
 - The `exporter` is a record exportable through
   `DataTransferModule.forRecord()`. Its filters and sort are checked as the
   export route checks them.
-- `ReportsRunner` runs every hour at :10 on one instance, one tenant at a
-  time, as `system:report-runner`. It looks up each owner again: a report is
+- `ReportsRunner` runs every hour at :10 on one instance, as
+  `system:report-runner`, in only the tenants with a report due (one read
+  across every tenant: the worker's DATABASE_MAINTENANCE_URL, then
+  `Tenancy.forEachTenant()` over them). It looks up each owner again: a report is
   deactivated when its owner is gone, or may no longer export.
   - A run is claimed by moving `nextRunAt`, so it starts once.
   - A refused export skips that run.

@@ -21,8 +21,11 @@ written only in its scope. Modules never know how the wall is built.
   with no tenant filter: the database binds every query to the scope.
 - **`Tenancy`** (global): `tenantId()` (the current one, or
   `TenantScopeMissingError` → 403 `tenant_required`), `run(tenantId, work)`,
-  `forEachTenant(job, work)` (each active tenant in its scope; one's failure
-  does not stop the others, then `TenantRunsFailed` names them),
+  `forEachTenant(job, work, { includeInactive?, tenantIds?, concurrency? })`
+  (each active tenant in its scope, read 500 at a time in id order, 4 at
+  once by default; `tenantIds`: only those, as a job that asked across
+  tenants which have work; one's failure does not stop the others, then
+  `TenantRunsFailed` names them),
   `acrossTenants(job, work)` (maintenance that sweeps every tenant at once:
   the maintenance role, never in a request; the job's first run in the
   process is logged, its repeats only at debug),

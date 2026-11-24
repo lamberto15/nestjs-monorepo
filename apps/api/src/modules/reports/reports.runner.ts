@@ -10,8 +10,9 @@ import { isRefusal, ReportsService } from './reports.service.js';
 const BATCH = 500;
 
 /**
- * Starts the reports that are due, every hour at :10, on one instance, one
- * tenant at a time (`Tenancy.forEachTenant()`): each as its owner, checked
+ * Starts the reports that are due, every hour at :10, on one instance, in
+ * the tenants that have one (found across every tenant, then walked with
+ * `Tenancy.forEachTenant()`): each as its owner, checked
  * again (a deactivated owner's reports, or ones they may no longer export,
  * are made inactive), its next run computed from this run's moment, so an
  * hour missed (downtime) runs once, not twice. The runner is
@@ -33,9 +34,14 @@ export class ReportsRunner {
   @OnOneInstance({ key: 'report-runner' })
   @WithoutOverlapping()
   async run(now = new Date()) {
+    // Only the tenants with a report due: one indexed read across them, not a visit to each.
+    const due = await this.tenancy.acrossTenants(REPORT_RUNNER_JOB.key, () =>
+      this.reports.dueTenants(now),
+    );
     const started = await this.tenancy.forEachTenant(
       REPORT_RUNNER_JOB.key,
       () => this.runTenant(now),
+      { tenantIds: due },
     );
     return [...started.values()].reduce((sum, count) => sum + count, 0);
   }

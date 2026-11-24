@@ -89,6 +89,10 @@ export const isRefusal = (error: unknown) =>
   error.getStatus() >= 400 &&
   error.getStatus() < 500;
 
+/** A report the runner starts at `now`: written once for the tenant's due reports and the tenants that have one. */
+const isDue = (now: Date) =>
+  and(eq(reportSchedules.active, true), lte(reportSchedules.nextRunAt, now));
+
 /**
  * Scheduled reports: an export asked for once, run for its owner on a
  * schedule (daily, weekly, monthly at an hour of their time zone), its file
@@ -503,14 +507,18 @@ export class ReportsService {
     return this.db
       .select()
       .from(reportSchedules)
-      .where(
-        and(
-          eq(reportSchedules.active, true),
-          lte(reportSchedules.nextRunAt, now),
-        ),
-      )
+      .where(isDue(now))
       .orderBy(asc(reportSchedules.nextRunAt))
       .limit(limit);
+  }
+
+  /** The tenants with a report due, read across every tenant (the runner, in `acrossTenants()`). */
+  async dueTenants(now: Date) {
+    const rows = await this.db
+      .selectDistinct({ tenantId: reportSchedules.tenantId })
+      .from(reportSchedules)
+      .where(isDue(now));
+    return rows.map((row) => row.tenantId);
   }
 
   /**

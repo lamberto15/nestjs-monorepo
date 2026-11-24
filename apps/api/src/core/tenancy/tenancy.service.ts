@@ -7,7 +7,7 @@ import {
   type OnApplicationBootstrap,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray } from 'drizzle-orm';
 import { CLS_REQ, ClsService } from 'nestjs-cls';
 import type { Database, DatabaseTransactions } from '../database/database.js';
 import { tenancyConfig } from './tenancy.config.js';
@@ -26,6 +26,9 @@ import {
   type TenantScope,
   tenantScope,
 } from './tenant-scope.js';
+
+/** Tenants read at once by forEachTenant(): a walk never holds every tenant. */
+export const TENANT_PAGE = 500;
 
 /**
  * The tenant of the current work, and work run as a tenant (README.md).
@@ -154,20 +157,29 @@ export class Tenancy implements OnApplicationBootstrap {
 
   /**
    * Runs `work` once per active tenant (every tenant with
-   * `includeInactive`), each in that tenant's scope. A tenant's failure is
-   * logged and the others still run; then a TenantRunsFailed names them all.
+   * `includeInactive`; only those of `tenantIds` when given: a job that
+   * asked across tenants which have work), each in that tenant's scope. The
+   * tenants are read a page at a time, in id order, and up to `concurrency`
+   * run at once. A tenant's failure is logged and the others still run; then
+   * a TenantRunsFailed names them all.
    */
   async forEachTenant<T>(
     job: string,
     work: (tenant: Tenant) => Promise<T>,
-    { includeInactive = false }: { includeInactive?: boolean } = {},
+    {
+      includeInactive = false,
+      tenantIds,
+      // 4: a walk shares the process's pool (DATABASE_POOL_MAX, 10 by default) with its other jobs and the queues' workers; more is more replicas.
+      concurrency = 4,
+    }: {
+      includeInactive?: boolean;
+      tenantIds?: readonly string[];
+      concurrency?: number;
+    } = {},
   ): Promise<Map<string, T>> {
     const results = new Map<string, T>();
     const failures: { tenant: Tenant; error: unknown }[] = [];
-    const walked = (await this.all()).filter(
-      (tenant) => includeInactive || tenant.active,
-    );
-    for (const tenant of walked) {
+    const visit = async (tenant: Tenant) => {
       try {
         results.set(tenant.id, await this.run(tenant.id, () => work(tenant)));
       } catch (error) {
@@ -176,6 +188,36 @@ export class Tenancy implements OnApplicationBootstrap {
           `${job}: failed for tenant ${tenant.slug}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
+    };
+    // Given ids are read a page of them at a time: a list too long for one query's parameters still walks.
+    const ids = tenantIds && [...new Set(tenantIds)];
+    let after: string | undefined;
+    for (let round = 0; ; round++) {
+      const among = ids?.slice(round * TENANT_PAGE, (round + 1) * TENANT_PAGE);
+      if (among?.length === 0) break;
+      const page = await this.db
+        .select()
+        .from(tenants)
+        .where(
+          and(
+            includeInactive ? undefined : eq(tenants.active, true),
+            among
+              ? inArray(tenants.id, among)
+              : after
+                ? gt(tenants.id, after)
+                : undefined,
+          ),
+        )
+        .orderBy(asc(tenants.id))
+        .limit(TENANT_PAGE);
+      let next = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, page.length) }, async () => {
+          while (next < page.length) await visit(page[next++]!);
+        }),
+      );
+      if ((among ?? page).length < TENANT_PAGE) break;
+      after = page.at(-1)?.id;
     }
     if (failures.length > 0) {
       throw new TenantRunsFailed(job, failures);

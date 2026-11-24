@@ -202,14 +202,7 @@ export class AttachmentImagesService {
         const stale = await this.db
           .select({ id: attachments.id })
           .from(attachments)
-          .where(
-            and(
-              eq(attachments.renditionStatus, 'pending'),
-              // A scan still running queues the job itself when it ends.
-              eq(attachments.scanStatus, 'clean'),
-              lt(attachments.updatedAt, new Date(now.getTime() - RETRY_MS)),
-            ),
-          )
+          .where(this.retried(now))
           .orderBy(asc(attachments.updatedAt))
           .limit(BATCH);
         const period = String(Math.floor(now.getTime() / RETRY_MS));
@@ -218,6 +211,28 @@ export class AttachmentImagesService {
       },
       { transaction: false },
     );
+  }
+
+  /** The tenants `retryPending()` has work in, read across every tenant (the retry job, in `acrossTenants()`). */
+  async pendingTenants(now: Date) {
+    const rows = await this.db
+      .selectDistinct({ tenantId: attachments.tenantId })
+      .from(attachments)
+      .where(this.retried(now));
+    return rows.map((row) => row.tenantId);
+  }
+
+  /** What `retryPending()` handles: with processing on the clean images pending past `RETRY_MS`, off every pending one (released). */
+  private retried(now: Date) {
+    const pending = eq(attachments.renditionStatus, 'pending');
+    return this.queue.enabled
+      ? and(
+          pending,
+          // A scan still running queues the job itself when it ends.
+          eq(attachments.scanStatus, 'clean'),
+          lt(attachments.updatedAt, new Date(now.getTime() - RETRY_MS)),
+        )
+      : pending;
   }
 
   /** Processing is off: the pending images lose their state (a round of `BATCH` at a time). */
