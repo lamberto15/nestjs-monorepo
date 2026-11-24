@@ -1,0 +1,58 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "fe120037-8049-4953-8dd9-7ec6751aa303",
+  "prevIds": [
+    "4b6f6245-d032-46ad-b9c3-3ed891abedf1"
+  ],
+  "footprints": [
+    {
+      "statementType": "recreate_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "report_schedules",
+        "report_schedules_next_run_at_idx"
+      ],
+      "writes": [
+        "s|idx|public.report_schedules_next_run_at_idx",
+        "n|idx|public.report_schedules_next_run_at_idx",
+        "e|idx|public.report_schedules_next_run_at_idx",
+        "n|rel|public.report_schedules_next_run_at_idx"
+      ],
+      "reads": [
+        "n|tbl|public.report_schedules",
+        "n|sch|public",
+        "n|col|public.report_schedules.next_run_at",
+        "n|col|public.report_schedules.tenant_id"
+      ],
+      "sharedWrites": [],
+      "sqlHash": "538f96b9f1f843c2"
+    }
+  ],
+  "deltas": [
+    {
+      "op": "alter",
+      "key": "indexes\u0000[\"public\",\"report_schedules_next_run_at_idx\"]",
+      "set": {
+        "columns": [
+          {
+            "value": "next_run_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "tenant_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ]
+      }
+    }
+  ]
+}

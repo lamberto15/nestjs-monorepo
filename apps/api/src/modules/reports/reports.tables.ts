@@ -41,8 +41,11 @@ export const reportSchedules = tenantTable(
   },
   (t) => [
     index('report_schedules_owner_idx').on(t.tenantId, t.owner, t.id),
+    // Due time first: the runner's query across tenants (dueTenants) reads
+    // it by time, and a tenant's own (due) filters the few due rows by
+    // tenant inside it. One index for both: no second one to write.
     index('report_schedules_next_run_at_idx')
-      .on(t.tenantId, t.nextRunAt)
+      .on(t.nextRunAt, t.tenantId)
       .where(sql`${t.active}`),
   ],
 );
