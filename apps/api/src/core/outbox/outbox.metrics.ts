@@ -10,7 +10,7 @@ import { MetricsService } from '../metrics/metrics.service.js';
 import { queuesConfig, runsWorkers } from '../queues/queues.config.js';
 
 /**
- * `outbox_lag_seconds` on `/metrics`: how long the longest-waiting due
+ * `outbox_lag_seconds` (core/metrics): how long the longest-waiting due
  * outbox message has waited (0 when none does), the relay's own `lagMs`.
  * Shared state (PostgreSQL): every worker reports the same value, aggregate
  * with max(). Only worker processes report it.
@@ -32,6 +32,7 @@ export class OutboxMetrics implements OnModuleInit {
       'outbox_lag_seconds',
       'How long the longest-waiting due outbox message has waited.',
       async () => [{ value: (await this.relay.stats()).lagMs / 1000 }],
+      's',
     );
   }
 }

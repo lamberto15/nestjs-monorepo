@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import type { ModuleRef } from '@nestjs/core';
 import { PasswordHasher } from '@nestjs/authentication';
+import { recordMetrics } from '../../../test/metrics.js';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { PasswordHashLimiter } from './password-hashing.js';
 
@@ -135,37 +136,47 @@ describe('PasswordHashLimiter', () => {
     await first;
   });
 
-  it('exposes both refusal reasons at 0 from the start', async () => {
-    const metrics = new MetricsService();
-    limiterOf(limits(), metrics);
-    const { body } = await metrics.scrape();
-    expect(body).toContain('password_hashes_rejected_total{reason="full"} 0');
-    expect(body).toContain(
-      'password_hashes_rejected_total{reason="queue-timeout"} 0',
-    );
-  });
+  describe('metrics', () => {
+    let recorded: ReturnType<typeof recordMetrics>;
+    beforeEach(() => {
+      recorded = recordMetrics();
+    });
+    afterEach(() => recorded.stop());
 
-  it('refuses a call that waited `queueTimeoutMs`, and counts it', async () => {
-    const metrics = new MetricsService();
-    const limiter = limiterOf(
-      limits({ concurrency: 1, queueTimeoutMs: 100 }),
-      metrics,
-    );
-    const running = deferred();
-    const first = limiter.run(() => running.promise);
-    const startedAt = Date.now();
-    await expect(limiter.run(async () => 'late')).rejects.toBeInstanceOf(
-      HttpException,
-    );
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(90);
-    running.resolve('done');
-    await first;
-    const { body } = await metrics.scrape();
-    expect(body).toContain(
-      'password_hashes_rejected_total{reason="queue-timeout"} 1',
-    );
-    expect(body).toContain('password_hashes_in_flight 0');
-    expect(body).toContain('password_hashes_queued 0');
+    it('exposes both refusal reasons at 0 from the start', async () => {
+      limiterOf(limits(), new MetricsService());
+      expect(await recorded.read('password_hashes_rejected')).toEqual([
+        { attributes: { reason: 'full' }, value: 0 },
+        { attributes: { reason: 'queue-timeout' }, value: 0 },
+      ]);
+    });
+
+    it('refuses a call that waited `queueTimeoutMs`, and counts it', async () => {
+      const metrics = new MetricsService();
+      const limiter = limiterOf(
+        limits({ concurrency: 1, queueTimeoutMs: 100 }),
+        metrics,
+      );
+      const running = deferred();
+      const first = limiter.run(() => running.promise);
+      const startedAt = Date.now();
+      await expect(limiter.run(async () => 'late')).rejects.toBeInstanceOf(
+        HttpException,
+      );
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(90);
+      running.resolve('done');
+      await first;
+      expect(await recorded.read('password_hashes_rejected')).toContainEqual({
+        attributes: { reason: 'queue-timeout' },
+        value: 1,
+      });
+      expect(await recorded.read('password_hashes_in_flight')).toEqual([
+        { attributes: {}, value: 0 },
+      ]);
+      expect(await recorded.read('password_hashes_queued')).toEqual([
+        { attributes: {}, value: 0 },
+      ]);
+    });
   });
 });
 

@@ -2,8 +2,8 @@ import { randomInt, randomUUID } from 'node:crypto';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { accessModules } from '../../../test/access.js';
 import { bootModules } from '../../../test/boot.js';
+import { recordMetrics } from '../../../test/metrics.js';
 import { MetricsModule } from '../../core/metrics/metrics.module.js';
-import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { CaptchaModule } from './captcha.module.js';
 import { ProbeModule } from './captcha-stand-in.js';
 
@@ -26,8 +26,10 @@ const ip = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
 
 describe('bot protection, always (e2e)', () => {
   let app: NestNodeApplication;
+  let recorded: ReturnType<typeof recordMetrics>;
 
   beforeAll(async () => {
+    recorded = recordMetrics();
     app = await bootModules(
       ...accessModules(),
       MetricsModule,
@@ -39,6 +41,7 @@ describe('bot protection, always (e2e)', () => {
   afterAll(async () => {
     await app.close();
     await siteverify.close();
+    await recorded.stop();
   });
 
   const post = (
@@ -137,12 +140,11 @@ describe('bot protection, always (e2e)', () => {
     expect(siteverify.requests).toHaveLength(1);
   });
 
-  it('counts its outcomes in captcha_verifications_total', async () => {
+  it('counts its outcomes in captcha_verifications', async () => {
     await signIn(siteverify.token());
-    const metrics = await app.get(MetricsService).registry.metrics();
-    expect(metrics).toMatch(
-      /captcha_verifications_total\{outcome="passed"\} [1-9]/,
-    );
+    const counts = await recorded.read('captcha_verifications');
+    const passed = counts.find((p) => p.attributes.outcome === 'passed');
+    expect(passed!.value).toBeGreaterThan(0);
   });
 
   it('fail-open: lets a request through unverified when the provider is down, up to CAPTCHA_DEGRADED_LIMIT, then 429', async () => {

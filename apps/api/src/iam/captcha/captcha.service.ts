@@ -15,8 +15,8 @@ import {
   type ThrottlerStorage,
 } from '@nestjs/throttler';
 import type { Redis } from 'ioredis';
-import { Counter } from 'prom-client';
 import { httpConfig } from '../../core/http/http.config.js';
+import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { REDIS } from '../../core/redis/redis.js';
 import { AppAttestationService } from './app-attestation.service.js';
@@ -97,7 +97,7 @@ return 0`;
 export class CaptchaService {
   private readonly logger = new Logger('Captcha');
   private readonly policy: ResiliencePolicy;
-  private readonly verifications: Counter<'outcome'>;
+  private readonly verifications: Counter;
 
   constructor(
     @Inject(CAPTCHA_VERIFIER) private readonly verifier: CaptchaVerifier,
@@ -128,15 +128,14 @@ export class CaptchaService {
       },
       CAPTCHA_BREAKER,
     );
-    this.verifications = new Counter({
-      name: 'captcha_verifications_total',
-      help: 'Challenge tokens checked, by outcome: passed, rejected (invalid, replayed by the provider, another host or action), replayed (seen here before), unavailable (the provider could not be asked).',
-      labelNames: ['outcome'] as const,
-      registers: [metrics.registry],
-    });
-    for (const outcome of OUTCOMES) {
-      this.verifications.labels(outcome).inc(0);
-    }
+    this.verifications = metrics.counter(
+      'captcha_verifications',
+      {
+        description:
+          'Challenge tokens checked, by outcome: passed, rejected (invalid, replayed by the provider, another host or action), replayed (seen here before), unavailable (the provider could not be asked).',
+      },
+      OUTCOMES.map((outcome) => ({ outcome })),
+    );
   }
 
   /** `off`, `always` or `after-failures` (CAPTCHA_MODE). */
@@ -180,7 +179,7 @@ export class CaptchaService {
     // verified here, no provider asked, so nothing to fail open or closed.
     if (!token && attestation && this.attestation.enabled) {
       await this.attestation.verify(attestation);
-      this.verifications.labels('passed').inc();
+      this.verifications.add(1, { outcome: 'passed' });
       return;
     }
     await this.verifyToken(token, request, trackers);
@@ -225,11 +224,11 @@ export class CaptchaService {
       });
     }
     if (token.length > MAX_TOKEN_LENGTH) {
-      this.verifications.labels('rejected').inc();
+      this.verifications.add(1, { outcome: 'rejected' });
       throw this.refused('invalid', request.action);
     }
     if (!(await this.firstUse(token))) {
-      this.verifications.labels('replayed').inc();
+      this.verifications.add(1, { outcome: 'replayed' });
       throw this.refused('duplicate', request.action);
     }
     let verdict: CaptchaVerdict;
@@ -250,10 +249,10 @@ export class CaptchaService {
       return this.unavailable((error as Error).message, trackers);
     }
     if (!verdict.ok) {
-      this.verifications.labels('rejected').inc();
+      this.verifications.add(1, { outcome: 'rejected' });
       throw this.refused(verdict.reason, request.action);
     }
-    this.verifications.labels('passed').inc();
+    this.verifications.add(1, { outcome: 'passed' });
   }
 
   /** Whether the breaker is open: the provider has been failing. */
@@ -312,7 +311,7 @@ export class CaptchaService {
 
   /** The provider couldn't be asked: refuse (fail-closed), or let through under the strict tier. */
   private async unavailable(reason: string, trackers: string[]) {
-    this.verifications.labels('unavailable').inc();
+    this.verifications.add(1, { outcome: 'unavailable' });
     if (this.config.onError === 'reject') {
       this.logger.warn(`provider unavailable (${reason}): request refused`);
       throw new ServiceUnavailableException({

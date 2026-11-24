@@ -146,7 +146,7 @@ retries over hours (10 attempts, exponential backoff)
 - **`@EssentialMail()`** marks mail that must still go out when delivery is
   limited to essential mail (sign-in links, security alerts).
 - **Delivery policy.** `MAIL_DELIVERY` is `all`, `essential` or `off`: the
-  ceiling. A withheld mail is logged and counted (`mail_withheld_total`), not
+  ceiling. A withheld mail is logged and counted (`mail_withheld`), not
   queued. [modules/deliverability](../apps/api/src/modules/deliverability/README.md)
   marks providers with `@MailDeliveryPolicy()` (a stricter mode, and a
   tenant's daily budget) and `@MailSuppressionList()` (addresses the worker

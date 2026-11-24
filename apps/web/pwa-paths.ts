@@ -9,4 +9,4 @@
  * pwa-paths.test.ts checks it.
  */
 export const apiPathPattern =
-  /^\/(v1|health|metrics|api|api-json|api-yaml|files|socket\.io|\.well-known)(\/|$)/;
+  /^\/(v1|health|api|api-json|api-yaml|files|socket\.io|\.well-known)(\/|$)/;

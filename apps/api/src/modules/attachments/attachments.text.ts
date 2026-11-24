@@ -6,11 +6,11 @@ import { Cron } from '@nestjs/schedule';
 import { StorageDisk, StorageFileNotFoundError } from '@nestjs/storage';
 import { and, asc, eq, isNull, lt } from 'drizzle-orm';
 import type { Job } from 'bullmq';
-import { Counter } from 'prom-client';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { TenantWorkerHost } from '../../core/tenancy/tenant-job.js';
@@ -64,8 +64,8 @@ const retried = (now: Date) =>
 export class AttachmentTextService {
   private readonly logger = new Logger('AttachmentText');
 
-  /** `attachment_texts_extracted_total{result}`: ready, failed (refused), or error (a disk or database failure; tried again). */
-  private readonly extracted: Counter<'result'>;
+  /** `attachment_texts_extracted{result}`: ready, failed (refused), or error (a disk or database failure; tried again). */
+  private readonly extracted: Counter;
 
   constructor(
     @InjectTransaction() private readonly db: Database,
@@ -76,11 +76,9 @@ export class AttachmentTextService {
     private readonly queue: AttachmentTextQueue,
     metrics: MetricsService,
   ) {
-    this.extracted = new Counter({
-      name: 'attachment_texts_extracted_total',
-      help: 'Attachment texts extracted for search, by result (ready, failed, error).',
-      labelNames: ['result'] as const,
-      registers: [metrics.registry],
+    this.extracted = metrics.counter('attachment_texts_extracted', {
+      description:
+        'Attachment texts extracted for search, by result (ready, failed, error).',
     });
   }
 
@@ -140,7 +138,7 @@ export class AttachmentTextService {
             !(error instanceof TextRejectedError) &&
             !(error instanceof StorageFileNotFoundError)
           ) {
-            this.extracted.inc({ result: 'error' });
+            this.extracted.add(1, { result: 'error' });
             throw error;
           }
           status = 'failed';
@@ -152,7 +150,7 @@ export class AttachmentTextService {
           });
         }
         if (!(await this.store(row, status, text))) return 'skipped';
-        this.extracted.inc({ result: status });
+        this.extracted.add(1, { result: status });
         return status;
       },
       { transaction: false, tenantId: job.tenantId },

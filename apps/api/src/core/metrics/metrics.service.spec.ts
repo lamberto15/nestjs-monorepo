@@ -1,97 +1,148 @@
 import { Logger } from '@nestjs/common';
+import { metrics } from '@opentelemetry/api';
+import { recordMetrics } from '../../../test/metrics.js';
 import {
   recordTelemetryFailure,
   resetTelemetryHealth,
 } from '../observability/telemetry-health.js';
 import { MetricsService } from './metrics.service.js';
 
-describe('MetricsService.collect()', () => {
-  beforeEach(() => {
-    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-  });
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+let recorded: ReturnType<typeof recordMetrics>;
 
+beforeEach(() => {
+  vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  recorded = recordMetrics();
+});
+afterEach(async () => {
+  vi.restoreAllMocks();
+  resetTelemetryHealth();
+  await recorded.stop();
+});
+
+describe('MetricsService.collect()', () => {
   const failing = () => Promise.reject(new Error('Redis is away'));
 
-  it('serves the gauges it read', async () => {
-    const metrics = new MetricsService();
-    metrics.collect(
-      'jobs',
-      'Jobs.',
-      () => [{ labels: { state: 'waiting' }, value: 3 }],
-      ['state'],
-    );
-    metrics.collect('lag_seconds', 'Lag.', () => [{ value: 1.5 }]);
+  it('reports the gauges it read', async () => {
+    const service = new MetricsService();
+    service.collect('jobs', 'Jobs.', () => [
+      { labels: { state: 'waiting' }, value: 3 },
+    ]);
+    service.collect('lag_seconds', 'Lag.', () => [{ value: 1.5 }], 's');
 
-    const { body } = await metrics.scrape();
-    expect(body).toMatch(/^jobs\{state="waiting"\} 3$/m);
-    expect(body).toMatch(/^lag_seconds 1\.5$/m);
+    expect(await recorded.read('jobs')).toEqual([
+      { attributes: { state: 'waiting' }, value: 3 },
+    ]);
+    expect(await recorded.read('lag_seconds')).toEqual([
+      { attributes: {}, value: 1.5 },
+    ]);
+    const [heap] = await recorded.read('nodejs_heap_size_limit_bytes');
+    expect(heap!.value).toBeGreaterThan(0);
   });
 
-  it('leaves a gauge whose read fails out of the scrape, labelled or not, and serves the rest', async () => {
-    const metrics = new MetricsService();
-    metrics.collect('queue_jobs', 'Jobs.', failing, ['queue', 'state']);
-    metrics.collect('outbox_lag_seconds', 'Lag.', failing);
-    metrics.collect('healthy', 'Still there.', () => [{ value: 1 }]);
+  it('counts a read that fails, and still reports the others', async () => {
+    const service = new MetricsService();
+    service.collect('outbox_lag_seconds', 'Lag.', failing);
+    service.collect('healthy', 'Still there.', () => [{ value: 1 }]);
 
-    const { body } = await metrics.scrape();
-    expect(body).not.toMatch(/^queue_jobs[{ ]/m);
-    // Absent, not a 0: the alerts read absence as "could not be read".
-    expect(body).not.toMatch(/^outbox_lag_seconds[{ ]/m);
-    expect(body).toMatch(/^healthy 1$/m);
-    expect(body).toMatch(/^nodejs_heap_size_limit_bytes \d+$/m);
+    expect(await recorded.read('outbox_lag_seconds')).toEqual([]);
+    expect(await recorded.read('healthy')).toEqual([
+      { attributes: {}, value: 1 },
+    ]);
+    // Each collection so far read it once, and failed.
+    const [failures] = await recorded.read('metric_read_failures');
+    expect(failures!.attributes).toEqual({ metric: 'outbox_lag_seconds' });
+    expect(failures!.value).toBeGreaterThanOrEqual(2);
   });
 
-  it('drops the samples of an earlier scrape when a later read fails', async () => {
-    const metrics = new MetricsService();
-    let fail = false;
-    metrics.collect(
-      'queue_jobs',
-      'Jobs.',
-      () => (fail ? failing() : [{ labels: { queue: 'mail' }, value: 2 }]),
-      ['queue'],
-    );
-    expect((await metrics.scrape()).body).toMatch(
-      /^queue_jobs\{queue="mail"\} 2$/m,
-    );
-    fail = true;
-    expect((await metrics.scrape()).body).not.toMatch(/^queue_jobs[{ ]/m);
+  it('stops reading once its app is closed', async () => {
+    const service = new MetricsService();
+    const read = vi.fn(() => [{ value: 1 }]);
+    service.collect('closed', 'Gone.', read);
+    service.onModuleDestroy();
+    expect(await recorded.read('closed')).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
   });
 });
 
-describe('MetricsService telemetry_rejected_total', () => {
-  afterEach(resetTelemetryHealth);
+describe('MetricsService and the global provider', () => {
+  it('moves its instruments to a provider registered after it was made', async () => {
+    // As with Nestrix, which registers its provider after the app booted.
+    await recorded.stop();
+    const service = new MetricsService();
+    service.collect('late_gauge', 'Late.', () => [{ value: 7 }]);
+    const counter = service.counter('late_counter');
+    counter.add(1);
+    recorded = recordMetrics();
 
+    counter.add(2);
+    expect(await recorded.read('late_counter')).toEqual([
+      { attributes: {}, value: 2 },
+    ]);
+    expect(await recorded.read('late_gauge')).toEqual([
+      { attributes: {}, value: 7 },
+    ]);
+  });
+
+  it('moves the gauges on its timer too, when nothing records', async () => {
+    vi.useFakeTimers();
+    try {
+      await recorded.stop();
+      const service = new MetricsService();
+      service.onModuleInit();
+      service.collect('idle_gauge', 'Idle.', () => [{ value: 4 }]);
+      recorded = recordMetrics();
+      expect(await recorded.read('idle_gauge')).toEqual([]);
+      vi.advanceTimersByTime(5_000);
+      expect(await recorded.read('idle_gauge')).toEqual([
+        { attributes: {}, value: 4 },
+      ]);
+      service.onModuleDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('records nothing, and throws nothing, with no provider at all', () => {
+    metrics.disable();
+    const service = new MetricsService();
+    expect(() => service.counter('nothing').add(1)).not.toThrow();
+  });
+});
+
+describe('MetricsService telemetry_rejected', () => {
   it('has every refusal series at 0 before the first refusal', async () => {
-    // Prometheus' increase() needs a sample before the count: a series that
+    // An alert's increase() needs a sample before the count: a series that
     // appears already at 1 (NestJS Observe refuses once, then pauses) would
-    // never raise an alert.
-    const { body } = await new MetricsService().scrape();
+    // never raise it.
+    new MetricsService();
+    const points = await recorded.read('telemetry_rejected');
     for (const target of ['observe', 'otlp']) {
-      for (const status of [401, 403, 429]) {
-        expect(body).toContain(
-          `telemetry_rejected_total{target="${target}",status="${status}"} 0`,
-        );
+      for (const status of ['401', '403', '429']) {
+        expect(points).toContainEqual({
+          attributes: { target, status },
+          value: 0,
+        });
       }
     }
   });
 
-  it('counts the refusals on top of that', async () => {
-    const metrics = new MetricsService();
+  it('counts the refusals on top of that, those before it was made included', async () => {
     recordTelemetryFailure('observe', 401);
+    new MetricsService();
     recordTelemetryFailure('otlp', 429);
     recordTelemetryFailure('otlp', 429);
-    const { body } = await metrics.scrape();
-    expect(body).toContain(
-      'telemetry_rejected_total{target="observe",status="401"} 1',
-    );
-    expect(body).toContain(
-      'telemetry_rejected_total{target="otlp",status="429"} 2',
-    );
-    expect(body).toContain(
-      'telemetry_rejected_total{target="otlp",status="401"} 0',
-    );
+    const points = await recorded.read('telemetry_rejected');
+    expect(points).toContainEqual({
+      attributes: { target: 'observe', status: '401' },
+      value: 1,
+    });
+    expect(points).toContainEqual({
+      attributes: { target: 'otlp', status: '429' },
+      value: 2,
+    });
+    expect(points).toContainEqual({
+      attributes: { target: 'otlp', status: '401' },
+      value: 0,
+    });
   });
 });

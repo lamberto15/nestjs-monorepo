@@ -3,11 +3,11 @@ import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { sql } from 'drizzle-orm';
-import { Counter as PromCounter } from 'prom-client';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import type { Counter as MetricCounter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { messagingConfig } from './messaging.config.js';
 import {
@@ -72,9 +72,9 @@ class CapHit extends Error {
 export class MessagingLimits {
   private readonly logger = new Logger('Messaging');
 
-  private readonly sent: PromCounter;
-  private readonly spend: PromCounter;
-  private readonly blocked: PromCounter<'reason'>;
+  private readonly sent: MetricCounter;
+  private readonly spend: MetricCounter;
+  private readonly blocked: MetricCounter;
 
   constructor(
     @InjectTransaction() private readonly db: Database,
@@ -83,22 +83,17 @@ export class MessagingLimits {
     private readonly config: ConfigType<typeof messagingConfig>,
     metrics: MetricsService,
   ) {
-    const registers = [metrics.registry];
-    this.sent = new PromCounter({
-      name: 'sms_sent_total',
-      help: 'SMS reserved against the toll-fraud caps (every tenant), by this process.',
-      registers,
+    this.sent = metrics.counter('sms_sent', {
+      description:
+        'SMS reserved against the toll-fraud caps (every tenant), by this process.',
     });
-    this.spend = new PromCounter({
-      name: 'sms_spend_minor_total',
-      help: 'SMS spend of every tenant, in minor units of the price table, by this process.',
-      registers,
+    this.spend = metrics.counter('sms_spend_minor', {
+      description:
+        'SMS spend of every tenant, in minor units of the price table, by this process.',
     });
-    this.blocked = new PromCounter({
-      name: 'sms_blocked_total',
-      help: 'SMS refused by the toll-fraud caps or the country allowlist, by reason. Alert on it rising.',
-      labelNames: ['reason'] as const,
-      registers,
+    this.blocked = metrics.counter('sms_blocked', {
+      description:
+        'SMS refused by the toll-fraud caps or the country allowlist, by reason. Alert on it rising.',
     });
   }
 
@@ -174,8 +169,8 @@ export class MessagingLimits {
       }
       throw error;
     }
-    this.sent.inc();
-    this.spend.inc(cost);
+    this.sent.add(1);
+    this.spend.add(cost);
     if (
       spent !== undefined &&
       spent >= budget * BUDGET_WARNING &&
@@ -242,7 +237,7 @@ export class MessagingLimits {
   /** Counts a refusal and logs it as an error (what an alert reads). */
   private async countBlocked(reason: SmsBlock, now: Date) {
     this.logger.error('SMS blocked by the toll-fraud caps', { reason });
-    this.blocked.labels(reason).inc();
+    this.blocked.add(1, { reason });
     await this.db
       .insert(messagingUsage)
       .values({ day: utcDay(now), counter: `blocked:${reason}`, count: 1 })

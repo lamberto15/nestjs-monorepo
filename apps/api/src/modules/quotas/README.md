@@ -31,4 +31,4 @@ Remove: `pnpm module:remove quotas` ([removing-a-module](../../../../../docs/rem
 
 ## Metrics
 
-When a module registers a stock quota with the key `storageBytes` (attachments does), `/metrics` has `tenant_storage_bytes{tenant}` (the quota's count, per active tenant slug) and `tenant_storage_limit_bytes{tenant}` (only tenants with a limit), each tenant read in its own scope and cached for 30 seconds.
+When a module registers a stock quota with the key `storageBytes` (attachments does), core/metrics reports `tenant_storage_bytes{tenant}` (the quota's count, per active tenant slug) and `tenant_storage_limit_bytes{tenant}` (only tenants with a limit), each tenant read in its own scope and cached for 30 seconds.

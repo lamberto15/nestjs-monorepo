@@ -1,6 +1,7 @@
 import type { DiscoveryService } from '@nestjs/core';
 import { type Mailer } from '@nestjs/mail';
 import type { Job } from 'bullmq';
+import { recordMetrics } from '../../../test/metrics.js';
 import { MetricsService } from '../metrics/metrics.service.js';
 import {
   type MailSuppression,
@@ -53,15 +54,13 @@ function processor(suppression: MailSuppression | null = list) {
         ? [{ instance: suppression }]
         : [],
   } as unknown as DiscoveryService;
-  const metrics = new MetricsService();
   return {
     worker: new MailProcessor(
       { send } as unknown as Mailer,
       discovery,
-      metrics,
+      new MetricsService(),
     ),
     send,
-    metrics,
   };
 }
 
@@ -79,13 +78,26 @@ describe('MailProcessor suppression', () => {
   });
 
   it('counts the mails sent and the recipients kept back, by reason', async () => {
-    const { worker, metrics } = processor();
-    await worker.process(job());
-    await worker.process(job({ to: [address('bounced@example.com')] }));
-    const { body } = await metrics.scrape();
-    expect(body).toMatch(/^mail_sent_total 1$/m);
-    expect(body).toMatch(/^mail_suppressed_total\{reason="hard_bounce"\} 2$/m);
-    expect(body).toMatch(/^mail_suppressed_total\{reason="complaint"\} 0$/m);
+    const recorded = recordMetrics();
+    try {
+      const { worker } = processor();
+      await worker.process(job());
+      await worker.process(job({ to: [address('bounced@example.com')] }));
+      expect(await recorded.read('mail_sent')).toEqual([
+        { attributes: {}, value: 1 },
+      ]);
+      const suppressed = await recorded.read('mail_suppressed');
+      expect(suppressed).toContainEqual({
+        attributes: { reason: 'hard_bounce' },
+        value: 2,
+      });
+      expect(suppressed).toContainEqual({
+        attributes: { reason: 'complaint' },
+        value: 0,
+      });
+    } finally {
+      await recorded.stop();
+    }
   });
 
   it('does not send a mail with no recipient left', async () => {

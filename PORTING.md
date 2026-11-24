@@ -22,7 +22,7 @@ repository.
       security behind one seam, `TENANCY=single|multi`, tenant-scoped jobs
 - [x] mail: transports, queued delivery with retries
 - [x] throttling (Redis counters, the multiplier)
-- [x] metrics (`/metrics`) and observability (NestJS Observe, or OTLP to a
+- [x] metrics (over OTLP) and observability (NestJS Observe, or OTLP to a
       self-hosted backend such as Nestrix)
 - [x] secrets: keys the app makes for itself, made once and kept in the
       database (list cursors, file links, tokens, idempotency)
@@ -177,6 +177,11 @@ repository.
 
 ## Changed on the way
 
+- `GET /metrics` (prom-client, `METRICS_TOKEN`) is removed (the owner,
+  2026-11-25): metrics go through the OpenTelemetry API and out over OTLP
+  with the registered MeterProvider (Nestrix's). Counters lose `_total`
+  (`mail_sent`; a Prometheus exporter adds it back), request durations are
+  Nestrix's `http.server.request.duration`, Node's runtime metrics its own.
 - A variable is described once, in its module's `*.config.ts`;
   `env.example` is generated from there (`pnpm env:example`).
 - Readiness checks are contributed by the module that owns the dependency

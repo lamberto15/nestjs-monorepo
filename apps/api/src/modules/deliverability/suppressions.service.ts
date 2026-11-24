@@ -108,7 +108,6 @@ export class SuppressionsService implements MailSuppression {
           value: rows.find((row) => row.reason === reason)?.value ?? 0,
         }));
       },
-      ['reason'],
     );
   }
 

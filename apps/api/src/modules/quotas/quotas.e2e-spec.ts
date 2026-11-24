@@ -10,11 +10,11 @@ import {
 } from '../../../test/access.js';
 import { apiClient } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
+import { recordMetrics } from '../../../test/metrics.js';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
-import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
@@ -111,6 +111,9 @@ describe('quotas (e2e)', () => {
       .json()
       .quotas.find((q: { key: string }) => q.key === key);
 
+  // Registered before the app boots, so its gauges are made on it.
+  const recorded = recordMetrics();
+  afterAll(() => recorded.stop());
   beforeAll(async () => {
     app = await bootModules(...accessModules(), OwnerModule);
     operator = await seededAdmin(app);
@@ -227,7 +230,7 @@ describe('quotas (e2e)', () => {
     );
   });
 
-  it('reports what each tenant stores and its limit on /metrics, the limit only where there is one', async () => {
+  it('reports what each tenant stores and its limit (core/metrics), the limit only where there is one', async () => {
     const slug = (await app.get(Tenancy).find(other.tenantId))!.slug;
     await call(
       'PUT',
@@ -237,12 +240,22 @@ describe('quotas (e2e)', () => {
         limits: { storageBytes: 5000 },
       },
     );
-    const { body } = await app.get(MetricsService).scrape();
-    expect(body).toContain(`tenant_storage_bytes{tenant="${slug}"} 1234`);
-    expect(body).toContain(`tenant_storage_limit_bytes{tenant="${slug}"} 5000`);
-    expect(body).toMatch(/^tenant_storage_bytes\{tenant="operators"\} 1234$/m);
-    expect(body).not.toMatch(
-      /^tenant_storage_limit_bytes\{tenant="operators"\}/m,
+    const stored = await recorded.read('tenant_storage_bytes');
+    expect(stored).toContainEqual({
+      attributes: { tenant: slug },
+      value: 1234,
+    });
+    expect(stored).toContainEqual({
+      attributes: { tenant: 'operators' },
+      value: 1234,
+    });
+    const limits = await recorded.read('tenant_storage_limit_bytes');
+    expect(limits).toContainEqual({
+      attributes: { tenant: slug },
+      value: 5000,
+    });
+    expect(limits.map((point) => point.attributes.tenant)).not.toContain(
+      'operators',
     );
   });
 

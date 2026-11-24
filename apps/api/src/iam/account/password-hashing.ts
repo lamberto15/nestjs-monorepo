@@ -12,7 +12,7 @@ import { ModuleRef } from '@nestjs/core';
 import { PasswordHasher } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
 import { BulkheadFullError, BulkheadPolicy } from '@nestjs/resilience';
-import { Counter } from 'prom-client';
+import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { accountConfig } from './account.config.js';
 
@@ -44,7 +44,7 @@ export class PasswordHashLimiter implements OnModuleInit {
    * checks it against the limit.
    */
   peak = 0;
-  private readonly rejected?: Counter<'reason'>;
+  private readonly rejected?: Counter;
   /** Set inside `run()`: this async context holds a slot already. */
   private readonly holding = new AsyncLocalStorage<true>();
 
@@ -72,16 +72,15 @@ export class PasswordHashLimiter implements OnModuleInit {
         'Password hashes waiting for a slot in this process.',
         () => [{ value: this.bulkhead.queued }],
       );
-      this.rejected = new Counter({
-        name: 'password_hashes_rejected_total',
-        help: 'Password hashes refused (503 server_busy): the queue full, or the wait too long.',
-        labelNames: ['reason'] as const,
-        registers: [metrics.registry],
-      });
       // Both series from the start: the first refusal after a start shows in increase().
-      for (const reason of ['full', 'queue-timeout']) {
-        this.rejected.inc({ reason }, 0);
-      }
+      this.rejected = metrics.counter(
+        'password_hashes_rejected',
+        {
+          description:
+            'Password hashes refused (503 server_busy): the queue full, or the wait too long.',
+        },
+        [{ reason: 'full' }, { reason: 'queue-timeout' }],
+      );
     }
   }
 
@@ -135,7 +134,7 @@ export class PasswordHashLimiter implements OnModuleInit {
       });
     } catch (error) {
       if (error instanceof BulkheadFullError) {
-        this.rejected?.inc({ reason: error.reason });
+        this.rejected?.add(1, { reason: error.reason });
         throw new HttpException(
           {
             message: t('account.serverBusy'),

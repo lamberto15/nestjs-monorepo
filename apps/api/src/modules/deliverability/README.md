@@ -9,7 +9,7 @@ to, and the mail worker asks it before every send.
 - **core/mail's hook**: `SuppressionsService` is marked `@MailSuppressionList()` (`core/mail/mail-suppression.ts`, the contract); core/mail's worker finds it and sends to everyone when it is absent.
 - **Delivery rules** (`MailDeliveryRules`, `@MailDeliveryPolicy()`): the setting `mail.delivery` (`all`, `essential`, `off`; tenant scope, operators enforce it for all at `PUT /v1/settings/mail.delivery/platform`; `MAIL_DELIVERY` stays the ceiling) and the quota `mail.perDay` (mails queued per UTC day and tenant, set through modules/quotas). Past `mail.essentialOnlyPercent` (setting, default 90) of the quota only essential mail is queued; essential mail is counted and never withheld by the budget. The old deployment-wide `mail.dailyLimit` is not ported (quotas are per tenant).
 - **Routes** (the operators' tenant, `@OperatorOnly()` plus `MailSuppression` `read`, `create`, `delete`): `GET|POST /v1/mail/suppressions`, `GET|DELETE /v1/mail/suppressions/{id}`.
-- **Metrics**: `mail_events_total{provider,type}`, `mail_suppressions{reason}`. A nightly job (03:40 UTC) deletes events older than `MAIL_EVENTS_RETENTION_DAYS` (90).
+- **Metrics**: `mail_events{provider,type}`, `mail_suppressions{reason}`. A nightly job (03:40 UTC) deletes events older than `MAIL_EVENTS_RETENTION_DAYS` (90).
 - **Personal data** (`mail-deliverability`): the suppression entry and events of a person's own address are in their export and go with their account.
 - JSON providers need `rawBody: true` when the app is created (main.ts); SNS posts `text/plain`, read from the stream.
 

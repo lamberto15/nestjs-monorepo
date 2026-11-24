@@ -30,23 +30,38 @@ export class DatabasePoolMetrics implements OnModuleInit, OnModuleDestroy {
     if (!(pool instanceof Pool)) {
       return;
     }
+    // A counter's first sample can already be 1. A timestamp also shows a
+    // failure from before the backend's first collection.
+    const lastFailure = { database_busy: 0, database_timeout: 0 };
     const failed = (code: 'database_busy' | 'database_timeout') => {
-      this.metrics.databaseFailures.inc({ code });
-      this.metrics.databaseLastFailure.set({ code }, Date.now() / 1000);
-      this.metrics.databaseIncidents.inc({ trigger: code });
+      this.metrics.databaseFailures.add(1, { code });
+      lastFailure[code] = Date.now() / 1000;
+      this.metrics.databaseIncidents.add(1, { trigger: code });
     };
     this.unobserve = observePool(pool, {
       acquired: (seconds, outcome) =>
-        this.metrics.databaseAcquire.observe({ outcome }, seconds),
+        this.metrics.databaseAcquire.record(seconds, { outcome }),
       queried: (seconds, operation, outcome) =>
-        this.metrics.databaseQuery.observe({ operation, outcome }, seconds),
+        this.metrics.databaseQuery.record(seconds, { operation, outcome }),
       failed,
-      slow: () => this.metrics.databaseIncidents.inc({ trigger: 'slow_query' }),
+      slow: () =>
+        this.metrics.databaseIncidents.add(1, { trigger: 'slow_query' }),
     });
+    this.metrics.collect(
+      'db_last_failure_timestamp_seconds',
+      'Unix timestamp of the last database failure, including before the first collection.',
+      () =>
+        Object.entries(lastFailure).map(([code, value]) => ({
+          labels: { code },
+          value,
+        })),
+      's',
+    );
     this.metrics.collect(
       'db_pool_max_connections',
       'Configured application pool connection limit.',
       () => [{ value: pool.options.max ?? 10 }],
+      '{connection}',
     );
     this.metrics.collect(
       'db_pool_connections',
@@ -56,7 +71,7 @@ export class DatabasePoolMetrics implements OnModuleInit, OnModuleDestroy {
         { labels: { state: 'idle' }, value: pool.idleCount },
         { labels: { state: 'waiting' }, value: pool.waitingCount },
       ],
-      ['state'],
+      '{connection}',
     );
   }
 

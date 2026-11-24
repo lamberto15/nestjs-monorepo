@@ -10,13 +10,13 @@ import { z } from 'zod';
 import { member, tenantWithAdmin } from '../../../test/access.js';
 import { apiClient } from '../../../test/auth.js';
 import { bootModules } from '../../../test/boot.js';
+import { recordMetrics } from '../../../test/metrics.js';
 import {
   deliverWebhooks,
   webhookModules,
   webhookReceiver,
 } from '../../../test/webhooks.js';
 import type { Database } from '../../core/database/database.js';
-import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { defineEvent, Events } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessModule } from '../../iam/access/access.module.js';
@@ -115,6 +115,9 @@ describe('outgoing webhooks (e2e)', () => {
         db().select().from(auditLog).where(eq(auditLog.targetId, targetId)),
       );
 
+  // Registered before the app boots, so its gauges are made on it.
+  const recorded = recordMetrics();
+  afterAll(() => recorded.stop());
   beforeAll(async () => {
     app = await bootModules(...webhookModules(), ProbeModule);
     ({
@@ -126,9 +129,9 @@ describe('outgoing webhooks (e2e)', () => {
     await app?.close();
   });
 
-  it('reports the delivery lag on /metrics', async () => {
-    const { body } = await app.get(MetricsService).scrape();
-    expect(body).toMatch(/^webhook_delivery_lag_seconds \d+(\.\d+)?$/m);
+  it('reports the delivery lag', async () => {
+    const [lag] = await recorded.read('webhook_delivery_lag_seconds');
+    expect(lag!.value).toBeGreaterThanOrEqual(0);
   });
 
   it('lists the declared event types by module, for a user and a client, not the test event', async () => {

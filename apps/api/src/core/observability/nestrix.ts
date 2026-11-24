@@ -51,7 +51,7 @@ export const nestrixModule = () =>
       serviceName: config.serviceName,
       serviceVersion: config.release,
       // A collector that refuses the data (401, 403, 429) is counted in
-      // telemetry_rejected_total (core/metrics), so an alert sees it.
+      // telemetry_rejected (core/metrics), so an alert sees it.
       export: {
         onFailure: (failure) =>
           recordTelemetryFailure('otlp', failure.httpStatus ?? undefined),

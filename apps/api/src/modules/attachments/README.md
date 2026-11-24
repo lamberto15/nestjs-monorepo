@@ -94,7 +94,7 @@ is one however many records take files.
   the record) for records the caller may read now, clean files only, never an
   issued document. It is a `@SearchSource('Attachment')`: `GET /v1/search`
   merges its hits (`?subject=Attachment` asks for files only). Metric
-  `attachment_texts_extracted_total{result}`.
+  `attachment_texts_extracted{result}`.
 - **Field-level permissions on issued documents**: `attachStored(…, { locked,
 fields })` records the record fields the PDF shows (`fields`, null for a
   file). Whoever may not read every one of them on that record gets 404 on the

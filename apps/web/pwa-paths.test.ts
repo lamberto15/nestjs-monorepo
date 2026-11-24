@@ -2,12 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { apiPathPattern } from './pwa-paths.ts';
 
 describe('the service worker navigation denylist', () => {
-  // What the API serves itself (docs/ of the API: routes, health, metrics,
+  // What the API serves itself (docs/ of the API: routes, health,
   // Swagger UI and its documents, signed file links, the socket).
   it.each([
     '/v1/auth/me',
     '/health',
-    '/metrics',
     '/api',
     '/api-json',
     '/api-yaml',

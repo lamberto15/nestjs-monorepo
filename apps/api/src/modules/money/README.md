@@ -34,7 +34,7 @@ Money: the library features import (no database, no route), and the exchange rat
 - **Job** (`exchange-rates.job.ts`): hourly at :07 UTC on one instance, as `system:exchange-rates`, fetches the ECB's reference rates through a `core/http-client` client: the daily document, or the 90-day history when empty, far behind or a working day is missing. Failures are logged and retried the next hour; rows are stored in one transaction.
 - **Service** `ExchangeRatesService` (exported): `convert(amount, to, { day, rounding })` through the euro with one rounding (`RateUnavailableError`, `rate_unavailable` 422, in `exchange-rates.errors.ts`), `ratesOn(day)`, `store()`.
 - **Routes** (`@Can.Anyone()`): `GET /v1/money/rates?date=`, `GET /v1/money/convert?amount&currency&to[&date][&rounding]`.
-- **Metric** `exchange_rates_age_seconds` on `/metrics` (`+Inf` before the first fetch).
+- **Metric** `exchange_rates_age_seconds` (core/metrics; since the Unix epoch before the first fetch).
 - **Variables** (`money.config.ts`): `EXCHANGE_RATES_FETCH` (`off` for an app without money), `EXCHANGE_RATES_ECB_URL`.
 - **Module** `MoneyModule` needs DatabaseModule, SharedLocksModule, MetricsModule, AuthModule.
 

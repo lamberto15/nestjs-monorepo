@@ -13,6 +13,6 @@ What the app's own code uses is backend-neutral (the OpenTelemetry API), so it w
 
 - **`reportError()`**: the problem-details filter reports the 5xx errors it answers; call it for an error you handled but that should be seen. It lands on the active span.
 - **`traceCorrelation()`**: the active trace id on log lines.
-- **Refused uploads:** a backend that turns telemetry away (401, 403, 429) leaves the app blind and running. It is counted in `telemetry_rejected_total{target,status}` (`core/metrics`): Observe's through its log lines, Nestrix's through its `export.onFailure`.
+- **Refused uploads:** a backend that turns telemetry away (401, 403, 429) leaves the app blind and running. It is counted in `telemetry_rejected{target,status}` (`core/metrics`): Observe's through its log lines, Nestrix's through its `export.onFailure`.
 - **Also read:** `SERVICE_NAME`, `GIT_SHA` (the release), `NODE_ENV`.
 - Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").

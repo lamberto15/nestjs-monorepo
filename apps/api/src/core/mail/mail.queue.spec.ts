@@ -1,8 +1,7 @@
 import type { DiscoveryService } from '@nestjs/core';
 import type { Mailer } from '@nestjs/mail';
 import type { Queue } from 'bullmq';
-import { Registry } from 'prom-client';
-import type { MetricsService } from '../metrics/metrics.service.js';
+import { MetricsService } from '../metrics/metrics.service.js';
 import { onceJob } from '../queues/queues.js';
 import { MailBrand } from './mail-brand.js';
 import { MailDeliveryPolicy, type MailDelivery } from './mail-delivery.js';
@@ -49,13 +48,12 @@ describe('MailQueue', () => {
         return instance ? [{ instance }] : [];
       },
     } as unknown as DiscoveryService;
-    const registry = new Registry();
     const queue = new MailQueue(
       { add } as unknown as Queue,
       { render } as unknown as Mailer,
       { delivery },
       discovery,
-      { registry } as unknown as MetricsService,
+      new MetricsService(),
     );
     return { queue, add, render };
   }

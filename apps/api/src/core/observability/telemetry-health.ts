@@ -3,7 +3,7 @@
  * refuses what it is sent (401/403: a revoked key, 429: out of credits, as
  * NestJS Observe did, issue #404) leaves the app running and blind, with the
  * only trace of it in a log line. Every refusal is counted here and served
- * on /metrics as `telemetry_rejected_total{target,status}`
+ * as the metric `telemetry_rejected{target,status}`
  * (`MetricsService`), for an alert to read.
  *
  * A module of its own, not part of `MetricsService`: the exporters start in

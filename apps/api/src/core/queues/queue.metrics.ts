@@ -14,7 +14,7 @@ import {
 } from './queues.config.js';
 
 /**
- * `queue_oldest_waiting_seconds{queue}` on `/metrics`: how long the oldest
+ * `queue_oldest_waiting_seconds{queue}` (core/metrics): how long the oldest
  * waiting job of each registered queue has waited (0 when none waits), so a
  * backlog that stopped moving shows before its size alarms anyone. The queue
  * is shared state (Redis): every worker reports the same value, aggregate
@@ -52,7 +52,7 @@ export class QueueMetrics implements OnModuleInit {
           }),
         );
       },
-      ['queue'],
+      's',
     );
   }
 }

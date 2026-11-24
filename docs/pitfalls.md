@@ -94,8 +94,8 @@ what to do.
   `API_PATHS` in `core/web/web.config.ts`
   ([`core/web`](../apps/api/src/core/web/README.md)).
 - **A route a monitor polls must skip the rate limit.** The limiter counts in
-  Redis, and its commands wait while Redis is down, so a throttled `/health` or
-  `/metrics` hangs exactly when it is needed. Keep `@SkipThrottle()` on them.
+  Redis, and its commands wait while Redis is down, so a throttled `/health`
+  hangs exactly when it is needed. Keep `@SkipThrottle()` on it.
 - **An event nothing subscribes to is not written.** The outbox retries a message
   that has no handler and holds back the later events of its key, so
   `events.publish()` skips an event type with no `@OnDomainEvent` subscriber. A

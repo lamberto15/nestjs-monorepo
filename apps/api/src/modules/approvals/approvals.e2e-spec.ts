@@ -2,6 +2,7 @@ import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { and, eq } from 'drizzle-orm';
 import { bootModules } from '../../../test/boot.js';
+import { recordMetrics } from '../../../test/metrics.js';
 import {
   ArchiveTestItem,
   PublishTestItem,
@@ -17,11 +18,11 @@ import {
 } from '../../../test/records.js';
 import type { Database } from '../../core/database/database.js';
 import { MetricsModule } from '../../core/metrics/metrics.module.js';
-import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { SharedWorkflowsModule } from '../../core/workflows/workflows.module.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
+import { ApprovalMetrics } from './approvals.metrics.js';
 import { ApprovalsModule } from './approvals.module.js';
 
 vi.hoisted(() => {
@@ -58,6 +59,9 @@ interface Detail {
 describe('approvals on test items (e2e)', () => {
   let app: NestNodeApplication;
   let team: Awaited<ReturnType<typeof recordsTenant>>;
+  // Registered before the app boots, so its gauges are made on it.
+  const recorded = recordMetrics();
+  afterAll(() => recorded.stop());
 
   beforeAll(async () => {
     app = await bootModules(
@@ -528,17 +532,14 @@ describe('approvals on test items (e2e)', () => {
     ]);
   });
 
-  it('reports the overdue and unapplied gauges on /metrics, across tenants', async () => {
+  it('reports the overdue and unapplied gauges, across tenants', async () => {
     await requested();
-    // Read by the worker's timer, across every tenant (the maintenance role).
-    await vi.waitFor(
-      async () => {
-        const { body } = await app.get(MetricsService).scrape();
-        expect(body).toMatch(/^approvals_overdue_seconds \d+(\.\d+)?$/m);
-        expect(body).toMatch(/^approvals_unapplied_seconds \d+(\.\d+)?$/m);
-      },
-      { timeout: 10_000 },
-    );
+    // Read by the one-instance job (SCHEDULER is off here), across every tenant (the maintenance role).
+    await app.get(ApprovalMetrics).refresh();
+    const [overdue] = await recorded.read('approvals_overdue_seconds');
+    expect(overdue!.value).toBeGreaterThanOrEqual(0);
+    const [unapplied] = await recorded.read('approvals_unapplied_seconds');
+    expect(unapplied!.value).toBeGreaterThanOrEqual(0);
   });
 
   it('expires a stage nobody decided in time', async () => {

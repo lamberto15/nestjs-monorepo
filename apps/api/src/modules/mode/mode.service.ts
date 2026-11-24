@@ -81,7 +81,6 @@ export class ModeService implements OnModuleInit, OnApplicationShutdown {
           labels: { mode },
           value: mode === this.mode ? 1 : 0,
         })),
-      ['mode'],
     );
     void this.refresh();
     this.timer = setInterval(() => void this.refresh(), POLL_MS);

@@ -5,6 +5,7 @@ import { NonRetryableMessageError, OutboxDeadLetters } from '@nestjs/outbox';
 import { PostgresOutboxStore } from '@nestjs/outbox/postgres';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../../../test/boot.js';
+import { recordMetrics } from '../../../test/metrics.js';
 import {
   TenantItemsModule,
   TenantItemsService,
@@ -12,7 +13,6 @@ import {
 import { DatabaseModule } from '../database/database.module.js';
 import { SharedLocksModule } from '../locks/locks.module.js';
 import { MetricsModule } from '../metrics/metrics.module.js';
-import { MetricsService } from '../metrics/metrics.service.js';
 import { Tenancy } from '../tenancy/tenancy.service.js';
 import { TenancyModule } from '../tenancy/tenancy.module.js';
 import { defineEvent, Events, OnDomainEvent } from './events.js';
@@ -72,6 +72,9 @@ const DAY = 86_400_000;
 
 describe('outbox and domain events (e2e)', () => {
   let app: NestNodeApplication;
+  // Registered before the app boots, so its gauges are made on it.
+  const recorded = recordMetrics();
+  afterAll(() => recorded.stop());
 
   beforeAll(async () => {
     process.env.SCHEDULER = 'off';
@@ -117,9 +120,10 @@ describe('outbox and domain events (e2e)', () => {
     );
   });
 
-  it('reports the outbox lag on /metrics: 0 once everything is delivered', async () => {
-    const { body } = await app.get(MetricsService).scrape();
-    expect(body).toMatch(/^outbox_lag_seconds 0$/m);
+  it('reports the outbox lag: 0 once everything is delivered', async () => {
+    expect(await recorded.read('outbox_lag_seconds')).toEqual([
+      { attributes: {}, value: 0 },
+    ]);
   });
 
   it('refuses to publish outside a transaction', async () => {

@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import { Counter } from 'prom-client';
+import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { PostmarkIntake } from './intake/postmark.intake.js';
 import { ResendIntake } from './intake/resend.intake.js';
@@ -35,7 +35,7 @@ export interface MailEventsReceipt {
 export class MailEventsService {
   private readonly logger = new Logger('MailEvents');
   private readonly intakes: Map<string, MailEventIntake>;
-  private readonly received: Counter<'provider' | 'type'>;
+  private readonly received: Counter;
 
   constructor(
     ses: SesIntake,
@@ -48,11 +48,9 @@ export class MailEventsService {
     this.intakes = new Map(
       [ses, postmark, resend, sendgrid].map((intake) => [intake.name, intake]),
     );
-    this.received = new Counter({
-      name: 'mail_events_total',
-      help: 'Bounce, complaint and delivery events mail providers reported, by provider and type (counted when received, before the queue).',
-      labelNames: ['provider', 'type'] as const,
-      registers: [metrics.registry],
+    this.received = metrics.counter('mail_events', {
+      description:
+        'Bounce, complaint and delivery events mail providers reported, by provider and type (counted when received, before the queue).',
     });
   }
 
@@ -73,7 +71,7 @@ export class MailEventsService {
       return { received: true, kind: result.kind, events: 0 };
     }
     for (const event of result.events) {
-      this.received.labels(provider, event.type).inc();
+      this.received.add(1, { provider, type: event.type });
     }
     await this.queue.add(
       provider,

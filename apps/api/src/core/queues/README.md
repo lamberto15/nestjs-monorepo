@@ -9,4 +9,4 @@
 
 To remove queues: delete this folder and its line in `app.module.ts`, and the modules that register a queue.
 
-- **Metrics:** `queue_oldest_waiting_seconds{queue}` on a worker's `/metrics`: how long the oldest waiting job of each queue has waited (0 when none), for every queue registered with `BullModule.registerQueue()`. Shared state: aggregate with max().
+- **Metrics:** `queue_oldest_waiting_seconds{queue}` a gauge a worker reports (core/metrics): how long the oldest waiting job of each queue has waited (0 when none), for every queue registered with `BullModule.registerQueue()`. Shared state: aggregate with max().

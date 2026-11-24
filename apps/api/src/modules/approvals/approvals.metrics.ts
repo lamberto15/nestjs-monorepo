@@ -1,25 +1,23 @@
 import { InjectTransaction } from '@nestjs-cls/transactional';
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import type { ConfigType } from '@nestjs/config';
+import { Injectable, Logger } from '@nestjs/common';
+import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
+import { Cron } from '@nestjs/schedule';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../../core/database/database.js';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
-import { queuesConfig, runsWorkers } from '../../core/queues/queues.config.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { approvalRequests } from './approvals.tables.js';
 
 const JOB = 'approvals.metrics';
-/** How often the gauges are read again. */
-const EVERY_MS = 15_000;
+/**
+ * A reading older than this (four of the job's 15-second ticks) is left
+ * out: this instance no longer owns the job, and its last reading would
+ * stand beside the new owner's.
+ */
+const STALE_MS = 60_000;
 
 /**
- * Two gauges on `/metrics`, across every tenant:
+ * Two gauges (core/metrics), across every tenant:
  *
  * - `approvals_overdue_seconds`: how far the most overdue pending stage is
  *   past its deadline (0: none). A stage past its deadline is expired by its
@@ -29,51 +27,51 @@ const EVERY_MS = 15_000;
  *   waited for its outcome to be applied (0: none).
  *
  * Every tenant's requests need the maintenance role, which `Tenancy.acrossTenants()`
- * refuses inside a request, so a timer reads them (workers only) and a scrape
- * serves the last reading; without the maintenance role the gauges stay out.
- * Shared state: every worker reports the same, aggregate with max().
+ * refuses inside a request, so a job reads them every 15 seconds on one
+ * instance (a worker: core/locks), not a timer on every one, and a collection
+ * reports its last reading. Only the instance that read reports the gauges
+ * (they appear on its first reading); without the maintenance role they
+ * stay out. Aggregate with max().
  */
 @Injectable()
-export class ApprovalMetrics implements OnModuleInit, OnModuleDestroy {
+export class ApprovalMetrics {
   private readonly logger = new Logger('ApprovalMetrics');
-  private timer?: NodeJS.Timeout;
-  private reading?: { overdue: number; unapplied: number };
+  private reading?: { overdue: number; unapplied: number; at: number };
+  private collecting = false;
 
   constructor(
     private readonly metrics: MetricsService,
     private readonly tenancy: Tenancy,
     @InjectTransaction() private readonly db: Database,
-    @Inject(queuesConfig.KEY)
-    private readonly queues: ConfigType<typeof queuesConfig>,
   ) {}
 
-  onModuleInit() {
-    if (!runsWorkers(this.queues.role)) {
-      return;
-    }
+  /** The gauges, once this instance has read them: the others report none. */
+  private collect() {
+    if (this.collecting) return;
+    this.collecting = true;
     const read = () => {
-      if (!this.reading) throw new Error('not read yet');
+      if (!this.reading || Date.now() - this.reading.at > STALE_MS) {
+        throw new Error('no recent reading');
+      }
       return this.reading;
     };
     this.metrics.collect(
       'approvals_overdue_seconds',
       'How far the most overdue pending approval stage is past its deadline (0: none).',
       () => [{ value: read().overdue }],
+      's',
     );
     this.metrics.collect(
       'approvals_unapplied_seconds',
       'How long the oldest approved request has waited for its outcome to be applied (0: none).',
       () => [{ value: read().unapplied }],
+      's',
     );
-    void this.refresh();
-    this.timer = setInterval(() => void this.refresh(), EVERY_MS);
-    this.timer.unref();
   }
 
-  onModuleDestroy() {
-    clearInterval(this.timer);
-  }
-
+  @Cron('*/15 * * * * *', { name: JOB, timeZone: 'UTC' })
+  @OnOneInstance({ key: 'approvals:metrics' })
+  @WithoutOverlapping()
   async refresh() {
     try {
       this.reading = await this.tenancy.acrossTenants(JOB, async () => {
@@ -99,8 +97,10 @@ export class ApprovalMetrics implements OnModuleInit, OnModuleDestroy {
         return {
           overdue: overdue?.seconds ?? 0,
           unapplied: unapplied?.seconds ?? 0,
+          at: Date.now(),
         };
       });
+      this.collect();
     } catch (error) {
       // Absent, not a 0: the alerts read absence as "could not be read".
       this.reading = undefined;

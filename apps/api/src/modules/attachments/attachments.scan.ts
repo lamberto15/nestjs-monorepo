@@ -2,11 +2,11 @@ import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable, Logger } from '@nestjs/common';
 import { StorageDisk } from '@nestjs/storage';
 import { and, asc, eq, inArray, lt } from 'drizzle-orm';
-import { Counter } from 'prom-client';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -24,7 +24,7 @@ import { AttachmentsService } from './attachments.service.js';
 import { AttachmentVersionsService } from './attachments.versions.js';
 import { type Attachment, attachments } from './attachments.tables.js';
 
-/** How a scan ended, as `attachments_scanned_total{result}` counts it. */
+/** How a scan ended, as `attachments_scanned{result}` counts it. */
 export type ScanOutcome = 'clean' | 'infected' | 'error';
 
 /**
@@ -51,8 +51,8 @@ const BATCH = 1000;
 export class AttachmentScanService {
   private readonly logger = new Logger('AttachmentScan');
 
-  /** `attachments_scanned_total{result}`: clean, infected, or error (the scan failed; it is tried again). */
-  private readonly scanned: Counter<'result'>;
+  /** `attachments_scanned{result}`: clean, infected, or error (the scan failed; it is tried again). */
+  private readonly scanned: Counter;
 
   constructor(
     @InjectTransaction() private readonly db: Database,
@@ -68,11 +68,9 @@ export class AttachmentScanService {
     private readonly versions: AttachmentVersionsService,
     metrics: MetricsService,
   ) {
-    this.scanned = new Counter({
-      name: 'attachments_scanned_total',
-      help: 'Uploads scanned for malware, by result (clean, infected, error).',
-      labelNames: ['result'] as const,
-      registers: [metrics.registry],
+    this.scanned = metrics.counter('attachments_scanned', {
+      description:
+        'Uploads scanned for malware, by result (clean, infected, error).',
     });
   }
 
@@ -97,7 +95,7 @@ export class AttachmentScanService {
           const file = await this.disk.get(row.key);
           verdict = await this.scanner.scan(file.body);
         } catch (error) {
-          this.scanned.inc({ result: 'error' });
+          this.scanned.add(1, { result: 'error' });
           throw error;
         }
         if (!verdict.infected) {
@@ -112,7 +110,7 @@ export class AttachmentScanService {
             )
             .returning({ id: attachments.id });
           if (clean) {
-            this.scanned.inc({ result: 'clean' });
+            this.scanned.add(1, { result: 'clean' });
             this.attachments.changed(system, row, row.id, 'scanned');
             // An image is processed only once it may be served.
             if (row.renditionStatus === 'pending') {
@@ -122,7 +120,7 @@ export class AttachmentScanService {
           return 'clean';
         }
         await this.reject(row, verdict.signature, system);
-        this.scanned.inc({ result: 'infected' });
+        this.scanned.add(1, { result: 'infected' });
         return 'infected';
       },
       { transaction: false, tenantId: job.tenantId },

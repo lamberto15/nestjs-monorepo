@@ -55,4 +55,4 @@ export const webConfig = registerAs('web', () => {
  * here, or its GET answers the web app's page.
  */
 export const API_PATHS =
-  /^\/(?:v\d+|health|metrics|api|api-json|api-yaml|files|socket\.io|\.well-known|assets)(?:\/|$)/;
+  /^\/(?:v\d+|health|api|api-json|api-yaml|files|socket\.io|\.well-known|assets)(?:\/|$)/;

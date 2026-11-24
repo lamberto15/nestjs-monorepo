@@ -5,11 +5,11 @@ import { HttpException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { StorageDisk, StorageFileNotFoundError } from '@nestjs/storage';
 import { and, asc, eq, inArray, lt } from 'drizzle-orm';
-import { Counter } from 'prom-client';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { SystemContext } from '../../iam/access/system-context.js';
@@ -34,7 +34,7 @@ import { STORAGE_BYTES } from './attachments.quota.js';
 import { AttachmentsService } from './attachments.service.js';
 import { type Attachment, attachments } from './attachments.tables.js';
 
-/** How an image's processing ended, as `attachment_images_processed_total{result}` counts it. */
+/** How an image's processing ended, as `attachment_images_processed{result}` counts it. */
 export type ImageOutcome = 'ready' | 'failed' | 'error';
 
 /**
@@ -65,8 +65,8 @@ const BATCH = 1000;
 export class AttachmentImagesService {
   private readonly logger = new Logger('AttachmentImages');
 
-  /** `attachment_images_processed_total{result}`: ready, failed (refused, as uploaded), or error (a disk or database failure; tried again). */
-  private readonly processed: Counter<'result'>;
+  /** `attachment_images_processed{result}`: ready, failed (refused, as uploaded), or error (a disk or database failure; tried again). */
+  private readonly processed: Counter;
 
   constructor(
     @InjectTransaction() private readonly db: Database,
@@ -82,11 +82,9 @@ export class AttachmentImagesService {
     private readonly config: ConfigType<typeof attachmentsConfig>,
     metrics: MetricsService,
   ) {
-    this.processed = new Counter({
-      name: 'attachment_images_processed_total',
-      help: 'Uploaded images processed, by result (ready, failed, error).',
-      labelNames: ['result'] as const,
-      registers: [metrics.registry],
+    this.processed = metrics.counter('attachment_images_processed', {
+      description:
+        'Uploaded images processed, by result (ready, failed, error).',
     });
   }
 
@@ -147,12 +145,12 @@ export class AttachmentImagesService {
               system,
             );
           }
-          this.processed.inc({ result: 'error' });
+          this.processed.add(1, { result: 'error' });
           throw error;
         }
         const stored = await this.store(row, image, system);
         if (stored === 'skipped' || stored === 'failed') return stored;
-        this.processed.inc({ result: 'ready' });
+        this.processed.add(1, { result: 'ready' });
         this.attachments.changed(system, stored, stored.id, 'processed');
         return 'ready';
       },
@@ -347,7 +345,7 @@ export class AttachmentImagesService {
         // Not the disk's fault: trying again would find the tenant as full.
         return this.fail(row, 'quota', error.message, system);
       }
-      this.processed.inc({ result: 'error' });
+      this.processed.add(1, { result: 'error' });
       throw error;
     }
     if (!updated) {
@@ -376,7 +374,7 @@ export class AttachmentImagesService {
         ),
       )
       .returning({ id: attachments.id });
-    this.processed.inc({ result: 'failed' });
+    this.processed.add(1, { result: 'failed' });
     this.logger.warn('An image could not be processed; it stays as uploaded', {
       attachment: row.id,
       reason,

@@ -141,6 +141,6 @@ The app must be created with `rawBody: true` for incoming signatures.
 
 ## Metrics
 
-`webhook_delivery_lag_seconds` on a worker's `/metrics`: how long the most overdue outgoing delivery has waited (0 when none). Shared state: aggregate with max().
+`webhook_delivery_lag_seconds` a gauge a worker reports (core/metrics): how long the most overdue outgoing delivery has waited (0 when none). Shared state: aggregate with max().
 
 Add-on: `pnpm feature:add --addons webhooks` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `webhooks.addon.js`): a record's changes as webhooks for API clients.

@@ -3,6 +3,7 @@ import type { NestNodeApplication } from '@nestjs/platform-node';
 import { and, eq } from 'drizzle-orm';
 import { accessModules, tenantWithAdmin } from '../../../test/access.js';
 import { bootModules } from '../../../test/boot.js';
+import { recordMetrics } from '../../../test/metrics.js';
 import type { Database } from '../../core/database/database.js';
 import { MetricsModule } from '../../core/metrics/metrics.module.js';
 import { SystemContext } from '../../iam/access/system-context.js';
@@ -40,19 +41,16 @@ const ecb = await vi.hoisted(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
-  const scrapeKey = ['money', 'scrape', String(port)].join('-');
   Object.assign(process.env, {
     SCHEDULER: 'off',
     REDIS_PREFIX: `test-money-${process.pid}-${Date.now()}`,
     EXCHANGE_RATES_FETCH: 'on',
     EXCHANGE_RATES_ECB_URL: `http://127.0.0.1:${port}/stats/eurofxref`,
-    METRICS_TOKEN: scrapeKey,
   });
   return {
     documents,
     requests,
     state,
-    scrapeKey,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 });
@@ -61,6 +59,9 @@ describe('exchange rates and the money routes (e2e)', () => {
   let app: NestNodeApplication;
   let db: Database;
   let headers: Record<string, string>;
+  // Registered before the app boots, so its gauges are made on it.
+  const recorded = recordMetrics();
+  afterAll(() => recorded.stop());
 
   beforeAll(async () => {
     app = await bootModules(...accessModules(), MetricsModule, MoneyModule);
@@ -76,14 +77,8 @@ describe('exchange rates and the money routes (e2e)', () => {
   const rates = () => app.get(ExchangeRatesService);
   const get = (url: string, extra: Record<string, string> = {}) =>
     app.inject({ method: 'GET', url, headers: { ...headers, ...extra } });
-  const scrape = async () =>
-    (
-      await app.inject({
-        method: 'GET',
-        url: '/metrics',
-        headers: { authorization: `Bearer ${ecb.scrapeKey}` },
-      })
-    ).body;
+  const age = async () =>
+    (await recorded.read('exchange_rates_age_seconds'))[0]!.value;
 
   // Thursday 2026-10-15, after the ECB published (15:00 UTC).
   const THURSDAY = new Date('2026-10-15T15:07:00Z');
@@ -96,7 +91,7 @@ describe('exchange rates and the money routes (e2e)', () => {
     '2026-10-15': { USD: '1.1652', JPY: '175.32', GBP: '0.8689' },
   });
 
-  it('answers 404 and 422 before any rate is stored, and the age gauge reads +Inf', async () => {
+  it('answers 404 and 422 before any rate is stored, and the age gauge reads since 1970', async () => {
     const none = await get('/v1/money/rates');
     expect(none.statusCode).toBe(404);
     expect(none.json().code).toBe('rates_unavailable');
@@ -105,7 +100,7 @@ describe('exchange rates and the money routes (e2e)', () => {
     );
     expect(convert.statusCode).toBe(422);
     expect(convert.json()).toMatchObject({ code: 'rate_unavailable' });
-    expect(await scrape()).toMatch(/^exchange_rates_age_seconds \+Inf$/m);
+    expect(Math.abs((await age()) - Date.now() / 1000)).toBeLessThan(60);
   });
 
   it('keeps what it has when the ECB is down: the run reports the failure, the next one retries', async () => {
@@ -297,12 +292,8 @@ describe('exchange rates and the money routes (e2e)', () => {
   });
 
   it('exposes how old the newest rates are', async () => {
-    const age = /^exchange_rates_age_seconds (\d+(\.\d+)?(e\+\d+)?)$/m.exec(
-      await scrape(),
-    );
-    expect(age).not.toBeNull();
     const expected = (Date.now() - Date.parse('2026-10-15T00:00:00Z')) / 1000;
-    expect(Math.abs(Number(age![1]) - expected)).toBeLessThan(60);
+    expect(Math.abs((await age()) - expected)).toBeLessThan(60);
   });
 
   it('throws its error in services, for the problem-details filter to map', async () => {

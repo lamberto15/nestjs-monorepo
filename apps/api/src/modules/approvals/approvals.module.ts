@@ -14,7 +14,6 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { AuthorizationService, Can } from '@nestjs/authorization';
-import { ConfigModule } from '@nestjs/config';
 import { DiscoveryModule } from '@nestjs/core';
 import { OnEvent } from '@nestjs/event-emitter';
 import type { NodeResponse } from '@nestjs/platform-node';
@@ -28,7 +27,6 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { MetricsModule } from '../../core/metrics/metrics.module.js';
-import { queuesConfig } from '../../core/queues/queues.config.js';
 import {
   ACCESS_EVENTS,
   type MemberDeactivatedEvent,
@@ -146,7 +144,6 @@ export class ApprovalsExtension implements RecordHooks {
   imports: [
     AccessModule.forFeature(APPROVAL_PERMISSIONS),
     AuditModule,
-    ConfigModule.forFeature(queuesConfig),
     DiscoveryModule,
     MetricsModule,
     NotificationsModule,

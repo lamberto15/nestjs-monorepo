@@ -102,7 +102,6 @@ describe('the web app, served by the API (e2e)', () => {
     for (const url of [
       '/v1/nothing',
       '/v2/nothing',
-      '/metrics',
       '/api-json',
       '/files/nothing',
       '/.well-known/nothing',

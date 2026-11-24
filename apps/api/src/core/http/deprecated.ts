@@ -65,7 +65,7 @@ export function Deprecated(options: DeprecatedOptions) {
 }
 
 /**
- * Sets the headers; see `Deprecated()`. core/metrics counts the calls (`deprecated_route_calls_total`), by the `Deprecation` header.
+ * Sets the headers; see `Deprecated()`. core/metrics counts the calls (`deprecated_route_calls`), by the `Deprecation` header.
  */
 @Injectable()
 export class DeprecationInterceptor implements NestInterceptor {

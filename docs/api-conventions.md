@@ -11,7 +11,7 @@ its own and the shared code does the rest.
 Routes are versioned in the URI: `/v1/...` is the default. A breaking change
 ships as `/v2` next to `/v1` (`@Version('2')` on a route, or
 `@Controller({ version: '2' })`). A route with no version uses
-`VERSION_NEUTRAL`: `/health`, `/metrics`, and the docs at `/api`.
+`VERSION_NEUTRAL`: `/health` and the docs at `/api`.
 
 ## Errors
 
@@ -180,7 +180,7 @@ gzip-compressed.
 adds `Deprecation` (RFC 9745), `Sunset` (RFC 8594) and `Link` headers,
 marks the operation `deprecated` in OpenAPI (the typed client gets
 `@deprecated`), and counts calls in the metric
-`deprecated_route_calls_total`. Remove a route only after its sunset date
+`deprecated_route_calls`. Remove a route only after its sunset date
 shows no calls.
 
 ## Switches and maintenance

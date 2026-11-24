@@ -9,7 +9,7 @@ import { QuotasService } from './quotas.service.js';
 
 /** The quota whose use is the storage gauges (attachments' `storageBytes`). */
 const STORAGE_KEY = 'storageBytes';
-/** A scrape every few seconds reads every tenant once per this long. */
+/** A collection every few seconds reads every tenant once per this long. */
 const TTL_MS = 30_000;
 
 interface Reading {
@@ -19,8 +19,8 @@ interface Reading {
 }
 
 /**
- * `tenant_storage_bytes{tenant}` and `tenant_storage_limit_bytes{tenant}` on
- * `/metrics`: what each active tenant stores and the limit it has (only
+ * `tenant_storage_bytes{tenant}` and `tenant_storage_limit_bytes{tenant}` (core/metrics):
+ * what each active tenant stores and the limit it has (only
  * tenants with one), the `storageBytes` stock quota some module registers.
  * Without that quota there are no gauges. Each tenant is read in its own
  * scope, the reading kept for 30 seconds. Shared state: every instance
@@ -52,7 +52,7 @@ export class QuotaMetrics implements OnModuleInit {
           labels: { tenant },
           value: used,
         })),
-      ['tenant'],
+      'By',
     );
     this.metrics.collect(
       'tenant_storage_limit_bytes',
@@ -61,7 +61,7 @@ export class QuotaMetrics implements OnModuleInit {
         (await this.read(quota)).flatMap(({ tenant, limit }) =>
           limit === null ? [] : [{ labels: { tenant }, value: limit }],
         ),
-      ['tenant'],
+      'By',
     );
   }
 
@@ -82,7 +82,7 @@ export class QuotaMetrics implements OnModuleInit {
     if (!this.cached || Date.now() - this.cached.at > TTL_MS) {
       const readings = this.measure(quota);
       this.cached = { at: Date.now(), readings };
-      // A failed reading is not kept: the next scrape asks again.
+      // A failed reading is not kept: the next collection asks again.
       readings.catch((error: unknown) => {
         this.cached = undefined;
         this.logger.warn(`Storage gauges not read: ${String(error)}`);

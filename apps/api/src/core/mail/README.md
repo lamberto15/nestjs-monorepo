@@ -33,7 +33,7 @@ export class PasswordResetMail implements Mailable<{ link: string }> {
 - A new template file needs a restart (the file list is read at boot); edits to one show at once in development (production caches the files).
 - `MAIL_TEMPLATE_ROOTS` adds directories to scan (tests use it for `test/fixtures/mail`).
 - `MAIL_DELIVERY` = `all` | `essential` | `off`: the ceiling. A withheld mail is logged, counted in
-  `mail_withheld_total{reason}` (`policy`, `budget`) and not queued.
+  `mail_withheld{reason}` (`policy`, `budget`) and not queued.
 - **Hooks**: core never imports the module that knows; that module marks its provider with a discovery
   decorator and core finds it (without one, the default applies).
   - `@MailDeliveryPolicy()` (mail-delivery.ts, `MailDelivery`): `mode()` (stricter than `MAIL_DELIVERY`, never looser)
@@ -45,6 +45,6 @@ export class PasswordResetMail implements Mailable<{ link: string }> {
     Provided by modules/branding.
   - `@MailSuppressionList()` (mail-suppression.ts): asked by the worker before each send. Provided by modules/deliverability.
 
-- **Metrics:** `mail_sent_total` (the transport accepted it, on the workers) and `mail_suppressed_total{reason}` (recipients the suppression list kept out), next to `mail_withheld_total`.
+- **Metrics:** `mail_sent` (the transport accepted it, on the workers) and `mail_suppressed{reason}` (recipients the suppression list kept out), next to `mail_withheld`.
 
 Variables (`mail.config.ts`): MAIL_TRANSPORT (`file` default, writing `.eml` files to MAIL_DIRECTORY; `log`, `smtp` with SMTP_URL, `resend`, `postmark` or `sendgrid` with MAIL_API_KEY, `ses` with AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, SES_ENDPOINT; `memory` for tests), MAIL_FROM, MAIL_DELIVERY, MAIL_TEMPLATE_ROOTS.

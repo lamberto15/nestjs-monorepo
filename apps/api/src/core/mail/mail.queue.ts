@@ -16,7 +16,7 @@ import {
   type Queue,
   UnrecoverableError,
 } from 'bullmq';
-import { Counter } from 'prom-client';
+import type { Counter } from '@opentelemetry/api';
 import { MetricsService } from '../metrics/metrics.service.js';
 import { abortable } from '../queues/abortable.js';
 import { DEFAULT_JOB_OPTIONS, onceJob } from '../queues/queues.js';
@@ -92,18 +92,17 @@ export class MailQueue {
     private readonly discovery: DiscoveryService,
     metrics: MetricsService,
   ) {
-    this.withheld = new Counter({
-      name: 'mail_withheld_total',
-      help: 'Mails not queued: the delivery mode or the daily budget kept them, by reason.',
-      labelNames: ['reason'] as const,
-      registers: [metrics.registry],
-    });
-    for (const reason of ['policy', 'budget']) {
-      this.withheld.labels(reason).inc(0);
-    }
+    this.withheld = metrics.counter(
+      'mail_withheld',
+      {
+        description:
+          'Mails not queued: the delivery mode or the daily budget kept them, by reason.',
+      },
+      [{ reason: 'policy' }, { reason: 'budget' }],
+    );
   }
 
-  private readonly withheld: Counter<'reason'>;
+  private readonly withheld: Counter;
 
   async send<M extends Mailable<any>>(
     mail: Type<M>,
@@ -127,7 +126,7 @@ export class MailQueue {
     // neither renders nor Redis memory.
     const reason = await this.withholdReason(mail, isEssential);
     if (reason) {
-      this.withheld.labels(reason).inc();
+      this.withheld.add(1, { reason });
       this.logger.warn(`Mail withheld (${reason})`, { mail: mail.name });
       return;
     }
@@ -218,7 +217,7 @@ export class MailQueue {
 export class MailProcessor extends WorkerHost {
   private readonly logger = new Logger('MailQueue');
   private readonly sent: Counter;
-  private readonly suppressed: Counter<'reason'>;
+  private readonly suppressed: Counter;
 
   constructor(
     private readonly mailer: Mailer,
@@ -226,21 +225,22 @@ export class MailProcessor extends WorkerHost {
     metrics: MetricsService,
   ) {
     super();
-    this.sent = new Counter({
-      name: 'mail_sent_total',
-      help: 'Mails the transport accepted (the mail queue, on the workers).',
-      registers: [metrics.registry],
-    });
-    this.sent.inc(0);
-    this.suppressed = new Counter({
-      name: 'mail_suppressed_total',
-      help: 'Recipients a mail was not sent to because the suppression list names them, by reason.',
-      labelNames: ['reason'] as const,
-      registers: [metrics.registry],
-    });
-    for (const reason of SUPPRESSION_REASONS) {
-      this.suppressed.labels(reason).inc(0);
-    }
+    this.sent = metrics.counter(
+      'mail_sent',
+      {
+        description:
+          'Mails the transport accepted (the mail queue, on the workers).',
+      },
+      [{}],
+    );
+    this.suppressed = metrics.counter(
+      'mail_suppressed',
+      {
+        description:
+          'Recipients a mail was not sent to because the suppression list names them, by reason.',
+      },
+      SUPPRESSION_REASONS.map((reason) => ({ reason })),
+    );
   }
 
   /** The application's suppression list, when a module keeps one. */
@@ -268,7 +268,7 @@ export class MailProcessor extends WorkerHost {
     const to = allowed(mail.to);
     const cc = allowed(mail.cc);
     const bcc = allowed(mail.bcc);
-    for (const { reason } of skipped) this.suppressed.labels(reason).inc();
+    for (const { reason } of skipped) this.suppressed.add(1, { reason });
     if (skipped.length > 0) {
       this.logger.warn('Mail not sent to suppressed addresses', {
         jobId: job.id,
@@ -289,7 +289,7 @@ export class MailProcessor extends WorkerHost {
         // The queue retries, over hours; the mailer makes one attempt per try.
         retry: false,
       });
-      this.sent.inc();
+      this.sent.add(1);
       return { messageId: sent.messageId, skipped };
     } catch (error) {
       if (error instanceof MailError && error.permanent) {

@@ -111,7 +111,7 @@ export type ExchangeRatesRun =
  *   written; the job asks again the next hour.
  * - The ECB unreachable, answering garbage or a document that can't be
  *   stored: a warning, the stored rates stay, the next hour tries again.
- *   `exchange_rates_age_seconds` on /metrics grows, and ExchangeRatesStale
+ *   `exchange_rates_age_seconds` (core/metrics) grows, and ExchangeRatesStale
  *   fires past six days (ExchangeRatesStale).
  *
  * The fetch runs outside any transaction; the store is one transaction.

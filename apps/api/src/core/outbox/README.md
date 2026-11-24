@@ -12,4 +12,4 @@ Variables (`outbox.config.ts`): OUTBOX_RELAY (`on`; `off` in tests and a worker 
 
 Always there: core is never removed ([apps/api/AGENTS.md](../../../AGENTS.md), "Folders").
 
-- **Metrics:** `outbox_lag_seconds` on a worker's `/metrics`: how long the longest-waiting due message has waited (the relay's `lagMs`; 0 when none). Shared state: aggregate with max().
+- **Metrics:** `outbox_lag_seconds` a gauge a worker reports (core/metrics): how long the longest-waiting due message has waited (the relay's `lagMs`; 0 when none). Shared state: aggregate with max().

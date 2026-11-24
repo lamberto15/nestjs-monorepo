@@ -125,10 +125,12 @@ The logger masks them.
   `GET /health/live` is liveness and asks nothing. Both are public, never
   rate limited and answer in maintenance
   ([core/health](../apps/api/src/core/health/README.md)).
-- `GET /metrics` is Prometheus text. With `METRICS_TOKEN` unset it answers 404;
-  set it (16 characters or more) and a scraper sends
-  `Authorization: Bearer <token>`. Scrape it from the private network
-  ([core/metrics](../apps/api/src/core/metrics/README.md)).
+- Metrics go out over OTLP, not a scrape route: with Nestrix on, to
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, else `OTEL_EXPORTER_OTLP_ENDPOINT`
+  plus `/v1/metrics`. The Nestrix server takes traces and logs only, so
+  metrics need an OpenTelemetry Collector there (its Prometheus exporter
+  keeps the names alerts read). With NestJS Observe on, they are not
+  exported ([core/metrics](../apps/api/src/core/metrics/README.md)).
 - Observability is off until a backend is configured, and has two:
   NestJS Observe (`OBSERVE_APP_KEY`, `OBSERVE_APP_SECRET`) or any
   OpenTelemetry endpoint such as the Nestrix server
@@ -224,7 +226,7 @@ This repository bundles no operations. The host brings:
 - **HTTPS and certificates**, and any reverse proxy or load balancer in front.
   The API sends HSTS and expects to be served over HTTPS.
 - **Backups** of PostgreSQL (and of the bucket), and a tested restore.
-- **Monitoring and alerting** on the `/metrics` scrape, the readiness probe
+- **Monitoring and alerting** on the exported metrics, the readiness probe
   and the observability backend. The outbox backlog (`GET /v1/ops/outbox`,
   `lagMs`) is the number to alert on.
 - **Deploying and releasing**: pulling the image `publish.yml` published,
