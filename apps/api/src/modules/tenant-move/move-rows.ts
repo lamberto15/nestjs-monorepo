@@ -8,11 +8,14 @@ import {
 /**
  * Rows as the archive keeps them: one JSON object per line, by the
  * table's properties (camelCase), as Drizzle reads them. JSON keeps every
- * type the tables use but one, a point in time (a Date, written as ISO
- * 8601): `decodeRow()` gives it back from the column's type.
+ * type the tables use but two, a point in time (a Date, written as ISO
+ * 8601) and a 64-bit integer (a BigInt, money's minor units, written as
+ * its digits): `decodeRow()` gives both back from the column's type.
  */
 export const encodeRow = (row: Record<string, unknown>) =>
-  `${JSON.stringify(row)}\n`;
+  `${JSON.stringify(row, (_key, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value,
+  )}\n`;
 
 /** A column PostgreSQL computes itself (`generated always`, identity): never written. */
 const computed = (column: PgColumn) =>
@@ -33,7 +36,7 @@ export function writable(table: PgTable, row: Record<string, unknown>) {
 
 /**
  * A row read from the archive, ready to insert into `table`: its points in
- * time as Dates again, what PostgreSQL computes left out. A property the
+ * time as Dates and its 64-bit integers as BigInts again, what PostgreSQL computes left out. A property the
  * table lacks is an archive of another schema: refused.
  */
 export function decodeRow(
@@ -51,9 +54,13 @@ export function decodeRow(
     }
     if (computed(column)) continue;
     decoded[property] =
-      value !== null && column.dataType === 'object date'
-        ? new Date(value as string)
-        : value;
+      value === null
+        ? value
+        : column.dataType === 'object date'
+          ? new Date(value as string)
+          : column.dataType === 'bigint int64'
+            ? BigInt(value as string)
+            : value;
   }
   return decoded;
 }

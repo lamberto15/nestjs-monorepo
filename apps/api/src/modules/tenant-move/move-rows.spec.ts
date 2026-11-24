@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { getTableName } from 'drizzle-orm';
-import { pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { bigint, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { at } from '../../core/database/columns.js';
 import { tenants } from '../../core/tenancy/tenancy.tables.js';
 import { tenantTables } from '../../core/tenancy/tenant-tables.js';
@@ -28,6 +28,7 @@ const tableFiles = (dir: string): string[] =>
 const parents = pgTable('parents', {
   id: uuid('id').primaryKey(),
   at: at('at'),
+  amount: bigint('amount', { mode: 'bigint' }),
 });
 const children = pgTable('children', {
   id: uuid('id').primaryKey(),
@@ -46,6 +47,13 @@ describe('rows of a move', () => {
       id: 'a',
       at: null,
     });
+  });
+
+  it('gives back a 64-bit integer (money) from its column', () => {
+    const row = { id: 'a', amount: 9_007_199_254_740_993n };
+    const line = encodeRow(row);
+    expect(line).toBe('{"id":"a","amount":"9007199254740993"}\n');
+    expect(decodeRow(parents, JSON.parse(line))).toEqual(row);
   });
 
   it('refuses a property the table lacks: an archive of another schema', () => {
