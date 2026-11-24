@@ -386,7 +386,7 @@ export class MergeService {
   /**
    * The relations whose records refer to the duplicate, with how many do:
    * refused (403) when any of them, live or in the recycle bin, is one the
-   * principal may not change. Those in the bin are repointed too, so a
+   * principal may not change, or its reference field is. Those in the bin are repointed too, so a
    * restore brings them back pointing at the survivor.
    */
   private async references(principal: Principal, duplicateId: string) {
@@ -410,14 +410,30 @@ export class MergeService {
         };
         const n = await referring();
         if (n === 0) continue;
-        const changeable = await referring(
-          await this.access.sqlFilter(
+        // The reference itself is a field: one the principal may not change,
+        // on any of these records or only on some, refuses the merge as a
+        // record they may not change does.
+        const [denied, conditional] = await Promise.all([
+          this.access.deniedFields(principal, 'update', relation.from.subject),
+          this.access.conditionalFields(
             principal,
-            relation.from.subject,
             'update',
-            { deleted },
+            relation.from.subject,
           ),
-        );
+        ]);
+        const fieldForbidden =
+          denied.includes(relation.field) ||
+          conditional.includes(relation.field);
+        const changeable = fieldForbidden
+          ? 0
+          : await referring(
+              await this.access.sqlFilter(
+                principal,
+                relation.from.subject,
+                'update',
+                { deleted },
+              ),
+            );
         if (changeable < n) {
           throw new ForbiddenException({
             code: 'merge_references_forbidden',
@@ -439,7 +455,12 @@ export class MergeService {
     return found;
   }
 
-  /** The references to the duplicate, repointed at the survivor: their ids, for the audit entry. */
+  /**
+   * The references to the duplicate, repointed at the survivor: their ids, for the audit entry.
+   * shortcut: one UPDATE per relation, not RecordStore.update() per record, so the referring
+   * records' hooks, audit entries and `updated` events don't run (the merge's own audit entry
+   * lists them); move them through the store if an add-on must hear of a changed reference.
+   */
   private async moveReferences(from: string, to: string) {
     const moved: { subject: string; field: string; ids: string[] }[] = [];
     for (const relation of relationsTo(this.record.subject)) {

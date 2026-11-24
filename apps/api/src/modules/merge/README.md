@@ -31,8 +31,10 @@ newest first, at most 20.
 Only records you may read, matched only by fields you may read. Merging takes
 updating the survivor and deleting the duplicate, choosing only fields you may
 read on both and change on the survivor (403 `field_forbidden`), and changing
-every record referring to the duplicate, in the bin too (403
-`merge_references_forbidden`). A duplicate under a legal hold stays (409
+every record referring to the duplicate, in the bin too, and its reference
+field on every one of them (403 `merge_references_forbidden`). The references
+move by one update per relation: the referring records' own hooks, audit
+entries and events don't run; the merge's audit entry lists them. A duplicate under a legal hold stays (409
 `legal_hold`); a hook refusing the write (an approval pending) refuses the
 merge; the survivor cannot end up referring to itself (422 `merge_self_reference`,
 `merge_same_record`).

@@ -19,7 +19,7 @@ import type { Database } from '../../core/database/database.js';
 import { defineEvent, OnDomainEvent } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
-import { tenantWithAdmin } from '../../../test/access.js';
+import { member, tenantWithAdmin } from '../../../test/access.js';
 import type { RecordDeclaration, RecordRow } from '../records/record.js';
 import {
   InjectRecord,
@@ -325,6 +325,45 @@ describe('merging duplicates (e2e)', () => {
       admin.headers,
     );
     expect(restored.json().parentId).toBe(survivor.id);
+  });
+
+  it('refuses moving a reference whose field the merger may not change', async () => {
+    // Changes and deletes every item, but never which one an item belongs to.
+    const role = await call('POST', '/v1/access/roles', admin.headers, {
+      name: `No parents ${randomUUID().slice(0, 6)}`,
+      permissions: [
+        { subject: 'TestItem', action: 'read', conditions: [] },
+        {
+          subject: 'TestItem',
+          action: 'update',
+          conditions: [],
+          fields: ['body'],
+        },
+        { subject: 'TestItem', action: 'delete', conditions: [] },
+      ],
+    });
+    expect(role.statusCode, role.body).toBe(201);
+    const merger = await member(app, tenantId, [role.json().id]);
+    const title = `Parent ${randomUUID().slice(0, 6)}`;
+    const survivor = await item({ title });
+    const duplicate = await item({ title });
+    const child = await item({ title: 'Child', parentId: duplicate.id });
+
+    const refused = await merge(
+      survivor.id,
+      { duplicateId: duplicate.id },
+      'merge',
+      merger.headers,
+    );
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json()).toMatchObject({
+      code: 'merge_references_forbidden',
+      field: 'parentId',
+    });
+    expect(
+      (await call('GET', `/v1/test-items/${child.id}`, admin.headers)).json()
+        .parentId,
+    ).toBe(duplicate.id);
   });
 
   it('refuses what it should, changing nothing', async () => {
