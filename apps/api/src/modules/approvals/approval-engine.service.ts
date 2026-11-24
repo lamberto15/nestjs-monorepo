@@ -972,29 +972,43 @@ export class ApprovalEngine {
     const concluded =
       !sameRound || row.status === 'pending' ? status : (row.status as Ending);
     if (sameRound && row.outcomeAppliedAt) return concluded; // a retry: applied before
-    if (concluded === 'approved') {
-      await this.registry.apply(`${row.subject}.${row.action}`, {
-        id: row.recordId,
-        actor: this.systemPrincipal(),
+    // The effect and the mark that it ran commit together: an attempt that
+    // dies between them (the worker lost) leaves neither, and the retry
+    // runs the effect again on a clean slate, never on top of its own
+    // writes. Effects that only write the database so run exactly once.
+    let applied: ApprovalRequestRow | undefined;
+    try {
+      await this.txHost.withTransaction(async () => {
+        if (concluded === 'approved') {
+          await this.registry.apply(`${row.subject}.${row.action}`, {
+            id: row.recordId,
+            actor: this.systemPrincipal(),
+          });
+        }
+        if (sameRound && concluded !== 'changes_requested') {
+          [applied] = await this.db
+            .update(approvalRequests)
+            .set({ outcomeAppliedAt: new Date() })
+            .where(
+              and(
+                eq(approvalRequests.id, requestId),
+                eq(approvalRequests.round, round),
+                isNull(approvalRequests.outcomeAppliedAt),
+                // Still what was concluded: one abandoned meanwhile isn't marked applied.
+                eq(approvalRequests.status, concluded),
+              ),
+            )
+            .returning();
+          // Applied by another attempt, or abandoned meanwhile: this
+          // attempt's effect rolls back with it.
+          if (!applied && concluded === 'approved') throw new NotApplied();
+        }
       });
+    } catch (error) {
+      if (!(error instanceof NotApplied)) throw error;
     }
-    if (sameRound && concluded !== 'changes_requested') {
-      const [applied] = await this.db
-        .update(approvalRequests)
-        .set({ outcomeAppliedAt: new Date() })
-        .where(
-          and(
-            eq(approvalRequests.id, requestId),
-            eq(approvalRequests.round, round),
-            isNull(approvalRequests.outcomeAppliedAt),
-            // Still what was concluded: one abandoned meanwhile isn't marked applied.
-            eq(approvalRequests.status, concluded),
-          ),
-        )
-        .returning();
-      // Only the attempt that set it tells; a page also reads the field.
-      if (applied && concluded === 'approved') await this.pushApplied(applied);
-    }
+    // Only the attempt that set it tells; a page also reads the field.
+    if (applied && concluded === 'approved') await this.pushApplied(applied);
     return concluded;
   }
 
@@ -1056,3 +1070,6 @@ export class ApprovalEngine {
     return this.approvers.resolve(this.context(row), rules);
   }
 }
+
+/** conclude(): the request was marked applied by another attempt, or is no longer approved; the effect is rolled back. */
+class NotApplied extends Error {}
