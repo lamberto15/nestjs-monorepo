@@ -195,7 +195,8 @@ const cursorValue = (type: FilterField['type']) => {
     case 'date':
       return z.iso.date();
     case 'number':
-      return z.number();
+      // An exact decimal (numeric) reads as its digits, a string.
+      return z.union([z.number(), z.string().regex(/^-?\d+(\.\d+)?$/)]);
     case 'boolean':
       return z.boolean();
     default:

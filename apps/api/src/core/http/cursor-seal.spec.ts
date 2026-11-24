@@ -84,6 +84,24 @@ describe('a sorted list cursor', () => {
   });
   const sortOf = (sort: string) => LIST.parse({ sort }).sort!;
 
+  it('takes back a decimal, which PostgreSQL gives as its digits', () => {
+    useCursorKeys([key()]);
+    const rates = listQuery({
+      rate: { column: things.salary, type: 'number', ops: [], sortable: true },
+    });
+    const sort = rates.parse({ sort: 'rate' }).sort!;
+    const id = randomUUID();
+    for (const rate of ['12.50', 7, '-3']) {
+      expect(decodeCursor(encodeCursor(sort, { id, rate }), sort)).toEqual({
+        after: [rate],
+        id,
+      });
+    }
+    expect(
+      decodeCursor(encodeCursor(sort, { id, rate: '1; drop' }), sort),
+    ).toBeUndefined();
+  });
+
   it('carries the sort values sealed, for its sort only', () => {
     useCursorKeys([key()]);
     const id = randomUUID();
