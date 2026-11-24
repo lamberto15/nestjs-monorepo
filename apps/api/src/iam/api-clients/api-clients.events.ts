@@ -14,6 +14,15 @@ export const apiKeyRotated = defineEvent<{
 }>('security.api-key-rotated');
 
 /**
+ * A client was deleted for good: a domain event (core/outbox), published in
+ * the delete's transaction, so what goes with it elsewhere (modules/webhooks:
+ * its endpoints) goes even when that work fails the first time.
+ */
+export const apiClientDeleted = defineEvent<{ clientId: string }>(
+  'access.api-client-deleted',
+);
+
+/**
  * What API clients tell the rest of the app (@nestjs/event-emitter,
  * `emitAsync()` after the change committed). The names are the contract with
  * modules/realtime, which ends the sockets they name.

@@ -8,7 +8,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { OnEvent } from '@nestjs/event-emitter';
 import {
   WebhookDeliveries,
   type WebhookDelivery,
@@ -28,10 +27,8 @@ import {
 } from '../../core/http/pagination.js';
 import { apiClientRoles } from '../../iam/access/access.tables.js';
 import { RolesService } from '../../iam/access/roles.service.js';
-import {
-  API_CLIENT_EVENTS,
-  type ClientRevokedEvent,
-} from '../../iam/api-clients/api-clients.events.js';
+import { OnDomainEvent } from '../../core/outbox/events.js';
+import { apiClientDeleted } from '../../iam/api-clients/api-clients.events.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { UserPrincipal } from '../../iam/auth/principal.js';
@@ -388,17 +385,14 @@ export class WebhooksService {
 
   /**
    * A deleted client's endpoints go with it: nothing more is sent to it (its
-   * pending deliveries fail as `endpoint-deleted`; the log stays). The
-   * event also comes for a deactivation, which keeps them: only a client
-   * that no longer exists in its tenant loses its endpoints.
+   * pending deliveries fail as `endpoint-deleted`; the log stays). In the
+   * worker after the delete commits, retried until it succeeds; safe to run
+   * again. A deactivated client keeps them.
    */
-  @OnEvent(API_CLIENT_EVENTS.revoked)
-  async onClientRevoked({ clientId }: ClientRevokedEvent) {
-    const [client] = await this.db
-      .select({ id: apiClients.id })
-      .from(apiClients)
-      .where(eq(apiClients.id, clientId));
-    if (client) return;
+  @OnDomainEvent(apiClientDeleted, {
+    consumer: 'webhooks.delete-client-endpoints',
+  })
+  async onClientDeleted({ clientId }: { clientId: string }) {
     await this.deleteEndpointsOf(clientId);
   }
 

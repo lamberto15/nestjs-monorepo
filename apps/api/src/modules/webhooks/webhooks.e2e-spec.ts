@@ -21,7 +21,7 @@ import { defineEvent, Events } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessModule } from '../../iam/access/access.module.js';
 import { definePermissions } from '../../iam/access/permissions.js';
-import { API_CLIENT_EVENTS } from '../../iam/api-clients/api-clients.events.js';
+import { apiClientDeleted } from '../../iam/api-clients/api-clients.events.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { TENANT_EVENTS } from '../../iam/tenants/tenants.events.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
@@ -592,40 +592,32 @@ describe('outgoing webhooks (e2e)', () => {
     }
   });
 
-  it("deletes a deleted client's endpoints, and keeps a deactivated one's", async () => {
+  it("deletes a deleted client's endpoints once the delete commits", async () => {
     const tenancy = app.get(Tenancy);
     const endpoints = app.get(WebhookEndpoints);
-    const [gone, paused] = await tenancy.run(tenantId, () =>
+    const [gone] = await tenancy.run(tenantId, () =>
       db()
         .insert(apiClients)
-        .values([
-          { name: `gone-${randomUUID()}` },
-          { name: `paused-${randomUUID()}` },
-        ])
+        .values({ name: `gone-${randomUUID()}` })
         .returning(),
     );
-    for (const owner of [gone!, paused!]) {
-      await endpoints.create({
-        url: 'https://hooks.example.com/x',
-        eventTypes: ['*'],
-        tenant: owner.id,
-      });
-    }
-    await tenancy.run(tenantId, async () => {
-      await db().delete(apiClients).where(eq(apiClients.id, gone!.id));
-      await db()
-        .update(apiClients)
-        .set({ active: false })
-        .where(eq(apiClients.id, paused!.id));
-      for (const owner of [gone!, paused!]) {
-        await app.get(EventEmitter2).emitAsync(API_CLIENT_EVENTS.revoked, {
-          clientId: owner.id,
-          tenantId,
-        });
-      }
+    await endpoints.create({
+      url: 'https://hooks.example.com/x',
+      eventTypes: ['*'],
+      tenant: gone!.id,
     });
+    // ApiClientsService.remove(): the event in the delete's transaction.
+    await tenancy.run(tenantId, () =>
+      app.get(TransactionHost).withTransaction(async () => {
+        await db().delete(apiClients).where(eq(apiClients.id, gone!.id));
+        await app
+          .get(Events)
+          .publish(apiClientDeleted, { clientId: gone!.id }, { key: gone!.id });
+      }),
+    );
+    expect(await endpoints.list({ tenant: gone!.id })).toHaveLength(1);
+    await deliverWebhooks(app);
     expect(await endpoints.list({ tenant: gone!.id })).toEqual([]);
-    expect(await endpoints.list({ tenant: paused!.id })).toHaveLength(1);
   });
 
   it("deletes an erased tenant's endpoints once the erase commits", async () => {
@@ -642,19 +634,13 @@ describe('outgoing webhooks (e2e)', () => {
     const tenant = subscriber.client.id;
     // TenantsService.purge(): the event in its transaction, outside any tenant.
     const erase = () =>
-      app
-        .get(Tenancy)
-        .run(null, () =>
-          app
-            .get(TransactionHost)
-            .withTransaction(() =>
-              app
-                .get(EventEmitter2)
-                .emitAsync(TENANT_EVENTS.erasing, {
-                  tenantId: erased.tenantId,
-                }),
-            ),
-        );
+      app.get(Tenancy).run(null, () =>
+        app.get(TransactionHost).withTransaction(() =>
+          app.get(EventEmitter2).emitAsync(TENANT_EVENTS.erasing, {
+            tenantId: erased.tenantId,
+          }),
+        ),
+      );
     await erase();
     // Kept until the commit's event is relayed: an erase rolled back keeps them.
     expect(await endpoints.list({ tenant })).toHaveLength(1);

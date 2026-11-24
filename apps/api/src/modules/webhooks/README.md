@@ -32,7 +32,7 @@ retried by the worker.
 - The log keeps each delivery's attempts and the last request sent (headers
   and which secrets signed it, never a secret). Finished deliveries older than
   WEBHOOKS_DELIVERY_RETENTION_DAYS (30) go every night at 03:35 UTC.
-- A deleted API client's endpoints are deleted (`access.client-revoked`).
+- A deleted API client's endpoints are deleted, in the worker after the delete commits (the `access.api-client-deleted` domain event, retried until it succeeds).
 - Built in: `security.api-key-rotated` (iam/api-clients' event, relayed in
   `webhooks.security.ts`) goes to the rotated client only.
 

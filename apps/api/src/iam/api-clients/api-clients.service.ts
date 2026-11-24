@@ -31,6 +31,7 @@ import type { UserPrincipal } from '../auth/principal.js';
 import { ClientQuota } from './client-quota.js';
 import {
   API_CLIENT_EVENTS,
+  apiClientDeleted,
   apiKeyRotated,
   type ClientRevokedEvent,
   type KeysRevokedEvent,
@@ -242,6 +243,11 @@ export class ApiClientsService implements OnModuleInit {
         details: { name: client.name },
         ip,
       });
+      await this.domainEvents?.publish(
+        apiClientDeleted,
+        { clientId: id },
+        { key: id },
+      );
     });
     this.access.invalidate();
     await this.announceRevoked(id);
