@@ -22,6 +22,7 @@ import {
 import { Throttle, minutes } from '@nestjs/throttler';
 import { z } from 'zod';
 import { AllowInMaintenance } from '../../core/http/maintenance.js';
+import { PasswordSignInThrottle } from '../auth/address-throttle.guard.js';
 import { SessionLifetime } from '../auth/session-lifetime.js';
 import { Captcha } from '../captcha/captcha.decorator.js';
 import { CaptchaService } from '../captcha/captcha.service.js';
@@ -97,6 +98,7 @@ export class TokensController {
   ) {}
 
   @Throttle({ default: { limit: 5, ttl: minutes(15) } })
+  @PasswordSignInThrottle()
   @Captcha({ action: 'sign-in', count: 'failures' })
   @Post()
   @HttpCode(200)

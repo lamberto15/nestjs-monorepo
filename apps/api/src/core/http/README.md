@@ -36,14 +36,15 @@ says how a route uses them.
 
 ## Variables
 
-| Variable       | Default                 | Meaning                                                                              |
-| -------------- | ----------------------- | ------------------------------------------------------------------------------------ |
-| `APP_URL`      | `http://localhost:3000` | This API's public origin, for the links it hands out (signed file URLs, mails).      |
-| `WEB_URL`      | APP_URL                 | The web app's base URL: mail links open its pages, OIDC and SSO sign-ins land on it. |
-| `CORS_ORIGINS` | none                    | Browser apps on other origins, comma-separated: CORS and CSRF trust.                 |
-| `CURSOR_KEYS`  | none                    | Keys sealing list cursors, newest first; unset, one kept in the database.            |
-| `OPENAPI`      | `on`                    | `off` serves no `/api`.                                                              |
-| `NODE_ENV`     | none                    | `production` keeps CSP's `upgrade-insecure-requests`.                                |
+| Variable       | Default                   | Meaning                                                                              |
+| -------------- | ------------------------- | ------------------------------------------------------------------------------------ |
+| `APP_URL`      | `http://localhost:3000`   | This API's public origin, for the links it hands out (signed file URLs, mails).      |
+| `WEB_URL`      | APP_URL                   | The web app's base URL: mail links open its pages, OIDC and SSO sign-ins land on it. |
+| `CORS_ORIGINS` | none                      | Browser apps on other origins, comma-separated: CORS and CSRF trust.                 |
+| `CURSOR_KEYS`  | none                      | Keys sealing list cursors, newest first; unset, one kept in the database.            |
+| `OPENAPI`      | `on`, `off` in production | `off` serves no `/api`.                                                              |
+| `TRUST_PROXY`  | private networks          | The proxies whose `X-Forwarded-For` gives the client address; name yours.            |
+| `NODE_ENV`     | none                      | `production` keeps CSP's `upgrade-insecure-requests`.                                |
 
 ## Removing it
 

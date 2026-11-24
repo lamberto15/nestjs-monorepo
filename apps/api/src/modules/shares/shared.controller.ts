@@ -23,6 +23,7 @@ import {
   type OpenShareDto,
   openShareSchema,
   SHARE_CODE_MINUTES,
+  SHARE_CODES_PER_HOUR,
   type ShareCodeDto,
   shareCodeSchema,
   sharedFileLinkSchema,
@@ -69,7 +70,7 @@ export class SharedController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: "Mail a code to a shared link's recipient",
-    description: `The code opens the link for ${SHARE_CODE_MINUTES} minutes, 5 tries; a new one replaces it. The same answer whether or not the link has a recipient.`,
+    description: `The code opens the link for ${SHARE_CODE_MINUTES} minutes, 5 tries; a new one replaces it, ${SHARE_CODES_PER_HOUR} a link an hour at most. The same answer whether or not the link has a recipient, and past that limit.`,
   })
   @ApiNoContentResponse()
   @ApiNotFoundResponse({

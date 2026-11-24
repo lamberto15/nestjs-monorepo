@@ -23,6 +23,7 @@ import type { Database } from '../../core/database/database.js';
 import { HttpConventionsModule } from '../../core/http/http-conventions.module.js';
 import { createHttpAdapter, setupHttp } from '../../core/http/http-setup.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { ACCESS_EVENTS } from '../../iam/access/access.events.js';
 import { authConfig } from '../../iam/auth/auth.config.js';
 import { AUTH_EVENTS } from '../../iam/auth/auth.events.js';
 import { sessions } from '../../iam/auth/auth.tables.js';
@@ -282,6 +283,27 @@ describe('realtime', () => {
         tenantId: inside.tenantId,
       });
     await closed;
+    expect(s2.connected).toBe(true);
+  });
+
+  it("ends a member's sockets once their deactivation committed, not while it is under way", async () => {
+    const member = await signedInUser(app);
+    const other = await signedInUser(app);
+    const { socket: s1 } = await connect({ extraHeaders: member.headers });
+    const { socket: s2 } = await connect({ extraHeaders: other.headers });
+    const event = {
+      userId: member.user.id,
+      tenantId: member.tenantId,
+      actor: other.user,
+    };
+    const events = app.get(EventEmitter2);
+    // Inside the transaction: a reconnect could still pass its handshake.
+    await events.emitAsync(ACCESS_EVENTS.memberDeactivated, event);
+    await whoami(s1);
+    expect(s1.connected).toBe(true);
+    const closed = once(s1, 'disconnect');
+    events.emit(ACCESS_EVENTS.memberDeactivationCommitted, event);
+    expect((await closed)[0]).toBe('io server disconnect');
     expect(s2.connected).toBe(true);
   });
 

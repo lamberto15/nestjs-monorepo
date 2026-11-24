@@ -283,6 +283,31 @@ describe('record shares (e2e)', () => {
     expect((await from(20, code)).statusCode).toBe(403);
   });
 
+  it('mails at most five codes a link an hour, from any address, with the same answer past them', async () => {
+    const item = await createTestItem(app, team.editor.headers);
+    const { token } = (
+      await share(team.editor.headers, item.id, {
+        fields: ['title'],
+        expiresAt: inDays(1),
+        recipientEmail: 'often@example.com',
+      })
+    ).json<{ token: string }>();
+    mailbox.clear();
+    const ask = (i: number) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/shared/code',
+        headers: { 'x-forwarded-for': `198.51.100.${i + 1}` },
+        payload: { token },
+      });
+    for (let i = 0; i < 7; i++) {
+      expect((await ask(i)).statusCode).toBe(204);
+    }
+    await vi.waitFor(() => expect(mailbox.mails).toHaveLength(5));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(mailbox.mails).toHaveLength(5);
+  });
+
   it('makes at most 20 working links per record, even when asked at once', async () => {
     const item = await createTestItem(app, team.editor.headers);
     const made = await Promise.all(

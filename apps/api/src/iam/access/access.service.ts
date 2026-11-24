@@ -261,6 +261,8 @@ interface Loaded {
 @Injectable()
 export class AccessService implements OnModuleInit, OnApplicationShutdown {
   private static readonly MAX_AGE_MS = 60_000;
+  /** The most abilities kept on an instance (tenants × principals seen within a minute). */
+  static readonly MAX_ENTRIES = 10_000;
   private version = 0;
   /** This instance, so it ignores its own invalidations coming back. */
   private readonly instanceId = randomUUID();
@@ -309,6 +311,28 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
     void this.redis
       .publish(this.channel, this.instanceId)
       .catch(() => undefined);
+  }
+
+  /**
+   * Room for one more ability: past MAX_ENTRIES the expired go, then the
+   * oldest (a Map keeps insertion order). Otherwise entries only ever left
+   * on an invalidation, and a quiet instance serving many principals grew
+   * without bound. Custom: a few lines on the Map, where an LRU package
+   * (or @nestjs/cache-manager's asynchronous store) would sit on every
+   * permission check.
+   */
+  private makeRoom() {
+    if (this.cache.size < AccessService.MAX_ENTRIES) return;
+    const now = Date.now();
+    for (const [key, entry] of this.cache) {
+      if (entry.until <= now || entry.loaded.version !== this.version) {
+        this.cache.delete(key);
+      }
+    }
+    for (const key of this.cache.keys()) {
+      if (this.cache.size < AccessService.MAX_ENTRIES) break;
+      this.cache.delete(key);
+    }
   }
 
   /** Both paths of an invalidation (this instance's, another's by pub/sub) end here. */
@@ -669,6 +693,7 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
     // Only what was built against the current version, never past the
     // next grant's end or membership change (nor a minute).
     if (version === this.version) {
+      this.makeRoom();
       this.cache.set(key, {
         loaded,
         until: Math.min(

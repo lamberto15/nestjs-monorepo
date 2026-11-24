@@ -63,10 +63,16 @@ class ProbeController {
 @Injectable()
 class Deactivations {
   readonly seen: MemberDeactivatedEvent[] = [];
+  readonly committed: MemberDeactivatedEvent[] = [];
 
   @OnEvent(ACCESS_EVENTS.memberDeactivated)
   deactivated(event: MemberDeactivatedEvent) {
     this.seen.push(event);
+  }
+
+  @OnEvent(ACCESS_EVENTS.memberDeactivationCommitted)
+  deactivationCommitted(event: MemberDeactivatedEvent) {
+    this.committed.push(event);
   }
 }
 
@@ -440,10 +446,16 @@ describe('SCIM provisioning (e2e)', () => {
     expect((await send('DELETE', `/Users/${user.id}`, scim)).statusCode).toBe(
       204,
     );
-    const event = app
-      .get(Deactivations)
-      .seen.find((seen) => seen.userId === user.id);
-    expect(event).toMatchObject({ tenantId, actor: { kind: 'client' } });
+    const deactivations = app.get(Deactivations);
+    for (const events of [deactivations.seen, deactivations.committed]) {
+      const event = events.filter((seen) => seen.userId === user.id);
+      expect(event).toEqual([
+        expect.objectContaining({
+          tenantId,
+          actor: expect.objectContaining({ kind: 'client' }),
+        }),
+      ]);
+    }
   });
 
   it('reactivates a deprovisioned account when an administrator turns its membership on', async () => {

@@ -16,12 +16,14 @@ import type { ConfigType } from '@nestjs/config';
 import { t } from '@nestjs/i18n';
 import { and, count, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
+import type { Redis } from 'ioredis';
 import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
+import { REDIS } from '../../core/redis/redis.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessService } from '../../iam/access/access.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -42,6 +44,7 @@ import {
   type OpenShareDto,
   SHARE_CODE_ATTEMPTS,
   SHARE_CODE_MINUTES,
+  SHARE_CODES_PER_HOUR,
   type ShareView,
 } from './share.schemas.js';
 import { sharesConfig } from './shares.config.js';
@@ -110,6 +113,7 @@ export class SharesService {
     private readonly config: ConfigType<typeof sharesConfig>,
     @Inject(httpConfig.KEY)
     private readonly http: Pick<ConfigType<typeof httpConfig>, 'webUrl'>,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
   /** The fields a link may show: the record's declared fields, never a reference to another record. */
@@ -352,6 +356,8 @@ export class SharesService {
   async sendCode(token: string) {
     await this.inTenantOf(token, async (share) => {
       if (!share.recipientEmail) return;
+      // Past the hour's codes: the same answer, and nothing mailed.
+      if (!(await this.mayMailCode(share.id))) return;
       const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
       await this.db
         .update(recordShares)
@@ -366,6 +372,17 @@ export class SharesService {
         data: { code, minutes: SHARE_CODE_MINUTES },
       });
     });
+  }
+
+  /** Counts a code against the link's hour (Redis, so every instance shares the count). */
+  private async mayMailCode(shareId: string) {
+    const key = `share-codes:${shareId}`;
+    const [[, sent]] = (await this.redis
+      .multi()
+      .incr(key)
+      .expire(key, 3600, 'NX')
+      .exec()) as [[Error | null, number]];
+    return sent <= SHARE_CODES_PER_HOUR;
   }
 
   /** When records are gone for good: their links too. */

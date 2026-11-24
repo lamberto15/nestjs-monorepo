@@ -15,6 +15,14 @@ export const ACCESS_EVENTS = {
    */
   memberDeactivated: 'access.member-deactivated',
   /**
+   * The same deactivation once its transaction committed (`emit()`, the
+   * payload of `memberDeactivated`): what must not act before the commit
+   * listens here. modules/realtime ends the member's sockets in the tenant:
+   * ended inside the transaction, a socket reconnecting before the commit
+   * would pass its handshake on the membership as it still was, and stay.
+   */
+  memberDeactivationCommitted: 'access.member-deactivation-committed',
+  /**
    * An administrator turned a membership back on: iam/sso reactivates the
    * account its SCIM deprovisioning deactivated (no active membership was
    * left), in the change's transaction.

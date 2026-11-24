@@ -132,8 +132,8 @@ in Redis so the limit holds across instances. Over it: 429 `rate_limited`
 with `Retry-After`. A route tightens it with `@Throttle()` or opts out
 with `@SkipThrottle()`; sign-in routes use `@AddressThrottle()` and
 `@UserThrottle()`. See [core/throttling](../apps/api/src/core/throttling/README.md).
-The client address comes from `X-Forwarded-For`, trusted only from loopback
-and private networks.
+The client address comes from `X-Forwarded-For`, trusted only from the
+proxies `TRUST_PROXY` names (loopback and private networks when unset).
 
 ## CORS and CSRF
 
@@ -179,8 +179,8 @@ shows no calls.
 
 ## OpenAPI and the realtime manifest
 
-`/api` serves Swagger UI and `/api-json` the document (`OPENAPI=off` serves
-neither). Request, query and response schemas come from the routes' Zod
+`/api` serves Swagger UI and `/api-json` the document outside production
+(`OPENAPI=on` serves them in production too, `OPENAPI=off` nowhere). Request, query and response schemas come from the routes' Zod
 schemas. `pnpm openapi:dump` writes the document without starting the app,
 and `pnpm client:generate` builds the typed client in `packages/api-client`
 from it (`pnpm client:check` fails when the committed client is stale).
