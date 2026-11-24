@@ -268,6 +268,8 @@ describe('organizational units (e2e)', () => {
     expect(history.find((row) => row.userId === northLead.id)).toMatchObject({
       email: northLead.email,
     });
+    // Only what the route documents: the row's tenant never leaves the API.
+    expect(history[0]).not.toHaveProperty('tenantId');
     expect(
       history.find((row) => row.userId === northLead.id)?.validTo,
     ).not.toBeNull();

@@ -31,6 +31,11 @@ export const settingViewSchema = z.object({
     .describe(
       'A feature flag (boolean, may roll out to a share of principals).',
     ),
+  secret: z
+    .boolean()
+    .describe(
+      'Kept encrypted and never shown: `value` is null, `source` says whether one is set.',
+    ),
   scopes: z
     .array(z.enum(SETTING_SCOPES))
     .describe('Where it may be set; `user`: you may set it for yourself.'),

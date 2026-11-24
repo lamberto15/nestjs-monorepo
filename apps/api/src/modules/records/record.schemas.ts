@@ -27,8 +27,9 @@ export const recordCanSchema = (softDelete: boolean) =>
 /**
  * A record's API schemas, from its declaration: `create` (POST's body,
  * without read-only fields), `update` (PATCH's: only what is sent),
- * `response` (id, owner, unit, the fields, dates, the recycle bin's, `can`
- * with `?include=can`; never the tenant). `response` takes what the
+ * `response` (id, owner, unit, the fields (each left out when the reader
+ * may not see it), dates, the recycle bin's, `can` with `?include=can`;
+ * never the tenant). `response` takes what the
  * record's add-ons show (their exported response shape: `tags`), so the
  * documented response is the one the presenter answers. `body` takes
  * the keys add-ons read from the create and update bodies (their exported
@@ -58,7 +59,17 @@ export function recordSchemas<
           "The creator's organizational unit, when they were in exactly one.",
         ),
     }),
-    ...fields.response,
+    // A field the reader may not see (field-level permissions) is left out.
+    ...(Object.fromEntries(
+      Object.entries(fields.response).map(([name, schema]) => [
+        name,
+        (schema as z.ZodType).optional(),
+      ]),
+    ) as {
+      [N in keyof typeof fields.response]: z.ZodOptional<
+        (typeof fields.response)[N]
+      >;
+    }),
     ...(added as X),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),

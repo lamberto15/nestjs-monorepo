@@ -10,10 +10,20 @@ says how a route uses them.
   `HttpException`s maps them in its own folder:
   `ProblemDetailsFilter.map(MyError, (error) => new ConflictException(…))`.
   A busy pool or a cancelled statement is a 503 `database_busy` /
-  `database_timeout` with Retry-After (`infrastructure-errors.ts`).
+  `database_timeout` with Retry-After, a unique violation no service mapped a
+  409 `conflict`, a malformed id that reached a query a 400 `invalid_id`
+  (`infrastructure-errors.ts`).
 - **Validation**: `@Body({ schema })`, `@Query({ schema })`,
   `@Param('id', { schema })` with Zod, through Nest's
   `StandardSchemaValidationPipe` (global).
+- **Responses** (`response-schema.interceptor.ts`, global): each response is
+  run, as JSON, through the schema its route documents for the status it
+  answers with (`@ApiOkResponse({ standardSchema })`, or
+  `@SerializeOptions({ schema })`): undeclared keys are dropped, and a
+  response off its schema is a 500 naming the route and keys in the log.
+  Nest's `StandardSchemaSerializerInterceptor`, with the schema read from
+  the OpenAPI entry so it is written once. Not checked: `?fields=` and
+  `?include=` responses (built from declared names only).
 - **The app** (`createHttpAdapter()`, `setupHttp(app)`, called by main.ts and
   the e2e tests): request ids, the JSON body limit (100 KB, `body-limit.ts`),
   security headers, gzip, CORS, CSRF, URI versioning (`/v1`; version-neutral

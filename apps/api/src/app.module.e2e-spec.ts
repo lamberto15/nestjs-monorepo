@@ -1,4 +1,9 @@
-import { ApplicationConfig } from '@nestjs/core';
+import {
+  ApplicationConfig,
+  DiscoveryService,
+  MetadataScanner,
+} from '@nestjs/core';
+import { METHOD_METADATA } from '@nestjs/common/constants.js';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { bootModules } from '../test/boot.js';
 import { PermissionCatalog } from './iam/access/permission-catalog.js';
@@ -38,9 +43,11 @@ describe('the whole app (e2e)', () => {
 
   // Idempotency's boot warning lists the global interceptors outside it.
   // Only these may be: the request's language (I18nInterceptor), the trace
-  // around everything (NestrixInterceptor, core/observability) and
+  // around everything (NestrixInterceptor, core/observability),
   // nestjs-cls's pass-through (a plain object: its interceptor is off, the
-  // middleware sets the context). Anything else would also see replays.
+  // middleware sets the context) and the response's schema
+  // (ResponseSchemaInterceptor, core/http: it only shapes, so a replay is
+  // shaped as the first answer was). Anything else would also see replays.
   it('runs idempotency inside only the interceptors that set context or trace', () => {
     // By name, as the warning prints them: @nestjs/idempotency doesn't
     // export its interceptor's class.
@@ -55,6 +62,7 @@ describe('the whole app (e2e)', () => {
       'I18nInterceptor',
       'NestrixInterceptor',
       'Object',
+      'ResponseSchemaInterceptor',
     ]);
   });
 
@@ -63,5 +71,37 @@ describe('the whole app (e2e)', () => {
   it('has a text for every permission and system job of every module', () => {
     const catalog = app.get(PermissionCatalog, { strict: false });
     expect(() => [catalog.view(), catalog.systemJobsView()]).not.toThrow();
+  });
+
+  // @nestjs/authorization refuses a route that declares nothing, at run
+  // time; this says which, before anyone calls one. The keys are the
+  // packages' (a registry symbol for @Public(), as they document).
+  it('has every route declare who may call it: @Can(), @Can.Anyone() or @Public()', () => {
+    const declares = (target: object) =>
+      Reflect.getMetadata('authorization:can', target) !== undefined ||
+      Reflect.getMetadata('authorization:can-anyone', target) !== undefined ||
+      Reflect.getMetadata(
+        Symbol.for('@nestjs/authentication:public'),
+        target,
+      ) === true;
+    const scanner = new MetadataScanner();
+    const undeclared = app
+      .get(DiscoveryService)
+      .getControllers()
+      .flatMap(({ metatype, instance }) => {
+        if (!metatype || !instance) return [];
+        const prototype = Object.getPrototypeOf(instance) as object;
+        return scanner
+          .getAllMethodNames(prototype)
+          .map((name) => (prototype as Record<string, object>)[name]!)
+          .filter(
+            (handler) =>
+              Reflect.getMetadata(METHOD_METADATA, handler) !== undefined &&
+              !declares(handler) &&
+              !declares(metatype),
+          )
+          .map((handler) => `${metatype.name}.${(handler as () => void).name}`);
+      });
+    expect(undeclared).toEqual([]);
   });
 });

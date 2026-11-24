@@ -129,8 +129,8 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
     // replayed response is neither metered nor retried), then usage
     // metering, and the retries of outbound calls are the innermost. Only
     // the two that set a request's context (its language, I18nModule;
-    // nestjs-cls) and the trace around everything (ObservabilityModule)
-    // stay outside idempotency: its boot warning names them, and
+    // nestjs-cls), the trace around everything (ObservabilityModule) and
+    // the response's schema (HttpConventionsModule) stay outside idempotency: its boot warning names them, and
     // app.module.e2e-spec.ts fails when another one joins.
     // Guards: the rate limit (ThrottlingModule, above), then who is calling
     // (AuthModule), then what they may do (AccessModule, which refuses a

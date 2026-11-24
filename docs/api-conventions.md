@@ -40,6 +40,9 @@ application/problem+json`:
   `path` (`items.0.quantity`).
 - An unexpected error answers 500 with a fixed message. Its internals stay in
   the logs, found by `requestId`.
+- Two requests racing for one unique key: the database's index decides, and
+  the loser gets 409 `conflict` (or the module's own code where it maps the
+  violation). A malformed id that reaches a query is 400 `invalid_id`.
 - Other fields an exception carries are kept (`retryAfter`, `etag`).
   A `retryAfter` on a 503 also sets `Retry-After`.
 - A module whose own errors are not `HttpException`s maps them in its folder:
@@ -71,7 +74,13 @@ list(@Query({ schema: LEGAL_HOLD_LIST.schema }) query: ListQuery) {}
 
 (From `apps/api/src/iam/holds/holds.controller.ts`.) The same schemas
 produce the OpenAPI document, so request and response types cannot drift from
-what the route accepts. A path parameter is `@Param('id', ParseUUIDPipe)` or
+what the route accepts. The response schema is also enforced
+(`ResponseSchemaInterceptor`, core/http): every response is run through the
+schema of the status it answers with, as JSON, so a key it does not declare
+(a `tenantId`, a hash) is never sent, and a response off its schema is a 500
+that names the route and the keys in the log. `@SerializeOptions({ schema })`
+names another schema for a route. Responses narrowed by `?fields=` or
+widened by `?include=` are built from declared names and not checked. A path parameter is `@Param('id', ParseUUIDPipe)` or
 `@Param('id', { schema })`. JSON bodies are limited to 100 KB (413
 `payload_too_large`) and a path parameter to 2048 characters (414).
 

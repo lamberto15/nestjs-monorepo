@@ -31,6 +31,9 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
 3. **`<item>.schemas.ts`**: `recordSchemas(ITEM, { body: NUMBER_BODY, response: NUMBER_RESPONSE })`:
    create, update (partial) and response; `body` and `response` are what the
    record's add-ons read from the bodies and show (their exported shapes, spread together).
+   The response is enforced (core/http): an add-on key missing from it is
+   dropped. Each field is optional in it, since field-level permissions
+   leave a hidden one out.
 4. **`<item>.list.ts`**: `recordList(ITEM, items)`: every field's filters and
    sorts (a reference: `?parentId=`), `q`/`rank`, ownerId, unitId,
    createdAt, updatedAt, `fields=`, `deleted=true`.
