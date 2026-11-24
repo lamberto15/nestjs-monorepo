@@ -8,14 +8,14 @@ import {
   type SessionStore,
 } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { and, eq, isNull, lt, lte, max, min } from 'drizzle-orm';
+import { and, eq, isNull, lt, lte, max, min, or } from 'drizzle-orm';
 import type { Database } from '../../core/database/database.js';
 import {
   AUTH_EVENTS,
   type SessionEndedEvent,
   type TokenSessionEndedEvent,
 } from './auth.events.js';
-import { refreshTokens, sessions } from './auth.tables.js';
+import { impersonatorOf, refreshTokens, sessions } from './auth.tables.js';
 import { distinctTokenSessionIds, tokenSessionId } from './token-session.js';
 import { UsersRepository } from './users.repository.js';
 
@@ -32,6 +32,12 @@ import { UsersRepository } from './users.repository.js';
  * a session or a token family is announced (`auth.session-ended`,
  * `auth.token-session-ended`) for the sockets it opened.
  */
+const ownedOrImpersonatedBy = (userId: string) =>
+  or(
+    eq(sessions.userId, userId),
+    eq(impersonatorOf(sessions.metadata), userId),
+  );
+
 @Injectable()
 export class DrizzleAuthenticationStore
   implements SessionStore, RefreshTokenStore
@@ -98,18 +104,25 @@ export class DrizzleAuthenticationStore
     return deleted.length > 0;
   }
 
+  /**
+   * The user's sessions, and those in which they act as someone else
+   * (impersonation: stored under the member's id). `revokeAll()` lists and
+   * deletes through these two, so signing out everywhere, a password change
+   * or reset end an administrator's impersonations too; left running, one
+   * would hand a fresh administrator session back when it stops.
+   */
   async listUserSessions(userId: string): Promise<SessionRecord[]> {
     const rows = await this.db
       .select()
       .from(sessions)
-      .where(eq(sessions.userId, userId));
+      .where(ownedOrImpersonatedBy(userId));
     return rows.map(withoutNulls);
   }
 
   async deleteUserSessions(userId: string): Promise<void> {
     const deleted = await this.db
       .delete(sessions)
-      .where(eq(sessions.userId, userId))
+      .where(ownedOrImpersonatedBy(userId))
       .returning({ id: sessions.id });
     await this.sessionsEnded(deleted);
   }
