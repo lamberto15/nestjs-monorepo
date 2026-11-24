@@ -1,4 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  type BeforeApplicationShutdown,
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { IdempotencyEvents } from '@nestjs/idempotency';
 import { LocksEvents } from '@nestjs/locks';
@@ -7,7 +14,18 @@ import { OutboxEvents } from '@nestjs/outbox';
 import { ResilienceEvents } from '@nestjs/resilience';
 import { WebhooksEvents } from '@nestjs/webhooks';
 import { WorkflowEvents } from '@nestjs/workflows';
-import { filter, map, merge, type Observable } from 'rxjs';
+import type { Redis } from 'ioredis';
+import {
+  defer,
+  finalize,
+  merge,
+  type Observable,
+  Subject,
+  type Subscription,
+  takeUntil,
+  timer,
+} from 'rxjs';
+import { closeRedis, REDIS } from '../../core/redis/redis.js';
 import { logRedaction, REDACTED } from '../../core/logging/redaction.js';
 import { opsEventSchema, type OpsEvent } from './ops.events.schemas.js';
 
@@ -94,14 +112,46 @@ export function opsEvent(
   return parsed.data;
 }
 
-/** The live log of the engines the app runs (`GET /v1/ops/events`). */
-@Injectable()
-export class OpsEventStream {
-  constructor(private readonly modules: ModuleRef) {}
+/**
+ * How long one stream stays open. The browser's EventSource reconnects by
+ * itself, through sign-in and `@Can()` again: a revoked session, key or
+ * permission loses the stream within this long, on whichever instance it
+ * was opened.
+ */
+export const OPS_STREAM_MAX_MS = 5 * 60_000;
 
-  /** The events of every engine this app has, as they happen; an engine the app lacks adds none. */
-  stream(): Observable<OpsEvent> {
-    const streams: Observable<OpsEvent | undefined>[] = [];
+/** After a publish no instance listened to, how long this one stops publishing. */
+const QUIET_MS = 5000;
+
+/**
+ * The live log of the engines (`GET /v1/ops/events`), from every instance:
+ * each publishes its engines' events to one Redis channel, and each stream
+ * reads the channel, so an API instance shows what the worker's outbox,
+ * workflows and mail do. While no instance watches (a publish reaches no
+ * subscriber), an instance stops publishing for a few seconds, so the
+ * engines cost nothing when nobody looks.
+ */
+@Injectable()
+export class OpsEventStream
+  implements OnModuleInit, BeforeApplicationShutdown, OnApplicationShutdown
+{
+  private readonly local: Subscription[] = [];
+  private readonly received = new Subject<OpsEvent>();
+  private readonly closing = new Subject<void>();
+  private subscriber?: Redis;
+  private watchers = 0;
+  private quietUntil = 0;
+
+  constructor(
+    private readonly modules: ModuleRef,
+    @Inject(REDIS) private readonly redis: Redis,
+  ) {}
+
+  private get channel() {
+    return `${this.redis.options.keyPrefix ?? ''}ops:events`;
+  }
+
+  onModuleInit() {
     for (const [source, engine] of Object.entries(SOURCES)) {
       let events: { events$: Observable<object> } | undefined;
       try {
@@ -110,15 +160,72 @@ export class OpsEventStream {
         // The app has no such engine (a test boots only some): nothing to add.
       }
       if (events) {
-        streams.push(
-          events.events$.pipe(
-            map((event) => opsEvent(source as OpsEvent['source'], event)),
+        this.local.push(
+          events.events$.subscribe((event) =>
+            this.publish(source as OpsEvent['source'], event),
           ),
         );
       }
     }
-    return merge(...streams).pipe(
-      filter((event): event is OpsEvent => event !== undefined),
+  }
+
+  private publish(source: OpsEvent['source'], event: object) {
+    if (Date.now() < this.quietUntil) return;
+    const tagged = opsEvent(source, event);
+    if (!tagged) return;
+    this.redis.publish(this.channel, JSON.stringify(tagged)).then(
+      (listeners) => {
+        if (listeners === 0) this.quietUntil = Date.now() + QUIET_MS;
+      },
+      () => undefined,
     );
+  }
+
+  /** The events of every instance, as they happen, for OPS_STREAM_MAX_MS at most. */
+  stream(): Observable<OpsEvent> {
+    return defer(() => {
+      this.watch();
+      return this.received;
+    }).pipe(
+      takeUntil(merge(timer(OPS_STREAM_MAX_MS), this.closing)),
+      finalize(() => this.unwatch()),
+    );
+  }
+
+  private watch() {
+    if (this.watchers++ > 0) return;
+    this.subscriber = this.redis.duplicate();
+    this.subscriber.on('error', (error: Error) =>
+      logger.warn(`Ops events: ${error.message}`),
+    );
+    this.subscriber.on('message', (_channel: string, message: string) => {
+      let parsed;
+      try {
+        parsed = opsEventSchema.safeParse(JSON.parse(message));
+      } catch {
+        return;
+      }
+      if (parsed.success) this.received.next(parsed.data);
+    });
+    void this.subscriber
+      .subscribe(this.channel)
+      .catch((error: unknown) =>
+        logger.warn(`Ops events: subscribing failed: ${String(error)}`),
+      );
+  }
+
+  private unwatch() {
+    if (--this.watchers > 0 || !this.subscriber) return;
+    void closeRedis(this.subscriber);
+    this.subscriber = undefined;
+  }
+
+  /** Open streams end before the HTTP server closes, or they would hold it open. */
+  beforeApplicationShutdown() {
+    this.closing.next();
+  }
+
+  onApplicationShutdown() {
+    for (const subscription of this.local) subscription.unsubscribe();
   }
 }

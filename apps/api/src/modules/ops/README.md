@@ -39,9 +39,14 @@ Here: `workers` and `mail` (SMTP connects and says QUIT; no mail is sent);
 URL or credential is ever shown, errors are masked as in the logs.
 
 **Events.** `GET /events` merges the live events of the workflow, webhook,
-outbox, idempotency, lock, mail and resilience engines the app runs. The
-schema (`ops.events.schemas.ts`) is an allowlist: no payload, header or
-workflow output.
+outbox, idempotency, lock, mail and resilience engines, from every instance:
+each publishes its engines' events to one Redis channel, so a stream opened
+on an API instance shows what the worker does. While nobody watches, an
+instance stops publishing for a few seconds at a time. The schema
+(`ops.events.schemas.ts`) is an allowlist: no payload, header or workflow
+output. A stream ends after five minutes and before the server shuts down;
+the browser's EventSource reconnects through sign-in and `viewOps` again, so
+a revoked session or permission loses it within five minutes.
 
 **Backlog.** The outbox keeps a message's tenant in its headers, so `tenantId`
 scopes the outbox; a mail job names none, so mail is only ever `global`
