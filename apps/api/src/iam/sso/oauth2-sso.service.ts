@@ -1,13 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import * as client from 'openid-client';
 import {
   ResponseTooLargeError,
   safeFetch,
   UnsafeDestinationError,
 } from '../../core/http/safe-fetch.js';
-import type { Database } from '../../core/database/database.js';
 import { ssoConfig } from './sso.config.js';
 import { mapUserinfo } from './oauth2-mapping.js';
 import { FETCH_MAX_BYTES, FETCH_TIMEOUT_MS } from './oidc-sso.service.js';
@@ -18,6 +16,7 @@ import {
 import type { SsoIdentity } from './sso-accounts.service.js';
 import { SsoRefused } from './sso-refused.js';
 import { openCodeRequest, takeCodeRequest } from './sso-requests.js';
+import { SsoRequestsRepository } from './sso-requests.repository.js';
 
 /**
  * Sign-in through a tenant's plain OAuth 2.0 provider (README.md, "OAuth
@@ -43,7 +42,7 @@ export class Oauth2Sso {
   private readonly allowLoopback: boolean;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly requests: SsoRequestsRepository,
     private readonly connections: SsoConnectionsService,
     @Inject(ssoConfig.KEY) config: ConfigType<typeof ssoConfig>,
   ) {
@@ -60,10 +59,14 @@ export class Oauth2Sso {
   async start(connection: SsoConnection, redirectTo: string | undefined) {
     const configuration = this.configuration(connection);
     const codeVerifier = client.randomPKCECodeVerifier();
-    const { binding, state } = await openCodeRequest(this.db, connection.id, {
-      codeVerifier,
-      redirectTo,
-    });
+    const { binding, state } = await openCodeRequest(
+      this.requests,
+      connection.id,
+      {
+        codeVerifier,
+        redirectTo,
+      },
+    );
     const scopes = connection.scopes ?? [];
     const url = client.buildAuthorizationUrl(configuration, {
       redirect_uri: this.connections.urls(connection).oauth2Callback,
@@ -87,7 +90,7 @@ export class Oauth2Sso {
     binding: string | undefined,
   ): Promise<{ identity: SsoIdentity; redirectTo: string | null }> {
     const request = await takeCodeRequest(
-      this.db,
+      this.requests,
       connection.id,
       query,
       binding,

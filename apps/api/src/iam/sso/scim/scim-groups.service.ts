@@ -1,33 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
-import { and, asc, count, eq, inArray, type SQL } from 'drizzle-orm';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { scimPatch } from 'scim-patch';
 import { z } from 'zod';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../../core/database/database.js';
+import type { DatabaseTransactions } from '../../../core/database/database.js';
 import { databaseErrorKind } from '../../../core/database/database-errors.js';
 import { httpConfig } from '../../../core/http/http.config.js';
 import { AccessService } from '../../access/access.service.js';
 import { AuditService } from '../../audit/audit.service.js';
-import { users } from '../../auth/auth.tables.js';
 import type { ClientPrincipal } from '../../auth/principal.js';
-import {
-  currentMembership,
-  openMembership,
-} from '../../organization/memberships.js';
-import {
-  organizationalUnitClosure,
-  organizationalUnitMemberships,
-  organizationalUnits,
-} from '../../organization/organization.tables.js';
 import { ScimUnits } from '../../organization/scim-units.js';
-import { UnitTree } from '../../organization/tree.js';
-import { scimGroups } from '../sso.tables.js';
 import { SCIM_SCHEMA, ScimException } from './scim-error.filter.js';
 import { scimFilter, scimPage } from './scim-filter.js';
+import {
+  SCIM_GROUP_FILTER,
+  ScimGroupsRepository,
+} from './scim-groups.repository.js';
 import {
   patchError,
   patchOperations,
@@ -65,7 +53,7 @@ export type ScimGroupInput = z.infer<typeof scimGroupSchema>;
 @ScimUnits()
 export class ScimGroupsService implements ScimUnits {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ScimGroupsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly scimUsers: ScimUsersService,
     private readonly audit: AuditService,
@@ -74,15 +62,9 @@ export class ScimGroupsService implements ScimUnits {
     private readonly http: ConfigType<typeof httpConfig>,
   ) {}
 
-  private readonly tree = new UnitTree();
-
   /** Those of these units the tenant's IdP manages (its groups): organization refuses an administrator's change of them. */
   async managedUnitIds(unitIds: readonly string[]) {
-    const rows = await this.db
-      .select({ id: scimGroups.unitId })
-      .from(scimGroups)
-      .where(inArray(scimGroups.unitId, [...unitIds]));
-    return new Set(rows.map((row) => row.id));
+    return new Set(await this.repository.managedIds([...unitIds]));
   }
 
   async list(query: {
@@ -91,37 +73,21 @@ export class ScimGroupsService implements ScimUnits {
     count?: number;
     excludedAttributes?: string;
   }) {
-    const where = scimFilter(query.filter, {
-      id: { column: scimGroups.unitId, uuid: true },
-      displayName: { column: organizationalUnits.name, caseInsensitive: true },
-      externalId: { column: scimGroups.externalId },
-    });
+    const where = scimFilter(query.filter, SCIM_GROUP_FILTER);
     const page = scimPage(query.startIndex, query.count);
     const withMembers = !/(^|,)\s*members\s*(,|$)/i.test(
       query.excludedAttributes ?? '',
     );
-    const [rows, [counted]] = await Promise.all([
-      page.limit
-        ? this.select(where)
-            .orderBy(asc(scimGroups.createdAt), asc(scimGroups.unitId))
-            .limit(page.limit)
-            .offset(page.offset)
-        : Promise.resolve([]),
-      this.db
-        .select({ total: count() })
-        .from(scimGroups)
-        .innerJoin(
-          organizationalUnits,
-          eq(organizationalUnits.id, scimGroups.unitId),
-        )
-        .where(where),
+    const [rows, total] = await Promise.all([
+      page.limit ? this.repository.list(where, page) : Promise.resolve([]),
+      this.repository.count(where),
     ]);
     const members = withMembers
       ? await this.membersOf(rows.map((row) => row.unitId))
       : undefined;
     return {
       schemas: [SCIM_SCHEMA.list],
-      totalResults: counted?.total ?? 0,
+      totalResults: total,
       startIndex: page.startIndex,
       itemsPerPage: rows.length,
       Resources: rows.map((row) =>
@@ -143,28 +109,23 @@ export class ScimGroupsService implements ScimUnits {
           await this.assertExternalIdFree(input.externalId);
         }
         // A top-level team of its own.
-        const [unit] = await this.db
-          .insert(organizationalUnits)
-          .values({ type: 'team', name: input.displayName, parentId: null })
-          .returning();
-        await this.tree.add(this.db, unit!.id, null);
-        await this.db.insert(scimGroups).values({
-          unitId: unit!.id,
+        const unit = await this.repository.insert({
+          name: input.displayName,
           externalId: input.externalId ?? null,
         });
-        const members = await this.setMembers(unit!.id, memberIds(input));
+        const members = await this.setMembers(unit.id, memberIds(input));
         await this.audit.record(actor, {
           action: 'scim.group-created',
           targetType: 'organizationalUnit',
-          targetId: unit!.id,
+          targetId: unit.id,
           details: {
-            name: unit!.name,
+            name: unit.name,
             externalId: input.externalId ?? null,
             members,
           },
           ip,
         });
-        return unit!.id;
+        return unit.id;
       }),
     );
     this.access.invalidate(actor.tenantId);
@@ -201,14 +162,10 @@ export class ScimGroupsService implements ScimUnits {
         if (input.externalId && input.externalId !== before.externalId) {
           await this.assertExternalIdFree(input.externalId);
         }
-        await this.db
-          .update(organizationalUnits)
-          .set({ name: input.displayName })
-          .where(eq(organizationalUnits.id, id));
-        await this.db
-          .update(scimGroups)
-          .set({ externalId: input.externalId ?? null, updatedAt: new Date() })
-          .where(eq(scimGroups.unitId, id));
+        await this.repository.update(id, {
+          name: input.displayName,
+          externalId: input.externalId ?? null,
+        });
         const members = await this.setMembers(id, memberIds(input));
         await this.audit.record(actor, {
           action: 'scim.group-updated',
@@ -268,37 +225,23 @@ export class ScimGroupsService implements ScimUnits {
     await this.txHost.withTransaction(async () => {
       await this.lock(id);
       const before = await this.find(id);
-      const [under] = await this.db
-        .select({ children: count() })
-        .from(organizationalUnits)
-        .where(eq(organizationalUnits.parentId, id));
-      if (under!.children > 0) {
+      if ((await this.repository.childCount(id)) > 0) {
         // An administrator put units under it: theirs to move first.
         throw new ScimException(
           409,
           'Units were put under this group: an administrator moves them first.',
         );
       }
-      await this.db.delete(scimGroups).where(eq(scimGroups.unitId, id));
       // Its memberships (not the members) and its own paths go with it.
-      await this.db
-        .delete(organizationalUnitMemberships)
-        .where(eq(organizationalUnitMemberships.unitId, id));
-      await this.db
-        .delete(organizationalUnitClosure)
-        .where(eq(organizationalUnitClosure.descendantId, id));
-      await this.db
-        .delete(organizationalUnits)
-        .where(eq(organizationalUnits.id, id))
-        .catch((error: unknown) => {
-          // Records or saved views of the unit: no cascade.
-          throw databaseErrorKind(error) === 'foreign_key_violation'
-            ? new ScimException(
-                409,
-                'Records or saved views belong to this group: an administrator moves them first.',
-              )
-            : error;
-        });
+      await this.repository.delete(id).catch((error: unknown) => {
+        // Records or saved views of the unit: no cascade.
+        throw databaseErrorKind(error) === 'foreign_key_violation'
+          ? new ScimException(
+              409,
+              'Records or saved views belong to this group: an administrator moves them first.',
+            )
+          : error;
+      });
       await this.audit.record(actor, {
         action: 'scim.group-deleted',
         targetType: 'organizationalUnit',
@@ -327,38 +270,20 @@ export class ScimGroupsService implements ScimUnits {
       );
     }
     const now = new Date();
-    const open = await this.db
-      .select({
-        id: organizationalUnitMemberships.id,
-        userId: organizationalUnitMemberships.userId,
-      })
-      .from(organizationalUnitMemberships)
-      .where(
-        and(
-          eq(organizationalUnitMemberships.unitId, unitId),
-          openMembership(now),
-        ),
-      );
+    const open = await this.repository.openMemberships(unitId, now);
     const removed = open.filter((row) => !wanted.includes(row.userId));
     const added = wanted.filter(
       (userId) => !open.some((row) => row.userId === userId),
     );
     if (removed.length) {
       // Ended, kept as history.
-      await this.db
-        .update(organizationalUnitMemberships)
-        .set({ validTo: now })
-        .where(
-          inArray(
-            organizationalUnitMemberships.id,
-            removed.map((row) => row.id),
-          ),
-        );
+      await this.repository.endMemberships(
+        removed.map((row) => row.id),
+        now,
+      );
     }
     if (added.length) {
-      await this.db
-        .insert(organizationalUnitMemberships)
-        .values(added.map((userId) => ({ unitId, userId, validFrom: now })));
+      await this.repository.insertMemberships(unitId, added, now);
     }
     return { added, removed: removed.map((row) => row.userId) };
   }
@@ -368,17 +293,7 @@ export class ScimGroupsService implements ScimUnits {
     if (!unitIds.length) {
       return byUnit;
     }
-    const member = organizationalUnitMemberships;
-    const rows = await this.db
-      .select({
-        unitId: member.unitId,
-        userId: member.userId,
-        email: users.email,
-      })
-      .from(member)
-      .innerJoin(users, eq(users.id, member.userId))
-      .where(and(inArray(member.unitId, unitIds), currentMembership()))
-      .orderBy(asc(users.email));
+    const rows = await this.repository.membersOf(unitIds);
     for (const row of rows) {
       const list = byUnit.get(row.unitId) ?? [];
       list.push({ value: row.userId, display: row.email });
@@ -388,10 +303,7 @@ export class ScimGroupsService implements ScimUnits {
   }
 
   private async assertExternalIdFree(externalId: string) {
-    const [taken] = await this.db
-      .select({ unitId: scimGroups.unitId })
-      .from(scimGroups)
-      .where(eq(scimGroups.externalId, externalId));
+    const taken = await this.repository.findByExternalId(externalId);
     if (taken) {
       throw new ScimException(
         409,
@@ -418,38 +330,17 @@ export class ScimGroupsService implements ScimUnits {
     }
   }
 
-  private select(where?: SQL) {
-    return this.db
-      .select({
-        unitId: scimGroups.unitId,
-        externalId: scimGroups.externalId,
-        name: organizationalUnits.name,
-        createdAt: scimGroups.createdAt,
-        updatedAt: scimGroups.updatedAt,
-      })
-      .from(scimGroups)
-      .innerJoin(
-        organizationalUnits,
-        eq(organizationalUnits.id, scimGroups.unitId),
-      )
-      .where(where);
-  }
-
   /** The group's row locked until the transaction ends: its writes one at a time. */
   private async lock(id: string) {
     if (!z.uuid().safeParse(id).success) return;
-    await this.db
-      .select({ unitId: scimGroups.unitId })
-      .from(scimGroups)
-      .where(eq(scimGroups.unitId, id))
-      .for('update');
+    await this.repository.lock(id);
   }
 
   private async find(id: string) {
     if (!z.uuid().safeParse(id).success) {
       throw new ScimException(404, `Group ${id} not found.`);
     }
-    const [row] = await this.select(eq(scimGroups.unitId, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       throw new ScimException(404, `Group ${id} not found.`);
     }

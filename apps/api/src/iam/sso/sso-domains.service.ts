@@ -6,13 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import type { Queue } from 'bullmq';
-import { and, asc, eq, isNotNull } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
 import { withTenant } from '../../core/tenancy/tenant-job.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -23,7 +19,8 @@ import {
   type SsoJob,
   type TxtResolver,
 } from './sso.queue.js';
-import { ssoDomainRoutes, ssoDomains } from './sso.tables.js';
+import { SsoDomainsRepository } from './sso-domains.repository.js';
+import type { ssoDomains } from './sso.tables.js';
 
 /** Where the TXT record goes, under the domain. */
 export const VERIFICATION_RECORD = '_sso-verification';
@@ -50,7 +47,7 @@ export function emailDomain(email: string | undefined | null) {
 @Injectable()
 export class SsoDomainsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SsoDomainsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     @Inject(SSO_TXT_RESOLVER) private readonly dns: TxtResolver,
@@ -58,23 +55,18 @@ export class SsoDomainsService {
   ) {}
 
   async list() {
-    const rows = await this.db
-      .select()
-      .from(ssoDomains)
-      .orderBy(asc(ssoDomains.domain));
+    const rows = await this.repository.list();
     return rows.map(view);
   }
 
   /** Adds a domain to verify: the record to publish, then POST …/verify. */
   async create(actor: UserPrincipal, domain: string, ip?: string) {
     const row = await this.txHost.withTransaction(async () => {
-      const [created] = await this.db
-        .insert(ssoDomains)
-        .values({
+      const created = await this.repository
+        .insert({
           domain,
           verificationToken: `${VALUE_PREFIX}${randomBytes(24).toString('base64url')}`,
         })
-        .returning()
         .catch((error: unknown) => {
           throw databaseErrorKind(error) === 'unique_violation'
             ? new ConflictException({
@@ -98,22 +90,12 @@ export class SsoDomainsService {
 
   async remove(actor: UserPrincipal, id: string, ip?: string) {
     await this.txHost.withTransaction(async () => {
-      const [row] = await this.db
-        .delete(ssoDomains)
-        .where(eq(ssoDomains.id, id))
-        .returning();
+      const row = await this.repository.delete(id);
       if (!row) {
         throw notFound(id);
       }
       // Global: filtered by the tenant here (no row-level security).
-      await this.db
-        .delete(ssoDomainRoutes)
-        .where(
-          and(
-            eq(ssoDomainRoutes.domain, row.domain),
-            eq(ssoDomainRoutes.tenantId, row.tenantId),
-          ),
-        );
+      await this.repository.deleteRoute(row);
       await this.audit.record(actor, {
         action: 'sso.domain-removed',
         targetType: 'sso-domain',
@@ -140,10 +122,7 @@ export class SsoDomainsService {
    * more, and its route goes; a lookup that failed records only the error.
    */
   async verify(actor: Principal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(ssoDomains)
-      .where(eq(ssoDomains.id, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       return;
     }
@@ -170,40 +149,26 @@ export class SsoDomainsService {
     await this.txHost.withTransaction(async () => {
       // Locked and read again: a domain removed while the lookup ran must
       // not get its route back.
-      const [current] = await this.db
-        .select({ verifiedAt: ssoDomains.verifiedAt })
-        .from(ssoDomains)
-        .where(eq(ssoDomains.id, id))
-        .for('update');
+      const current = await this.repository.lockVerification(id);
       if (!current) {
         return;
       }
       const was = current.verifiedAt !== null;
       const verified =
         outcome === 'found' ? true : outcome === 'gone' ? false : was;
-      await this.db
-        .update(ssoDomains)
-        .set({
-          lastCheckedAt: now,
-          lastError: error,
-          verifiedAt: verified ? (current.verifiedAt ?? now) : null,
-        })
-        .where(eq(ssoDomains.id, id));
+      await this.repository.update(id, {
+        lastCheckedAt: now,
+        lastError: error,
+        verifiedAt: verified ? (current.verifiedAt ?? now) : null,
+      });
       if (outcome === 'found') {
         // The sign-in page's lookup (global; kept with the verification).
-        await this.db
-          .insert(ssoDomainRoutes)
-          .values({ domain: row.domain, tenantId: row.tenantId })
-          .onConflictDoNothing();
+        await this.repository.insertRoute({
+          domain: row.domain,
+          tenantId: row.tenantId,
+        });
       } else if (outcome === 'gone') {
-        await this.db
-          .delete(ssoDomainRoutes)
-          .where(
-            and(
-              eq(ssoDomainRoutes.domain, row.domain),
-              eq(ssoDomainRoutes.tenantId, row.tenantId),
-            ),
-          );
+        await this.repository.deleteRoute(row);
       }
       if (verified !== was) {
         await this.audit.record(actor, {
@@ -218,19 +183,12 @@ export class SsoDomainsService {
 
   /** The current tenant's verified domains: what the nightly check looks up again. */
   async verifiedIds() {
-    const rows = await this.db
-      .select({ id: ssoDomains.id })
-      .from(ssoDomains)
-      .where(isNotNull(ssoDomains.verifiedAt));
-    return rows.map((row) => row.id);
+    return this.repository.verifiedIds();
   }
 
   /** The tenants that route a domain (global): whose domains the nightly check walks. */
   async routedTenants() {
-    const rows = await this.db
-      .selectDistinct({ tenantId: ssoDomainRoutes.tenantId })
-      .from(ssoDomainRoutes);
-    return rows.map((row) => row.tenantId);
+    return this.repository.routedTenants();
   }
 
   /** Whether the current tenant verified `domain`. */
@@ -238,20 +196,11 @@ export class SsoDomainsService {
     if (!domain) {
       return false;
     }
-    const [row] = await this.db
-      .select({ id: ssoDomains.id })
-      .from(ssoDomains)
-      .where(
-        and(eq(ssoDomains.domain, domain), isNotNull(ssoDomains.verifiedAt)),
-      );
-    return !!row;
+    return !!(await this.repository.findVerified(domain));
   }
 
   private async find(id: string) {
-    const [row] = await this.db
-      .select()
-      .from(ssoDomains)
-      .where(eq(ssoDomains.id, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       throw notFound(id);
     }

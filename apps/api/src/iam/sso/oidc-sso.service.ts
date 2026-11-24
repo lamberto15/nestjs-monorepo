@@ -1,9 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import * as client from 'openid-client';
 import { safeFetch } from '../../core/http/safe-fetch.js';
-import type { Database } from '../../core/database/database.js';
 import { authTimeOf } from '../auth/sign-in-context.js';
 import { ssoConfig } from './sso.config.js';
 import {
@@ -13,6 +11,7 @@ import {
 import type { SsoIdentity } from './sso-accounts.service.js';
 import { SsoRefused } from './sso-refused.js';
 import { openCodeRequest, takeCodeRequest } from './sso-requests.js';
+import { SsoRequestsRepository } from './sso-requests.repository.js';
 
 /** Time and size limits of every request to a tenant's IdP. */
 export const FETCH_TIMEOUT_MS = 10_000;
@@ -38,7 +37,7 @@ export class OidcSso {
   private readonly allowLoopback: boolean;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly requests: SsoRequestsRepository,
     private readonly connections: SsoConnectionsService,
     @Inject(ssoConfig.KEY) config: ConfigType<typeof ssoConfig>,
   ) {
@@ -89,11 +88,15 @@ export class OidcSso {
     const configuration = this.configuration(connection);
     const codeVerifier = client.randomPKCECodeVerifier();
     const nonce = client.randomNonce();
-    const { binding, state } = await openCodeRequest(this.db, connection.id, {
-      codeVerifier,
-      nonce,
-      redirectTo,
-    });
+    const { binding, state } = await openCodeRequest(
+      this.requests,
+      connection.id,
+      {
+        codeVerifier,
+        nonce,
+        redirectTo,
+      },
+    );
     const url = client.buildAuthorizationUrl(configuration, {
       redirect_uri: this.connections.urls(connection).oidcCallback,
       scope: 'openid email profile',
@@ -117,7 +120,7 @@ export class OidcSso {
     binding: string | undefined,
   ): Promise<{ identity: SsoIdentity; redirectTo: string | null }> {
     const request = await takeCodeRequest(
-      this.db,
+      this.requests,
       connection.id,
       query,
       binding,

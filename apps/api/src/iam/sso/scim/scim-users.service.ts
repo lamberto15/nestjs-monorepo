@@ -2,8 +2,7 @@ import { SessionService, TokenService } from '@nestjs/authentication';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
-import { and, asc, count, eq, inArray, type SQL, sql } from 'drizzle-orm';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   patchBodyValidation,
   type ScimPatch,
@@ -11,10 +10,7 @@ import {
   type ScimPatchOperation,
 } from 'scim-patch';
 import { z } from 'zod';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../../core/database/database.js';
+import type { DatabaseTransactions } from '../../../core/database/database.js';
 import { databaseErrorKind } from '../../../core/database/database-errors.js';
 import { httpConfig } from '../../../core/http/http.config.js';
 import { Tenancy } from '../../../core/tenancy/tenancy.service.js';
@@ -27,13 +23,15 @@ import { AccessService } from '../../access/access.service.js';
 import { ScimMembers } from '../../access/scim-members.js';
 import { RolesService } from '../../access/roles.service.js';
 import { AuditService } from '../../audit/audit.service.js';
-import { memberships, users } from '../../auth/auth.tables.js';
 import type { ClientPrincipal } from '../../auth/principal.js';
 import { normalizeEmail } from '../../auth/users.repository.js';
 import { emailDomain, SsoDomainsService } from '../sso-domains.service.js';
-import { scimDeprovisionedUsers, scimUsers } from '../sso.tables.js';
 import { SCIM_SCHEMA, ScimException } from './scim-error.filter.js';
 import { scimFilter, scimPage } from './scim-filter.js';
+import {
+  SCIM_USER_FILTER,
+  ScimUsersRepository,
+} from './scim-users.repository.js';
 
 /** Azure's `"True"`/`"False"` too: what a PATCH of `active` carries from some IdPs. */
 const scimBoolean = z.preprocess(
@@ -112,7 +110,7 @@ interface Row {
 @ScimMembers()
 export class ScimUsersService implements ScimMembers {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ScimUsersRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly domains: SsoDomainsService,
     private readonly audit: AuditService,
@@ -128,48 +126,19 @@ export class ScimUsersService implements ScimMembers {
 
   /** Those of these users the tenant's IdP provisioned: access lists them `managedByScim`. */
   async managedUserIds(userIds: readonly string[]) {
-    const rows = await this.db
-      .select({ id: scimUsers.userId })
-      .from(scimUsers)
-      .where(inArray(scimUsers.userId, [...userIds]));
-    return new Set(rows.map((row) => row.id));
+    return new Set(await this.repository.provisionedIds([...userIds]));
   }
 
   async list(query: { filter?: string; startIndex?: number; count?: number }) {
-    const where = scimFilter(query.filter, {
-      id: { column: scimUsers.userId, uuid: true },
-      userName: {
-        column: this.userNameColumn(),
-        caseInsensitive: true,
-      },
-      externalId: { column: scimUsers.externalId },
-      'emails.value': { column: users.email, caseInsensitive: true },
-      active: { column: memberships.active },
-    });
+    const where = scimFilter(query.filter, SCIM_USER_FILTER);
     const page = scimPage(query.startIndex, query.count);
-    const [rows, [counted]] = await Promise.all([
-      page.limit
-        ? this.select(where)
-            .orderBy(asc(scimUsers.createdAt), asc(scimUsers.userId))
-            .limit(page.limit)
-            .offset(page.offset)
-        : Promise.resolve([]),
-      this.db
-        .select({ total: count() })
-        .from(scimUsers)
-        .innerJoin(users, eq(users.id, scimUsers.userId))
-        .innerJoin(
-          memberships,
-          and(
-            eq(memberships.tenantId, scimUsers.tenantId),
-            eq(memberships.userId, scimUsers.userId),
-          ),
-        )
-        .where(where),
+    const [rows, total] = await Promise.all([
+      page.limit ? this.repository.list(where, page) : Promise.resolve([]),
+      this.repository.count(where),
     ]);
     return {
       schemas: [SCIM_SCHEMA.list],
-      totalResults: counted?.total ?? 0,
+      totalResults: total,
       startIndex: page.startIndex,
       itemsPerPage: rows.length,
       Resources: rows.map((row) => this.resource(row)),
@@ -190,29 +159,22 @@ export class ScimUsersService implements ScimMembers {
         if (input.externalId) {
           await this.assertExternalIdFree(input.externalId);
         }
-        let [account] = await this.db
-          .select()
-          .from(users)
-          .where(eq(users.email, email))
-          .for('update');
+        let account = await this.repository.lockUserByEmail(email);
         let created = false;
         if (!account) {
-          [account] = await this.db
-            .insert(users)
-            .values({
-              email,
-              name: displayNameOf(input, email),
-              passwordHash: null,
-              // The tenant proved it holds the domain (its DNS): its IdP's word counts.
-              emailVerified: true,
-            })
-            .returning();
+          account = await this.repository.insertUser({
+            email,
+            name: displayNameOf(input, email),
+            passwordHash: null,
+            // The tenant proved it holds the domain (its DNS): its IdP's word counts.
+            emailVerified: true,
+          });
           created = true;
         } else {
           if (
             !account.active &&
             // Deactivated by deprovisioning: provisioning brings it back.
-            !(await this.isDeprovisioned(account.id))
+            !(await this.repository.isDeprovisioned(account.id))
           ) {
             throw new ScimException(
               409,
@@ -230,11 +192,8 @@ export class ScimUsersService implements ScimMembers {
             );
           }
         }
-        const member = await this.lockMembership(tenantId, account!.id);
-        const [linked] = await this.db
-          .select({ userId: scimUsers.userId })
-          .from(scimUsers)
-          .where(eq(scimUsers.userId, account!.id));
+        const member = await this.lockMembership(tenantId, account.id);
+        const linked = await this.repository.findLink(account.id);
         if (linked) {
           throw new ScimException(
             409,
@@ -243,26 +202,24 @@ export class ScimUsersService implements ScimMembers {
           );
         }
         if (!member) {
-          await this.db
-            .insert(memberships)
-            .values({ tenantId, userId: account!.id });
+          await this.repository.insertMembership(tenantId, account.id);
         }
-        await this.db.insert(scimUsers).values({
-          userId: account!.id,
+        await this.repository.insert({
+          userId: account.id,
           externalId: input.externalId ?? null,
           attributes: attributesOf(input),
         });
         const wasActive = member ? member.active : true;
         const active = input.active ?? true;
         if (active !== wasActive) {
-          await this.setActive(actor, tenantId, account!.id, active);
+          await this.setActive(actor, tenantId, account.id, active);
           left = !active;
         }
-        deactivated = await this.settleAccount(actor, account!.id, active, ip);
+        deactivated = await this.settleAccount(actor, account.id, active, ip);
         await this.audit.record(actor, {
           action: 'scim.user-provisioned',
           targetType: 'user',
-          targetId: account!.id,
+          targetId: account.id,
           details: {
             email,
             externalId: input.externalId ?? null,
@@ -272,7 +229,7 @@ export class ScimUsersService implements ScimMembers {
           },
           ip,
         });
-        return account!.id;
+        return account.id;
       }),
     );
     if (deactivated) await this.signOutEverywhere(userId);
@@ -317,14 +274,11 @@ export class ScimUsersService implements ScimMembers {
         if (input.externalId && input.externalId !== before.externalId) {
           await this.assertExternalIdFree(input.externalId);
         }
-        await this.db
-          .update(scimUsers)
-          .set({
-            externalId: input.externalId ?? null,
-            attributes: attributesOf(input),
-            updatedAt: new Date(),
-          })
-          .where(eq(scimUsers.userId, id));
+        await this.repository.update(id, {
+          externalId: input.externalId ?? null,
+          attributes: attributesOf(input),
+          updatedAt: new Date(),
+        });
         const active = input.active ?? before.active;
         if (active !== before.active) {
           await this.setActive(actor, tenantId, id, active);
@@ -424,7 +378,7 @@ export class ScimUsersService implements ScimMembers {
         left = true;
       }
       deactivated = await this.settleAccount(actor, id, false, ip);
-      await this.db.delete(scimUsers).where(eq(scimUsers.userId, id));
+      await this.repository.delete(id);
       await this.audit.record(actor, {
         action: 'scim.user-deprovisioned',
         targetType: 'user',
@@ -443,18 +397,9 @@ export class ScimUsersService implements ScimMembers {
     if (!ids.length) {
       return [];
     }
-    const rows = await this.db
-      .select({ id: scimUsers.userId })
-      .from(scimUsers)
-      .innerJoin(
-        memberships,
-        and(
-          eq(memberships.tenantId, scimUsers.tenantId),
-          eq(memberships.userId, scimUsers.userId),
-        ),
-      )
-      .where(inArray(scimUsers.userId, [...new Set(ids)]));
-    const known = new Set(rows.map((row) => row.id));
+    const known = new Set(
+      await this.repository.provisionedMemberIds([...new Set(ids)]),
+    );
     return ids.filter((id) => known.has(id));
   }
 
@@ -483,12 +428,7 @@ export class ScimUsersService implements ScimMembers {
     userId: string,
     active: boolean,
   ) {
-    await this.db
-      .update(memberships)
-      .set({ active })
-      .where(
-        and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)),
-      );
+    await this.repository.setMembershipActive(tenantId, userId, active);
     if (!active) {
       await this.roles.assertAnAdministratorRemains();
       await this.events.emitAsync(ACCESS_EVENTS.memberDeactivated, {
@@ -515,36 +455,14 @@ export class ScimUsersService implements ScimMembers {
   ): Promise<boolean> {
     let changed = false;
     if (active) {
-      const [marked] = await this.db
-        .delete(scimDeprovisionedUsers)
-        .where(eq(scimDeprovisionedUsers.userId, userId))
-        .returning();
-      if (marked) {
-        await this.db
-          .update(users)
-          .set({ active: true })
-          .where(eq(users.id, userId));
+      if (await this.repository.unmarkDeprovisioned(userId)) {
+        await this.repository.activateUser(userId);
         changed = true;
       }
     } else {
-      const [other] = await this.db
-        .select({ tenantId: memberships.tenantId })
-        .from(memberships)
-        .where(
-          and(eq(memberships.userId, userId), eq(memberships.active, true)),
-        )
-        .limit(1);
-      if (!other) {
-        const [deactivated] = await this.db
-          .update(users)
-          .set({ active: false })
-          .where(and(eq(users.id, userId), eq(users.active, true)))
-          .returning({ id: users.id });
-        if (deactivated) {
-          await this.db
-            .insert(scimDeprovisionedUsers)
-            .values({ userId })
-            .onConflictDoNothing();
+      if (!(await this.repository.hasActiveMembership(userId))) {
+        if (await this.repository.deactivateUser(userId)) {
+          await this.repository.markDeprovisioned(userId);
           changed = true;
         }
       }
@@ -584,17 +502,10 @@ export class ScimUsersService implements ScimMembers {
    */
   @OnEvent(ACCESS_EVENTS.memberReactivated, { suppressErrors: false })
   async membershipReactivated({ userId, actor, ip }: MemberReactivatedEvent) {
-    const [marked] = await this.db
-      .delete(scimDeprovisionedUsers)
-      .where(eq(scimDeprovisionedUsers.userId, userId))
-      .returning();
-    if (!marked) {
+    if (!(await this.repository.unmarkDeprovisioned(userId))) {
       return;
     }
-    await this.db
-      .update(users)
-      .set({ active: true })
-      .where(eq(users.id, userId));
+    await this.repository.activateUser(userId);
     await this.audit.record(actor, {
       action: 'user.account-reactivated',
       targetType: 'user',
@@ -604,24 +515,12 @@ export class ScimUsersService implements ScimMembers {
     });
   }
 
-  private async isDeprovisioned(userId: string) {
-    const [row] = await this.db
-      .select({ userId: scimDeprovisionedUsers.userId })
-      .from(scimDeprovisionedUsers)
-      .where(eq(scimDeprovisionedUsers.userId, userId));
-    return !!row;
-  }
-
   /** The account's row locked until the transaction ends (a creation takes it first too). */
   private async lockAccount(userId: string) {
     if (!z.uuid().safeParse(userId).success) {
       return;
     }
-    await this.db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, userId))
-      .for('update');
+    await this.repository.lockUser(userId);
   }
 
   /** The membership, locked until the transaction ends; undefined without one. */
@@ -629,14 +528,7 @@ export class ScimUsersService implements ScimMembers {
     if (!z.uuid().safeParse(userId).success) {
       return undefined;
     }
-    const [row] = await this.db
-      .select({ active: memberships.active })
-      .from(memberships)
-      .where(
-        and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)),
-      )
-      .for('update');
-    return row;
+    return this.repository.lockMembership(tenantId, userId);
   }
 
   private async verifiedEmailOf(input: ScimUserInput) {
@@ -675,10 +567,7 @@ export class ScimUsersService implements ScimMembers {
   }
 
   private async assertExternalIdFree(externalId: string) {
-    const [taken] = await this.db
-      .select({ userId: scimUsers.userId })
-      .from(scimUsers)
-      .where(eq(scimUsers.externalId, externalId));
+    const taken = await this.repository.findByExternalId(externalId);
     if (taken) {
       throw new ScimException(
         409,
@@ -704,58 +593,11 @@ export class ScimUsersService implements ScimMembers {
     }
   }
 
-  private userNameColumn() {
-    // The userName the IdP sent, else the account's address.
-    return sql`coalesce(${scimUsers.attributes}->>'userName', ${users.email})` as SQL;
-  }
-
-  private select(where?: SQL) {
-    return this.db
-      .select({
-        userId: scimUsers.userId,
-        externalId: scimUsers.externalId,
-        attributes: scimUsers.attributes,
-        createdAt: scimUsers.createdAt,
-        updatedAt: scimUsers.updatedAt,
-        email: users.email,
-        active: memberships.active,
-      })
-      .from(scimUsers)
-      .innerJoin(users, eq(users.id, scimUsers.userId))
-      .innerJoin(
-        memberships,
-        and(
-          eq(memberships.tenantId, scimUsers.tenantId),
-          eq(memberships.userId, scimUsers.userId),
-        ),
-      )
-      .where(where);
-  }
-
   private async find(id: string): Promise<Row> {
     if (!z.uuid().safeParse(id).success) {
       throw new ScimException(404, `User ${id} not found.`);
     }
-    const [row] = await this.db
-      .select({
-        userId: scimUsers.userId,
-        externalId: scimUsers.externalId,
-        attributes: scimUsers.attributes,
-        createdAt: scimUsers.createdAt,
-        updatedAt: scimUsers.updatedAt,
-        email: users.email,
-        active: memberships.active,
-      })
-      .from(scimUsers)
-      .innerJoin(users, eq(users.id, scimUsers.userId))
-      .innerJoin(
-        memberships,
-        and(
-          eq(memberships.tenantId, scimUsers.tenantId),
-          eq(memberships.userId, scimUsers.userId),
-        ),
-      )
-      .where(eq(scimUsers.userId, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       throw new ScimException(404, `User ${id} not found.`);
     }

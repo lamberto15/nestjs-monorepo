@@ -1,8 +1,6 @@
-import { and, eq, gt, isNull, lt } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { SsoRefused } from './sso-refused.js';
 import { bindingHash, newBinding, SSO_REQUEST_TTL_MS } from './sso-browser.js';
-import { ssoRequests } from './sso.tables.js';
+import type { SsoRequestsRepository } from './sso-requests.repository.js';
 
 /**
  * The authorization code flow's transactions (OpenID Connect and OAuth 2.0
@@ -12,14 +10,14 @@ import { ssoRequests } from './sso.tables.js';
 
 /** A new sign-in under way: its row, and the browser's binding and `state`. */
 export async function openCodeRequest(
-  db: Database,
+  requests: SsoRequestsRepository,
   connectionId: string,
   values: { codeVerifier: string; nonce?: string; redirectTo?: string },
 ) {
   const binding = newBinding();
   const state = bindingHash(binding);
-  await db.delete(ssoRequests).where(lt(ssoRequests.expiresAt, new Date()));
-  await db.insert(ssoRequests).values({
+  await requests.deleteExpired(new Date());
+  await requests.insert({
     connectionId,
     bindingHash: state,
     codeVerifier: values.codeVerifier,
@@ -36,7 +34,7 @@ export async function openCodeRequest(
  * (`state_mismatch`, `request_unknown`), then the IdP's own `error`.
  */
 export async function takeCodeRequest(
-  db: Database,
+  requests: SsoRequestsRepository,
   connectionId: string,
   query: Record<string, string>,
   binding: string | undefined,
@@ -45,19 +43,9 @@ export async function takeCodeRequest(
     throw new SsoRefused('state_mismatch');
   }
   // One use: the first callback takes it, a replay finds nothing.
-  const [request] = await db
-    .update(ssoRequests)
-    .set({ consumedAt: new Date() })
-    .where(
-      and(
-        eq(ssoRequests.connectionId, connectionId),
-        eq(ssoRequests.bindingHash, query.state),
-        isNull(ssoRequests.consumedAt),
-        isNull(ssoRequests.samlRequestId),
-        gt(ssoRequests.expiresAt, new Date()),
-      ),
-    )
-    .returning();
+  const request = await requests.take(connectionId, query.state, {
+    codeFlow: true,
+  });
   if (!request?.codeVerifier) {
     throw new SsoRefused('request_unknown');
   }

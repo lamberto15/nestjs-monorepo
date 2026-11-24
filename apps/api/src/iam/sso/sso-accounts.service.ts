@@ -1,34 +1,25 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { SessionService, SignInService } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import {
-  InjectTransaction,
-  Propagation,
-  TransactionHost,
-} from '@nestjs-cls/transactional';
-import { and, eq, inArray, lte } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
-import { userRoles } from '../access/access.tables.js';
+import { Propagation, TransactionHost } from '@nestjs-cls/transactional';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { AccessService } from '../access/access.service.js';
 import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AUTH_EVENTS, type SignedInEvent } from '../auth/auth.events.js';
-import { memberships, refreshTokens, users } from '../auth/auth.tables.js';
+import type { users } from '../auth/auth.tables.js';
 import {
   authenticationOf,
   methodMetadata,
 } from '../auth/authentication-method.js';
 import { DrizzleAuthenticationStore } from '../auth/drizzle-authentication.store.js';
 import type { UserPrincipal } from '../auth/principal.js';
-import { tokenSignInMethod } from '../auth/token-session.js';
 import { normalizeEmail, UsersRepository } from '../auth/users.repository.js';
+import { SsoAccountsRepository } from './sso-accounts.repository.js';
+import { SsoConnectionsRepository } from './sso-connections.repository.js';
 import type { SsoConnection } from './sso-connections.service.js';
 import { emailDomain, SsoDomainsService } from './sso-domains.service.js';
 import { SsoRefused } from './sso-refused.js';
-import { ssoIdentities, ssoRoleGrants, ssoRoleMappings } from './sso.tables.js';
 
 /** Who the IdP says signed in: from a verified ID token, a verified assertion, or an OAuth 2.0 provider's user-info answer. */
 export interface SsoIdentity {
@@ -77,7 +68,8 @@ export class SsoAccounts {
   private readonly logger = new Logger(SsoAccounts.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SsoAccountsRepository,
+    private readonly connections: SsoConnectionsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly users: UsersRepository,
     private readonly domains: SsoDomainsService,
@@ -108,16 +100,10 @@ export class SsoAccounts {
   ) {
     const tenantId = connection.tenantId;
     return this.txHost.withTransaction(async () => {
-      const [known] = await this.db
-        .select({ userId: ssoIdentities.userId, active: users.active })
-        .from(ssoIdentities)
-        .innerJoin(users, eq(users.id, ssoIdentities.userId))
-        .where(
-          and(
-            eq(ssoIdentities.connectionId, connection.id),
-            eq(ssoIdentities.subject, identity.subject),
-          ),
-        );
+      const known = await this.repository.findIdentity(
+        connection.id,
+        identity.subject,
+      );
       if (known) {
         if (!known.active) {
           throw new SsoRefused('account_inactive');
@@ -151,10 +137,7 @@ export class SsoAccounts {
       if (connection.protocol !== 'saml' && !identity.emailVerified) {
         throw new SsoRefused('email_unverified');
       }
-      const [existing] = await this.db
-        .select()
-        .from(users)
-        .where(eq(users.email, email));
+      const existing = await this.repository.findUserByEmail(email);
       let userId: string;
       if (existing) {
         if (!existing.active) {
@@ -170,17 +153,14 @@ export class SsoAccounts {
         if (!connection.jitProvisioning) {
           throw new SsoRefused('not_a_member');
         }
-        const [created] = await this.db
-          .insert(users)
-          .values({
-            email,
-            name: identity.name?.trim() || email,
-            passwordHash: null,
-            emailVerified: true,
-          })
-          .returning();
-        userId = created!.id;
-        await this.audit.record(asActor(created!), {
+        const created = await this.repository.insertUser({
+          email,
+          name: identity.name?.trim() || email,
+          passwordHash: null,
+          emailVerified: true,
+        });
+        userId = created.id;
+        await this.audit.record(asActor(created), {
           action: 'user.signed-up',
           targetType: 'user',
           targetId: userId,
@@ -188,7 +168,7 @@ export class SsoAccounts {
         });
       }
       const provisioned = await this.ensureMember(connection, userId, identity);
-      await this.db.insert(ssoIdentities).values({
+      await this.repository.insertIdentity({
         connectionId: connection.id,
         subject: identity.subject,
         userId,
@@ -238,36 +218,15 @@ export class SsoAccounts {
     identity: SsoIdentity,
     provisioned: boolean,
   ) {
-    const mappings = await this.db
-      .select({ group: ssoRoleMappings.group, roleId: ssoRoleMappings.roleId })
-      .from(ssoRoleMappings)
-      .where(eq(ssoRoleMappings.connectionId, connection.id));
+    const mappings = await this.connections.roleMappingsOf(connection.id);
     if (mappings.length === 0) {
       return false;
     }
     const now = new Date();
     // A grant that ended counts as none (a later grant replaces it).
-    await this.db
-      .delete(userRoles)
-      .where(
-        and(
-          eq(userRoles.tenantId, connection.tenantId),
-          eq(userRoles.userId, userId),
-          lte(userRoles.expiresAt, now),
-        ),
-      );
+    await this.repository.deleteEndedRoles(connection.tenantId, userId, now);
     const held = new Set(
-      (
-        await this.db
-          .select({ roleId: userRoles.roleId })
-          .from(userRoles)
-          .where(
-            and(
-              eq(userRoles.tenantId, connection.tenantId),
-              eq(userRoles.userId, userId),
-            ),
-          )
-      ).map((row) => row.roleId),
+      await this.repository.roleIdsOf(connection.tenantId, userId),
     );
     const added: string[] = [];
     if (provisioned) {
@@ -276,10 +235,7 @@ export class SsoAccounts {
         .map((mapping) => mapping.roleId)
         .filter((roleId) => !held.has(roleId));
       if (defaults.length > 0) {
-        await this.db
-          .insert(userRoles)
-          .values(defaults.map((roleId) => ({ userId, roleId })))
-          .onConflictDoNothing();
+        await this.repository.grantRoles(userId, defaults);
         defaults.forEach((roleId) => held.add(roleId));
         added.push(...defaults);
       }
@@ -296,46 +252,17 @@ export class SsoAccounts {
       );
       const granting = [...wanted].filter((roleId) => !held.has(roleId));
       if (granting.length > 0) {
-        await this.db
-          .insert(userRoles)
-          .values(granting.map((roleId) => ({ userId, roleId })))
-          .onConflictDoNothing();
-        await this.db
-          .insert(ssoRoleGrants)
-          .values(
-            granting.map((roleId) => ({
-              userId,
-              roleId,
-              connectionId: connection.id,
-            })),
-          )
-          .onConflictDoNothing();
+        await this.repository.grantRoles(userId, granting);
+        await this.repository.markGrants(connection.id, userId, granting);
         added.push(...granting);
       }
-      const ours = await this.db
-        .select({ roleId: ssoRoleGrants.roleId })
-        .from(ssoRoleGrants)
-        .where(
-          and(
-            eq(ssoRoleGrants.userId, userId),
-            eq(ssoRoleGrants.connectionId, connection.id),
-          ),
-        );
-      const taking = ours
-        .map((row) => row.roleId)
-        .filter((roleId) => !wanted.has(roleId));
+      const ours = await this.repository.markedRoleIds(connection.id, userId);
+      const taking = ours.filter((roleId) => !wanted.has(roleId));
       if (taking.length > 0) {
         try {
           // A savepoint: refused, the grants stay and the sign-in goes on.
           await this.txHost.withTransaction(Propagation.Nested, async () => {
-            await this.db
-              .delete(userRoles)
-              .where(
-                and(
-                  eq(userRoles.userId, userId),
-                  inArray(userRoles.roleId, taking),
-                ),
-              );
+            await this.repository.revokeRoles(userId, taking);
             await this.roles.assertAnAdministratorRemains();
           });
           removed = taking;
@@ -377,16 +304,10 @@ export class SsoAccounts {
     identity: SsoIdentity,
   ) {
     // Locked: a concurrent sign-in or SCIM change waits for this one.
-    const [membership] = await this.db
-      .select({ active: memberships.active })
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.tenantId, connection.tenantId),
-          eq(memberships.userId, userId),
-        ),
-      )
-      .for('update');
+    const membership = await this.repository.lockMembership(
+      connection.tenantId,
+      userId,
+    );
     if (membership) {
       if (!membership.active) {
         throw new SsoRefused('membership_inactive');
@@ -398,11 +319,7 @@ export class SsoAccounts {
     }
     // A known identity whose membership went (an administrator removed it)
     // comes back only as a new person would: an address of a verified domain.
-    const [account] = await this.db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .for('update');
+    const account = await this.repository.lockUser(userId);
     if (
       !account ||
       !(await this.domains.isVerified(emailDomain(account.email)))
@@ -412,9 +329,7 @@ export class SsoAccounts {
     if (!account.active) {
       throw new SsoRefused('account_inactive');
     }
-    await this.db
-      .insert(memberships)
-      .values({ tenantId: connection.tenantId, userId });
+    await this.repository.insertMembership(connection.tenantId, userId);
     await this.audit.record(asActor(account), {
       action: 'member.provisioned',
       targetType: 'user',
@@ -470,11 +385,7 @@ export class SsoAccounts {
 
   /** Who signed in through the connection: its identities' accounts. */
   async usersOf(connectionId: string) {
-    const rows = await this.db
-      .selectDistinct({ userId: ssoIdentities.userId })
-      .from(ssoIdentities)
-      .where(eq(ssoIdentities.connectionId, connectionId));
-    return rows.map((row) => row.userId);
+    return this.repository.usersOf(connectionId);
   }
 
   /**
@@ -488,16 +399,10 @@ export class SsoAccounts {
    */
   async endSessions(connectionId: string, userIds: readonly string[]) {
     if (userIds.length === 0) return;
-    const families = await this.db
-      .selectDistinct({ familyId: refreshTokens.familyId })
-      .from(refreshTokens)
-      .where(
-        and(
-          inArray(refreshTokens.userId, [...userIds]),
-          eq(refreshTokens.revoked, false),
-          eq(tokenSignInMethod, ssoProvider(connectionId)),
-        ),
-      );
+    const families = await this.repository.liveFamilies(
+      [...userIds],
+      ssoProvider(connectionId),
+    );
     // The store announces each family's end (`auth.token-session-ended`).
     for (const { familyId } of families) {
       await this.store.revokeRefreshTokenFamily(familyId);

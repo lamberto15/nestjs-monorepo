@@ -7,12 +7,8 @@ import {
 import { t } from '@nestjs/i18n';
 import { MfaService } from '@nestjs/authentication';
 import { ModuleRef } from '@nestjs/core';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
-import { and, asc, count, eq } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import {
@@ -26,8 +22,8 @@ import {
   type SigningIn,
 } from '../auth/sign-in-gate.js';
 import { UsersRepository } from '../auth/users.repository.js';
-import { memberships, users } from '../auth/auth.tables.js';
-import { ssoConnections, ssoExemptions, ssoPolicies } from './sso.tables.js';
+import { SsoConnectionsRepository } from './sso-connections.repository.js';
+import { SsoPolicyRepository } from './sso-policy.repository.js';
 
 /** The refusal's code (the problem's `code`). */
 export const SSO_REQUIRED = 'sso_required';
@@ -64,7 +60,8 @@ export const ssoRequired = () =>
 @SignInGate()
 export class SsoPolicyService implements SignInGateProvider {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SsoPolicyRepository,
+    private readonly connections: SsoConnectionsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -76,10 +73,7 @@ export class SsoPolicyService implements SignInGateProvider {
 
   /** The policy and its exemptions. */
   async get() {
-    const [policy] = await this.db
-      .select()
-      .from(ssoPolicies)
-      .where(eq(ssoPolicies.tenantId, this.tenancy.tenantId()));
+    const policy = await this.repository.findPolicy(this.tenancy.tenantId());
     return {
       requireSso: policy?.requireSso ?? false,
       updatedAt: policy?.updatedAt ?? null,
@@ -99,16 +93,10 @@ export class SsoPolicyService implements SignInGateProvider {
     ip?: string,
   ) {
     if (requireSso) {
-      const [row] = await this.db
-        .select({ enabled: count() })
-        .from(ssoConnections)
-        .where(
-          and(
-            eq(ssoConnections.tenantId, this.tenancy.tenantId()),
-            eq(ssoConnections.enabled, true),
-          ),
-        );
-      if (!row?.enabled) {
+      const enabled = await this.connections.countEnabled(
+        this.tenancy.tenantId(),
+      );
+      if (!enabled) {
         throw new ConflictException({
           code: 'sso_connection_required',
           message: 'Turn a connection on before requiring SSO.',
@@ -130,30 +118,20 @@ export class SsoPolicyService implements SignInGateProvider {
       }
     }
     return this.txHost.withTransaction(async () => {
-      const [before] = await this.db
-        .select()
-        .from(ssoPolicies)
-        .where(eq(ssoPolicies.tenantId, this.tenancy.tenantId()));
-      const [row] = await this.db
-        .insert(ssoPolicies)
-        .values({ requireSso })
-        .onConflictDoUpdate({
-          target: ssoPolicies.tenantId,
-          set: { requireSso, updatedAt: new Date() },
-        })
-        .returning();
+      const before = await this.repository.findPolicy(this.tenancy.tenantId());
+      const row = await this.repository.upsertPolicy(requireSso);
       await this.audit.record(actor, {
         action: 'sso.policy-updated',
         targetType: 'tenant',
-        targetId: row!.tenantId,
+        targetId: row.tenantId,
         details: {
           requireSso: { from: before?.requireSso ?? false, to: requireSso },
         },
         ip,
       });
       return {
-        requireSso: row!.requireSso,
-        updatedAt: row!.updatedAt,
+        requireSso: row.requireSso,
+        updatedAt: row.updatedAt,
         exemptions: await this.exemptions(),
       };
     });
@@ -173,18 +151,7 @@ export class SsoPolicyService implements SignInGateProvider {
     ip?: string,
   ) {
     const tenantId = this.tenancy.tenantId();
-    const [member] = await this.db
-      .select({ email: users.email })
-      .from(memberships)
-      .innerJoin(users, eq(users.id, memberships.userId))
-      .where(
-        and(
-          eq(memberships.tenantId, tenantId),
-          eq(memberships.userId, userId),
-          eq(memberships.active, true),
-          eq(users.active, true),
-        ),
-      );
+    const member = await this.repository.findActiveMember(tenantId, userId);
     if (!member) {
       throw new NotFoundException(`User ${userId} not found.`);
     }
@@ -196,13 +163,11 @@ export class SsoPolicyService implements SignInGateProvider {
       });
     }
     await this.txHost.withTransaction(async () => {
-      await this.db
-        .insert(ssoExemptions)
-        .values({ userId, reason, createdBy: actor.id })
-        .onConflictDoUpdate({
-          target: [ssoExemptions.tenantId, ssoExemptions.userId],
-          set: { reason },
-        });
+      await this.repository.upsertExemption({
+        userId,
+        reason,
+        createdBy: actor.id,
+      });
       await this.audit.record(actor, {
         action: 'sso.exemption-granted',
         targetType: 'user',
@@ -239,15 +204,10 @@ export class SsoPolicyService implements SignInGateProvider {
       });
     }
     await this.txHost.withTransaction(async () => {
-      const [removed] = await this.db
-        .delete(ssoExemptions)
-        .where(
-          and(
-            eq(ssoExemptions.tenantId, this.tenancy.tenantId()),
-            eq(ssoExemptions.userId, userId),
-          ),
-        )
-        .returning();
+      const removed = await this.repository.deleteExemption(
+        this.tenancy.tenantId(),
+        userId,
+      );
       if (!removed) {
         throw new NotFoundException(`User ${userId} is not exempted.`);
       }
@@ -272,19 +232,7 @@ export class SsoPolicyService implements SignInGateProvider {
   }
 
   private async exemptions() {
-    return this.db
-      .select({
-        userId: ssoExemptions.userId,
-        email: users.email,
-        name: users.name,
-        reason: ssoExemptions.reason,
-        createdBy: ssoExemptions.createdBy,
-        createdAt: ssoExemptions.createdAt,
-      })
-      .from(ssoExemptions)
-      .innerJoin(users, eq(users.id, ssoExemptions.userId))
-      .where(eq(ssoExemptions.tenantId, this.tenancy.tenantId()))
-      .orderBy(asc(ssoExemptions.createdAt));
+    return this.repository.exemptions(this.tenancy.tenantId());
   }
 
   // Enforcement (any tenant)
@@ -301,10 +249,7 @@ export class SsoPolicyService implements SignInGateProvider {
   ): Promise<'free' | 'sso' | 'exempt' | false> {
     return this.tenancy.run(tenantId, async () => {
       // Its own row: a holding's scope may read its subsidiaries' too.
-      const [policy] = await this.db
-        .select({ requireSso: ssoPolicies.requireSso })
-        .from(ssoPolicies)
-        .where(eq(ssoPolicies.tenantId, tenantId));
+      const policy = await this.repository.findPolicy(tenantId);
       if (!policy?.requireSso) {
         return 'free';
       }
@@ -326,29 +271,11 @@ export class SsoPolicyService implements SignInGateProvider {
     // turned off since no longer counts.
     const provider = authentication?.provider;
     if (authentication?.method === 'sso' && provider && UUID.test(provider)) {
-      const [connection] = await this.db
-        .select({ id: ssoConnections.id })
-        .from(ssoConnections)
-        .where(
-          and(
-            eq(ssoConnections.tenantId, tenantId),
-            eq(ssoConnections.id, provider),
-            eq(ssoConnections.enabled, true),
-          ),
-        );
-      if (connection) {
+      if (await this.connections.isEnabledIn(tenantId, provider)) {
         return 'sso';
       }
     }
-    const [exempted] = await this.db
-      .select({ userId: ssoExemptions.userId })
-      .from(ssoExemptions)
-      .where(
-        and(
-          eq(ssoExemptions.tenantId, tenantId),
-          eq(ssoExemptions.userId, userId),
-        ),
-      );
+    const exempted = await this.repository.findExemption(tenantId, userId);
     return exempted ? 'exempt' : false;
   }
 

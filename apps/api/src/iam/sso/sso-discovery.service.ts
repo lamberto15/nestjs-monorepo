@@ -1,11 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { InjectTransaction } from '@nestjs-cls/transactional';
-import { and, asc, eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
+import { SsoConnectionsRepository } from './sso-connections.repository.js';
 import { SsoConnectionsService } from './sso-connections.service.js';
+import { SsoDomainsRepository } from './sso-domains.repository.js';
 import { emailDomain } from './sso-domains.service.js';
-import { ssoConnections, ssoDomainRoutes } from './sso.tables.js';
 
 /** At most this many tenants are looked at for one domain (a domain is rarely shared). */
 const MAX_TENANTS = 10;
@@ -21,7 +19,8 @@ const MAX_TENANTS = 10;
 @Injectable()
 export class SsoDiscovery {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly domains: SsoDomainsRepository,
+    private readonly connectionRows: SsoConnectionsRepository,
     private readonly tenancy: Tenancy,
     private readonly connections: SsoConnectionsService,
   ) {}
@@ -33,30 +32,15 @@ export class SsoDiscovery {
     }
     // Global: readable outside any tenant.
     const routes = await this.tenancy.run(null, () =>
-      this.db
-        .select({ tenantId: ssoDomainRoutes.tenantId })
-        .from(ssoDomainRoutes)
-        .where(eq(ssoDomainRoutes.domain, domain))
-        .orderBy(asc(ssoDomainRoutes.createdAt), asc(ssoDomainRoutes.tenantId))
-        .limit(MAX_TENANTS),
+      this.domains.routesOf(domain, MAX_TENANTS),
     );
     for (const { tenantId } of routes) {
       const tenant = await this.tenancy.find(tenantId);
       if (!tenant?.active) {
         continue;
       }
-      const [connection] = await this.tenancy.run(tenantId, () =>
-        this.db
-          .select({ id: ssoConnections.id, tenantId: ssoConnections.tenantId })
-          .from(ssoConnections)
-          .where(
-            and(
-              eq(ssoConnections.tenantId, tenantId),
-              eq(ssoConnections.enabled, true),
-            ),
-          )
-          .orderBy(asc(ssoConnections.createdAt), asc(ssoConnections.id))
-          .limit(1),
+      const connection = await this.tenancy.run(tenantId, () =>
+        this.connectionRows.oldestEnabled(tenantId),
       );
       if (connection) {
         return this.connections.urls(connection).login;

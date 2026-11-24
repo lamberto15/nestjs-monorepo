@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   type CacheItem,
   type CacheProvider,
@@ -7,8 +6,6 @@ import {
   SAML,
   ValidateInResponseTo,
 } from '@node-saml/node-saml';
-import { and, eq, gt, isNull, lt } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import {
   type SsoConnection,
   SsoConnectionsService,
@@ -21,7 +18,7 @@ import {
   SSO_HANDOFF_TTL_MS,
   SSO_REQUEST_TTL_MS,
 } from './sso-browser.js';
-import { ssoAssertions, ssoRequests } from './sso.tables.js';
+import { SsoRequestsRepository } from './sso-requests.repository.js';
 import {
   checkXmlAlgorithms,
   hasEncryptedAssertion,
@@ -97,33 +94,25 @@ type Assertion = {
 @Injectable()
 export class SamlSso {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly requests: SsoRequestsRepository,
     private readonly connections: SsoConnectionsService,
   ) {}
 
   /** The IdP's URL for a new sign-in, and the binding for the browser's cookie. */
   async start(connection: SsoConnection, redirectTo: string | undefined) {
     const binding = newBinding();
-    await this.db
-      .delete(ssoRequests)
-      .where(lt(ssoRequests.expiresAt, new Date()));
-    const [request] = await this.db
-      .insert(ssoRequests)
-      .values({
-        connectionId: connection.id,
-        bindingHash: bindingHash(binding),
-        redirectTo: redirectTo ?? null,
-        expiresAt: new Date(Date.now() + SSO_REQUEST_TTL_MS),
-      })
-      .returning({ id: ssoRequests.id });
+    await this.requests.deleteExpired(new Date());
+    const request = await this.requests.insert({
+      connectionId: connection.id,
+      bindingHash: bindingHash(binding),
+      redirectTo: redirectTo ?? null,
+      expiresAt: new Date(Date.now() + SSO_REQUEST_TTL_MS),
+    });
     // node-saml makes the AuthnRequest's ID and hands it to the cache
     // provider: it lands on this browser's request.
     const saml = await this.saml(connection, {
       saveAsync: async (key, value) => {
-        await this.db
-          .update(ssoRequests)
-          .set({ samlRequestId: key })
-          .where(eq(ssoRequests.id, request!.id));
+        await this.requests.setSamlRequestId(request.id, key);
         return { value, createdAt: Date.now() } satisfies CacheItem;
       },
       getAsync: () => Promise.resolve(null),
@@ -157,19 +146,12 @@ export class SamlSso {
         if (!hash) {
           return null;
         }
-        const [row] = await this.db
-          .select({ createdAt: ssoRequests.createdAt })
-          .from(ssoRequests)
-          .where(
-            and(
-              eq(ssoRequests.connectionId, connection.id),
-              eq(ssoRequests.samlRequestId, key),
-              eq(ssoRequests.bindingHash, hash),
-              isNull(ssoRequests.consumedAt),
-              isNull(ssoRequests.userId),
-              gt(ssoRequests.expiresAt, now),
-            ),
-          );
+        const row = await this.requests.findOpenSaml(
+          connection.id,
+          key,
+          hash,
+          now,
+        );
         return row ? row.createdAt.toISOString() : null;
       },
       // Taken below, once the whole response checked out.
@@ -226,12 +208,12 @@ export class SamlSso {
         now.getTime() + MAX_ASSERTION_AGE_MS,
       ) + CLOCK_SKEW_MS,
     );
-    await this.db.delete(ssoAssertions).where(lt(ssoAssertions.expiresAt, now));
-    const [fresh] = await this.db
-      .insert(ssoAssertions)
-      .values({ connectionId: connection.id, assertionId, expiresAt })
-      .onConflictDoNothing()
-      .returning({ id: ssoAssertions.assertionId });
+    await this.requests.deleteExpiredAssertions(now);
+    const fresh = await this.requests.insertAssertion({
+      connectionId: connection.id,
+      assertionId,
+      expiresAt,
+    });
     if (!fresh) {
       throw new SsoRefused('assertion_replayed');
     }
@@ -244,16 +226,11 @@ export class SamlSso {
     let requestId: string | null = null;
     if (inResponseTo) {
       // Already checked by the cache provider; read again for its row.
-      const [request] = await this.db
-        .select({ id: ssoRequests.id, redirectTo: ssoRequests.redirectTo })
-        .from(ssoRequests)
-        .where(
-          and(
-            eq(ssoRequests.connectionId, connection.id),
-            eq(ssoRequests.samlRequestId, inResponseTo),
-            eq(ssoRequests.bindingHash, hash ?? ''),
-          ),
-        );
+      const request = await this.requests.findSaml(
+        connection.id,
+        inResponseTo,
+        hash ?? '',
+      );
       if (!request) {
         throw new SsoRefused('request_unknown');
       }
@@ -308,28 +285,18 @@ export class SamlSso {
     redirectTo: string | null,
   ): Promise<{ binding?: string }> {
     if (requestId) {
-      const [taken] = await this.db
-        .update(ssoRequests)
-        .set({
-          userId,
-          authenticatedAt: authenticatedAt ?? null,
-          expiresAt: new Date(Date.now() + SSO_HANDOFF_TTL_MS),
-        })
-        .where(
-          and(
-            eq(ssoRequests.id, requestId),
-            isNull(ssoRequests.userId),
-            isNull(ssoRequests.consumedAt),
-          ),
-        )
-        .returning({ id: ssoRequests.id });
+      const taken = await this.requests.handOver(requestId, {
+        userId,
+        authenticatedAt: authenticatedAt ?? null,
+        expiresAt: new Date(Date.now() + SSO_HANDOFF_TTL_MS),
+      });
       if (!taken) {
         throw new SsoRefused('request_used');
       }
       return {};
     }
     const binding = newBinding();
-    await this.db.insert(ssoRequests).values({
+    await this.requests.insert({
       connectionId: connection.id,
       bindingHash: bindingHash(binding),
       userId,
@@ -345,18 +312,11 @@ export class SamlSso {
     if (!binding) {
       throw new SsoRefused('no_binding');
     }
-    const [request] = await this.db
-      .update(ssoRequests)
-      .set({ consumedAt: new Date() })
-      .where(
-        and(
-          eq(ssoRequests.connectionId, connection.id),
-          eq(ssoRequests.bindingHash, bindingHash(binding)),
-          isNull(ssoRequests.consumedAt),
-          gt(ssoRequests.expiresAt, new Date()),
-        ),
-      )
-      .returning();
+    const request = await this.requests.take(
+      connection.id,
+      bindingHash(binding),
+      { codeFlow: false },
+    );
     if (!request?.userId) {
       throw new SsoRefused('handover_unknown');
     }

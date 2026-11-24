@@ -13,20 +13,27 @@ import { Oauth2Sso } from './oauth2-sso.service.js';
 import { OidcSso } from './oidc-sso.service.js';
 import { SamlMetadataImport } from './saml-metadata.service.js';
 import { SamlSso } from './saml-sso.service.js';
+import { ScimGroupsRepository } from './scim/scim-groups.repository.js';
 import { ScimGroupsService } from './scim/scim-groups.service.js';
+import { ScimUsersRepository } from './scim/scim-users.repository.js';
 import { ScimUsersService } from './scim/scim-users.service.js';
 import { ScimController } from './scim/scim.controller.js';
 import { SsoSignIn } from './sso-sign-in.service.js';
+import { SsoAccountsRepository } from './sso-accounts.repository.js';
 import { SsoAccounts } from './sso-accounts.service.js';
 import {
   SsoAuthController,
   SsoConnectionGuard,
 } from './sso-auth.controller.js';
+import { SsoConnectionsRepository } from './sso-connections.repository.js';
 import { SsoConnectionsService } from './sso-connections.service.js';
 import { SsoDiscoveryController } from './sso-discovery.controller.js';
 import { SsoDiscovery } from './sso-discovery.service.js';
+import { SsoDomainsRepository } from './sso-domains.repository.js';
 import { SsoDomainsService } from './sso-domains.service.js';
+import { SsoPolicyRepository } from './sso-policy.repository.js';
 import { SsoPolicyService } from './sso-policy.service.js';
+import { SsoRequestsRepository } from './sso-requests.repository.js';
 import { SsoRequiredGuard } from './sso-required.guard.js';
 import { ssoConfig } from './sso.config.js';
 import { SsoController } from './sso.controller.js';
@@ -70,6 +77,13 @@ csrfExclusions.set('sso.saml-acs', {
   ],
   providers: [
     SsoPolicy,
+    SsoConnectionsRepository,
+    SsoDomainsRepository,
+    SsoPolicyRepository,
+    SsoAccountsRepository,
+    SsoRequestsRepository,
+    ScimUsersRepository,
+    ScimGroupsRepository,
     SsoConnectionsService,
     SsoDomainsService,
     SsoPolicyService,

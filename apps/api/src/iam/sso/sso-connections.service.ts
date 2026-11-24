@@ -7,13 +7,9 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { ConfigType } from '@nestjs/config';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import type { Queue } from 'bullmq';
-import { and, asc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { EncryptedColumns } from '../../core/encryption/encrypted-columns.js';
@@ -24,11 +20,12 @@ import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { Principal, UserPrincipal } from '../auth/principal.js';
 import { SsoAccounts } from './sso-accounts.service.js';
+import { SsoConnectionsRepository } from './sso-connections.repository.js';
 import { ssoConfig } from './sso.config.js';
 import type { CreateConnection, UpdateConnection } from './sso.schemas.js';
 import { endpointProblem, presetDefaults } from './oauth2-mapping.js';
 import { SSO_QUEUE, type SsoJob } from './sso.queue.js';
-import { ssoConnections, ssoRoleMappings } from './sso.tables.js';
+import { ssoConnections } from './sso.tables.js';
 import { describeCertificate, newSpKeyPair } from './sp-keys.js';
 
 export type SsoConnection = typeof ssoConnections.$inferSelect;
@@ -82,7 +79,7 @@ const ALL_PROTOCOL_FIELDS = [
 @Injectable()
 export class SsoConnectionsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: SsoConnectionsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     private readonly encryption: EncryptionService,
@@ -97,10 +94,7 @@ export class SsoConnectionsService {
   ) {}
 
   async list() {
-    const rows = await this.db
-      .select()
-      .from(ssoConnections)
-      .orderBy(asc(ssoConnections.name));
+    const rows = await this.repository.list();
     const roles = await this.roleSetups(rows.map((row) => row.id));
     return rows.map((row) => this.view(row, roles.get(row.id)));
   }
@@ -137,9 +131,8 @@ export class SsoConnectionsService {
               ...(await this.newSpKeys()),
             };
     const row = await this.txHost.withTransaction(async () => {
-      const [created] = await this.db
-        .insert(ssoConnections)
-        .values({
+      const created = await this.repository
+        .insert({
           name: input.name,
           protocol: input.protocol,
           enabled: input.enabled ?? false,
@@ -147,11 +140,10 @@ export class SsoConnectionsService {
           groupsAttribute: input.groupsAttribute ?? null,
           ...values,
         })
-        .returning()
         .catch((error: unknown) => {
           throw isUniqueViolation(error) ? nameTaken(input.name) : error;
         });
-      await this.writeRoleSetup(created!.id, input);
+      await this.writeRoleSetup(created.id, input);
       await this.audit.record(actor, {
         action: 'sso.connection-created',
         targetType: 'sso-connection',
@@ -222,9 +214,8 @@ export class SsoConnectionsService {
     const issuerChanged =
       changes.issuer !== undefined && changes.issuer !== before.issuer;
     const row = await this.txHost.withTransaction(async () => {
-      const [updated] = await this.db
-        .update(ssoConnections)
-        .set({
+      const updated = await this.repository
+        .update(id, {
           ...(changes.name !== undefined && { name: changes.name }),
           ...(changes.enabled !== undefined && { enabled: changes.enabled }),
           ...(changes.jitProvisioning !== undefined && {
@@ -288,8 +279,6 @@ export class SsoConnectionsService {
           ...(changes.scopes !== undefined && { scopes: changes.scopes }),
           ...(changes.mapping !== undefined && { mapping: changes.mapping }),
         })
-        .where(eq(ssoConnections.id, id))
-        .returning()
         .catch((error: unknown) => {
           throw isUniqueViolation(error) ? nameTaken(changes.name!) : error;
         });
@@ -327,10 +316,7 @@ export class SsoConnectionsService {
     const signedIn = await this.txHost.withTransaction(async () => {
       // Read before the delete takes the identities with it.
       const userIds = await this.accounts.usersOf(id);
-      const [row] = await this.db
-        .delete(ssoConnections)
-        .where(eq(ssoConnections.id, id))
-        .returning();
+      const row = await this.repository.delete(id);
       if (!row) {
         throw notFound(id);
       }
@@ -380,10 +366,7 @@ export class SsoConnectionsService {
       clientId: string,
     ) => Promise<Record<string, unknown>>,
   ) {
-    const [row] = await this.db
-      .select()
-      .from(ssoConnections)
-      .where(eq(ssoConnections.id, id));
+    const row = await this.repository.findById(id);
     if (!row || row.protocol !== 'oidc' || !row.issuer || !row.clientId) {
       return;
     }
@@ -396,23 +379,17 @@ export class SsoConnectionsService {
     }
     await this.txHost.withTransaction(async () => {
       // Only for the issuer it was fetched for: a change meanwhile queued another.
-      await this.db
-        .update(ssoConnections)
-        .set(
-          metadata
-            ? {
-                oidcMetadata: metadata,
-                metadataFetchedAt: new Date(),
-                metadataError: null,
-              }
-            : { metadataError: error },
-        )
-        .where(
-          and(
-            eq(ssoConnections.id, id),
-            eq(ssoConnections.issuer, row.issuer!),
-          ),
-        );
+      await this.repository.storeDiscovery(
+        id,
+        row.issuer!,
+        metadata
+          ? {
+              oidcMetadata: metadata,
+              metadataFetchedAt: new Date(),
+              metadataError: null,
+            }
+          : { metadataError: error },
+      );
       await this.audit.record(actor, {
         action: metadata ? 'sso.metadata-fetched' : 'sso.metadata-fetch-failed',
         targetType: 'sso-connection',
@@ -436,16 +413,8 @@ export class SsoConnectionsService {
     if (!tenant?.active) {
       return null;
     }
-    const [row] = await this.tenancy.run(tenant.id, () =>
-      this.db
-        .select()
-        .from(ssoConnections)
-        .where(
-          and(
-            eq(ssoConnections.id, connectionId.toLowerCase()),
-            eq(ssoConnections.enabled, true),
-          ),
-        ),
+    const row = await this.tenancy.run(tenant.id, () =>
+      this.repository.findEnabled(connectionId.toLowerCase()),
     );
     return row ?? null;
   }
@@ -478,16 +447,7 @@ export class SsoConnectionsService {
       };
     }
     const keys = await this.newSpKeys();
-    const [stored] = await this.db
-      .update(ssoConnections)
-      .set(keys)
-      .where(
-        and(
-          eq(ssoConnections.id, connection.id),
-          isNull(ssoConnections.spCertificate),
-        ),
-      )
-      .returning();
+    const stored = await this.repository.setSpKeysIfNone(connection.id, keys);
     return this.samlKeys(stored ?? (await this.find(connection.id)));
   }
 
@@ -496,10 +456,7 @@ export class SsoConnectionsService {
    * it gives a just-in-time member (`group` null).
    */
   async roleMappingsOf(connectionId: string) {
-    return this.db
-      .select({ group: ssoRoleMappings.group, roleId: ssoRoleMappings.roleId })
-      .from(ssoRoleMappings)
-      .where(eq(ssoRoleMappings.connectionId, connectionId));
+    return this.repository.roleMappingsOf(connectionId);
   }
 
   /** The URLs of a connection, under APP_URL. */
@@ -626,34 +583,17 @@ export class SsoConnectionsService {
   ) {
     const rows: { group: string | null; roleId: string }[] = [];
     if (input.roleMappings !== undefined) {
-      await this.db
-        .delete(ssoRoleMappings)
-        .where(
-          and(
-            eq(ssoRoleMappings.connectionId, connectionId),
-            isNotNull(ssoRoleMappings.group),
-          ),
-        );
+      await this.repository.deleteRoleMappings(connectionId, true);
       rows.push(...input.roleMappings);
     }
     if (input.defaultRoleIds !== undefined) {
-      await this.db
-        .delete(ssoRoleMappings)
-        .where(
-          and(
-            eq(ssoRoleMappings.connectionId, connectionId),
-            isNull(ssoRoleMappings.group),
-          ),
-        );
+      await this.repository.deleteRoleMappings(connectionId, false);
       rows.push(
         ...input.defaultRoleIds.map((roleId) => ({ group: null, roleId })),
       );
     }
     if (rows.length > 0) {
-      await this.db
-        .insert(ssoRoleMappings)
-        .values(rows.map((row) => ({ ...row, connectionId })))
-        .onConflictDoNothing();
+      await this.repository.insertRoleMappings(connectionId, rows);
     }
   }
 
@@ -663,11 +603,7 @@ export class SsoConnectionsService {
     if (connectionIds.length === 0) {
       return setups;
     }
-    const rows = await this.db
-      .select()
-      .from(ssoRoleMappings)
-      .where(inArray(ssoRoleMappings.connectionId, connectionIds))
-      .orderBy(asc(ssoRoleMappings.group), asc(ssoRoleMappings.createdAt));
+    const rows = await this.repository.roleMappingsOfAll(connectionIds);
     for (const row of rows) {
       const setup = setups.get(row.connectionId) ?? {
         roleMappings: [],
@@ -716,10 +652,7 @@ export class SsoConnectionsService {
   }
 
   private async find(id: string) {
-    const [row] = await this.db
-      .select()
-      .from(ssoConnections)
-      .where(eq(ssoConnections.id, id));
+    const row = await this.repository.findById(id);
     if (!row) {
       throw notFound(id);
     }
