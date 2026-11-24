@@ -10,13 +10,15 @@ import { ScaledThrottlerGuard } from './scaled-throttler.guard.js';
 import { throttlingConfig } from './throttling.config.js';
 
 /**
- * Rate limiting (@nestjs/throttler) on every route: 600 requests a minute
- * per IP (the address the HTTP adapter resolved behind the trusted proxies),
+ * Rate limiting (@nestjs/throttler) on every route: RATE_LIMIT_PER_IP
+ * (1200) requests a minute per IP (the address the HTTP adapter resolved behind the trusted proxies),
  * counted in Redis so the limit holds across instances. A route tightens it
  * with `@Throttle({ default: { limit, ttl } })` and skips it with
  * `@SkipThrottle()` (health does). Over the limit: 429 `rate_limited` with
  * Retry-After, as problem details (the ThrottlerException goes through
  * ProblemDetailsFilter). Every limit is multiplied by RATE_LIMIT_MULTIPLIER.
+ * The limit per signed-in caller runs after authentication (iam/auth,
+ * UserThrottlerGuard): this one comes first, before anyone is known.
  */
 @Module({
   imports: [
@@ -29,7 +31,7 @@ import { throttlingConfig } from './throttling.config.js';
         config: ConfigType<typeof throttlingConfig>,
         redis: Redis,
       ) => ({
-        throttlers: [{ ttl: minutes(1), limit: 600 }],
+        throttlers: [{ ttl: minutes(1), limit: config.perIp }],
         errorMessage: 'Too many requests: try again later.',
         storage:
           config.store === 'redis'

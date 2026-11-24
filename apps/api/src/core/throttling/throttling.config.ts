@@ -14,6 +14,14 @@ export const schema = z.object({
    * APP_ENV=loadtest.
    */
   RATE_LIMIT_MULTIPLIER: integer(1, { min: 1, max: 100_000 }),
+  /**
+   * Requests a minute to one route from one address, before sign-in is
+   * known. High enough for an office behind one NAT address: the limit per
+   * signed-in caller (RATE_LIMIT_PER_CALLER) is the one that bites.
+   */
+  RATE_LIMIT_PER_IP: integer(1200, { min: 1 }),
+  /** Requests a minute to one route from one signed-in user or API client (iam/auth); a route's `@UserThrottle()` changes it. */
+  RATE_LIMIT_PER_CALLER: integer(600, { min: 1 }),
   NODE_ENV: optional().describe(
     '`production` in a deployment: RATE_LIMIT_MULTIPLIER above 1 is then refused unless APP_ENV=loadtest.',
   ),
@@ -36,5 +44,7 @@ export const throttlingConfig = registerAs('throttling', () => {
   return {
     store: env.RATE_LIMIT_STORE,
     multiplier: env.RATE_LIMIT_MULTIPLIER,
+    perIp: env.RATE_LIMIT_PER_IP,
+    perCaller: env.RATE_LIMIT_PER_CALLER,
   };
 });

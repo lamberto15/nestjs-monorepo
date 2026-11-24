@@ -14,7 +14,9 @@ principal is for jobs only and the guard refuses it on a request.
   `@RecentAuthentication({ maxAgeMinutes? })` (403
   `reauthentication_required`), `@OperatorOnly()` (members of the
   operators' tenant), `@RequiresSwitch('auth.impersonation',
-'IMPERSONATION')` (404 `feature_off`), `@UserThrottle()`,
+'IMPERSONATION')` (404 `feature_off`), `@UserThrottle()` (this route's
+  limit per caller, in place of RATE_LIMIT_PER_CALLER a minute, which every
+  route has),
   `@AddressThrottle()`, `@DuringOnboarding()`, `@DuringMfaEnrollment()`.
 - **A session checked outside a request** (a realtime socket's, at its
   deadline): `SessionLifetime.endsAt(session, user)` is when it ends unless

@@ -143,11 +143,14 @@ missing key is a 400 `IDEMPOTENCY_KEY_REQUIRED` when `IDEMPOTENCY=required`
 
 ## Rate limits
 
-Every route is limited to 600 requests a minute per client address, counted
-in Redis so the limit holds across instances. Over it: 429 `rate_limited`
-with `Retry-After`. A route tightens it with `@Throttle()` or opts out
-with `@SkipThrottle()`; sign-in routes use `@AddressThrottle()` and
-`@UserThrottle()`. See [core/throttling](../apps/api/src/core/throttling/README.md).
+Every route is limited twice, counted in Redis so the limits hold across
+instances: per client address before sign-in (`RATE_LIMIT_PER_IP`, 1200 a
+minute), then per signed-in user or API client (`RATE_LIMIT_PER_CALLER`,
+600 a minute), so callers behind one address don't share a counter. Over
+either: 429 `rate_limited` with `Retry-After` (`Retry-After-user` for the
+second). A route tightens the first with `@Throttle()`, changes the second
+with `@UserThrottle()`, or opts out of both with `@SkipThrottle()`; sign-in
+routes use `@AddressThrottle()`. See [core/throttling](../apps/api/src/core/throttling/README.md).
 The client address comes from `X-Forwarded-For`, trusted only from the
 proxies `TRUST_PROXY` names (loopback and private networks when unset).
 

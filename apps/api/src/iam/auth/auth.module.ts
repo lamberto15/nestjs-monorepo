@@ -33,6 +33,7 @@ import { SignInGates } from './sign-in-gate.js';
 import { SignInContext, signInMetadata } from './sign-in-context.js';
 import { UsersRepository } from './users.repository.js';
 import { WhoAmIController } from './who-am-i.controller.js';
+import { UserThrottlerGuard } from './user-throttle.guard.js';
 import { WhoAmIParts } from './who-am-i.js';
 import './auth-types.js';
 
@@ -142,6 +143,8 @@ const JWT_KEY_SECRET = 'jwt-signing-key';
     WhoAmIParts,
     SessionPruneJob,
     { provide: APP_GUARD, useClass: PrincipalGuard },
+    // After the principal's: the limit per signed-in caller.
+    { provide: APP_GUARD, useClass: UserThrottlerGuard },
     { provide: APP_GUARD, useClass: MfaEnrollmentGuard },
     { provide: APP_GUARD, useClass: OnboardingGuard },
   ],
