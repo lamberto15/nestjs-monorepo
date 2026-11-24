@@ -363,7 +363,7 @@ describe('recurring record schedules (e2e)', () => {
       db().delete(userRoles).where(eq(userRoles.userId, ada.id)),
     );
     // The cached abilities of the owner may linger up to a minute: drop them.
-    app.get(AccessService).invalidate();
+    app.get(AccessService).invalidate(tenantId);
     const { now } = await due(id, HOUR);
     expect(await run(now)).toBe(0);
     expect(await state(id)).toMatchObject({

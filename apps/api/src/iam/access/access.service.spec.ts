@@ -6,6 +6,7 @@ import {
   AccessService,
   abilityOf,
   caslCondition,
+  parseInvalidation,
   sqlCondition,
 } from './access.service.js';
 import { regrant } from './members.service.js';
@@ -108,27 +109,33 @@ describe('regrant', () => {
 });
 
 describe('the ability cache', () => {
-  type Entry = { loaded: { version: number }; until: number };
+  type Entry = { loaded: { version: string }; until: number };
   const service = () => {
+    const redis = {
+      options: {},
+      publish: vi.fn().mockResolvedValue(1),
+    };
+    const events = { emit: vi.fn() };
     const access = new AccessService(
-      ...([{}, {}, {}, {}, {}] as unknown as ConstructorParameters<
+      ...([{}, {}, redis, {}, events] as unknown as ConstructorParameters<
         typeof AccessService
       >),
     );
     const internals = access as unknown as {
       cache: Map<string, Entry>;
-      version: number;
+      generation(tenant: string): string;
       makeRoom(): void;
+      invalidate(tenantId: string | null): void;
     };
-    return internals;
+    return { access: internals, redis, events };
   };
 
   it('keeps at most MAX_ENTRIES: the expired go first, then the oldest', () => {
-    const access = service();
+    const { access } = service();
     const live = Date.now() + 60_000;
     for (let i = 0; i < AccessService.MAX_ENTRIES; i++) {
       access.cache.set(`k${i}`, {
-        loaded: { version: access.version },
+        loaded: { version: access.generation('k') },
         until: i === 5 ? 0 : live,
       });
     }
@@ -137,11 +144,49 @@ describe('the ability cache', () => {
     expect(access.cache.has('k5')).toBe(false);
     expect(access.cache.has('k0')).toBe(true);
     access.cache.set('k5', {
-      loaded: { version: access.version },
+      loaded: { version: access.generation('k') },
       until: live,
     });
     access.makeRoom();
     expect(access.cache.size).toBe(AccessService.MAX_ENTRIES - 1);
     expect(access.cache.has('k0')).toBe(false);
+  });
+
+  it("an invalidation of one tenant keeps another's abilities, and names the tenant to the other instances", () => {
+    const { access, redis, events } = service();
+    const live = Date.now() + 60_000;
+    for (const key of ['a:user:1', 'a:client:2', 'b:user:1']) {
+      access.cache.set(key, {
+        loaded: { version: access.generation(key[0]!) },
+        until: live,
+      });
+    }
+    const [beforeA, beforeB] = [access.generation('a'), access.generation('b')];
+    access.invalidate('a');
+    expect([...access.cache.keys()]).toEqual(['b:user:1']);
+    // A load of tenant a under way when it changed is not cached; b's still is.
+    expect(access.generation('a')).not.toBe(beforeA);
+    expect(access.generation('b')).toBe(beforeB);
+    expect(JSON.parse(redis.publish.mock.calls[0]![1] as string)).toEqual({
+      from: expect.any(String),
+      tenantId: 'a',
+    });
+    expect(events.emit).toHaveBeenCalledWith(expect.any(String), {
+      tenantId: 'a',
+    });
+    access.invalidate(null);
+    expect(access.cache.size).toBe(0);
+    expect(access.generation('b')).not.toBe(beforeB);
+  });
+
+  it("reads an invalidation of the release before (its instance id alone) as every tenant's", () => {
+    expect(parseInvalidation('some-instance')).toEqual({
+      from: 'some-instance',
+      tenantId: null,
+    });
+    expect(parseInvalidation('{"from":"x","tenantId":"a"}')).toEqual({
+      from: 'x',
+      tenantId: 'a',
+    });
   });
 });

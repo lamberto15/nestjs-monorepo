@@ -167,7 +167,7 @@ export class ScimGroupsService implements ScimUnits {
         return unit!.id;
       }),
     );
-    this.access.invalidate();
+    this.access.invalidate(actor.tenantId);
     return this.get(unitId);
   }
 
@@ -224,7 +224,7 @@ export class ScimGroupsService implements ScimUnits {
         });
       }),
     );
-    this.access.invalidate();
+    this.access.invalidate(actor.tenantId);
     return this.get(id);
   }
 
@@ -307,7 +307,7 @@ export class ScimGroupsService implements ScimUnits {
         ip,
       });
     });
-    this.access.invalidate();
+    this.access.invalidate(actor.tenantId);
   }
 
   /**

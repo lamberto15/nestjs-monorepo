@@ -52,9 +52,13 @@ export class NotePolicy {
   `assertQueryFields()` (403 `field_forbidden`).
 - **Soft delete:** `deletedAt` on the subject: a deleted record can only be
   restored; `sqlFilter(…, { deleted: true })` for the recycle bin.
-- **After a change to grants or units**, `access.invalidate()` (every
-  instance, Redis pub/sub). Abilities are cached for a minute at most,
-  never past a grant's end or a unit membership's start or end.
+- **After a change to grants or units**, `access.invalidate(tenantId)`
+  with the tenant whose roles, grants or memberships changed: that tenant's
+  cached abilities go, here and on every instance (Redis pub/sub, the
+  message names the tenant); other tenants' stay. `invalidate(null)` drops
+  every tenant's, for a change that is not one tenant's. Abilities are
+  cached for a minute at most (at most `MAX_ENTRIES` per instance), never
+  past a grant's end or a unit membership's start or end.
 
 ## Routes
 

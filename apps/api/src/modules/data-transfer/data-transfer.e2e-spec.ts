@@ -705,7 +705,7 @@ describe('data transfer (e2e)', () => {
           .delete(userRoles)
           .where(eq(userRoles.userId, reader.id)),
       );
-    app.get(AccessService).invalidate();
+    app.get(AccessService).invalidate(team.tenantId);
 
     const { detail, listed } = await shown(exported.id, reader.headers);
     for (const transfer of [detail, listed]) {

@@ -149,7 +149,7 @@ export class ApiClientsService implements OnModuleInit {
       });
       return { id: client!.id, key: created };
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
     return { ...(await this.get(id)), key };
   }
 
@@ -220,7 +220,7 @@ export class ApiClientsService implements OnModuleInit {
         });
       }
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
     if (changes.active === false && before.active) {
       await this.announceRevoked(id);
     }
@@ -249,7 +249,7 @@ export class ApiClientsService implements OnModuleInit {
         { key: id },
       );
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
     await this.announceRevoked(id);
   }
 

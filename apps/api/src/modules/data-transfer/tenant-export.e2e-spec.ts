@@ -200,7 +200,7 @@ describe("a tenant's export by the operators (e2e)", () => {
           .delete(userRoles)
           .where(eq(userRoles.userId, leaving.id)),
       );
-    app.get(AccessService).invalidate();
+    app.get(AccessService).invalidate(opsId);
 
     const { detail, listed } = await read();
     expect(detail).toMatchObject({

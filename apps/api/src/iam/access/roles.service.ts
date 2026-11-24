@@ -13,6 +13,7 @@ import type {
   DatabaseTransactions,
 } from '../../core/database/database.js';
 import { untagged } from '../../core/http/etag.js';
+import { currentTenantScope } from '../../core/tenancy/tenant-scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import type { Principal, UserPrincipal } from '../auth/principal.js';
@@ -104,7 +105,7 @@ export class RolesService {
         return role!.id;
       })
       .catch(nameTaken);
-    this.access.invalidate();
+    this.access.invalidate(currentTenantScope()?.tenantId ?? null);
     return { id };
   }
 
@@ -149,7 +150,7 @@ export class RolesService {
         });
       })
       .catch(nameTaken);
-    this.access.invalidate();
+    this.access.invalidate(currentTenantScope()?.tenantId ?? null);
   }
 
   async remove(
@@ -176,7 +177,7 @@ export class RolesService {
         ip,
       });
     });
-    this.access.invalidate();
+    this.access.invalidate(currentTenantScope()?.tenantId ?? null);
   }
 
   /**

@@ -276,7 +276,7 @@ export class ScimUsersService implements ScimMembers {
       }),
     );
     if (deactivated) await this.signOutEverywhere(userId);
-    this.access.invalidate();
+    this.access.invalidate(tenantId);
     if (left) this.announceLeft(actor, tenantId, userId);
     return this.get(userId);
   }
@@ -352,7 +352,7 @@ export class ScimUsersService implements ScimMembers {
       }),
     );
     if (deactivated) await this.signOutEverywhere(id);
-    this.access.invalidate();
+    this.access.invalidate(tenantId);
     if (left) this.announceLeft(actor, tenantId, id);
     return this.get(id);
   }
@@ -434,7 +434,7 @@ export class ScimUsersService implements ScimMembers {
       });
     });
     if (deactivated) await this.signOutEverywhere(id);
-    this.access.invalidate();
+    this.access.invalidate(tenantId);
     if (left) this.announceLeft(actor, tenantId, id);
   }
 

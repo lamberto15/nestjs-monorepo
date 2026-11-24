@@ -553,7 +553,7 @@ export class InvitationsService {
       );
       return row;
     });
-    this.access.invalidate();
+    this.access.invalidate(tenantId);
     return { tenantId, userId: user.id, accountCreated: !account };
   }
 

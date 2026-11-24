@@ -42,7 +42,7 @@ import {
   type Principal,
   principalKey,
 } from '../auth/principal.js';
-import { ACCESS_EVENTS } from './access.events.js';
+import { ACCESS_EVENTS, type AbilitiesChangedEvent } from './access.events.js';
 import { apiClientRoles, rolePermissions, userRoles } from './access.tables.js';
 import {
   type FieldComparison,
@@ -241,8 +241,32 @@ export interface Explanation {
   }[];
 }
 
+/**
+ * An invalidation as published: `{ from, tenantId }`. Anything else (an
+ * instance of the release before, which published its id alone) drops
+ * every tenant's.
+ */
+export function parseInvalidation(message: string): {
+  from: string;
+  tenantId: string | null;
+} {
+  try {
+    const { from, tenantId } = JSON.parse(message) as {
+      from?: unknown;
+      tenantId?: unknown;
+    };
+    if (typeof from === 'string') {
+      return { from, tenantId: typeof tenantId === 'string' ? tenantId : null };
+    }
+  } catch {
+    // Not JSON: the older message.
+  }
+  return { from: message, tenantId: null };
+}
+
 interface Loaded {
-  version: number;
+  /** The generation it was built in (`generation()`): a load that raced an invalidation is not cached. */
+  version: string;
   permissions: PermissionInput[];
   context: AccessContext;
   ability: AppAbility;
@@ -255,7 +279,7 @@ interface Loaded {
  * own grants; the system principal's from its job's declaration, nothing
  * more. Abilities are cached per tenant and principal, for a minute at
  * most and never past a grant's end or a unit membership's start or end;
- * `invalidate()` drops every cached one, here and on every instance
+ * `invalidate(tenantId)` drops that tenant's, here and on every instance
  * (Redis pub/sub), so a change applies from the next request.
  */
 @Injectable()
@@ -263,7 +287,9 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
   private static readonly MAX_AGE_MS = 60_000;
   /** The most abilities kept on an instance (tenants × principals seen within a minute). */
   static readonly MAX_ENTRIES = 10_000;
+  /** Bumped by a full clear; a tenant's own counter by an invalidation of that tenant. */
   private version = 0;
+  private readonly tenantVersions = new Map<string, number>();
   /** This instance, so it ignores its own invalidations coming back. */
   private readonly instanceId = randomUUID();
   private subscriber?: Redis;
@@ -292,8 +318,9 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
       'unit directory (@UnitDirectory())',
     );
     this.subscriber = this.redis.duplicate();
-    this.subscriber.on('message', (_channel: string, from: string) => {
-      if (from !== this.instanceId) this.clear();
+    this.subscriber.on('message', (_channel: string, message: string) => {
+      const { from, tenantId } = parseInvalidation(message);
+      if (from !== this.instanceId) this.clear(tenantId);
     });
     await this.subscriber.subscribe(this.channel);
   }
@@ -303,14 +330,24 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * Drops every cached ability, here and on every other instance: call after
-   * any change to roles, grants or unit memberships.
+   * Drops the cached abilities of `tenantId`, here and on every other
+   * instance: call after any change to that tenant's roles, grants or unit
+   * memberships. `null` drops every tenant's, for a change that is not one
+   * tenant's (roles, grants and units are all tenant tables, so none today).
    */
-  invalidate() {
-    this.clear();
+  invalidate(tenantId: string | null) {
+    this.clear(tenantId);
     void this.redis
-      .publish(this.channel, this.instanceId)
+      .publish(
+        this.channel,
+        JSON.stringify({ from: this.instanceId, tenantId }),
+      )
       .catch(() => undefined);
+  }
+
+  /** The generation of a tenant's abilities (`-` for none): what a cached one must still be of. */
+  private generation(tenant: string) {
+    return `${this.version}.${this.tenantVersions.get(tenant) ?? 0}`;
   }
 
   /**
@@ -323,11 +360,10 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
    */
   private makeRoom() {
     if (this.cache.size < AccessService.MAX_ENTRIES) return;
+    // Only the expired: an invalidation deletes what it makes stale.
     const now = Date.now();
     for (const [key, entry] of this.cache) {
-      if (entry.until <= now || entry.loaded.version !== this.version) {
-        this.cache.delete(key);
-      }
+      if (entry.until <= now) this.cache.delete(key);
     }
     for (const key of this.cache.keys()) {
       if (this.cache.size < AccessService.MAX_ENTRIES) break;
@@ -336,10 +372,25 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Both paths of an invalidation (this instance's, another's by pub/sub) end here. */
-  private clear() {
-    this.version++;
-    this.cache.clear();
-    this.events.emit(ACCESS_EVENTS.abilitiesChanged);
+  private clear(tenantId: string | null) {
+    if (tenantId === null) {
+      this.version++;
+      this.tenantVersions.clear();
+      this.cache.clear();
+    } else {
+      this.tenantVersions.set(
+        tenantId,
+        (this.tenantVersions.get(tenantId) ?? 0) + 1,
+      );
+      // Keys lead with the tenant (load()): one pass over at most MAX_ENTRIES.
+      const prefix = `${tenantId}:`;
+      for (const key of this.cache.keys()) {
+        if (key.startsWith(prefix)) this.cache.delete(key);
+      }
+    }
+    this.events.emit(ACCESS_EVENTS.abilitiesChanged, {
+      tenantId,
+    } satisfies AbilitiesChangedEvent);
   }
 
   /** Whether the principal may do `action` on `subject`: on this record, or on some when there is none. */
@@ -642,7 +693,7 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
       // `kind: 'system'` read from data: nothing, and never the cached
       // ability of the real one (the cache is keyed by principalKey).
       return {
-        version: this.version,
+        version: this.generation('-'),
         permissions: [],
         context: NO_UNITS,
         ability: abilityOf(this.catalog, principal, [], NO_UNITS),
@@ -652,23 +703,24 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
     // the system principal's conditions read the job's tenant's rows. A
     // break-glass request's ability is its grant's, never the person's own
     // in that tenant (an operator may also be a member there).
-    const key = `${currentTenantScope()?.tenantId ?? '-'}:${principalKey(principal)}${principal.kind === 'user' && principal.breakGlass ? `:break-glass:${principal.breakGlass.grantId}` : ''}`;
+    const tenant = currentTenantScope()?.tenantId ?? '-';
+    const key = `${tenant}:${principalKey(principal)}${principal.kind === 'user' && principal.breakGlass ? `:break-glass:${principal.breakGlass.grantId}` : ''}`;
     const cached = this.cache.get(key);
     if (
       cached &&
-      cached.loaded.version === this.version &&
+      cached.loaded.version === this.generation(tenant) &&
       Date.now() < cached.until
     ) {
       return cached.loaded;
     }
-    const version = this.version;
+    const version = this.generation(tenant);
     // Misses at the same moment share one load: redactAll() over a page
     // would otherwise query the grants once per row.
     const pendingKey = `${version}:${key}`;
     const pending = this.loading.get(pendingKey);
     if (pending) return pending;
-    const loading = this.loadFresh(principal, key, version).finally(() =>
-      this.loading.delete(pendingKey),
+    const loading = this.loadFresh(principal, tenant, key, version).finally(
+      () => this.loading.delete(pendingKey),
     );
     this.loading.set(pendingKey, loading);
     return loading;
@@ -676,8 +728,9 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
 
   private async loadFresh(
     principal: Principal,
+    tenant: string,
     key: string,
-    version: number,
+    version: string,
   ): Promise<Loaded> {
     const now = new Date();
     // One after the other: the caller may be in a transaction (one connection).
@@ -692,7 +745,7 @@ export class AccessService implements OnModuleInit, OnApplicationShutdown {
     };
     // Only what was built against the current version, never past the
     // next grant's end or membership change (nor a minute).
-    if (version === this.version) {
+    if (version === this.generation(tenant)) {
       this.makeRoom();
       this.cache.set(key, {
         loaded,

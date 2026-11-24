@@ -195,7 +195,7 @@ export class OrganizationService implements OnModuleInit {
       });
       return row!;
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
     return unit;
   }
 
@@ -253,7 +253,7 @@ export class OrganizationService implements OnModuleInit {
       });
       return row!;
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
     return unit;
   }
 
@@ -340,7 +340,7 @@ export class OrganizationService implements OnModuleInit {
         ip,
       });
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
   }
 
   /**
@@ -473,7 +473,7 @@ export class OrganizationService implements OnModuleInit {
       });
       return created!;
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
     return row;
   }
 
@@ -526,7 +526,7 @@ export class OrganizationService implements OnModuleInit {
       });
       return changed!;
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
     return row;
   }
 
@@ -567,7 +567,7 @@ export class OrganizationService implements OnModuleInit {
         ip,
       });
     });
-    this.access.invalidate();
+    this.access.invalidate(this.tenancy.tenantId());
   }
 
   /**
@@ -645,7 +645,7 @@ export class OrganizationService implements OnModuleInit {
     } finally {
       // The change ran (and was rolled back): its invalidation must not
       // leave abilities built inside the rolled-back transaction.
-      this.access.invalidate();
+      this.access.invalidate(this.tenancy.tenantId());
     }
     throw new Error('A preview always rolls back.');
   }

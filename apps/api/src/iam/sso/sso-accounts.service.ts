@@ -97,7 +97,7 @@ export class SsoAccounts {
       identity,
     );
     if (rolesChanged) {
-      this.access.invalidate();
+      this.access.invalidate(connection.tenantId);
     }
     return userId;
   }

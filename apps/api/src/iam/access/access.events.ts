@@ -32,11 +32,17 @@ export const ACCESS_EVENTS = {
    * Cached abilities were dropped on this instance (AccessService.clear():
    * a change to roles, grants or unit memberships, here or on another
    * instance). Unlike the others: emitted with `emit()` on every instance,
-   * after the change committed, with no payload (which principal changed is
-   * not known). modules/realtime re-checks its impersonation sockets.
+   * after the change committed, with the tenant whose abilities went
+   * (AbilitiesChangedEvent; which principal changed is not known).
+   * modules/realtime re-checks its impersonation sockets.
    */
   abilitiesChanged: 'access.abilities-changed',
 } as const;
+
+export interface AbilitiesChangedEvent {
+  /** The tenant whose abilities were dropped, or null for every tenant's. */
+  tenantId: string | null;
+}
 
 export interface MemberDeactivatedEvent {
   userId: string;

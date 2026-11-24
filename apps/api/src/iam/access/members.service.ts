@@ -236,7 +236,7 @@ export class MembersService implements OnModuleInit {
         ip,
       });
     });
-    this.access.invalidate();
+    this.access.invalidate(tenantId);
     if (deactivated) {
       this.events.emit(ACCESS_EVENTS.memberDeactivationCommitted, {
         userId: id,
