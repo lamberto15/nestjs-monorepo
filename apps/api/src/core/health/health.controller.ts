@@ -17,7 +17,8 @@ import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
  * - `GET /health/ready` (readiness; `GET /health` is the same check): 200
  *   when every `@ReadinessCheck()` of the app answers, 503 when one doesn't
  *   or while the app shuts down.
- * - `GET /health/live` (liveness): 200 while the process serves requests.
+ * - `GET /health/live` (liveness): 200 while the process serves requests,
+ *   draining included.
  */
 // Probes are never rate limited.
 @Public()
@@ -53,9 +54,13 @@ export class HealthController {
     );
   }
 
+  /**
+   * Not through Terminus: its graceful shutdown answers every check 503
+   * while the app drains, and a failing liveness probe means "restart me",
+   * which a draining process doesn't want. Terminus's body, with no checks.
+   */
   @Get('live')
-  @HealthCheck()
   live() {
-    return this.health.check([]);
+    return { status: 'ok', info: {}, error: {}, details: {} };
   }
 }
