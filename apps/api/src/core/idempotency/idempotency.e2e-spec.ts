@@ -12,13 +12,18 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
+import { like } from 'drizzle-orm';
 import { bootModules } from '../../../test/boot.js';
+import type { Database } from '../database/database.js';
 import { DatabaseModule } from '../database/database.module.js';
 import { EncryptionModule } from '../encryption/encryption.module.js';
 import { SecretsModule } from '../secrets/secrets.module.js';
 import { TenancyModule } from '../tenancy/tenancy.module.js';
 import { SharedIdempotencyModule } from './idempotency.module.js';
+import { DrizzleIdempotencyStore } from './idempotency.store.js';
+import { idempotencyKeys } from './idempotency.tables.js';
 import { IdempotentRoute } from './idempotent-route.js';
 
 const stats = { handled: 0, later: 0 };
@@ -136,5 +141,31 @@ describe('idempotency (e2e)', () => {
     const bob = await post('/v1/orders', key, { item: 'a' }, 'bob');
     expect(bob.json().id).not.toBe(alice.json().id);
     expect(stats.handled).toBe(2);
+  });
+
+  it('prunes every expired record, past one round of the limit, and keeps live ones', async () => {
+    const db = app.get<Database>(getDrizzleToken());
+    const prefix = `prune-${randomUUID()}`;
+    const row = (n: number, expiresAt: number) => ({
+      keyHash: `${prefix}-${n}`,
+      key: `${prefix}-${n}`,
+      fingerprint: 'f',
+      owner: null,
+      response: null,
+      expiresAt,
+    });
+    await db
+      .insert(idempotencyKeys)
+      .values([
+        ...[1, 2, 3, 4, 5].map((n) => row(n, Date.now() - 1000)),
+        row(6, Date.now() + 60_000),
+      ]);
+    // Two a round: three rounds to drain the five expired.
+    await app.get(DrizzleIdempotencyStore).pruneAll(2);
+    const left = await db
+      .select({ key: idempotencyKeys.key })
+      .from(idempotencyKeys)
+      .where(like(idempotencyKeys.key, `${prefix}-%`));
+    expect(left.map(({ key }) => key)).toEqual([`${prefix}-6`]);
   });
 });

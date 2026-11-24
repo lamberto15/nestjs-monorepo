@@ -146,9 +146,23 @@ export class DrizzleIdempotencyStore
     return deleted.length;
   }
 
+  /**
+   * Deletes every expired row, `limit` at a time: one round an hour would
+   * fall behind a busy API (every record create is idempotent, kept 24
+   * hours), and the table would only grow. Returns how many went.
+   */
+  async pruneAll(limit = 1000): Promise<number> {
+    let total = 0;
+    for (;;) {
+      const deleted = await this.prune(limit);
+      total += deleted;
+      if (deleted < limit) return total;
+    }
+  }
+
   onModuleInit() {
     this.pruneTimer = setInterval(() => {
-      this.prune().catch((error: unknown) =>
+      this.pruneAll().catch((error: unknown) =>
         this.logger.warn(`Pruning idempotency keys failed: ${String(error)}`),
       );
     }, PRUNE_INTERVAL_MS);
