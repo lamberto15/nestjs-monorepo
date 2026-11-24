@@ -205,8 +205,8 @@ Order matters, so it is written down once, in `app.module.ts`.
    (`NestrixInterceptor`) and the request context sit outside idempotency
    ([pitfalls](pitfalls.md#permissions-and-the-request-pipeline)).
 4. **Pipe and handler**: Zod validation (`StandardSchemaValidationPipe`, global),
-   then the controller, which does HTTP only, and the service, which owns the
-   logic and its queries.
+   then the controller, which does HTTP only, the service, which holds the
+   rules, and the repository, which holds the queries.
 5. **Errors** leave as problem details (`ProblemDetailsFilter`), with the request id.
 
 Guards run before interceptors, so the idempotency scope and the usage meter

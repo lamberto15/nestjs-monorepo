@@ -1,5 +1,4 @@
 import { randomUUIDv7 } from 'node:crypto';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ForbiddenException,
@@ -16,29 +15,15 @@ import {
   WebhooksStorage,
   WebhookWorker,
 } from '@nestjs/webhooks';
-import { and, eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
-import { apiClientRoles } from '../../iam/access/access.tables.js';
 import { RolesService } from '../../iam/access/roles.service.js';
 import { OnDomainEvent } from '../../core/outbox/events.js';
 import { apiClientDeleted } from '../../iam/api-clients/api-clients.events.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { UserPrincipal } from '../../iam/auth/principal.js';
 import { WebhookCatalog } from './webhook-catalog.js';
 import { TEST_EVENT_TYPE } from './webhook-events.js';
-import {
-  DELIVERY_LIST,
-  deliveryColumns,
-  storeDeliveries,
-} from './webhook-store.view.js';
+import { DELIVERY_LIST } from './webhook-store.view.js';
 import { destinationRefusal } from './webhook.transport.js';
 import { webhooksConfig } from './webhooks.config.js';
 import type {
@@ -46,11 +31,8 @@ import type {
   RetryDeliveriesDto,
   UpdateEndpointDto,
 } from './webhooks.schemas.js';
-import {
-  webhookClientScopes,
-  webhookDeliveryRequests,
-  type WebhookScope,
-} from './webhooks.tables.js';
+import { WebhooksRepository } from './webhooks.repository.js';
+import type { WebhookScope } from './webhooks.tables.js';
 
 /** The delivery's times, which the package keeps in epoch milliseconds. */
 const DELIVERY_TIMES = [
@@ -93,7 +75,7 @@ export interface WebhookOwner {
 @Injectable()
 export class WebhooksService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: WebhooksRepository,
     @Inject(webhooksConfig.KEY)
     private readonly config: ConfigType<typeof webhooksConfig>,
     private readonly endpoints: WebhookEndpoints,
@@ -122,23 +104,14 @@ export class WebhooksService {
     clientId: string,
     ip?: string,
   ): Promise<WebhookOwner> {
-    const [client] = await this.db
-      .select({ id: apiClients.id, name: apiClients.name })
-      .from(apiClients)
-      .where(eq(apiClients.id, clientId));
+    const client = await this.repository.findClient(clientId);
     if (!client) {
       throw new NotFoundException(`API client ${clientId} not found.`);
     }
     // Ended grants too: the stricter answer.
-    const held = await this.db
-      .select({ roleId: apiClientRoles.roleId })
-      .from(apiClientRoles)
-      .where(eq(apiClientRoles.clientId, client.id));
+    const held = await this.repository.roleIdsOfClient(client.id);
     try {
-      await this.roles.checkGrant(
-        user,
-        await this.roles.permissionsOf(held.map((row) => row.roleId)),
-      );
+      await this.roles.checkGrant(user, await this.roles.permissionsOf(held));
     } catch (error) {
       if (
         error instanceof ForbiddenException ||
@@ -158,27 +131,15 @@ export class WebhooksService {
 
   /** Which records' events the client's endpoints receive: `own` unless an administrator chose `tenant`. */
   async getScope(owner: WebhookOwner): Promise<{ scope: WebhookScope }> {
-    const [row] = await this.db
-      .select({ scope: webhookClientScopes.scope })
-      .from(webhookClientScopes)
-      .where(eq(webhookClientScopes.clientId, owner.clientId));
-    return { scope: row?.scope ?? 'own' };
+    return { scope: (await this.repository.scopeOf(owner.clientId)) ?? 'own' };
   }
 
   /** Sets it (`own` removes the row: the default), audited as the user's. */
   async setScope(owner: WebhookOwner, scope: WebhookScope) {
     if (scope === 'own') {
-      await this.db
-        .delete(webhookClientScopes)
-        .where(eq(webhookClientScopes.clientId, owner.clientId));
+      await this.repository.deleteScope(owner.clientId);
     } else {
-      await this.db
-        .insert(webhookClientScopes)
-        .values({ clientId: owner.clientId, scope })
-        .onConflictDoUpdate({
-          target: [webhookClientScopes.tenantId, webhookClientScopes.clientId],
-          set: { scope, updatedAt: new Date() },
-        });
+      await this.repository.saveScope(owner.clientId, scope);
     }
     await this.audited(owner, 'webhook-scope.updated', { scope });
     return { scope };
@@ -299,23 +260,10 @@ export class WebhooksService {
 
   /** The client's deliveries, newest first, cursor-paged (DELIVERY_LIST). */
   async listDeliveries(owner: WebhookOwner, query: ListQuery) {
-    const mine = eq(storeDeliveries.tenant, owner.clientId);
-    const [rows, total] = await Promise.all([
-      this.db
-        .select({ ...deliveryColumns, ...DELIVERY_LIST.sortSelect(query) })
-        .from(storeDeliveries)
-        .where(and(mine, DELIVERY_LIST.where(query, storeDeliveries.id)))
-        .orderBy(...pageOrder(storeDeliveries.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(
-        this.db,
-        storeDeliveries,
-        and(mine, DELIVERY_LIST.where(query)),
-        query,
-      ),
-    ]);
-    const page = DELIVERY_LIST.pick(toPage(rows, query, total), query);
+    const page = DELIVERY_LIST.pick(
+      await this.repository.deliveriesPage(owner.clientId, query),
+      query,
+    );
     return { ...page, items: page.items.map(deliveryView) };
   }
 
@@ -325,10 +273,7 @@ export class WebhooksService {
     if (!delivery) {
       throw new NotFoundException(`Webhook delivery ${id} not found.`);
     }
-    const [request] = await this.db
-      .select()
-      .from(webhookDeliveryRequests)
-      .where(eq(webhookDeliveryRequests.deliveryId, delivery.id));
+    const request = await this.repository.lastRequestOf(delivery.id);
     return {
       ...deliveryView(delivery),
       message: {

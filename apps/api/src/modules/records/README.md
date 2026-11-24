@@ -43,9 +43,16 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
    (editor: their own; unit-lead: their units'; viewer: all).
 6. **`<item>.policy.ts`**: `@Policy() export class ItemPolicy extends RecordPolicy {}`.
    An ability of the feature's own goes here.
-7. **`<item>s.service.ts`**: injects `RecordStore<Item>`; business logic around
-   `create(owner, values, { input: dto })`, `findOne`, `findPage`,
-   `update(by, id, changes, { check, input: dto })`, `delete(by, id, { check })`.
+7. **`<item>s.service.ts`**: injects `RecordStore<Item>`, the feature's
+   repository (no repository file of its own), with `AccessService`,
+   `AuthorizationService` and `RecordPresenter`; business logic and the
+   checks around `create(owner, values, { input: dto })`, `findOne`,
+   `findPage`, `update(by, id, changes, { check, input: dto })`,
+   `delete(by, id, { check })`: `assertWritableFields` on a create;
+   `findOne(id, { visibleTo })` first (a 404 for a record the caller may not
+   read); the policy, `assertWritableFields` and `assertUnchanged`
+   (If-Match, 412) in `check`, on the locked row. It returns what the route
+   answers (`presenter.one`/`page`).
    `input` is the validated body: the add-ons' hooks read their keys from it.
    Logic that must hold for every write (a derived read-only column) is not
    here: bulk, imports, automations, a restored revision and a recurring
@@ -53,12 +60,10 @@ by `test-items.e2e-spec.ts` and `two-apps.e2e-spec.ts`.
    own `@RecordExtension()` provider (`creating`/`updating` return the
    columns), listed in the feature module's providers: the fixture's
    `test-item.logic.ts` counts `words` this way.
-8. **`<item>s.controller.ts`**: HTTP only. POST (`@Can(Policy,'create')`,
-   `@RecordIdempotent`, `assertWritableFields`), GET list
-   (`presenter.query`/`page`, `IncludePipe`), GET one, PATCH, DELETE
-   (`@Can.Anyone()`, then `findOne(id, { visibleTo })`: a 404 for a record the
-   caller may not read; the policy and `assertUnchanged` (If-Match, 412)
-   in `check`, on the locked row). `@Etag()` on every read.
+8. **`<item>s.controller.ts`**: HTTP only, one service call per route. POST
+   (`@Can(Policy,'create')`, `@RecordIdempotent`), GET list (`IncludePipe`),
+   GET one, PATCH, DELETE (`@Can.Anyone()`: the service checks the record;
+   `If-Match` passed to it). `@Etag()` on every read.
 9. **`<item>s.module.ts`**:
 
    ```ts

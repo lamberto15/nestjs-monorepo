@@ -14,7 +14,7 @@ import {
   type Type,
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
-import { AuthorizationService, Can } from '@nestjs/authorization';
+import { Can } from '@nestjs/authorization';
 import {
   ApiBearerAuth,
   ApiCookieAuth,
@@ -31,23 +31,19 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import {
-  assertUnchanged,
   Etag,
   ifMatchHeader,
   ifNoneMatchHeader,
 } from '../../../src/core/http/etag.js';
 import { ApiListQuery } from '../../../src/core/http/list-docs.js';
 import { pageSchema } from '../../../src/core/http/pagination.js';
-import { AccessService } from '../../../src/iam/access/access.service.js';
 import type { RequestPrincipal } from '../../../src/iam/auth/principal.js';
 import {
   IncludePipe,
   includeQuery,
   type RecordInclude,
-  RecordPresenter,
 } from '../../../src/modules/records/record.presenter.js';
 import {
-  assertWritableFields,
   deleteDocs,
   RecordIdempotent,
 } from '../../../src/modules/records/record.routes.js';
@@ -62,9 +58,9 @@ import type {
 import { TestItemsService } from './test-items.service.js';
 
 /**
- * Test items: the HTTP routes only. A record the caller may not read is
- * the 404 of a missing one; one they read but may not change, a 403. The
- * restore route and the add-ons' routes come with the module's imports.
+ * Test items: the HTTP routes only, one service call each; the checks are
+ * the service's. The restore route and the add-ons' routes come with the
+ * module's imports.
  * Made per testItemsModule(): its bodies and response take what the
  * module's add-ons add (`schemas`).
  */
@@ -77,12 +73,7 @@ export function testItemsController(SCHEMAS: RecordSchemas): Type {
   @ApiForbiddenResponse({ description: 'Not allowed by your permissions.' })
   @Controller('test-items')
   class TestItemsController {
-    constructor(
-      private readonly testItems: TestItemsService,
-      private readonly access: AccessService,
-      private readonly authorization: AuthorizationService,
-      private readonly presenter: RecordPresenter,
-    ) {}
+    constructor(private readonly testItems: TestItemsService) {}
 
     @Post()
     @Etag()
@@ -90,12 +81,11 @@ export function testItemsController(SCHEMAS: RecordSchemas): Type {
     @Can(TestItemPolicy, 'create')
     @ApiOperation({ summary: 'Create a test item' })
     @ApiCreatedResponse({ standardSchema: SCHEMAS.response })
-    async create(
+    create(
       @CurrentUser() user: RequestPrincipal,
       @Body({ schema: SCHEMAS.create }) dto: CreateTestItemDto,
     ) {
-      await assertWritableFields(this.access, user, 'create', TEST_ITEM, dto);
-      return this.presenter.one(user, await this.testItems.create(user, dto));
+      return this.testItems.create(user, dto);
     }
 
     @Get()
@@ -105,37 +95,33 @@ export function testItemsController(SCHEMAS: RecordSchemas): Type {
     @ApiOkResponse({ standardSchema: pageSchema(SCHEMAS.response) })
     @ApiListQuery(TEST_ITEM_LIST)
     @ApiQuery(includeQuery())
-    async list(
+    list(
       @CurrentUser() user: RequestPrincipal,
       @Query() raw: Record<string, unknown>,
       @Query('include', IncludePipe) include: RecordInclude,
     ) {
-      const { list, query } = await this.presenter.query(user, raw);
-      const page = await this.testItems.findPage(user, list, query);
-      return this.presenter.page(user, page, { list, query, include });
+      return this.testItems.findPage(user, raw, include);
     }
 
     @Get(':id')
     @Etag()
-    @Can.Anyone() // Checked below, on the record itself.
+    @Can.Anyone() // The service checks the record itself.
     @ApiOperation({ summary: 'One test item' })
     @ApiHeader(ifNoneMatchHeader())
     @ApiQuery(includeQuery())
     @ApiOkResponse({ standardSchema: SCHEMAS.response })
     @ApiNotFoundResponse()
-    async get(
+    get(
       @CurrentUser() user: RequestPrincipal,
       @Param('id', ParseUUIDPipe) id: string,
       @Query('include', IncludePipe) include: RecordInclude,
     ) {
-      const row = await this.testItems.findOne(id, { visibleTo: user });
-      await this.authorization.authorize(TestItemPolicy, 'read', user, row);
-      return this.presenter.one(user, row, include);
+      return this.testItems.findOne(user, id, include);
     }
 
     @Patch(':id')
     @Etag()
-    @Can.Anyone() // Checked below, on the record and on each field.
+    @Can.Anyone() // The service checks the record and each field.
     @ApiOperation({ summary: 'Change a test item: only what is sent changes' })
     @ApiHeader(ifMatchHeader())
     @ApiOkResponse({ standardSchema: SCHEMAS.response })
@@ -143,41 +129,18 @@ export function testItemsController(SCHEMAS: RecordSchemas): Type {
     @ApiPreconditionFailedResponse({
       description: 'It changed since you read it.',
     })
-    async update(
+    update(
       @CurrentUser() user: RequestPrincipal,
       @Param('id', ParseUUIDPipe) id: string,
       @Body({ schema: SCHEMAS.update }) dto: UpdateTestItemDto,
       @Headers('if-match') ifMatch: string | undefined,
     ) {
-      await this.testItems.findOne(id, { visibleTo: user });
-      const updated = await this.testItems.update(
-        user,
-        id,
-        dto,
-        async (row) => {
-          await this.authorization.authorize(
-            TestItemPolicy,
-            'update',
-            user,
-            row,
-          );
-          await assertWritableFields(
-            this.access,
-            user,
-            'update',
-            TEST_ITEM,
-            dto,
-            row,
-          );
-          assertUnchanged(ifMatch, await this.presenter.one(user, row));
-        },
-      );
-      return this.presenter.one(user, updated);
+      return this.testItems.update(user, id, dto, ifMatch);
     }
 
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
-    @Can.Anyone() // Checked below, on the record itself.
+    @Can.Anyone() // The service checks the record itself.
     @ApiOperation(deleteDocs(TEST_ITEM))
     @ApiHeader(ifMatchHeader())
     @ApiNoContentResponse()
@@ -187,11 +150,7 @@ export function testItemsController(SCHEMAS: RecordSchemas): Type {
       @Param('id', ParseUUIDPipe) id: string,
       @Headers('if-match') ifMatch: string | undefined,
     ) {
-      await this.testItems.findOne(id, { visibleTo: user });
-      await this.testItems.delete(user, id, async (row) => {
-        await this.authorization.authorize(TestItemPolicy, 'delete', user, row);
-        assertUnchanged(ifMatch, await this.presenter.one(user, row));
-      });
+      await this.testItems.delete(user, id, ifMatch);
     }
   }
   return TestItemsController;

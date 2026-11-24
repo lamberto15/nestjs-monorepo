@@ -1,18 +1,20 @@
 import { randomBytes } from 'node:crypto';
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { asc, eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
 import { EncryptedColumns } from '../../core/encryption/encrypted-columns.js';
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
+import {
+  IncomingSendersRepository,
+  type Sender,
+} from './incoming-senders.repository.js';
 import type { ResolvedSender } from './tenant-sender.scheme.js';
 import type {
   CreateIncomingSenderDto,
@@ -20,8 +22,6 @@ import type {
   UpdateIncomingSenderDto,
 } from './webhooks.schemas.js';
 import { incomingWebhookSenders } from './webhooks.tables.js';
-
-type Sender = typeof incomingWebhookSenders.$inferSelect;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -62,17 +62,14 @@ const view = (sender: Sender, now = new Date()) => ({
 @Injectable()
 export class IncomingSendersService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly senders: IncomingSendersRepository,
     private readonly encryption: EncryptionService,
     private readonly audit: AuditService,
     private readonly tenancy: Tenancy,
   ) {}
 
   async list() {
-    const rows = await this.db
-      .select()
-      .from(incomingWebhookSenders)
-      .orderBy(asc(incomingWebhookSenders.name));
+    const rows = await this.senders.list();
     return { items: rows.map((row) => view(row)) };
   }
 
@@ -108,22 +105,19 @@ export class IncomingSendersService {
     secret: string,
     ip?: string,
   ) {
-    const [created] = await this.db
-      .insert(incomingWebhookSenders)
-      .values({
-        name: dto.name,
-        description: dto.description ?? null,
-        secret: this.encryption.encrypt(incomingWebhookSenders.secret, secret),
-      })
-      .returning();
+    const created = await this.senders.insert({
+      name: dto.name,
+      description: dto.description ?? null,
+      secret: this.encryption.encrypt(incomingWebhookSenders.secret, secret),
+    });
     await this.audit.record(principal, {
       action: 'webhookSender.created',
       targetType: 'webhookSender',
-      targetId: created!.id,
+      targetId: created.id,
       details: { name: dto.name },
       ip,
     });
-    return created!;
+    return created;
   }
 
   @Transactional()
@@ -138,11 +132,7 @@ export class IncomingSendersService {
       Object.entries(dto).filter(([, value]) => value !== undefined),
     ) as UpdateIncomingSenderDto;
     if (Object.keys(values).length === 0) return view(before);
-    const [updated] = await this.db
-      .update(incomingWebhookSenders)
-      .set(values)
-      .where(eq(incomingWebhookSenders.id, id))
-      .returning();
+    const updated = await this.senders.update(id, values);
     await this.audit.record(principal, {
       action: 'webhookSender.updated',
       targetType: 'webhookSender',
@@ -150,7 +140,7 @@ export class IncomingSendersService {
       details: { name: before.name, changed: Object.keys(values) },
       ip,
     });
-    return view(updated!);
+    return view(updated);
   }
 
   /** A new secret, shown this once; the old one verifies for `graceSeconds` more. */
@@ -167,16 +157,12 @@ export class IncomingSendersService {
       dto.graceSeconds > 0
         ? new Date(Date.now() + dto.graceSeconds * 1000)
         : null;
-    const [updated] = await this.db
-      .update(incomingWebhookSenders)
-      .set({
-        secret: this.encryption.encrypt(incomingWebhookSenders.secret, secret),
-        // Sealed already, under the same binding: it moves as it is.
-        previousSecret: graceEnds ? before.secret : null,
-        previousSecretExpiresAt: graceEnds,
-      })
-      .where(eq(incomingWebhookSenders.id, id))
-      .returning();
+    const updated = await this.senders.update(id, {
+      secret: this.encryption.encrypt(incomingWebhookSenders.secret, secret),
+      // Sealed already, under the same binding: it moves as it is.
+      previousSecret: graceEnds ? before.secret : null,
+      previousSecretExpiresAt: graceEnds,
+    });
     await this.audit.record(principal, {
       action: 'webhookSender.secret-rotated',
       targetType: 'webhookSender',
@@ -187,15 +173,13 @@ export class IncomingSendersService {
       },
       ip,
     });
-    return { ...view(updated!), secret };
+    return { ...view(updated), secret };
   }
 
   @Transactional()
   async remove(principal: Principal, id: string, ip?: string) {
     const before = await this.find(id);
-    await this.db
-      .delete(incomingWebhookSenders)
-      .where(eq(incomingWebhookSenders.id, id));
+    await this.senders.delete(id);
     await this.audit.record(principal, {
       action: 'webhookSender.deleted',
       targetType: 'webhookSender',
@@ -219,11 +203,8 @@ export class IncomingSendersService {
     if (!UUID.test(tenantId)) return null;
     const tenant = await this.tenancy.find(tenantId.toLowerCase());
     if (!tenant?.active) return null;
-    const [row] = await this.tenancy.run(tenant.id, () =>
-      this.db
-        .select()
-        .from(incomingWebhookSenders)
-        .where(eq(incomingWebhookSenders.name, name)),
+    const row = await this.tenancy.run(tenant.id, () =>
+      this.senders.findByName(name),
     );
     if (!row?.enabled) return null;
     const secrets = [
@@ -253,10 +234,7 @@ export class IncomingSendersService {
   }
 
   private async find(id: string): Promise<Sender> {
-    const [row] = await this.db
-      .select()
-      .from(incomingWebhookSenders)
-      .where(eq(incomingWebhookSenders.id, id));
+    const row = await this.senders.findById(id);
     if (!row) {
       throw new NotFoundException(`Webhook sender ${id} not found.`);
     }

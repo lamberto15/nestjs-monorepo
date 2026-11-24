@@ -1,14 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { InjectDrizzle } from '@nestjs/drizzle';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
 import { WebhookDeliveries } from '@nestjs/webhooks';
-import { eq, notExists } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
-import { storeDeliveries } from './webhook-store.view.js';
 import { webhooksConfig } from './webhooks.config.js';
-import { webhookDeliveryRequests } from './webhooks.tables.js';
+import { WebhooksRepository } from './webhooks.repository.js';
 
 /**
  * Deletes outgoing deliveries that succeeded or failed for good more than
@@ -27,7 +23,7 @@ export class WebhookDeliveryRetentionJob {
     @Inject(webhooksConfig.KEY)
     private readonly config: ConfigType<typeof webhooksConfig>,
     private readonly deliveries: WebhookDeliveries,
-    @InjectDrizzle() private readonly db: Database,
+    private readonly repository: WebhooksRepository,
   ) {}
 
   /** Returns how many deliveries and recorded requests were deleted. */
@@ -38,18 +34,8 @@ export class WebhookDeliveryRetentionJob {
     const days = this.config.retentionDays;
     const deliveries = await this.deliveries.prune(`${days}d`);
     // After the package: a request row outlives its delivery by a night at most.
-    const deleted = await this.db
-      .delete(webhookDeliveryRequests)
-      .where(
-        notExists(
-          this.db
-            .select({ id: storeDeliveries.id })
-            .from(storeDeliveries)
-            .where(eq(storeDeliveries.id, webhookDeliveryRequests.deliveryId)),
-        ),
-      )
-      .returning({ id: webhookDeliveryRequests.deliveryId });
-    const requests = deleted.length;
+    // A nightly job has no ambient transaction: the delete commits on its own.
+    const requests = await this.repository.deleteOrphanRequests();
     this.logger.log(
       `Old webhook deliveries deleted: ${deliveries} deliveries, ${requests} recorded requests (${days} days).`,
     );

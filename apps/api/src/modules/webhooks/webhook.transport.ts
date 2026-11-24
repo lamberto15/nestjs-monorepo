@@ -109,7 +109,9 @@ export async function destinationRefusal(
  * It also records the request it is about to send for the delivery log
  * (`lastRequest`). Custom: the package logs each attempt's response, not
  * its request, and a transport is its documented place to wrap sending. A
- * failed write is logged and the webhook is sent anyway.
+ * failed write is logged and the webhook is sent anyway. That write stays
+ * here, not in WebhooksRepository: the package builds the transport in its
+ * own module, where this module's providers can't be injected.
  */
 @Injectable()
 export class SafeWebhookTransport extends WebhookTransport {

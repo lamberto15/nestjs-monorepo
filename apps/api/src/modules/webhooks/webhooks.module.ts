@@ -24,6 +24,7 @@ import { ClientWebhooksController } from './client-webhooks.controller.js';
 import { IncomingEventTypesController } from './incoming-event-types.controller.js';
 import { IncomingEventHandlers } from './incoming-events.js';
 import { IncomingSendersController } from './incoming-senders.controller.js';
+import { IncomingSendersRepository } from './incoming-senders.repository.js';
 import { IncomingSendersService } from './incoming-senders.service.js';
 import {
   TENANT_SENDERS_RECEIVER,
@@ -46,6 +47,7 @@ import './webhooks.errors.js';
 import { WEBHOOK_PERMISSIONS } from './webhooks.permissions.js';
 import { WebhookPolicy } from './webhooks.policy.js';
 import { WebhooksErasure } from './webhooks.erasure.js';
+import { WebhooksRepository } from './webhooks.repository.js';
 import { WebhooksService } from './webhooks.service.js';
 
 /**
@@ -132,9 +134,11 @@ import { WebhooksService } from './webhooks.service.js';
     },
     WebhookCatalog,
     WebhookPublisher,
+    WebhooksRepository,
     WebhooksService,
     WebhooksErasure,
     WebhookPolicy,
+    IncomingSendersRepository,
     IncomingSendersService,
     IncomingEventHandlers,
     TenantSenderGuard,

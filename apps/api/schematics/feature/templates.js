@@ -294,28 +294,29 @@ export function policy(c) {
 export function service(c) {
   const { t } = c;
   const S = t.Singular;
+  const P = S + 'Policy';
   return (
     importLines(
       [
         ['Injectable', '@nestjs/common'],
-        ['List', src(c, 'core/http/list-query.js')],
-        ['ListQuery', src(c, 'core/http/list-query.js')],
+        ['AuthorizationService', '@nestjs/authorization'],
+        ['assertUnchanged', src(c, 'core/http/etag.js')],
+        ['AccessService', src(c, 'iam/access/access.service.js')],
         ['Principal', src(c, 'iam/auth/principal.js')],
         ['recordValues', src(c, 'modules/records/record.js')],
-        ['CurrentCheck', src(c, 'modules/records/record.store.js')],
-        ['RecordLookup', src(c, 'modules/records/record.store.js')],
+        ['RecordInclude', src(c, 'modules/records/record.presenter.js')],
+        ['RecordPresenter', src(c, 'modules/records/record.presenter.js')],
+        ['assertWritableFields', src(c, 'modules/records/record.routes.js')],
         ['RecordStore', src(c, 'modules/records/record.store.js')],
+        [P, './' + t.singular + '.policy.js'],
         [c.R, './' + t.singular + '.record.js'],
         ['Create' + S + 'Dto', './' + t.singular + '.schemas.js'],
         [S, './' + t.singular + '.schemas.js'],
         ['Update' + S + 'Dto', './' + t.singular + '.schemas.js'],
       ],
       new Set([
-        'List',
-        'ListQuery',
         'Principal',
-        'CurrentCheck',
-        'RecordLookup',
+        'RecordInclude',
         'Create' + S + 'Dto',
         S,
         'Update' + S + 'Dto',
@@ -324,41 +325,71 @@ export function service(c) {
     '\n\n' +
     '/**\n * ' +
     cap(t.nouns) +
-    ': the use cases. RecordStore does what the declaration decides\n' +
-    ' * (owner, unit, recycle bin) and what every write causes in its transaction\n' +
-    " * (the add-ons' hooks, the audit entry, the domain event). Business logic\n" +
-    ' * goes where the comments say so. Logic that must hold for every write,\n' +
-    ' * whoever makes it (bulk, imports, automations), is a `@RecordExtension()`\n' +
-    ' * provider of this feature instead (modules/records/README.md, step 7).\n */\n' +
+    ': the use cases and their checks.\n' +
+    ' * One the caller may not read is the 404 of a missing one; one they read\n' +
+    ' * but may not change, a 403; a change to what they read, a 412 (If-Match).\n' +
+    ' * Business logic goes where the comments say so. Logic that must hold for\n' +
+    ' * every write, whoever makes it (bulk, imports, automations), is a\n' +
+    ' * `@RecordExtension()` provider of this feature instead\n' +
+    ' * (modules/records/README.md, step 7).\n */\n' +
     '@Injectable()\nexport class ' +
     t.Plural +
     'Service {\n' +
-    'constructor(private readonly records: RecordStore<' +
+    'constructor(\n' +
+    '// The repository of a record feature: RecordStore holds its queries and\n' +
+    '// what every write causes in its transaction (owner, unit, recycle bin,\n' +
+    "// add-ons' hooks, audit, domain event), so there is no repository file.\n" +
+    'private readonly records: RecordStore<' +
     S +
-    '>) {}\n\n' +
+    '>,\nprivate readonly access: AccessService,\nprivate readonly authorization: AuthorizationService,\nprivate readonly presenter: RecordPresenter,\n) {}\n\n' +
     "/** `dto` goes along as `input`: the add-ons' hooks read their keys from it. */\n" +
-    'create(owner: Principal, dto: Create' +
+    'async create(owner: Principal, dto: Create' +
     S +
     'Dto) {\n' +
+    "await assertWritableFields(this.access, owner, 'create', " +
+    c.R +
+    ', dto);\n' +
     '// Business logic: check or derive values before the write.\n' +
-    'return this.records.create(owner, recordValues(' +
+    'const row = await this.records.create(owner, recordValues(' +
     c.R +
-    ', dto), { input: dto });\n}\n\n' +
-    'findOne(id: string, lookup?: RecordLookup) {\nreturn this.records.findOne(id, lookup);\n}\n\n' +
-    'findPage(user: Principal, list: List, query: ListQuery) {\nreturn this.records.findPage(user, list, query);\n}\n\n' +
-    'update(by: Principal, id: string, dto: Update' +
+    ', dto), { input: dto });\n' +
+    'return this.presenter.one(owner, row);\n}\n\n' +
+    '/** A page of those the caller may read: filtered in the query. */\n' +
+    'async findPage(user: Principal, raw: Record<string, unknown>, include: RecordInclude) {\n' +
+    'const { list, query } = await this.presenter.query(user, raw);\n' +
+    'const page = await this.records.findPage(user, list, query);\n' +
+    'return this.presenter.page(user, page, { list, query, include });\n}\n\n' +
+    'async findOne(user: Principal, id: string, include: RecordInclude) {\n' +
+    'const row = await this.records.findOne(id, { visibleTo: user });\n' +
+    'await this.authorization.authorize(' +
+    P +
+    ", 'read', user, row);\n" +
+    'return this.presenter.one(user, row, include);\n}\n\n' +
+    '/** The checks run in `check`, on the locked row. */\n' +
+    'async update(by: Principal, id: string, dto: Update' +
     S +
-    'Dto, check?: CurrentCheck<' +
-    S +
-    '>) {\n' +
-    '// Business logic: what a change must respect, in `check` (on the locked row) or here.\n' +
-    'return this.records.update(by, id, recordValues(' +
+    'Dto, ifMatch: string | undefined) {\n' +
+    'await this.records.findOne(id, { visibleTo: by });\n' +
+    'const updated = await this.records.update(by, id, recordValues(' +
     c.R +
-    ', dto), { check, input: dto });\n}\n\n' +
-    'delete(by: Principal, id: string, check?: CurrentCheck<' +
-    S +
-    '>) {\n' +
-    'return this.records.delete(by, id, { check });\n}\n}\n'
+    ', dto), {\ninput: dto,\ncheck: async (row) => {\n' +
+    'await this.authorization.authorize(' +
+    P +
+    ", 'update', by, row);\n" +
+    "await assertWritableFields(this.access, by, 'update', " +
+    c.R +
+    ', dto, row);\n' +
+    'assertUnchanged(ifMatch, await this.presenter.one(by, row));\n' +
+    '// Business logic: what a change must respect, on the locked row.\n' +
+    '},\n});\n' +
+    'return this.presenter.one(by, updated);\n}\n\n' +
+    'async delete(by: Principal, id: string, ifMatch: string | undefined) {\n' +
+    'await this.records.findOne(id, { visibleTo: by });\n' +
+    'await this.records.delete(by, id, {\ncheck: async (row) => {\n' +
+    'await this.authorization.authorize(' +
+    P +
+    ", 'delete', by, row);\n" +
+    'assertUnchanged(ifMatch, await this.presenter.one(by, row));\n},\n});\n}\n}\n'
   );
 }
 
@@ -385,7 +416,6 @@ export function controller(c) {
           'Query',
         ].map((n) => [n, '@nestjs/common']),
         ['CurrentUser', '@nestjs/authentication'],
-        ['AuthorizationService', '@nestjs/authorization'],
         ['Can', '@nestjs/authorization'],
         ...[
           'ApiBearerAuth',
@@ -402,25 +432,21 @@ export function controller(c) {
           'ApiTags',
           'ApiUnauthorizedResponse',
         ].map((n) => [n, '@nestjs/swagger']),
-        ...[
-          'assertUnchanged',
-          'Etag',
-          'ifMatchHeader',
-          'ifNoneMatchHeader',
-        ].map((n) => [n, src(c, 'core/http/etag.js')]),
+        ...['Etag', 'ifMatchHeader', 'ifNoneMatchHeader'].map((n) => [
+          n,
+          src(c, 'core/http/etag.js'),
+        ]),
         ['ApiListQuery', src(c, 'core/http/list-docs.js')],
         ['pageSchema', src(c, 'core/http/pagination.js')],
-        ['AccessService', src(c, 'iam/access/access.service.js')],
         ['RequestPrincipal', src(c, 'iam/auth/principal.js')],
-        ...[
-          'IncludePipe',
-          'includeQuery',
-          'RecordInclude',
-          'RecordPresenter',
-        ].map((n) => [n, src(c, 'modules/records/record.presenter.js')]),
-        ...['assertWritableFields', 'deleteDocs', 'RecordIdempotent'].map(
-          (n) => [n, src(c, 'modules/records/record.routes.js')],
-        ),
+        ...['IncludePipe', 'includeQuery', 'RecordInclude'].map((n) => [
+          n,
+          src(c, 'modules/records/record.presenter.js'),
+        ]),
+        ...['deleteDocs', 'RecordIdempotent'].map((n) => [
+          n,
+          src(c, 'modules/records/record.routes.js'),
+        ]),
         [c.R + '_LIST', './' + t.singular + '.list.js'],
         [P, './' + t.singular + '.policy.js'],
         [c.R, './' + t.singular + '.record.js'],
@@ -442,9 +468,9 @@ export function controller(c) {
     '_SCHEMAS;\n\n' +
     '/**\n * ' +
     cap(t.nouns) +
-    ': the HTTP routes only. One the caller may not read is the\n' +
-    ' * 404 of a missing one; one they read but may not change, a 403. The\n' +
-    " * restore route and the add-ons' routes come with the module's imports.\n */\n" +
+    ': the HTTP routes only.\n' +
+    " * One service call each; the checks are the service's. The restore route\n" +
+    " * and the add-ons' routes come with the module's imports.\n */\n" +
     "@ApiTags('" +
     t.plural +
     "')\n@ApiBearerAuth('api-key')\n@ApiBearerAuth('user-token')\n@ApiCookieAuth('user-session')\n" +
@@ -455,11 +481,11 @@ export function controller(c) {
     "')\nexport class " +
     t.Plural +
     'Controller {\n' +
-    'constructor(\nprivate readonly ' +
+    'constructor(private readonly ' +
     m +
     ': ' +
     t.Plural +
-    'Service,\nprivate readonly access: AccessService,\nprivate readonly authorization: AuthorizationService,\nprivate readonly presenter: RecordPresenter,\n) {}\n\n' +
+    'Service) {}\n\n' +
     '@Post()\n@Etag()\n@RecordIdempotent(' +
     c.R +
     ')\n@Can(' +
@@ -468,15 +494,12 @@ export function controller(c) {
     "@ApiOperation({ summary: 'Create " +
     t.aNoun +
     "' })\n@ApiCreatedResponse({ standardSchema: SCHEMAS.response })\n" +
-    'async create(\n@CurrentUser() user: RequestPrincipal,\n@Body({ schema: SCHEMAS.create }) dto: Create' +
+    'create(\n@CurrentUser() user: RequestPrincipal,\n@Body({ schema: SCHEMAS.create }) dto: Create' +
     S +
     'Dto,\n) {\n' +
-    "await assertWritableFields(this.access, user, 'create', " +
-    c.R +
-    ', dto);\n' +
-    'return this.presenter.one(user, await this.' +
+    'return this.' +
     m +
-    '.create(user, dto));\n}\n\n' +
+    '.create(user, dto);\n}\n\n' +
     '@Get()\n@Etag()\n@Can.Anyone() // Only those the caller may read: filtered in the query.\n' +
     "@ApiOperation({ summary: 'The " +
     t.nouns +
@@ -484,62 +507,38 @@ export function controller(c) {
     '@ApiOkResponse({ standardSchema: pageSchema(SCHEMAS.response) })\n@ApiListQuery(' +
     c.R +
     '_LIST)\n@ApiQuery(includeQuery())\n' +
-    "async list(\n@CurrentUser() user: RequestPrincipal,\n@Query() raw: Record<string, unknown>,\n@Query('include', IncludePipe) include: RecordInclude,\n) {\n" +
-    'const { list, query } = await this.presenter.query(user, raw);\n' +
-    'const page = await this.' +
+    "list(\n@CurrentUser() user: RequestPrincipal,\n@Query() raw: Record<string, unknown>,\n@Query('include', IncludePipe) include: RecordInclude,\n) {\n" +
+    'return this.' +
     m +
-    '.findPage(user, list, query);\n' +
-    'return this.presenter.page(user, page, { list, query, include });\n}\n\n' +
-    "@Get(':id')\n@Etag()\n@Can.Anyone() // Checked below, on the record itself.\n" +
+    '.findPage(user, raw, include);\n}\n\n' +
+    "@Get(':id')\n@Etag()\n@Can.Anyone() // The service checks the record itself.\n" +
     "@ApiOperation({ summary: 'One " +
     t.noun +
     "' })\n@ApiHeader(ifNoneMatchHeader())\n@ApiQuery(includeQuery())\n" +
     '@ApiOkResponse({ standardSchema: SCHEMAS.response })\n@ApiNotFoundResponse()\n' +
-    "async get(\n@CurrentUser() user: RequestPrincipal,\n@Param('id', ParseUUIDPipe) id: string,\n@Query('include', IncludePipe) include: RecordInclude,\n) {\n" +
-    'const row = await this.' +
+    "get(\n@CurrentUser() user: RequestPrincipal,\n@Param('id', ParseUUIDPipe) id: string,\n@Query('include', IncludePipe) include: RecordInclude,\n) {\n" +
+    'return this.' +
     m +
-    '.findOne(id, { visibleTo: user });\n' +
-    'await this.authorization.authorize(' +
-    P +
-    ", 'read', user, row);\n" +
-    'return this.presenter.one(user, row, include);\n}\n\n' +
-    "@Patch(':id')\n@Etag()\n@Can.Anyone() // Checked below, on the record and on each field.\n" +
+    '.findOne(user, id, include);\n}\n\n' +
+    "@Patch(':id')\n@Etag()\n@Can.Anyone() // The service checks the record and each field.\n" +
     "@ApiOperation({ summary: 'Change " +
     t.aNoun +
     ": only what is sent changes' })\n@ApiHeader(ifMatchHeader())\n" +
     "@ApiOkResponse({ standardSchema: SCHEMAS.response })\n@ApiNotFoundResponse()\n@ApiPreconditionFailedResponse({ description: 'It changed since you read it.' })\n" +
-    "async update(\n@CurrentUser() user: RequestPrincipal,\n@Param('id', ParseUUIDPipe) id: string,\n@Body({ schema: SCHEMAS.update }) dto: Update" +
+    "update(\n@CurrentUser() user: RequestPrincipal,\n@Param('id', ParseUUIDPipe) id: string,\n@Body({ schema: SCHEMAS.update }) dto: Update" +
     S +
     "Dto,\n@Headers('if-match') ifMatch: string | undefined,\n) {\n" +
-    'await this.' +
+    'return this.' +
     m +
-    '.findOne(id, { visibleTo: user });\n' +
-    'const updated = await this.' +
-    m +
-    '.update(user, id, dto, async (row) => {\n' +
-    'await this.authorization.authorize(' +
-    P +
-    ", 'update', user, row);\n" +
-    "await assertWritableFields(this.access, user, 'update', " +
-    c.R +
-    ', dto, row);\n' +
-    'assertUnchanged(ifMatch, await this.presenter.one(user, row));\n});\n' +
-    'return this.presenter.one(user, updated);\n}\n\n' +
-    "@Delete(':id')\n@HttpCode(HttpStatus.NO_CONTENT)\n@Can.Anyone() // Checked below, on the record itself.\n" +
+    '.update(user, id, dto, ifMatch);\n}\n\n' +
+    "@Delete(':id')\n@HttpCode(HttpStatus.NO_CONTENT)\n@Can.Anyone() // The service checks the record itself.\n" +
     '@ApiOperation(deleteDocs(' +
     c.R +
     '))\n@ApiHeader(ifMatchHeader())\n@ApiNoContentResponse()\n@ApiNotFoundResponse()\n' +
     "async delete(\n@CurrentUser() user: RequestPrincipal,\n@Param('id', ParseUUIDPipe) id: string,\n@Headers('if-match') ifMatch: string | undefined,\n) {\n" +
     'await this.' +
     m +
-    '.findOne(id, { visibleTo: user });\n' +
-    'await this.' +
-    m +
-    '.delete(user, id, async (row) => {\n' +
-    'await this.authorization.authorize(' +
-    P +
-    ", 'delete', user, row);\n" +
-    'assertUnchanged(ifMatch, await this.presenter.one(user, row));\n});\n}\n}\n'
+    '.delete(user, id, ifMatch);\n}\n}\n'
   );
 }
 

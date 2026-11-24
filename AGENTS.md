@@ -53,8 +53,9 @@ from the template (`pnpm create nestjs-monorepo`), not the template. There:
    limit has one definition; everything else is derived from it.
 6. **Nothing until it is needed.** No layer, base class, option or helper
    before a second real caller.
-7. **Layers:** a controller does HTTP only, a service owns the logic and its
-   queries, a module wires them.
+7. **Layers:** a controller does HTTP only (params, one service call,
+   status codes); a service holds the rules; a repository holds the queries
+   (`<name>.repository.ts`); a module wires them.
 8. **No raw SQL.** Drizzle's query builder; `sql` only for an expression it
    lacks.
 9. **Generate, never hand-write what a command produces:** `pnpm add`,
@@ -92,6 +93,11 @@ from the template (`pnpm create nestjs-monorepo`), not the template. There:
   the copies of its accounts are independent from then on. Schema- and
   database-per-tenant wait until a customer needs them (the owner,
   2026-11-19).
+- **Repositories everywhere** (the owner, 2026-11-25): every module with
+  queries keeps them in a repository, as NestJS's own guidance places data
+  access, so a service's rules are tested with a stubbed repository and no
+  database. A record feature's repository is the records engine's
+  `RecordStore`. The user stays an explicit parameter.
 - **Features come from a generator**, a Nest schematics collection (`nest g`).
 - **No sample feature ships.** `src/features` starts empty: a new project
   has nothing to delete first. The generator carries its own templates and

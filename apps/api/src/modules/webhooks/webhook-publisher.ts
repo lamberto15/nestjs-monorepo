@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto';
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
 import {
   NonRetryableMessageError,
   type OutboxHandlerContext,
 } from '@nestjs/outbox';
 import { type NewWebhookMessage, Webhooks } from '@nestjs/webhooks';
-import { and, eq, inArray } from 'drizzle-orm';
 import type {
   Database,
   DatabaseTransactions,
@@ -14,11 +13,9 @@ import type {
 import { EncryptionService } from '../../core/encryption/encryption.service.js';
 import { currentTenantScope } from '../../core/tenancy/tenant-scope.js';
 import { AccessService } from '../../iam/access/access.service.js';
-import { apiClients } from '../../iam/auth/auth.tables.js';
 import type { ClientPrincipal } from '../../iam/auth/principal.js';
 import type { WebhookEvent } from './webhook-events.js';
-import { storeEndpoints } from './webhook-store.view.js';
-import { webhookClientScopes } from './webhooks.tables.js';
+import { WebhooksRepository } from './webhooks.repository.js';
 
 /**
  * Turns a module's domain event into webhooks (`WebhooksModule.forFeature()`):
@@ -33,7 +30,7 @@ import { webhookClientScopes } from './webhooks.tables.js';
 @Injectable()
 export class WebhookPublisher {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: WebhooksRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly webhooks: Webhooks<Database>,
     private readonly access: AccessService,
@@ -62,13 +59,15 @@ export class WebhookPublisher {
     const addressee = (
       definition.to as ((payload: unknown) => string | undefined) | undefined
     )?.(source);
-    const wide = definition.record ? await this.tenantScoped() : new Set();
+    const wide = definition.record
+      ? await this.repository.tenantScopedClientIds()
+      : new Set();
     // A record's owner is `client:<id>`: its own client always hears it; the
     // others only with the `tenant` scope (and only what their role reads).
     const owner = definition.record
       ? (data as { ownerId?: unknown }).ownerId
       : undefined;
-    for (const client of await this.subscribers()) {
+    for (const client of await this.repository.subscribers()) {
       if (
         definition.record &&
         owner !== `client:${client.id}` &&
@@ -125,34 +124,5 @@ export class WebhookPublisher {
       ),
     );
     this.webhooks.notify();
-  }
-
-  /** The clients of this tenant whose scope is `tenant` (webhooks.tables.ts). */
-  private async tenantScoped() {
-    const rows = await this.db
-      .select({ clientId: webhookClientScopes.clientId })
-      .from(webhookClientScopes)
-      .where(and(eq(webhookClientScopes.scope, 'tenant')));
-    return new Set(rows.map((row) => row.clientId));
-  }
-
-  /** The tenant's active API clients that have at least one endpoint. */
-  private async subscribers() {
-    const clients = await this.db
-      .select({ id: apiClients.id, name: apiClients.name })
-      .from(apiClients)
-      .where(eq(apiClients.active, true));
-    if (clients.length === 0) return [];
-    const withEndpoints = await this.db
-      .selectDistinct({ tenant: storeEndpoints.tenant })
-      .from(storeEndpoints)
-      .where(
-        inArray(
-          storeEndpoints.tenant,
-          clients.map((client) => client.id),
-        ),
-      );
-    const ids = new Set(withEndpoints.map((row) => row.tenant));
-    return clients.filter((client) => ids.has(client.id));
   }
 }

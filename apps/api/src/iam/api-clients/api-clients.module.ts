@@ -9,6 +9,7 @@ import { ActiveRequester } from './active-requester.js';
 import { ApiClientsController } from './api-clients.controller.js';
 import { API_CLIENT_PERMISSIONS } from './api-clients.permissions.js';
 import { ApiClientPolicy } from './api-clients.policy.js';
+import { ApiClientsRepository } from './api-clients.repository.js';
 import { ApiClientsService } from './api-clients.service.js';
 
 /**
@@ -27,6 +28,7 @@ import { ApiClientsService } from './api-clients.service.js';
   ],
   controllers: [ApiClientsController],
   providers: [
+    ApiClientsRepository,
     ApiClientsService,
     ApiClientPolicy,
     ActiveRequester,

@@ -1,4 +1,4 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -10,24 +10,22 @@ import {
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Events } from '../../core/outbox/events.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessService } from '../access/access.service.js';
-import { apiClientRoles } from '../access/access.tables.js';
 import { regrant } from '../access/members.service.js';
-import { liveGrant, RolesService } from '../access/roles.service.js';
+import { RolesService } from '../access/roles.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { apiKeyId, generateApiKey, hashApiKey } from '../auth/api-keys.js';
-import { apiClients, apiKeys } from '../auth/auth.tables.js';
 import { normalizeCidr } from '../auth/client-ip.js';
 import { discoverOne } from '../auth/discover.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import {
+  type ApiClient,
+  ApiClientsRepository,
+} from './api-clients.repository.js';
 import { ClientQuota } from './client-quota.js';
 import {
   API_CLIENT_EVENTS,
@@ -67,7 +65,7 @@ export interface ClientChanges {
 @Injectable()
 export class ApiClientsService implements OnModuleInit {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ApiClientsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly audit: AuditService,
@@ -91,11 +89,7 @@ export class ApiClientsService implements OnModuleInit {
   }
 
   async list() {
-    const clients = await this.db
-      .select()
-      .from(apiClients)
-      .orderBy(asc(apiClients.name));
-    return this.views(clients);
+    return this.views(await this.repository.list());
   }
 
   /** One client of the tenant, never its keys' secrets; another tenant's is a 404. */
@@ -125,29 +119,27 @@ export class ApiClientsService implements OnModuleInit {
       }
     }
     const { id, key } = await this.txHost.withTransaction(async () => {
-      const [client] = await this.db
-        .insert(apiClients)
-        .values({ name: input.name, allowedCidrs })
-        .returning()
+      const client = await this.repository
+        .insert({ name: input.name, allowedCidrs })
         .catch(nameTaken);
-      const created = await this.addKey(client!.id, input.keyExpiresAt);
-      await this.writeRoles(client!.id, roleIds, expiries);
+      const created = await this.addKey(client.id, input.keyExpiresAt);
+      await this.writeRoles(client.id, roleIds, expiries);
       if (quota !== undefined) {
-        await this.quota!.set(actor, client!.id, quota, ip);
+        await this.quota!.set(actor, client.id, quota, ip);
       }
       await this.audit.record(actor, {
         action: 'client.created',
         targetType: 'client',
-        targetId: client!.id,
+        targetId: client.id,
         details: {
-          name: client!.name,
+          name: client.name,
           keyId: apiKeyId(created),
           roleIds,
           ...(allowedCidrs.length > 0 && { allowedCidrs }),
         },
         ip,
       });
-      return { id: client!.id, key: created };
+      return { id: client.id, key: created };
     });
     this.access.invalidate(this.tenancy.tenantId());
     return { ...(await this.get(id)), key };
@@ -173,10 +165,7 @@ export class ApiClientsService implements OnModuleInit {
       changes.allowedCidrs && normalizeCidrs(changes.allowedCidrs);
     await this.txHost.withTransaction(async () => {
       if (changes.active !== undefined && changes.active !== before.active) {
-        await this.db
-          .update(apiClients)
-          .set({ active: changes.active })
-          .where(eq(apiClients.id, id));
+        await this.repository.update(id, { active: changes.active });
         await this.audit.record(actor, {
           action: changes.active ? 'client.activated' : 'client.revoked',
           targetType: 'client',
@@ -186,10 +175,7 @@ export class ApiClientsService implements OnModuleInit {
         });
       }
       if (allowedCidrs && allowedCidrs.join() !== before.allowedCidrs.join()) {
-        await this.db
-          .update(apiClients)
-          .set({ allowedCidrs })
-          .where(eq(apiClients.id, id));
+        await this.repository.update(id, { allowedCidrs });
         await this.audit.record(actor, {
           action: 'client.allowlist-changed',
           targetType: 'client',
@@ -202,9 +188,7 @@ export class ApiClientsService implements OnModuleInit {
       }
       if (changes.roleIds && grants) {
         // Ended grants not given again are deleted here, never rewritten.
-        await this.db
-          .delete(apiClientRoles)
-          .where(eq(apiClientRoles.clientId, id));
+        await this.repository.deleteGrants(id);
         await this.writeRoles(id, changes.roleIds, grants.expiries);
         await this.audit.record(actor, {
           action: 'client.roles-changed',
@@ -235,7 +219,7 @@ export class ApiClientsService implements OnModuleInit {
     const client = await this.find(id);
     await this.assertAuthorityOver(actor, id, client.name);
     await this.txHost.withTransaction(async () => {
-      await this.db.delete(apiClients).where(eq(apiClients.id, id));
+      await this.repository.delete(id);
       await this.audit.record(actor, {
         action: 'client.deleted',
         targetType: 'client',
@@ -269,24 +253,11 @@ export class ApiClientsService implements OnModuleInit {
     const until = new Date(now.getTime() + options.graceSeconds * 1000);
     const { key, ended } = await this.txHost.withTransaction(async () => {
       // Current keys end at the grace period's end (or sooner, if they expire earlier).
-      const rows = await this.db
-        .update(apiKeys)
-        .set(
-          options.graceSeconds === 0
-            ? { revokedAt: now }
-            : { expiresAt: until },
-        )
-        .where(
-          and(
-            // api_keys is global (found by its id before the tenant is known):
-            // this tenant's keys only, said here.
-            eq(apiKeys.tenantId, this.tenancy.tenantId()),
-            eq(apiKeys.clientId, id),
-            isNull(apiKeys.revokedAt),
-            or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, until)),
-          ),
-        )
-        .returning({ keyId: apiKeys.keyId });
+      const ended = await this.repository.endKeys(
+        id,
+        options.graceSeconds === 0 ? { revokedAt: now } : { expiresAt: until },
+        until,
+      );
       const created = await this.addKey(id, options.expiresAt);
       await this.audit.record(actor, {
         action: 'client.key-rotated',
@@ -308,7 +279,7 @@ export class ApiClientsService implements OnModuleInit {
         },
         { key: id },
       );
-      return { key: created, ended: rows.map((row) => row.keyId) };
+      return { key: created, ended };
     });
     if (options.graceSeconds === 0) await this.announceKeys(ended);
     return { ...(await this.get(id)), key };
@@ -324,18 +295,7 @@ export class ApiClientsService implements OnModuleInit {
     const client = await this.find(clientId);
     await this.assertAuthorityOver(actor, clientId, client.name);
     const revoked = await this.txHost.withTransaction(async () => {
-      const [row] = await this.db
-        .update(apiKeys)
-        .set({ revokedAt: new Date() })
-        .where(
-          and(
-            eq(apiKeys.tenantId, this.tenancy.tenantId()),
-            eq(apiKeys.clientId, clientId),
-            eq(apiKeys.id, keyId),
-            isNull(apiKeys.revokedAt),
-          ),
-        )
-        .returning({ keyId: apiKeys.keyId });
+      const row = await this.repository.revokeKey(clientId, keyId);
       if (!row) {
         throw new NotFoundException(`Key ${keyId} not found.`);
       }
@@ -367,10 +327,7 @@ export class ApiClientsService implements OnModuleInit {
   }
 
   private async find(id: string) {
-    const [client] = await this.db
-      .select()
-      .from(apiClients)
-      .where(eq(apiClients.id, id));
+    const client = await this.repository.findById(id);
     if (!client) {
       throw new NotFoundException(`API client ${id} not found.`);
     }
@@ -389,15 +346,9 @@ export class ApiClientsService implements OnModuleInit {
     who: string,
   ) {
     // Ended grants too: the stricter answer.
-    const held = await this.db
-      .select({ roleId: apiClientRoles.roleId })
-      .from(apiClientRoles)
-      .where(eq(apiClientRoles.clientId, clientId));
+    const held = await this.repository.roleIdsOf(clientId);
     try {
-      await this.roles.checkGrant(
-        actor,
-        await this.roles.permissionsOf(held.map((row) => row.roleId)),
-      );
+      await this.roles.checkGrant(actor, await this.roles.permissionsOf(held));
     } catch (error) {
       if (
         error instanceof ForbiddenException ||
@@ -417,9 +368,7 @@ export class ApiClientsService implements OnModuleInit {
       throw new BadRequestException('A key can’t end in the past.');
     }
     const key = generateApiKey();
-    await this.db.insert(apiKeys).values({
-      // The client's tenant: a key is found by its id before any tenant.
-      tenantId: this.tenancy.tenantId(),
+    await this.repository.insertKey({
       clientId,
       keyId: apiKeyId(key)!,
       keyHash: hashApiKey(key),
@@ -430,15 +379,7 @@ export class ApiClientsService implements OnModuleInit {
 
   /** A client's grants still running: role id → end (null: never). */
   private async liveGrantsOf(clientId: string) {
-    const rows = await this.db
-      .select({
-        roleId: apiClientRoles.roleId,
-        expiresAt: apiClientRoles.expiresAt,
-      })
-      .from(apiClientRoles)
-      .where(
-        and(eq(apiClientRoles.clientId, clientId), liveGrant(apiClientRoles)),
-      );
+    const rows = await this.repository.liveGrantsOf([clientId]);
     return new Map(rows.map((row) => [row.roleId, row.expiresAt]));
   }
 
@@ -455,7 +396,7 @@ export class ApiClientsService implements OnModuleInit {
       (roleId) => (end(roleId)?.getTime() ?? Infinity) > now,
     );
     if (unique.length) {
-      await this.db.insert(apiClientRoles).values(
+      await this.repository.insertGrants(
         unique.map((roleId) => ({
           clientId,
           roleId,
@@ -466,27 +407,13 @@ export class ApiClientsService implements OnModuleInit {
   }
 
   /** Clients as the routes show them: their keys (never the secrets) and live role grants. */
-  private async views(clients: (typeof apiClients.$inferSelect)[]) {
+  private async views(clients: ApiClient[]) {
     const ids = clients.map((client) => client.id);
     if (!ids.length) return [];
     // One after the other: get() may run in a write's transaction (one connection).
-    const keys = await this.db
-      .select()
-      .from(apiKeys)
-      .where(
-        and(
-          eq(apiKeys.tenantId, this.tenancy.tenantId()),
-          inArray(apiKeys.clientId, ids),
-        ),
-      )
-      .orderBy(asc(apiKeys.createdAt));
+    const keys = await this.repository.keysOf(ids);
     // An ended grant is gone: never reported, so never echoed back into a change.
-    const grants = await this.db
-      .select()
-      .from(apiClientRoles)
-      .where(
-        and(inArray(apiClientRoles.clientId, ids), liveGrant(apiClientRoles)),
-      );
+    const grants = await this.repository.liveGrantsOf(ids);
     return clients.map((client) => ({
       id: client.id,
       name: client.name,
