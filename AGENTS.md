@@ -98,6 +98,14 @@ from the template (`pnpm create nestjs-monorepo`), not the template. There:
   access, so a service's rules are tested with a stubbed repository and no
   database. A record feature's repository is the records engine's
   `RecordStore`. The user stays an explicit parameter.
+- **Aligned with NestJS's guidance** (the owner, 2026-11-25), beside the
+  repositories: row-level security stays the tenant wall and is made
+  cheaper, not replaced by a tenant id in every query; the user stays an
+  explicit parameter (no `AuthenticationContext`); one app and one image,
+  the worker answering its own probes; `GET /health/ready` is added and
+  `GET /health` kept; every route is limited per address, then per
+  signed-in caller; metrics go through OpenTelemetry only (prom-client and
+  `GET /metrics` are gone).
 - **Features come from a generator**, a Nest schematics collection (`nest g`).
 - **No sample feature ships.** `src/features` starts empty: a new project
   has nothing to delete first. The generator carries its own templates and
