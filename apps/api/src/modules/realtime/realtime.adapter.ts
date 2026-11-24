@@ -17,10 +17,11 @@ export const channelKey = (redis: Redis) =>
 
 /**
  * socket.io with the Redis adapter (docs.nestjs.com/websockets/adapter): what
- * an instance emits reaches the clients connected to every other one. With
- * several instances behind a load balancer, clients connect with
- * `transports: ['websocket']` (or the balancer needs sticky sessions):
- * Redis alone doesn't make polling work.
+ * an instance emits reaches the clients connected to every other one. The
+ * server takes WebSockets only (`transports: ['websocket']`, as the typed
+ * client connects): long-polling spreads one session over several requests,
+ * which only works behind a balancer with sticky sessions, and Redis alone
+ * doesn't make it work.
  */
 class RedisIoAdapter extends IoAdapter {
   private readonly clients: Redis[];
@@ -35,7 +36,10 @@ class RedisIoAdapter extends IoAdapter {
   }
 
   override createIOServer(port: number, options?: ServerOptions): Server {
-    const server = super.createIOServer(port, options);
+    const server = super.createIOServer(port, {
+      ...options,
+      transports: ['websocket'],
+    } as ServerOptions);
     server.adapter(this.adapter);
     return server;
   }

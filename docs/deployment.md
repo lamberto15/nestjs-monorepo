@@ -188,8 +188,8 @@ Run several API instances and several workers freely. What they share:
 - **Scheduled jobs** run on one instance at a time (`core/locks`), so more
   workers never run a job twice.
 - **Realtime.** socket.io uses the Redis adapter, so an event reaches clients
-  on every instance. Clients connect with `transports: ['websocket']`; with
-  polling the balancer needs sticky sessions
+  on every instance. The server takes WebSockets only (no long-polling), so
+  the balancer needs no sticky sessions; it must pass WebSocket upgrades
   ([modules/realtime](../apps/api/src/modules/realtime/README.md)). The
   session cookie needs no stickiness: sessions are in the database.
 
