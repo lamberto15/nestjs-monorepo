@@ -18,7 +18,7 @@ import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
-import { defineQuota } from './quota.js';
+import { defineQuota, type StockQuota } from './quota.js';
 import { QuotasModule } from './quotas.module.js';
 import { QuotasService } from './quotas.service.js';
 
@@ -44,6 +44,13 @@ const STORAGE = defineQuota({
   kind: 'stock',
   count: () => Promise.resolve(1234),
 });
+/** A second stock quota: its checks must not wait on the first's. */
+const SEATS = defineQuota({
+  key: 'seats',
+  label: 'seats',
+  kind: 'stock',
+  count: () => Promise.resolve(0),
+});
 const CALLS = defineQuota({
   key: 'test.callsPerDay',
   label: 'calls a day',
@@ -66,10 +73,22 @@ class MakeClients {
       await this.db.insert(apiClients).values({ name });
     });
   }
+
+  /** A check of `quota` whose transaction stays open until `release`. */
+  hold(quota: StockQuota, release: Promise<void>) {
+    return this.txHost.withTransaction(async () => {
+      await this.quotas.assertRoom(quota);
+      await release;
+    });
+  }
+
+  check(quota: StockQuota) {
+    return this.txHost.withTransaction(() => this.quotas.assertRoom(quota));
+  }
 }
 
 @Module({
-  imports: [QuotasModule.forFeature(CLIENTS, CALLS, STORAGE)],
+  imports: [QuotasModule.forFeature(CLIENTS, CALLS, STORAGE, SEATS)],
   providers: [MakeClients],
 })
 class OwnerModule {}
@@ -133,6 +152,79 @@ describe('quotas (e2e)', () => {
     });
     await setLimit(null);
     await asOther(() => maker.make('fourth'));
+  });
+
+  it('at one place left, of two parallel creates one passes and one is refused', async () => {
+    const maker = app.get(MakeClients);
+    const used = await asOther(() => app.get(QuotasService).used(CLIENTS));
+    await call(
+      'PUT',
+      `/v1/tenants/${other.tenantId}/quotas`,
+      operator.headers,
+      {
+        limits: { clients: used + 1 },
+      },
+    );
+    const results = await Promise.allSettled([
+      asOther(() => maker.make('race-a')),
+      asOther(() => maker.make('race-b')),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
+    expect(
+      (
+        results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+      ).reason.getResponse(),
+    ).toMatchObject({ code: 'quota_exceeded', quota: { used: used + 1 } });
+    await call(
+      'PUT',
+      `/v1/tenants/${other.tenantId}/quotas`,
+      operator.headers,
+      {
+        limits: { clients: null },
+      },
+    );
+  });
+
+  it('a check of one quota waits on another check of it, never on one of another quota', async () => {
+    const maker = app.get(MakeClients);
+    await call(
+      'PUT',
+      `/v1/tenants/${other.tenantId}/quotas`,
+      operator.headers,
+      {
+        limits: { clients: 1000, seats: 1000 },
+      },
+    );
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const held = asOther(() => maker.hold(CLIENTS, gate));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const timeout = () =>
+      new Promise((resolve) => setTimeout(() => resolve('waited'), 1000));
+    // Another quota of the same tenant goes through while the first is held.
+    expect(
+      await Promise.race([
+        asOther(() => maker.check(SEATS)).then(() => 'passed'),
+        timeout(),
+      ]),
+    ).toBe('passed');
+    // The same quota waits for the commit.
+    const same = asOther(() => maker.check(CLIENTS)).then(() => 'passed');
+    expect(await Promise.race([same, timeout()])).toBe('waited');
+    release();
+    await held;
+    expect(await same).toBe('passed');
+    await call(
+      'PUT',
+      `/v1/tenants/${other.tenantId}/quotas`,
+      operator.headers,
+      {
+        limits: { clients: null, seats: null },
+      },
+    );
   });
 
   it('reports what each tenant stores and its limit on /metrics, the limit only where there is one', async () => {

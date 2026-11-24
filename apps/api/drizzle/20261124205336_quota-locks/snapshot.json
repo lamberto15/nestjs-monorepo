@@ -1,0 +1,266 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "4b6f6245-d032-46ad-b9c3-3ed891abedf1",
+  "prevIds": [
+    "e863bced-51e4-4fbb-9c8c-0612e6b5c0e1"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "quota_locks"
+      ],
+      "writes": [
+        "s|tbl|public.quota_locks",
+        "n|tbl|public.quota_locks",
+        "e|tbl|public.quota_locks",
+        "n|rel|public.quota_locks",
+        "n|type|public.quota_locks",
+        "n|rel|public.quota_locks_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "quota_locks"
+      ],
+      "writes": [
+        "s|fk|public.quota_locks.quota_locks_tenant_id_tenants_id_fkey",
+        "n|fk|public.quota_locks.quota_locks_tenant_id_tenants_id_fkey",
+        "e|fk|public.quota_locks.quota_locks_tenant_id_tenants_id_fkey",
+        "n|con|public.quota_locks.quota_locks_tenant_id_tenants_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.quota_locks",
+        "n|sch|public",
+        "n|tbl|public.tenants",
+        "n|sch|public",
+        "n|col|public.quota_locks.tenant_id",
+        "n|col|public.tenants.id",
+        "e|uniqueness|public.tenants.id"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "quota_locks"
+      ],
+      "writes": [
+        "s|pol|public.quota_locks.quota_locks_tenant_select",
+        "n|pol|public.quota_locks.quota_locks_tenant_select",
+        "e|pol|public.quota_locks.quota_locks_tenant_select"
+      ],
+      "reads": [
+        "n|tbl|public.quota_locks",
+        "n|sch|public",
+        "e|rls|public.quota_locks"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "quota_locks"
+      ],
+      "writes": [
+        "s|pol|public.quota_locks.quota_locks_tenant_insert",
+        "n|pol|public.quota_locks.quota_locks_tenant_insert",
+        "e|pol|public.quota_locks.quota_locks_tenant_insert"
+      ],
+      "reads": [
+        "n|tbl|public.quota_locks",
+        "n|sch|public",
+        "e|rls|public.quota_locks"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "quota_locks"
+      ],
+      "writes": [
+        "s|pol|public.quota_locks.quota_locks_tenant_update",
+        "n|pol|public.quota_locks.quota_locks_tenant_update",
+        "e|pol|public.quota_locks.quota_locks_tenant_update"
+      ],
+      "reads": [
+        "n|tbl|public.quota_locks",
+        "n|sch|public",
+        "e|rls|public.quota_locks"
+      ]
+    },
+    {
+      "statementType": "create_policy",
+      "statementTarget": [
+        "table",
+        "public",
+        "quota_locks"
+      ],
+      "writes": [
+        "s|pol|public.quota_locks.quota_locks_tenant_delete",
+        "n|pol|public.quota_locks.quota_locks_tenant_delete",
+        "e|pol|public.quota_locks.quota_locks_tenant_delete"
+      ],
+      "reads": [
+        "n|tbl|public.quota_locks",
+        "n|sch|public",
+        "e|rls|public.quota_locks"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "quota_locks",
+        "isRlsEnabled": true,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "key",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "tenant_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "quota_locks_tenant_id_tenants_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "tenant_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "tenants",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "quota_locks_pkey",
+        "columns": [
+          "tenant_id",
+          "key"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "quota_locks_tenant_select",
+        "as": "PERMISSIVE",
+        "for": "SELECT",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"quota_locks\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "quota_locks_tenant_insert",
+        "as": "PERMISSIVE",
+        "for": "INSERT",
+        "roles": [
+          "public"
+        ],
+        "using": null,
+        "withCheck": "(\"quota_locks\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "quota_locks_tenant_update",
+        "as": "PERMISSIVE",
+        "for": "UPDATE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"quota_locks\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": "(\"quota_locks\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "entityType": "policies"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "quota_locks",
+        "name": "quota_locks_tenant_delete",
+        "as": "PERMISSIVE",
+        "for": "DELETE",
+        "roles": [
+          "public"
+        ],
+        "using": "(\"quota_locks\".\"tenant_id\" = (select nullif(current_setting('app.tenant_id', true), '')::uuid))",
+        "withCheck": null,
+        "entityType": "policies"
+      }
+    }
+  ]
+}

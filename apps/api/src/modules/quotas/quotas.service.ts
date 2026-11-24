@@ -21,7 +21,6 @@ import type {
 import { REDIS } from '../../core/redis/redis.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
-import { tenants } from '../../core/tenancy/tenancy.tables.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import type { Principal } from '../../iam/auth/principal.js';
 import {
@@ -32,7 +31,7 @@ import {
   type StockQuota,
 } from './quota.js';
 import type { SetTenantQuotas } from './quotas.schemas.js';
-import { quotaPlans, tenantQuotas } from './quotas.tables.js';
+import { quotaLocks, quotaPlans, tenantQuotas } from './quotas.tables.js';
 
 /** The plan every tenant without one is on. */
 export const DEFAULT_PLAN = 'default';
@@ -110,9 +109,10 @@ export class QuotasService implements OnModuleInit {
   /**
    * 422 `quota_exceeded` when `adding` more would pass the tenant's limit of
    * a stock quota. Call it in the transaction that makes the thing, before
-   * the insert: it takes a lock on the tenant, so two parallel creates
-   * between the check and their commit never both pass the last place. A
-   * tenant with no limit takes no lock.
+   * the insert: it locks this quota's row of the tenant until the commit, so
+   * two parallel creates between the check and their commit never both pass
+   * the last place; checks of other quotas don't wait. A tenant with no
+   * limit takes no lock.
    */
   async assertRoom(quota: StockQuota, adding = 1) {
     const tenantId = requireTenantId('A quota check');
@@ -120,12 +120,15 @@ export class QuotasService implements OnModuleInit {
     if (limit === null) {
       return;
     }
-    // FOR NO KEY UPDATE doesn't block the foreign key checks of inserts.
+    // One statement, race-free on the first check too: the insert, or the
+    // no-op update of the row already there, locks it.
     await this.db
-      .select({ id: tenants.id })
-      .from(tenants)
-      .where(eq(tenants.id, tenantId))
-      .for('no key update');
+      .insert(quotaLocks)
+      .values({ key: quota.key })
+      .onConflictDoUpdate({
+        target: [quotaLocks.tenantId, quotaLocks.key],
+        set: { key: quota.key },
+      });
     const used = await quota.count(this.db, tenantId);
     if (used + adding > limit) {
       throw new UnprocessableEntityException({

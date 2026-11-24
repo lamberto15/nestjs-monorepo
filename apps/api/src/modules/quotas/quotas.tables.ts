@@ -1,6 +1,6 @@
 import { index, jsonb, pgTable, primaryKey, text } from 'drizzle-orm/pg-core';
 import { timestamps } from '../../core/database/columns.js';
-import { globalTable } from '../../core/tenancy/tenant-tables.js';
+import { globalTable, tenantTable } from '../../core/tenancy/tenant-tables.js';
 
 /**
  * Named sets of limits the operators define (`free`, `pro`): quota key to
@@ -35,4 +35,18 @@ export const tenantQuotas = globalTable(
     // The foreign key to quota_plans: a plan's delete finds its tenants.
     index('tenant_quotas_plan_idx').on(t.plan),
   ],
+);
+
+/**
+ * One row per tenant and stock quota, there only to be locked: a check of
+ * that quota locks its row until the commit, so parallel creates of one
+ * thing never both take the last place while creates of other things don't
+ * wait. A lock and not a counter of use: each module counts what it owns
+ * (`count()`), and every delete, purge and resize would have to keep a
+ * counter in step.
+ */
+export const quotaLocks = tenantTable(
+  'quota_locks',
+  { key: text('key').notNull() },
+  (t) => [primaryKey({ columns: [t.tenantId, t.key] })],
 );

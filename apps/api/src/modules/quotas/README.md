@@ -12,7 +12,9 @@ export const MAILS = defineQuota({ key: 'mail.perDay', label: 'mails a day', kin
 ```
 
 - **Stock** (what a tenant HAS): `await quotas.assertRoom(CLIENTS, adding = 1)` in the transaction that makes the
-  thing, before the insert; it locks the tenant row so parallel creates never pass the last place. Past it: 422 `quota_exceeded`.
+  thing, before the insert; it locks that quota's row of the tenant (`quota_locks`) until the commit, so parallel creates
+  never pass the last place, while creates under other quotas (or none) don't wait. What is used is still `count()`, so a
+  delete, purge or resize needs no call here. Past it: 422 `quota_exceeded`.
 - **Rate** (what it USES per UTC `day` or `month`): `await quotas.consume(MAILS, amount = 1, tenantId?)`: 429
   `quota_exceeded` with `quota.resetsAt` and `Retry-After`; `tryConsume()` answers `{ allowed, used, limit, resetsAt }`
   instead of throwing. Counted in Redis, atomic across replicas, nothing taken past the limit; Redis down: allowed, logged.

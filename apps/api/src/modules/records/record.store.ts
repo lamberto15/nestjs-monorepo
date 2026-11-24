@@ -199,7 +199,7 @@ export class RecordStore<Row extends RecordRow = RecordRow> {
         ? await this.onlyUnitOf(owner.id)
         : null;
     return this.txHost.withTransaction(async () => {
-      // The last place: the quota locks the tenant until the commit.
+      // The last place: the quota locks its own row until the commit.
       if (this.feature.quota) await this.quotas!.assertRoom(this.feature.quota);
       let all = { ...values };
       for (const hooks of this.hooks) {
