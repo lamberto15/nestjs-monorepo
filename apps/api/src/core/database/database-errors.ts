@@ -10,13 +10,16 @@
  *   DATABASE_STATEMENT_TIMEOUT_MS (57014).
  * - `read_only`: a write in a read-only transaction (25006): a frozen
  *   tenant's, or a break-glass read's (core/tenancy).
+ * - `invalid_text`: a value PostgreSQL can't read as its column's type
+ *   (22P02): a malformed id in a path (`/notes/abc` against a uuid).
  */
 export type DatabaseErrorKind =
   | 'unique_violation'
   | 'foreign_key_violation'
   | 'pool_exhausted'
   | 'statement_timeout'
-  | 'read_only';
+  | 'read_only'
+  | 'invalid_text';
 
 const BY_SQLSTATE: Record<string, DatabaseErrorKind> = {
   '23505': 'unique_violation',
@@ -24,6 +27,7 @@ const BY_SQLSTATE: Record<string, DatabaseErrorKind> = {
   '23001': 'foreign_key_violation',
   '57014': 'statement_timeout',
   '25006': 'read_only',
+  '22P02': 'invalid_text',
 };
 
 /**

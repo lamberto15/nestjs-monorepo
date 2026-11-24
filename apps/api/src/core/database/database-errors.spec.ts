@@ -10,6 +10,7 @@ describe('databaseErrorKind', () => {
     ['23503', 'foreign_key_violation'],
     ['23001', 'foreign_key_violation'],
     ['57014', 'statement_timeout'],
+    ['22P02', 'invalid_text'],
   ])("reads SQLSTATE %s as %s, also inside Drizzle's wrapper", (code, kind) => {
     expect(databaseErrorKind(pgError(code))).toBe(kind);
     expect(databaseErrorKind(wrapped(pgError(code)))).toBe(kind);

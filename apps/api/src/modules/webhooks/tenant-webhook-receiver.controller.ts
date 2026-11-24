@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Public } from '@nestjs/authentication';
 import {
@@ -69,7 +70,7 @@ export class TenantWebhookReceiverController {
   })
   async handle(
     // Verified by TenantSenderGuard: the sender exists in this tenant.
-    @Param('tenantId') tenantId: string,
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
     @Param('name') name: string,
     @IncomingWebhook() webhook: IncomingWebhook<IncomingEvent>,
   ) {

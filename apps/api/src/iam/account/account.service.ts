@@ -20,6 +20,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
 import { InjectTransaction } from '@nestjs-cls/transactional';
 import { and, eq, gt } from 'drizzle-orm';
+import { databaseErrorKind } from '../../core/database/database-errors.js';
 import type { Database } from '../../core/database/database.js';
 import { isSafeRedirectPath } from '../../core/http/redirect-path.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -279,7 +280,13 @@ export class AccountService {
       await this.db
         .update(users)
         .set({ email, emailVerified: false })
-        .where(eq(users.id, user.id));
+        .where(eq(users.id, user.id))
+        // Taken since the check above: the unique index decides.
+        .catch((error: unknown) => {
+          throw databaseErrorKind(error) === 'unique_violation'
+            ? new ConflictException(t('account.emailTaken'))
+            : error;
+        });
       await this.audit.record(user, {
         action: 'user.email-changed',
         targetType: 'user',

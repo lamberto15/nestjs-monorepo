@@ -7,6 +7,7 @@ import {
   Param,
   Put,
   Query,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
@@ -72,7 +73,7 @@ export class SubscriptionsController {
   async watch(
     @CurrentUser() user: Principal,
     @Param('subject') subject: string,
-    @Param('recordId') recordId: string,
+    @Param('recordId', ParseUUIDPipe) recordId: string,
   ) {
     notWhileImpersonating(user);
     await this.subscriptions.watch(user, { subject, recordId });
@@ -87,7 +88,7 @@ export class SubscriptionsController {
   async remove(
     @CurrentUser() user: Principal,
     @Param('subject') subject: string,
-    @Param('recordId') recordId: string,
+    @Param('recordId', ParseUUIDPipe) recordId: string,
   ) {
     notWhileImpersonating(user);
     await this.subscriptions.remove(user, { subject, recordId });

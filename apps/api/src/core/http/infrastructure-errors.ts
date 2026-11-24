@@ -1,4 +1,9 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { databaseErrorKind } from '../database/database-errors.js';
 import { queueUnavailable } from '../queues/queue-errors.js';
 
@@ -12,10 +17,27 @@ const overloaded = (code: string, message: string, cause: unknown) =>
 /**
  * The overload errors of the database and the queue as 503 problems with
  * Retry-After, not 500s: the request was fine, the service could not take it
- * in time. Clients and load balancers retry.
+ * in time. Clients and load balancers retry. A unique violation no service
+ * mapped to its own code is a 409 `conflict`: two requests raced for the
+ * same key, and the index decided (a service maps it where it can say more).
+ * A value the database can't read as its column's type (bodies and queries
+ * are validated first, so a malformed id in the path) is a 400 `invalid_id`.
  */
 export function infrastructureError(error: unknown) {
   switch (databaseErrorKind(error)) {
+    case 'invalid_text':
+      return new BadRequestException(
+        { code: 'invalid_id', message: 'That is not a valid id.' },
+        { cause: error },
+      );
+    case 'unique_violation':
+      return new ConflictException(
+        {
+          code: 'conflict',
+          message: 'It conflicts with one that already exists.',
+        },
+        { cause: error },
+      );
     case 'pool_exhausted':
       return overloaded(
         'database_busy',

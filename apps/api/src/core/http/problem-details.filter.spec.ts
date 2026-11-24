@@ -187,4 +187,21 @@ describe('ProblemDetailsFilter', () => {
     });
     expect(answer(new Unmapped('internal')).status).toBe(500);
   });
+
+  it('answers a unique violation no service mapped as a 409 conflict', () => {
+    // Drizzle wraps the driver's error; the SQLSTATE is in its cause.
+    const error = new Error('Failed query', {
+      cause: Object.assign(new Error('duplicate key'), { code: '23505' }),
+    });
+    expect(answer(error)).toMatchObject({ status: 409, code: 'conflict' });
+  });
+
+  it('answers a malformed id that reached a query as a 400 invalid_id', () => {
+    const error = new Error('Failed query', {
+      cause: Object.assign(new Error('invalid input syntax for type uuid'), {
+        code: '22P02',
+      }),
+    });
+    expect(answer(error)).toMatchObject({ status: 400, code: 'invalid_id' });
+  });
 });

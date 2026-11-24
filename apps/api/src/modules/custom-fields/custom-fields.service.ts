@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { and, asc, count, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
+import { databaseErrorKind } from '../../core/database/database-errors.js';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type {
   Database,
@@ -157,16 +158,6 @@ export class CustomFieldsService {
     };
     assertValid(definition);
     return this.txHost.withTransaction(async () => {
-      const [existing] = await this.db
-        .select({ id: d.id })
-        .from(d)
-        .where(and(eq(d.subject, input.subject), eq(d.key, input.key)));
-      if (existing) {
-        throw new ConflictException({
-          code: 'custom_field_exists',
-          message: `${input.subject} already has a field "${input.key}" (keys are never reused, even after a field is deactivated).`,
-        });
-      }
       await this.assertRoom(input.subject);
       const [{ last }] = await this.db
         .select({ last: max(d.position) })
@@ -185,7 +176,16 @@ export class CustomFieldsService {
           filterable: input.filterable ?? false,
           sortable: input.sortable ?? false,
         })
-        .returning();
+        .returning()
+        // The unique index decides, so two creates of one key can't both pass.
+        .catch((error: unknown) => {
+          throw databaseErrorKind(error) === 'unique_violation'
+            ? new ConflictException({
+                code: 'custom_field_exists',
+                message: `${input.subject} already has a field "${input.key}" (keys are never reused, even after a field is deactivated).`,
+              })
+            : error;
+        });
       await this.audit.record(actor, {
         action: 'customField.created',
         targetType: 'customField',
