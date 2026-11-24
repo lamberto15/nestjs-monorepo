@@ -5,7 +5,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
+import { t } from '@nestjs/i18n';
 import { StorageDisk, type StoredUpload } from '@nestjs/storage';
 import { and, eq } from 'drizzle-orm';
 import type {
@@ -16,6 +18,10 @@ import { requireTenantId } from '../../../core/tenancy/tenant-scope.js';
 import { AuditService } from '../../../iam/audit/audit.service.js';
 import { memberships } from '../../../iam/auth/auth.tables.js';
 import type { Principal, UserPrincipal } from '../../../iam/auth/principal.js';
+import {
+  ImageProcessor,
+  ImageRejectedError,
+} from '../../images/image-processor.js';
 import { accountFileKey } from '../../storage/storage.keys.js';
 import { userAvatars } from './avatars.tables.js';
 
@@ -53,8 +59,9 @@ export const avatarUrl = (userId: string, key: string) =>
  * tenant the person belongs to (`GET /v1/people/{id}/avatar`, which streams
  * the file from the API's own origin).
  *
- * Stored as uploaded (type and size checked): not resized, nor stripped of
- * its metadata.
+ * Stored as uploaded (type and size checked), but for its metadata: the
+ * EXIF of a phone's photo (its GPS position among it) is stripped before
+ * any member can see it. Not resized.
  */
 @Injectable()
 export class AvatarsService {
@@ -65,13 +72,15 @@ export class AvatarsService {
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly audit: AuditService,
     private readonly disk: StorageDisk,
+    private readonly images: ImageProcessor,
   ) {}
 
   /** Records the stored file (`file.key`) as the user's picture. Failed, the file is deleted. */
   async set(user: UserPrincipal, file: StoredUpload, ip?: string) {
     try {
+      const size = await this.stripMetadata(file);
       const previous = await this.change(user, file.key, ip, {
-        size: file.size,
+        size,
         contentType: file.contentType,
       });
       await this.dispose(previous);
@@ -80,6 +89,24 @@ export class AvatarsService {
       await this.dispose(file.key);
       throw error;
     }
+  }
+
+  /** The stored file rewritten without its metadata, when it had some: its size then. A file the processor refuses is a 415. */
+  private async stripMetadata(file: StoredUpload) {
+    let stripped;
+    try {
+      stripped = await this.images.strip(await this.disk.getBuffer(file.key));
+    } catch (error) {
+      if (error instanceof ImageRejectedError) {
+        throw new UnsupportedMediaTypeException(t('attachments.badPicture'));
+      }
+      throw error;
+    }
+    if (!stripped) return file.size;
+    await this.disk.put(file.key, stripped.data, {
+      contentType: file.contentType,
+    });
+    return stripped.data.length;
   }
 
   /** Removes the picture, file and row; nothing to do without one. */

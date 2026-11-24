@@ -2,6 +2,7 @@ import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { StorageDisk } from '@nestjs/storage';
 import { eq } from 'drizzle-orm';
+import sharp from 'sharp';
 import { member, tenantWithAdmin } from '../../../../test/access.js';
 import { bootModules } from '../../../../test/boot.js';
 import { accessModules } from '../../../../test/access.js';
@@ -21,14 +22,20 @@ vi.hoisted(() => {
   });
 });
 
-const PNG = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  Buffer.from('0000000d49484452000000010000000108060000001f15c489', 'hex'),
-]);
-const JPEG = Buffer.from([
-  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01,
-  0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9,
-]);
+/** A real picture: the image processor decodes it (a damaged one is a 415). */
+const picture = () =>
+  sharp({
+    create: {
+      width: 8,
+      height: 8,
+      channels: 3,
+      background: { r: 200, g: 40, b: 40 },
+    },
+  });
+let PNG: Buffer;
+let JPEG: Buffer;
+/** A phone's photo: its maker and where it was taken in the EXIF. */
+let PHOTO: Buffer;
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\n%%EOF\n');
 
 describe('user avatars (e2e)', () => {
@@ -37,6 +44,15 @@ describe('user avatars (e2e)', () => {
   let admin: Record<string, string>;
 
   beforeAll(async () => {
+    PNG = await picture().png().toBuffer();
+    JPEG = await picture().jpeg().toBuffer();
+    PHOTO = await picture()
+      .withExif({
+        IFD0: { Make: 'ACME', Model: 'Cam 1' },
+        IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '40/1 26/1 46/1' },
+      })
+      .jpeg()
+      .toBuffer();
     app = await bootModules(...accessModules(), StorageModule, AvatarsModule);
     const created = await tenantWithAdmin(app);
     tenantId = created.tenantId;
@@ -196,6 +212,25 @@ describe('user avatars (e2e)', () => {
       'account.avatar-changed',
       'account.avatar-removed',
     ]);
+  });
+
+  it('shows a photo without its metadata: no maker, no place', async () => {
+    const ada = await member(app, tenantId, []);
+    expect(PHOTO.includes(Buffer.from('Cam 1'))).toBe(true);
+    const set = await put(ada.headers, {
+      name: 'me.jpg',
+      type: 'image/jpeg',
+      data: PHOTO,
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    const shown = await app.inject({
+      method: 'GET',
+      url: set.json<{ avatarUrl: string }>().avatarUrl,
+      headers: ada.headers,
+    });
+    expect(shown.statusCode).toBe(200);
+    expect(shown.rawPayload.includes(Buffer.from('Cam 1'))).toBe(false);
+    expect((await sharp(shown.rawPayload).metadata()).exif).toBeUndefined();
   });
 
   it('refuses what is not a picture, too large, or not as declared, and stores nothing', async () => {

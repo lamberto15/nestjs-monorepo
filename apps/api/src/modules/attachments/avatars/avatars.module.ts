@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ImagesModule } from '../../images/images.module.js';
 import { AuditModule } from '../../../iam/audit/audit.module.js';
 import { avatarsConfig } from './avatars.config.js';
 import {
@@ -22,7 +23,7 @@ import {
  * asks for `avatarUrl`.
  */
 @Module({
-  imports: [ConfigModule.forFeature(avatarsConfig), AuditModule],
+  imports: [ConfigModule.forFeature(avatarsConfig), AuditModule, ImagesModule],
   controllers: [AvatarController, PeopleAvatarController],
   providers: [
     AvatarsService,

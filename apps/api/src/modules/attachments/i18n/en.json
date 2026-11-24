@@ -1,6 +1,7 @@
 {
   "attachments": {
-    "withheldName": "{noun}{extension}"
+    "withheldName": "{noun}{extension}",
+    "badPicture": "The file is not a picture that can be used."
   },
   "notifications": {
     "attachment": {
