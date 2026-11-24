@@ -5,6 +5,12 @@ export const MAX_SHARES_PER_RECORD = 20;
 /** How long a mailed code opens a link to a recipient, and how many wrong tries it takes. */
 export const SHARE_CODE_MINUTES = 10;
 export const SHARE_CODE_ATTEMPTS = 5;
+/**
+ * At most this many codes mailed per link an hour, from every address
+ * together: each new code brings fresh tries, so without it a guesser on
+ * many addresses could keep asking for codes, and flood the recipient.
+ */
+export const SHARE_CODES_PER_HOUR = 5;
 
 /** `shr_<tenant id>_<secret>`: what the link's fragment carries. */
 const tokenSchema = z

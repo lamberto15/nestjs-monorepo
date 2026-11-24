@@ -5245,7 +5245,7 @@ export interface paths {
         put?: never;
         /**
          * Mail a code to a shared link's recipient
-         * @description The code opens the link for 10 minutes, 5 tries; a new one replaces it. The same answer whether or not the link has a recipient.
+         * @description The code opens the link for 10 minutes, 5 tries; a new one replaces it, 5 a link an hour at most. The same answer whether or not the link has a recipient, and past that limit.
          */
         post: operations["SharedController_code_v1"];
         delete?: never;
@@ -8221,7 +8221,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description rate_limited: more than 5 requests in 15 minutes for this email from this address. */
+            /** @description rate_limited: more than 5 requests in 15 minutes for this email from this address, or 20 for this email from every address. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -12883,6 +12883,13 @@ export interface operations {
             };
             /** @description `captcha_required`: solve the challenge (the problem names `provider`, `siteKey` and `action`) and send its token in `X-Captcha-Token`. `captcha_invalid`: the token was refused (`reason`: `invalid`, `duplicate`, `hostname`, `action`); render the widget again. `attestation_invalid`: the `X-App-Attestation` proof was refused (`reason`). Provider down: 503 `captcha_unavailable` (fail-closed), or 429 `rate_limited` past the fail-open allowance. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited: more than 5 requests in 15 minutes for this email from this address, or 20 for this email from every address. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

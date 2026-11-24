@@ -82,7 +82,7 @@
             "description": "`captcha_required`: solve the challenge (the problem names `provider`, `siteKey` and `action`) and send its token in `X-Captcha-Token`. `captcha_invalid`: the token was refused (`reason`: `invalid`, `duplicate`, `hostname`, `action`); render the widget again. `attestation_invalid`: the `X-App-Attestation` proof was refused (`reason`). Provider down: 503 `captcha_unavailable` (fail-closed), or 429 `rate_limited` past the fail-open allowance."
           },
           "429": {
-            "description": "rate_limited: more than 5 requests in 15 minutes for this email from this address."
+            "description": "rate_limited: more than 5 requests in 15 minutes for this email from this address, or 20 for this email from every address."
           }
         },
         "summary": "Sign in with a password: sets the session cookie",
@@ -10082,6 +10082,9 @@
           },
           "403": {
             "description": "`captcha_required`: solve the challenge (the problem names `provider`, `siteKey` and `action`) and send its token in `X-Captcha-Token`. `captcha_invalid`: the token was refused (`reason`: `invalid`, `duplicate`, `hostname`, `action`); render the widget again. `attestation_invalid`: the `X-App-Attestation` proof was refused (`reason`). Provider down: 503 `captcha_unavailable` (fail-closed), or 429 `rate_limited` past the fail-open allowance."
+          },
+          "429": {
+            "description": "rate_limited: more than 5 requests in 15 minutes for this email from this address, or 20 for this email from every address."
           }
         },
         "summary": "Sign in a token client with a password",
@@ -42458,7 +42461,7 @@
     },
     "/v1/shared/code": {
       "post": {
-        "description": "The code opens the link for 10 minutes, 5 tries; a new one replaces it. The same answer whether or not the link has a recipient.",
+        "description": "The code opens the link for 10 minutes, 5 tries; a new one replaces it, 5 a link an hour at most. The same answer whether or not the link has a recipient, and past that limit.",
         "operationId": "SharedController_code_v1",
         "parameters": [],
         "requestBody": {
