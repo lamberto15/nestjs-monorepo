@@ -1,12 +1,9 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnOneInstance, WithoutOverlapping } from '@nestjs/locks';
 import { Cron } from '@nestjs/schedule';
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { MetricsService } from '../../core/metrics/metrics.service.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
-import { approvalRequests } from './approvals.tables.js';
+import { ApprovalsRepository } from './approvals.repository.js';
 
 const JOB = 'approvals.metrics';
 /**
@@ -42,7 +39,7 @@ export class ApprovalMetrics {
   constructor(
     private readonly metrics: MetricsService,
     private readonly tenancy: Tenancy,
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ApprovalsRepository,
   ) {}
 
   /** The gauges, once this instance has read them: the others report none. */
@@ -75,28 +72,13 @@ export class ApprovalMetrics {
   async refresh() {
     try {
       this.reading = await this.tenancy.acrossTenants(JOB, async () => {
-        const [overdue] = await this.db
-          .select({
-            seconds: sql<number>`coalesce(max(extract(epoch from now() - ${approvalRequests.dueAt})) filter (where ${approvalRequests.dueAt} < now()), 0)::float8`,
-          })
-          .from(approvalRequests)
-          .where(eq(approvalRequests.status, 'pending'));
+        const overdue = await this.repository.overdueSeconds();
         // Approved, its outcome not applied yet: the workflow applies it
         // within minutes, or fails it; one that stays is stuck.
-        const [unapplied] = await this.db
-          .select({
-            seconds: sql<number>`coalesce(max(extract(epoch from now() - ${approvalRequests.endedAt})), 0)::float8`,
-          })
-          .from(approvalRequests)
-          .where(
-            and(
-              eq(approvalRequests.status, 'approved'),
-              isNull(approvalRequests.outcomeAppliedAt),
-            ),
-          );
+        const unapplied = await this.repository.unappliedSeconds();
         return {
-          overdue: overdue?.seconds ?? 0,
-          unapplied: unapplied?.seconds ?? 0,
+          overdue: overdue ?? 0,
+          unapplied: unapplied ?? 0,
           at: Date.now(),
         };
       });

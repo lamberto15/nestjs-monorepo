@@ -1,12 +1,8 @@
-import { InjectTransaction, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { WorkflowClient, WorkflowNotFoundError } from '@nestjs/workflows';
-import { isNull } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import {
   defineEvent,
   Events,
@@ -18,7 +14,7 @@ import {
   type TenantErasingEvent,
 } from '../../iam/tenants/tenants.events.js';
 import { approvalWorkflowId } from './approvals.events.js';
-import { approvalRequests } from './approvals.tables.js';
+import { ApprovalsRepository } from './approvals.repository.js';
 
 /** The requests of an erased tenant whose workflows may not have ended: theirs go after the commit. */
 export const approvalWorkflowsOrphaned = defineEvent<{ requestIds: string[] }>(
@@ -37,7 +33,7 @@ export const approvalWorkflowsOrphaned = defineEvent<{ requestIds: string[] }>(
 @Injectable()
 export class ApprovalsErasure {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ApprovalsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     private readonly tenancy: Tenancy,
     private readonly events: Events,
@@ -54,12 +50,7 @@ export class ApprovalsErasure {
   @OnEvent(TENANT_EVENTS.erasing, { suppressErrors: false })
   async tenantErasing({ tenantId }: TenantErasingEvent) {
     const open = await this.txHost.withoutTransaction(() =>
-      this.tenancy.run(tenantId, () =>
-        this.db
-          .select({ id: approvalRequests.id })
-          .from(approvalRequests)
-          .where(isNull(approvalRequests.outcomeAppliedAt)),
-      ),
+      this.tenancy.run(tenantId, () => this.repository.unapplied()),
     );
     if (open.length === 0) return;
     await this.events.publish(

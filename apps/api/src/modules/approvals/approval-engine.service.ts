@@ -1,8 +1,4 @@
-import {
-  InjectTransaction,
-  Propagation,
-  TransactionHost,
-} from '@nestjs-cls/transactional';
+import { Propagation, TransactionHost } from '@nestjs-cls/transactional';
 import {
   HttpException,
   HttpStatus,
@@ -13,11 +9,7 @@ import {
 import { I18nService } from '@nestjs/i18n';
 import { WorkflowClient } from '@nestjs/workflows';
 import { createHash } from 'node:crypto';
-import { and, eq, isNull, ne, notInArray, or } from 'drizzle-orm';
-import type {
-  Database,
-  DatabaseTransactions,
-} from '../../core/database/database.js';
+import type { DatabaseTransactions } from '../../core/database/database.js';
 import { Events } from '../../core/outbox/events.js';
 import { SystemContext } from '../../iam/access/system-context.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
@@ -43,14 +35,9 @@ import {
   stageDecided,
 } from './approvals.events.js';
 import { ApprovalsRegistry } from './approvals.registry.js';
-import {
-  approvalAssignments,
-  approvalDelegations,
-  approvalEvents,
-  type ApprovalRequestRow,
-  approvalRequests,
-  type ApprovalStatus,
-} from './approvals.tables.js';
+import { ApprovalDelegationsRepository } from './approval-delegations.repository.js';
+import { ApprovalsRepository } from './approvals.repository.js';
+import type { ApprovalRequestRow, ApprovalStatus } from './approvals.tables.js';
 import { Approvers, requesterOf, type RuleContext } from './approvers.js';
 
 export type Ending = Exclude<ApprovalStatus, 'pending'>;
@@ -112,7 +99,8 @@ export class ApprovalEngine {
   private readonly logger = new Logger('Approvals');
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ApprovalsRepository,
+    private readonly delegations: ApprovalDelegationsRepository,
     private readonly txHost: TransactionHost<DatabaseTransactions>,
     readonly registry: ApprovalsRegistry,
     readonly approvers: Approvers,
@@ -177,12 +165,7 @@ export class ApprovalEngine {
 
   /** The request, locked for the rest of the transaction: its changes take turns. */
   async lock(id: string) {
-    const [row] = await this.db
-      .select()
-      .from(approvalRequests)
-      .where(eq(approvalRequests.id, id))
-      .for('update');
-    return row;
+    return this.repository.lock(id);
   }
 
   /** The record as stored, or null when it is gone. */
@@ -228,7 +211,7 @@ export class ApprovalEngine {
     details?: Record<string, unknown>,
     stage?: number,
   ) {
-    await this.db.insert(approvalEvents).values({
+    await this.repository.insertEvent({
       requestId: row.id,
       type,
       actor: actor.key,
@@ -310,21 +293,15 @@ export class ApprovalEngine {
     userIds: readonly string[],
     { escalated, type }: { escalated: boolean; type: string },
   ) {
-    const created = userIds.length
-      ? await this.db
-          .insert(approvalAssignments)
-          .values(
-            userIds.map((approverId) => ({
-              requestId: row.id,
-              round: row.round,
-              stage,
-              approverId,
-              escalated,
-            })),
-          )
-          .onConflictDoNothing()
-          .returning()
-      : [];
+    const created = await this.repository.assign(
+      userIds.map((approverId) => ({
+        requestId: row.id,
+        round: row.round,
+        stage,
+        approverId,
+        escalated,
+      })),
+    );
     const assigned = created.map((assignment) => assignment.approverId);
     const delegates = await this.approvers.delegatesOf(assigned, row.subject);
     const recipients = [
@@ -361,19 +338,16 @@ export class ApprovalEngine {
 
   /** The request's stage plan (a workflow step: replays get the same). */
   async plan(requestId: string): Promise<ApprovalPlan | null> {
-    const [row] = await this.db
-      .select({ policy: approvalRequests.policy })
-      .from(approvalRequests)
-      .where(eq(approvalRequests.id, requestId));
-    if (!row) return null;
+    const policy = await this.repository.policyOf(requestId);
+    if (!policy) return null;
     const ms = (duration?: string) => (duration ? millis(duration) : null);
     return {
-      stages: row.policy.stages.map((stage) => ({
+      stages: policy.stages.map((stage) => ({
         remindAfterMs: ms(stage.remindAfter),
         dueAfterMs: ms(stage.dueAfter),
         escalationDueAfterMs: ms(stage.escalationDueAfter),
       })),
-      resubmitWithinMs: millis(row.policy.resubmitWithin),
+      resubmitWithinMs: millis(policy.resubmitWithin),
     };
   }
 
@@ -394,21 +368,7 @@ export class ApprovalEngine {
   }
 
   async votes(row: ApprovalRequestRow, stage: number) {
-    return this.db
-      .select({
-        approverId: approvalAssignments.approverId,
-        status: approvalAssignments.status,
-        decidedAt: approvalAssignments.decidedAt,
-        decidedBy: approvalAssignments.decidedBy,
-      })
-      .from(approvalAssignments)
-      .where(
-        and(
-          eq(approvalAssignments.requestId, row.id),
-          eq(approvalAssignments.round, row.round),
-          eq(approvalAssignments.stage, stage),
-        ),
-      );
+    return this.repository.stageAssignments(row.id, row.round, stage);
   }
 
   /**
@@ -445,11 +405,9 @@ export class ApprovalEngine {
       return row;
     }
     const ending = outcome === 'unreachable' ? 'failed' : outcome;
-    const [settled] = await this.db
-      .update(approvalRequests)
-      .set({ stageOutcome: ending })
-      .where(eq(approvalRequests.id, row.id))
-      .returning();
+    const settled = await this.repository.update(row.id, {
+      stageOutcome: ending,
+    });
     const key = `${row.id}:${row.round}:${stage}`;
     await this.workflows.signal(
       stageDecided,
@@ -458,26 +416,12 @@ export class ApprovalEngine {
     );
     if (ending === 'approved' && stage < row.policy.stages.length - 1) {
       // The stage's other approvers needn't decide; the workflow starts the next stage.
-      await this.db
-        .update(approvalAssignments)
-        .set({ status: 'closed' })
-        .where(
-          and(
-            eq(approvalAssignments.requestId, row.id),
-            eq(approvalAssignments.status, 'pending'),
-          ),
-        );
-      await this.event(
-        settled!,
-        'stage_approved',
-        this.actorFor(by),
-        {},
-        stage,
-      );
-      this.pushDecided(after, settled!, decision, voters);
-      return settled!;
+      await this.repository.closePending(row.id);
+      await this.event(settled, 'stage_approved', this.actorFor(by), {}, stage);
+      this.pushDecided(after, settled, decision, voters);
+      return settled;
     }
-    return this.end(after, settled!, ending, by, {
+    return this.end(after, settled, ending, by, {
       ...(outcome === 'unreachable' && { reason: 'no_approvers' }),
       comment,
       ip,
@@ -533,31 +477,27 @@ export class ApprovalEngine {
           return ended.status as Ending;
         }
         const now = new Date();
-        const [started] = await this.db
-          .update(approvalRequests)
-          .set({
-            currentStage: stage,
-            stageStartedAt: now,
-            stageOutcome: null,
-            dueAt: policyStage.dueAfter
-              ? new Date(now.getTime() + millis(policyStage.dueAfter))
-              : null,
-          })
-          .where(eq(approvalRequests.id, requestId))
-          .returning();
-        await this.assign(after, started!, stage, ids, {
+        const started = await this.repository.update(requestId, {
+          currentStage: stage,
+          stageStartedAt: now,
+          stageOutcome: null,
+          dueAt: policyStage.dueAfter
+            ? new Date(now.getTime() + millis(policyStage.dueAfter))
+            : null,
+        });
+        await this.assign(after, started, stage, ids, {
           escalated: false,
           type: 'approval.requested',
         });
         await this.event(
-          started!,
+          started,
           'stage_started',
           this.actorFor(null),
           { name: policyStage.name, approvers: ids },
           stage,
         );
         // Too few for the mode (a quorum above the approvers found): it can't be decided.
-        const settled = await this.settleStage(after, started!, null);
+        const settled = await this.settleStage(after, started, null);
         return settled.status === 'pending'
           ? 'started'
           : (settled.status as Ending);
@@ -581,19 +521,7 @@ export class ApprovalEngine {
   }
 
   private async happened(row: ApprovalRequestRow, type: string, stage: number) {
-    const [found] = await this.db
-      .select({ id: approvalEvents.id })
-      .from(approvalEvents)
-      .where(
-        and(
-          eq(approvalEvents.requestId, row.id),
-          eq(approvalEvents.round, row.round),
-          eq(approvalEvents.stage, stage),
-          eq(approvalEvents.type, type),
-        ),
-      )
-      .limit(1);
-    return !!found;
+    return this.repository.hasEvent(row.id, row.round, stage, type);
   }
 
   private async pendingApprovers(row: ApprovalRequestRow, stage: number) {
@@ -661,47 +589,35 @@ export class ApprovalEngine {
           if (ids.some((id) => !assigned.has(id))) {
             // Those who didn't answer in time are closed out: an `all` stage
             // then waits for the escalation's approvers, not for them.
-            await this.db
-              .update(approvalAssignments)
-              .set({ status: 'closed' })
-              .where(
-                and(
-                  eq(approvalAssignments.requestId, row.id),
-                  eq(approvalAssignments.round, row.round),
-                  eq(approvalAssignments.stage, stage),
-                  eq(approvalAssignments.status, 'pending'),
-                  notInArray(approvalAssignments.approverId, ids),
-                ),
-              );
+            await this.repository.closePendingExcept(
+              row.id,
+              row.round,
+              stage,
+              ids,
+            );
             const assignments = await this.assign(after, row, stage, ids, {
               escalated: true,
               type: 'approval.escalated',
             });
-            const [escalated] = await this.db
-              .update(approvalRequests)
-              .set({
-                dueAt: policyStage.escalationDueAfter
-                  ? new Date(
-                      Date.now() + millis(policyStage.escalationDueAfter),
-                    )
-                  : null,
-              })
-              .where(eq(approvalRequests.id, row.id))
-              .returning();
+            const escalated = await this.repository.update(row.id, {
+              dueAt: policyStage.escalationDueAfter
+                ? new Date(Date.now() + millis(policyStage.escalationDueAfter))
+                : null,
+            });
             const approvers = assignments.map((a) => a.approverId);
             await this.event(
-              escalated!,
+              escalated,
               'escalated',
               this.actorFor(null),
               { approvers },
               stage,
             );
-            await this.record(null, 'approval.escalated', escalated!, {
+            await this.record(null, 'approval.escalated', escalated, {
               stage,
               approvers,
             });
             // The votes changed: the stage may be decided now (or out of reach).
-            const settled = await this.settleStage(after, escalated!, null);
+            const settled = await this.settleStage(after, escalated, null);
             if (settled.status !== 'pending') return settled.status as Ending;
             return settled.stageOutcome ? 'raced' : 'escalated';
           }
@@ -749,34 +665,18 @@ export class ApprovalEngine {
    * Requests are locked in id order, so two deactivations can't deadlock.
    */
   async release(userId: string, by: Principal) {
-    const held = await this.db
-      .selectDistinct({ requestId: approvalAssignments.requestId })
-      .from(approvalAssignments)
-      .where(
-        and(
-          eq(approvalAssignments.approverId, userId),
-          eq(approvalAssignments.status, 'pending'),
-        ),
-      )
-      .orderBy(approvalAssignments.requestId);
+    const held = await this.repository.pendingRequestsOf(userId);
     const after = new AfterCommit(); // realtime is left out: the caller's transaction hasn't committed
     for (const { requestId } of held) {
       const locked = await this.lock(requestId);
       if (!locked || locked.status !== 'pending' || locked.stageOutcome)
         continue;
-      const closed = await this.db
-        .update(approvalAssignments)
-        .set({ status: 'closed' })
-        .where(
-          and(
-            eq(approvalAssignments.requestId, requestId),
-            eq(approvalAssignments.round, locked.round),
-            eq(approvalAssignments.stage, locked.currentStage),
-            eq(approvalAssignments.approverId, userId),
-            eq(approvalAssignments.status, 'pending'),
-          ),
-        )
-        .returning({ id: approvalAssignments.id });
+      const closed = await this.repository.closeApprover(
+        requestId,
+        locked.round,
+        locked.currentStage,
+        userId,
+      );
       if (!closed.length) continue;
       await this.event(
         locked,
@@ -788,14 +688,7 @@ export class ApprovalEngine {
       await this.settleStage(after, locked, by, { tolerant: true });
     }
     // Nobody stands in for them, and they stand in for nobody.
-    await this.db
-      .delete(approvalDelegations)
-      .where(
-        or(
-          eq(approvalDelegations.fromUserId, userId),
-          eq(approvalDelegations.toUserId, userId),
-        ),
-      );
+    await this.delegations.deleteOf(userId);
   }
 
   /**
@@ -827,38 +720,25 @@ export class ApprovalEngine {
     } = {},
   ) {
     const actor = this.actorFor(by);
-    const closed = await this.db
-      .update(approvalAssignments)
-      .set({ status: 'closed' })
-      .where(
-        and(
-          eq(approvalAssignments.requestId, row.id),
-          eq(approvalAssignments.status, 'pending'),
-        ),
-      )
-      .returning({ approverId: approvalAssignments.approverId });
-    const [ended] = await this.db
-      .update(approvalRequests)
-      .set({
-        status,
-        currentStage: row.currentStage,
-        // Sent back for changes, it stays open: it may come back.
-        endedAt: status === 'changes_requested' ? null : new Date(),
-        outcomeReason: reason ?? null,
-      })
-      .where(eq(approvalRequests.id, row.id))
-      .returning();
+    const closed = await this.repository.closePending(row.id);
+    const ended = await this.repository.update(row.id, {
+      status,
+      currentStage: row.currentStage,
+      // Sent back for changes, it stays open: it may come back.
+      endedAt: status === 'changes_requested' ? null : new Date(),
+      outcomeReason: reason ?? null,
+    });
     await this.event(
-      ended!,
+      ended,
       status,
       actor,
       { ...(reason && { reason }), ...(comment && { comment }) },
-      ended!.currentStage,
+      ended.currentStage,
     );
     await this.record(
       by,
       `approval.${status}`,
-      ended!,
+      ended,
       { ...(reason && { reason }) },
       ip,
     );
@@ -867,48 +747,48 @@ export class ApprovalEngine {
       if (type) {
         await this.notifications.notify({
           type,
-          to: ended!.requester,
+          to: ended.requester,
           data: {
-            ...this.data(ended!),
+            ...this.data(ended),
             ...(status !== 'expired' &&
               status !== 'failed' && { by: actor.name }),
             ...((status === 'rejected' || status === 'changes_requested') && {
               comment: comment ?? '',
             }),
           },
-          link: `/approvals/${ended!.id}`,
+          link: `/approvals/${ended.id}`,
         });
-      } else if (closed.length || actor.key !== ended!.requester) {
+      } else if (closed.length || actor.key !== ended.requester) {
         // Withdrawn: the approvers still waiting needn't decide, and the
         // requester is told when someone else withdrew it.
         await this.notifications.notify({
           type: 'approval.cancelled',
           to: [
             ...closed.map(({ approverId }) => `user:${approverId}`),
-            ...(actor.key !== ended!.requester ? [ended!.requester] : []),
+            ...(actor.key !== ended.requester ? [ended.requester] : []),
           ],
-          data: { ...this.data(ended!), by: actor.name },
-          link: `/approvals/${ended!.id}`,
+          data: { ...this.data(ended), by: actor.name },
+          link: `/approvals/${ended.id}`,
         });
       }
-      await this.publish(APPROVAL_EVENTS[status], ended!);
+      await this.publish(APPROVAL_EVENTS[status], ended);
     };
     if (tolerant) {
       try {
         await this.txHost.withTransaction(Propagation.Nested, tell);
       } catch (error) {
         this.logger.error(
-          `Telling of approval ${ended!.id}'s ending failed; the change went ahead: ${(error as Error).message}`,
+          `Telling of approval ${ended.id}'s ending failed; the change went ahead: ${(error as Error).message}`,
         );
       }
     } else {
       await tell();
     }
-    this.pushDecided(after, ended!, decision, [
+    this.pushDecided(after, ended, decision, [
       ...voters,
       ...closed.map((a) => a.approverId),
     ]);
-    return ended!;
+    return ended;
   }
 
   /** `approval.decided` to the requester and to these approvers: one event per change. */
@@ -946,10 +826,7 @@ export class ApprovalEngine {
     status: Ending,
     round: number,
   ): Promise<Ending | 'gone'> {
-    let [row] = await this.db
-      .select()
-      .from(approvalRequests)
-      .where(eq(approvalRequests.id, requestId));
+    let row = await this.repository.findById(requestId);
     if (!row) return 'gone';
     const sameRound = row.round === round;
     if (
@@ -986,19 +863,12 @@ export class ApprovalEngine {
           });
         }
         if (sameRound && concluded !== 'changes_requested') {
-          [applied] = await this.db
-            .update(approvalRequests)
-            .set({ outcomeAppliedAt: new Date() })
-            .where(
-              and(
-                eq(approvalRequests.id, requestId),
-                eq(approvalRequests.round, round),
-                isNull(approvalRequests.outcomeAppliedAt),
-                // Still what was concluded: one abandoned meanwhile isn't marked applied.
-                eq(approvalRequests.status, concluded),
-              ),
-            )
-            .returning();
+          // Only while still what was concluded: one abandoned meanwhile isn't marked applied.
+          applied = await this.repository.markApplied(
+            requestId,
+            round,
+            concluded,
+          );
           // Applied by another attempt, or abandoned meanwhile: this
           // attempt's effect rolls back with it.
           if (!applied && concluded === 'approved') throw new NotApplied();
@@ -1014,16 +884,10 @@ export class ApprovalEngine {
 
   /** `approval.applied` to the requester and the round's approvers (best effort). */
   private async pushApplied(row: ApprovalRequestRow) {
-    const assignments = await this.db
-      .select({ approverId: approvalAssignments.approverId })
-      .from(approvalAssignments)
-      .where(
-        and(
-          eq(approvalAssignments.requestId, row.id),
-          eq(approvalAssignments.round, row.round),
-          ne(approvalAssignments.status, 'closed'),
-        ),
-      );
+    const assignments = await this.repository.liveAssignments(
+      row.id,
+      row.round,
+    );
     this.realtime.toPrincipals(
       [
         requesterOf(row.requester),

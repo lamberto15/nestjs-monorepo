@@ -1,18 +1,17 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import {
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type { Database } from '../../core/database/database.js';
+import { assertUnchanged } from '../../core/http/etag.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
 import { type Principal, principalKey } from '../../iam/auth/principal.js';
 import { ApprovalEngine } from './approval-engine.service.js';
 import { type ApprovalPolicy, parsePolicy } from './approval-policy.js';
 import { ApprovalsRegistry } from './approvals.registry.js';
-import { approvalPolicies } from './approvals.tables.js';
+import { ApprovalPoliciesRepository } from './approval-policies.repository.js';
 
 /** An action's policy in force: the code's default (version 0, or a reset) or an administrator's version. */
 export interface EffectivePolicy {
@@ -31,7 +30,7 @@ export interface EffectivePolicy {
 @Injectable()
 export class ApprovalPoliciesService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ApprovalPoliciesRepository,
     private readonly registry: ApprovalsRegistry,
     private readonly audit: AuditService,
     private readonly engine: ApprovalEngine,
@@ -51,12 +50,7 @@ export class ApprovalPoliciesService {
 
   /** The policy new requests of `key` get. */
   async effective(key: string): Promise<EffectivePolicy> {
-    const [latest] = await this.db
-      .select()
-      .from(approvalPolicies)
-      .where(eq(approvalPolicies.key, key))
-      .orderBy(desc(approvalPolicies.version))
-      .limit(1);
+    const latest = await this.repository.latest(key);
     return latest?.definition
       ? {
           policy: latest.definition,
@@ -105,18 +99,15 @@ export class ApprovalPoliciesService {
     key: string,
     input: unknown,
     ip?: string,
-    /** The caller's If-Match check: the action as they would read it now. */
-    unchanged?: (
-      shown: Awaited<ReturnType<ApprovalPoliciesService['view']>>,
-    ) => void,
+    /** The caller's If-Match: compared with the action as they would read it now. */
+    ifMatch?: string,
   ) {
     const shown = await this.view(key);
-    unchanged?.(shown);
+    if (ifMatch) assertUnchanged(ifMatch, shown);
     const definition = input === null ? null : parsePolicy(input);
     const version = shown.version + 1;
-    await this.db
-      .insert(approvalPolicies)
-      .values({ key, version, definition, changedBy: principalKey(by) })
+    await this.repository
+      .insert({ key, version, definition, changedBy: principalKey(by) })
       .catch((error: unknown) => {
         if (databaseErrorKind(error) === 'unique_violation') {
           throw new ConflictException({

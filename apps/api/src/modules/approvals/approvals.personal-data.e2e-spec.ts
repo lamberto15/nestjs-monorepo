@@ -1,5 +1,7 @@
+import { ApprovalDelegationsRepository } from './approval-delegations.repository.js';
 import { ApprovalEngine } from './approval-engine.service.js';
 import { ApprovalsPersonalData } from './approvals.personal-data.js';
+import { ApprovalsRepository } from './approvals.repository.js';
 import {
   approvalAssignments,
   approvalDelegations,
@@ -24,6 +26,8 @@ personalDataSection(
   'approvals',
   [
     ApprovalsPersonalData,
+    ApprovalsRepository,
+    ApprovalDelegationsRepository,
     { provide: ApprovalEngine, useValue: { release: vi.fn() } },
   ],
   {

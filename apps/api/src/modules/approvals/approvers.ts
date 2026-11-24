@@ -1,25 +1,9 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import {
-  type AnyColumn,
-  and,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNull,
-  lte,
-  or,
-  sql,
-} from 'drizzle-orm';
-import { QueryBuilder } from 'drizzle-orm/pg-core';
-import type { Database } from '../../core/database/database.js';
-import { requireTenantId } from '../../core/tenancy/tenant-scope.js';
 import { MembersService } from '../../iam/access/members.service.js';
-import { apiClients, memberships, users } from '../../iam/auth/auth.tables.js';
 import { OrganizationService } from '../../iam/organization/organization.service.js';
+import { ApprovalDelegationsRepository } from './approval-delegations.repository.js';
 import type { ApproverRule } from './approval-policy.js';
-import { approvalDelegations } from './approvals.tables.js';
+import { ApprovalsRepository } from './approvals.repository.js';
 
 /** Who asked: `user:<id>` or `client:<id>`. */
 export interface Requester {
@@ -43,28 +27,6 @@ export interface RuleContext {
   record(): Promise<Record<string, unknown> | null>;
 }
 
-/** Subqueries with no connection: they run inside the caller's query. */
-const subquery = new QueryBuilder();
-
-/**
- * The user (a column holding their id) is an active member of the current
- * tenant: who may decide, or stand in, here. Memberships are a global
- * table, so the tenant is named.
- */
-export const activeMember = (userId: AnyColumn) =>
-  exists(
-    subquery
-      .select({ one: sql`1` })
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.userId, userId),
-          eq(memberships.tenantId, requireTenantId('An approver')),
-          eq(memberships.active, true),
-        ),
-      ),
-  );
-
 /**
  * Who a policy's rules name, as they are when a stage starts: role
  * holders and permitted members come from iam/access (MembersService), a
@@ -76,7 +38,8 @@ export class Approvers {
   private static readonly MAX_CANDIDATES = 2000;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly delegations: ApprovalDelegationsRepository,
+    private readonly requests: ApprovalsRepository,
     private readonly members: MembersService,
     private readonly organization: OrganizationService,
   ) {}
@@ -158,24 +121,7 @@ export class Approvers {
   async delegatesOf(userIds: readonly string[], subject: string) {
     const map = new Map<string, string[]>();
     if (!userIds.length) return map;
-    const rows = await this.db
-      .select({
-        from: approvalDelegations.fromUserId,
-        to: approvalDelegations.toUserId,
-      })
-      .from(approvalDelegations)
-      .where(
-        and(
-          inArray(approvalDelegations.fromUserId, [...userIds]),
-          lte(approvalDelegations.startsAt, sql`now()`),
-          gt(approvalDelegations.endsAt, sql`now()`),
-          or(
-            isNull(approvalDelegations.subject),
-            eq(approvalDelegations.subject, subject),
-          ),
-          activeMember(approvalDelegations.toUserId),
-        ),
-      );
+    const rows = await this.delegations.delegatesOf(userIds, subject);
     for (const { from, to } of rows) {
       map.set(from, [...(map.get(from) ?? []), to]);
     }
@@ -184,40 +130,15 @@ export class Approvers {
 
   /** Whom `userId` stands in for now, of every subject or of `subject`. */
   async delegators(userId: string, subject?: string) {
-    const rows = await this.db
-      .select({
-        from: approvalDelegations.fromUserId,
-        subject: approvalDelegations.subject,
-      })
-      .from(approvalDelegations)
-      .where(
-        and(
-          eq(approvalDelegations.toUserId, userId),
-          lte(approvalDelegations.startsAt, sql`now()`),
-          gt(approvalDelegations.endsAt, sql`now()`),
-          subject
-            ? or(
-                isNull(approvalDelegations.subject),
-                eq(approvalDelegations.subject, subject),
-              )
-            : undefined,
-        ),
-      );
-    return rows;
+    return this.delegations.delegators(userId, subject);
   }
 
   /** The requester's display name: the user's or the API client's, as it is now. */
   async requesterName(requester: Requester) {
-    const [row] =
-      requester.kind === 'user'
-        ? await this.db
-            .select({ name: users.name })
-            .from(users)
-            .where(eq(users.id, requester.id))
-        : await this.db
-            .select({ name: apiClients.name })
-            .from(apiClients)
-            .where(eq(apiClients.id, requester.id));
-    return row?.name ?? `${requester.kind}:${requester.id}`;
+    const name = await this.requests.requesterName(
+      requester.kind,
+      requester.id,
+    );
+    return name ?? `${requester.kind}:${requester.id}`;
   }
 }

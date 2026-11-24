@@ -1,23 +1,17 @@
-import { InjectTransaction, Transactional } from '@nestjs-cls/transactional';
+import { Transactional } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { AuditService } from '../../iam/audit/audit.service.js';
-import { users } from '../../iam/auth/auth.tables.js';
 import type { UserPrincipal } from '../../iam/auth/principal.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { ApprovalEngine } from './approval-engine.service.js';
 import type { CreateDelegationDto } from './approvals.schemas.js';
 import { APPROVAL_MAX_DELEGATION_DAYS } from './approvals.settings.js';
-import {
-  approvalDelegations,
-  type ApprovalDelegationRow,
-} from './approvals.tables.js';
-import { activeMember } from './approvers.js';
+import { ApprovalDelegationsRepository } from './approval-delegations.repository.js';
+import type { ApprovalDelegationRow } from './approvals.tables.js';
 
 /**
  * Out of office: a user lets another decide their approvals for a period
@@ -31,7 +25,7 @@ export class ApprovalDelegationsService {
   private static readonly LISTED = 200;
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ApprovalDelegationsRepository,
     private readonly audit: AuditService,
     private readonly settings: SettingsService,
     private readonly engine: ApprovalEngine,
@@ -39,17 +33,10 @@ export class ApprovalDelegationsService {
 
   /** The caller's delegations, given and received, newest first. */
   async list(user: UserPrincipal) {
-    const rows = await this.db
-      .select()
-      .from(approvalDelegations)
-      .where(
-        or(
-          eq(approvalDelegations.fromUserId, user.id),
-          eq(approvalDelegations.toUserId, user.id),
-        ),
-      )
-      .orderBy(desc(approvalDelegations.id))
-      .limit(ApprovalDelegationsService.LISTED);
+    const rows = await this.repository.listOf(
+      user.id,
+      ApprovalDelegationsService.LISTED,
+    );
     return { items: await this.views(rows) };
   }
 
@@ -78,32 +65,19 @@ export class ApprovalDelegationsService {
     if (dto.toUserId === user.id) {
       throw this.invalid('toUserId', 'delegateToSelf');
     }
-    const [delegate] = await this.db
-      .select({ id: users.id })
-      .from(users)
-      // A member of this tenant: users are global.
-      .where(
-        and(
-          eq(users.id, dto.toUserId),
-          eq(users.active, true),
-          activeMember(users.id),
-        ),
-      );
+    const delegate = await this.repository.findActiveMember(dto.toUserId);
     if (!delegate) throw this.invalid('toUserId', 'unknownUser');
-    const [created] = await this.db
-      .insert(approvalDelegations)
-      .values({
-        fromUserId: user.id,
-        toUserId: dto.toUserId,
-        startsAt: new Date(dto.startsAt),
-        endsAt: new Date(dto.endsAt),
-        subject: dto.subject ?? null,
-      })
-      .returning();
+    const created = await this.repository.insert({
+      fromUserId: user.id,
+      toUserId: dto.toUserId,
+      startsAt: new Date(dto.startsAt),
+      endsAt: new Date(dto.endsAt),
+      subject: dto.subject ?? null,
+    });
     await this.audit.record(user, {
       action: 'approvalDelegation.created',
       targetType: 'ApprovalDelegation',
-      targetId: created!.id,
+      targetId: created.id,
       details: {
         toUserId: dto.toUserId,
         startsAt: dto.startsAt,
@@ -112,21 +86,13 @@ export class ApprovalDelegationsService {
       },
       ip,
     });
-    return (await this.views([created!]))[0]!;
+    return (await this.views([created]))[0]!;
   }
 
   /** Ends one of the caller's own delegations (given, not received). */
   @Transactional()
   async remove(user: UserPrincipal, id: string, ip?: string) {
-    const [removed] = await this.db
-      .delete(approvalDelegations)
-      .where(
-        and(
-          eq(approvalDelegations.id, id),
-          eq(approvalDelegations.fromUserId, user.id),
-        ),
-      )
-      .returning();
+    const removed = await this.repository.deleteGiven(id, user.id);
     if (!removed) throw new NotFoundException();
     await this.audit.record(user, {
       action: 'approvalDelegation.removed',
@@ -143,12 +109,7 @@ export class ApprovalDelegationsService {
     ];
     const names = new Map(
       ids.length
-        ? (
-            await this.db
-              .select({ id: users.id, name: users.name })
-              .from(users)
-              .where(inArray(users.id, ids))
-          ).map((row) => [row.id, row.name])
+        ? (await this.repository.namesOf(ids)).map((row) => [row.id, row.name])
         : [],
     );
     const now = Date.now();

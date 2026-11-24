@@ -1,38 +1,17 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
+import { AuthorizationService } from '@nestjs/authorization';
 import {
   ConflictException,
   ForbiddenException,
   HttpStatus,
   Injectable,
   NotFoundException,
+  type Type,
 } from '@nestjs/common';
 import { WorkflowClient } from '@nestjs/workflows';
-import {
-  and,
-  asc,
-  eq,
-  getColumns,
-  inArray,
-  isNull,
-  or,
-  type SQL,
-  sql,
-} from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type { Database } from '../../core/database/database.js';
-import { etagOf } from '../../core/http/etag.js';
-import type { ListQuery } from '../../core/http/list-query.js';
-import {
-  afterCursor,
-  countPage,
-  pageOffset,
-  pageOrder,
-  toPage,
-} from '../../core/http/pagination.js';
+import { assertUnchanged, etagOf } from '../../core/http/etag.js';
 import { withTenant } from '../../core/tenancy/tenant-job.js';
 import { AccessService } from '../../iam/access/access.service.js';
-import { users } from '../../iam/auth/auth.tables.js';
 import {
   type Principal,
   principalKey,
@@ -55,16 +34,11 @@ import {
   requestCancelled,
   requestResubmitted,
 } from './approvals.events.js';
-import { type ApprovalList, participates } from './approvals.list.js';
+import { approvalList } from './approvals.list.js';
 import { applyingEffect, ApprovalsRegistry } from './approvals.registry.js';
 import type { ApprovalDetail, ApprovalView } from './approvals.schemas.js';
-import {
-  approvalAssignments,
-  approvalEvents,
-  type ApprovalRequestRow,
-  approvalRequests,
-  OPEN_STATUSES,
-} from './approvals.tables.js';
+import { ApprovalsRepository } from './approvals.repository.js';
+import { type ApprovalRequestRow, OPEN_STATUSES } from './approvals.tables.js';
 
 type Decision = 'approved' | 'rejected' | 'changes_requested';
 
@@ -92,7 +66,7 @@ export type ActionResult =
 @Injectable()
 export class ApprovalsService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: ApprovalsRepository,
     private readonly registry: ApprovalsRegistry,
     private readonly engine: ApprovalEngine,
     private readonly policies: ApprovalPoliciesService,
@@ -100,6 +74,7 @@ export class ApprovalsService {
     private readonly settings: SettingsService,
     private readonly access: AccessService,
     private readonly records: Records,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   /** Nobody decides, withdraws, resubmits or delegates while acting as someone else. */
@@ -128,17 +103,14 @@ export class ApprovalsService {
   /** Locks the record's row for the transaction: a request and a write to the record take turns. */
   private async lockRecord(subject: string, id: string) {
     const { table } = this.records.of(subject).feature;
-    const [row] = await this.db
-      .select({ id: table.id })
-      .from(table as unknown as PgTable)
-      .where(eq(table.id, id))
-      .for('update');
+    const row = await this.repository.lockRecord(table, id);
     if (!row) throw new NotFoundException();
   }
 
   /**
-   * An approvable action asked for on a record (its route, after the
-   * route checked the requester may update the record). Done at once when
+   * An approvable action asked for on a record (its route), by whoever may
+   * update the record: a 404 when they may not read it, a 403 when they may
+   * read it but not change it. Done at once when
    * no approval is needed (the policy is off, the flag is off for the
    * requester, or the policy's `when` doesn't hold); otherwise a request
    * is made, and its workflow starts in the same transaction. A 409
@@ -153,6 +125,17 @@ export class ApprovalsService {
     comment?: string,
     ip?: string,
   ): Promise<ActionResult> {
+    const { store, feature } = this.records.of(subject);
+    // Unreadable: the 404 of a missing one; readable but not theirs to change: a 403.
+    const record = await store.findOne(recordId, { visibleTo: by });
+    await this.authorization.authorize(
+      feature.policy as unknown as Type<{
+        update(...args: unknown[]): boolean;
+      }>,
+      'update',
+      by,
+      record,
+    );
     const key = `${subject}.${action}`;
     const declared = this.registry.action(key);
     const { policy, version } = await this.policies.effective(key);
@@ -189,40 +172,37 @@ export class ApprovalsService {
             { stage: startable.stage },
           );
         }
-        const [created] = await this.db
-          .insert(approvalRequests)
-          .values({
-            ...draft,
-            payload,
-            requesterName: by.name,
-            title: payload.title,
-            link: `/${declaration.path}/${recordId}`,
-            policy,
-            policyVersion: version,
-            fingerprint: await this.engine.fingerprint(subject, recordId),
-            comment: comment ?? null,
-          })
-          .returning();
-        await this.engine.event(created!, 'requested', actorOf(by), {
+        const created = await this.repository.insert({
+          ...draft,
+          payload,
+          requesterName: by.name,
+          title: payload.title,
+          link: `/${declaration.path}/${recordId}`,
+          policy,
+          policyVersion: version,
+          fingerprint: await this.engine.fingerprint(subject, recordId),
+          comment: comment ?? null,
+        });
+        await this.engine.event(created, 'requested', actorOf(by), {
           policyVersion: version,
         });
         await this.engine.record(
           by,
           'approval.requested',
-          created!,
+          created,
           {
             policyVersion: version,
           },
           ip,
         );
-        await this.engine.publish(APPROVAL_EVENTS.requested, created!);
+        await this.engine.publish(APPROVAL_EVENTS.requested, created);
         // The process exists if and only if the request does.
         await this.workflows.start(
           ApprovalWorkflow,
-          withTenant({ requestId: created!.id }),
-          { id: approvalWorkflowId(created!.id), transaction: this.engine.tx },
+          withTenant({ requestId: created.id }),
+          { id: approvalWorkflowId(created.id), transaction: this.engine.tx },
         );
-        return { status: 'pending', approvalId: created!.id };
+        return { status: 'pending', approvalId: created.id };
       })
       .catch((error: unknown) => {
         // Two requests at once: the open-request index lets one through.
@@ -242,17 +222,7 @@ export class ApprovalsService {
     recordId: string,
     action: string,
   ) {
-    const [open] = await this.db
-      .select({ id: approvalRequests.id })
-      .from(approvalRequests)
-      .where(
-        and(
-          eq(approvalRequests.subject, subject),
-          eq(approvalRequests.recordId, recordId),
-          eq(approvalRequests.action, action),
-          inArray(approvalRequests.status, [...OPEN_STATUSES]),
-        ),
-      );
+    const [open] = await this.repository.open(subject, recordId, action);
     if (open) throw this.pendingConflict(open.id);
   }
 
@@ -265,22 +235,7 @@ export class ApprovalsService {
    */
   async assertNotPending(subject: string, recordId: string) {
     if (applyingEffect()) return;
-    const [open] = await this.db
-      .select({ id: approvalRequests.id })
-      .from(approvalRequests)
-      .where(
-        and(
-          eq(approvalRequests.subject, subject),
-          eq(approvalRequests.recordId, recordId),
-          or(
-            eq(approvalRequests.status, 'pending'),
-            and(
-              eq(approvalRequests.status, 'approved'),
-              isNull(approvalRequests.outcomeAppliedAt),
-            ),
-          ),
-        ),
-      );
+    const open = await this.repository.blocking(subject, recordId);
     if (open) throw this.pendingConflict(open.id);
   }
 
@@ -290,16 +245,7 @@ export class ApprovalsService {
    * is gone. In the delete's transaction; realtime events are left out.
    */
   async withdraw(by: Principal, subject: string, recordId: string) {
-    const open = await this.db
-      .select({ id: approvalRequests.id })
-      .from(approvalRequests)
-      .where(
-        and(
-          eq(approvalRequests.subject, subject),
-          eq(approvalRequests.recordId, recordId),
-          inArray(approvalRequests.status, [...OPEN_STATUSES]),
-        ),
-      );
+    const open = await this.repository.open(subject, recordId);
     const after = new AfterCommit();
     for (const { id } of open) {
       const locked = (await this.engine.lock(id))!;
@@ -312,25 +258,9 @@ export class ApprovalsService {
 
   /** Records deleted for good take their requests along; the open ones' workflows are told. */
   async forget(subject: string, recordIds: readonly string[]) {
-    const open = await this.db
-      .select()
-      .from(approvalRequests)
-      .where(
-        and(
-          eq(approvalRequests.subject, subject),
-          inArray(approvalRequests.recordId, [...recordIds]),
-          inArray(approvalRequests.status, [...OPEN_STATUSES]),
-        ),
-      );
+    const open = await this.repository.openOfRecords(subject, recordIds);
     for (const row of open) await this.signalCancelled(row, 'purge');
-    await this.db
-      .delete(approvalRequests)
-      .where(
-        and(
-          eq(approvalRequests.subject, subject),
-          inArray(approvalRequests.recordId, [...recordIds]),
-        ),
-      );
+    await this.repository.deleteOfRecords(subject, recordIds);
   }
 
   private signalCancelled(row: ApprovalRequestRow, by: string) {
@@ -341,12 +271,9 @@ export class ApprovalsService {
     );
   }
 
-  /** What the principal may read: what they take part in, or every request (of a subject) with Approval.read. */
-  private async readable(principal: Principal): Promise<SQL | undefined> {
-    const oversee = await this.access.sqlFilter(principal, 'Approval', 'read');
-    return oversee === undefined
-      ? undefined
-      : or(participates(principal), oversee);
+  /** The principal's Approval.read filter: what they may oversee beside what they take part in. */
+  private oversee(principal: Principal) {
+    return this.access.sqlFilter(principal, 'Approval', 'read');
   }
 
   /**
@@ -354,19 +281,16 @@ export class ApprovalsService {
    * with `?fields=` applied: each item with the `can` and the `etag` its
    * `GET /approvals/{id}` would give the caller.
    */
-  async page(principal: Principal, query: ListQuery, list: ApprovalList) {
-    const filter = and(await this.readable(principal), list.where(query));
-    const [rows, total] = await Promise.all([
-      this.db
-        .select(getColumns(approvalRequests))
-        .from(approvalRequests)
-        .where(and(filter, afterCursor(approvalRequests.id, query)))
-        .orderBy(...pageOrder(approvalRequests.id, query))
-        .limit(query.limit + 1)
-        .offset(pageOffset(query)),
-      countPage(this.db, approvalRequests, filter, query),
-    ]);
-    const page = toPage(rows, query, total);
+  async page(principal: Principal, raw: Record<string, unknown>) {
+    // The list bound to the caller: assignedToMe, requestedByMe and decidedByMe are theirs.
+    const list = approvalList(principal);
+    const query = list.parse(raw);
+    const page = await this.repository.page(
+      principal,
+      await this.oversee(principal),
+      list.where(query),
+      query,
+    );
     const details = await this.detailsOf(principal, page.items);
     const picked = list.pick({ ...page, items: page.items.map(view) }, query);
     return {
@@ -382,10 +306,11 @@ export class ApprovalsService {
 
   /** The request, if the principal may read it; a 404 otherwise (its existence stays hidden). */
   async find(principal: Principal, id: string) {
-    const [row] = await this.db
-      .select()
-      .from(approvalRequests)
-      .where(and(eq(approvalRequests.id, id), await this.readable(principal)));
+    const row = await this.repository.findReadable(
+      principal,
+      await this.oversee(principal),
+      id,
+    );
     if (!row) throw new NotFoundException();
     return row;
   }
@@ -404,17 +329,8 @@ export class ApprovalsService {
   ): Promise<ApprovalDetail[]> {
     if (!rows.length) return [];
     const ids = rows.map((row) => row.id);
-    const assignments = await this.db
-      .select({ ...getColumns(approvalAssignments), approverName: users.name })
-      .from(approvalAssignments)
-      .leftJoin(users, eq(users.id, approvalAssignments.approverId))
-      .where(inArray(approvalAssignments.requestId, ids))
-      .orderBy(asc(approvalAssignments.id));
-    const timeline = await this.db
-      .select()
-      .from(approvalEvents)
-      .where(inArray(approvalEvents.requestId, ids))
-      .orderBy(asc(approvalEvents.id));
+    const assignments = await this.repository.assignmentsOf(ids);
+    const timeline = await this.repository.timelineOf(ids);
     const delegations =
       principal.kind === 'user'
         ? await this.engine.approvers.delegators(principal.id)
@@ -508,17 +424,11 @@ export class ApprovalsService {
 
   /** The current stage's assignments the principal decides: their own, and those of whom they stand in for. */
   private async held(principal: Principal, row: ApprovalRequestRow) {
-    const stage = await this.db
-      .select()
-      .from(approvalAssignments)
-      .where(
-        and(
-          eq(approvalAssignments.requestId, row.id),
-          eq(approvalAssignments.round, row.round),
-          eq(approvalAssignments.stage, row.currentStage),
-        ),
-      )
-      .orderBy(asc(approvalAssignments.id));
+    const stage = await this.repository.stageAssignments(
+      row.id,
+      row.round,
+      row.currentStage,
+    );
     const delegators = new Set(
       (await this.engine.approvers.delegators(principal.id, row.subject)).map(
         (d) => d.from,
@@ -529,16 +439,14 @@ export class ApprovalsService {
     );
   }
 
-  /** The request locked, readable by the principal, as they would read it now (their If-Match). */
-  private async locked(
-    principal: Principal,
-    id: string,
-    unchanged?: (shown: ApprovalDetail) => void,
-  ) {
+  /** The request locked, readable by the principal, and as they read it (their If-Match: under the lock, a check before it would race). */
+  private async locked(principal: Principal, id: string, ifMatch?: string) {
     const locked = await this.engine.lock(id);
     if (!locked) throw new NotFoundException();
     await this.find(principal, id);
-    unchanged?.((await this.detailsOf(principal, [locked]))[0]!);
+    if (ifMatch) {
+      assertUnchanged(ifMatch, (await this.detailsOf(principal, [locked]))[0]!);
+    }
     return locked;
   }
 
@@ -556,11 +464,11 @@ export class ApprovalsService {
     decision: Decision,
     comment: string | undefined,
     ip?: string,
-    unchanged?: (shown: ApprovalDetail) => void,
+    ifMatch?: string,
   ): Promise<ApprovalDetail> {
     this.assertNotImpersonating(principal);
     const row = await this.engine.run(async (after) => {
-      const locked = await this.locked(principal, id, unchanged);
+      const locked = await this.locked(principal, id, ifMatch);
       if (locked.requester === principalKey(principal)) {
         throw this.engine.problem(
           HttpStatus.FORBIDDEN,
@@ -606,26 +514,12 @@ export class ApprovalsService {
           'alreadyDecided',
         );
       }
-      const decided = await this.db
-        .update(approvalAssignments)
-        .set({
-          status: decision,
-          comment: comment ?? null,
-          decidedAt: new Date(),
-          decidedBy: principal.id,
-          decidedByName: principal.name,
-          onBehalfOf: sql`case when ${approvalAssignments.approverId} = ${principal.id} then null else ${approvalAssignments.approverId} end`,
-        })
-        .where(
-          and(
-            inArray(
-              approvalAssignments.id,
-              pending.map((a) => a.id),
-            ),
-            eq(approvalAssignments.status, 'pending'),
-          ),
-        )
-        .returning();
+      const decided = await this.repository.decide(
+        pending.map((a) => a.id),
+        decision,
+        comment ?? null,
+        principal,
+      );
       const stage = locked.currentStage;
       const onBehalfOf = decided
         .map((a) => a.onBehalfOf)
@@ -663,11 +557,11 @@ export class ApprovalsService {
     id: string,
     reason?: string,
     ip?: string,
-    unchanged?: (shown: ApprovalDetail) => void,
+    ifMatch?: string,
   ) {
     this.assertNotImpersonating(principal);
     await this.engine.run(async (after) => {
-      const locked = await this.locked(principal, id, unchanged);
+      const locked = await this.locked(principal, id, ifMatch);
       if (
         locked.requester !== principalKey(principal) &&
         !(await this.access.can(principal, 'cancel', 'Approval', locked))
@@ -706,7 +600,7 @@ export class ApprovalsService {
     id: string,
     comment?: string,
     ip?: string,
-    unchanged?: (shown: ApprovalDetail) => void,
+    ifMatch?: string,
   ) {
     this.assertNotImpersonating(principal);
     const current = await this.find(principal, id);
@@ -727,7 +621,7 @@ export class ApprovalsService {
     await this.engine.run(async () => {
       // The record's lock first (as act() and the record's writes take it), then the request's.
       await this.lockRecord(current.subject, current.recordId);
-      const locked = await this.locked(principal, id, unchanged);
+      const locked = await this.locked(principal, id, ifMatch);
       if (locked.status !== 'changes_requested')
         throw notSentBack(locked.status);
       const row = (await this.engine.recordOf(
@@ -749,40 +643,36 @@ export class ApprovalsService {
           { stage: startable.stage },
         );
       }
-      const [resubmitted] = await this.db
-        .update(approvalRequests)
-        .set({
-          status: 'pending',
-          round: locked.round + 1,
-          currentStage: 0,
-          stageStartedAt: null,
-          stageOutcome: null,
-          dueAt: null,
-          payload,
-          title: payload.title,
-          fingerprint: await this.engine.fingerprint(
-            locked.subject,
-            locked.recordId,
-          ),
-          // A new round: its outcome is still to be applied.
-          outcomeAppliedAt: null,
-          comment: comment ?? locked.comment,
-        })
-        .where(eq(approvalRequests.id, id))
-        .returning();
-      await this.engine.event(resubmitted!, 'resubmitted', actorOf(principal), {
+      const resubmitted = await this.repository.update(id, {
+        status: 'pending',
+        round: locked.round + 1,
+        currentStage: 0,
+        stageStartedAt: null,
+        stageOutcome: null,
+        dueAt: null,
+        payload,
+        title: payload.title,
+        fingerprint: await this.engine.fingerprint(
+          locked.subject,
+          locked.recordId,
+        ),
+        // A new round: its outcome is still to be applied.
+        outcomeAppliedAt: null,
+        comment: comment ?? locked.comment,
+      });
+      await this.engine.event(resubmitted, 'resubmitted', actorOf(principal), {
         ...(comment && { comment }),
       });
       await this.engine.record(
         principal,
         'approval.resubmitted',
-        resubmitted!,
-        { round: resubmitted!.round },
+        resubmitted,
+        { round: resubmitted.round },
         ip,
       );
       await this.workflows.signal(
         requestResubmitted,
-        { round: resubmitted!.round, tenantId: resubmitted!.tenantId },
+        { round: resubmitted.round, tenantId: resubmitted.tenantId },
         {
           key: `${id}:${locked.round}`,
           id: `${id}:${locked.round}:resubmitted`,
@@ -805,11 +695,11 @@ export class ApprovalsService {
     id: string,
     reason?: string,
     ip?: string,
-    unchanged?: (shown: ApprovalDetail) => void,
+    ifMatch?: string,
   ) {
     this.assertNotImpersonating(principal);
     const row = await this.engine.run(async (after) => {
-      const locked = await this.locked(principal, id, unchanged);
+      const locked = await this.locked(principal, id, ifMatch);
       if (!(await this.access.can(principal, 'abandon', 'Approval', locked))) {
         throw new ForbiddenException({
           code: 'forbidden',

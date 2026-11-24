@@ -31,14 +31,13 @@ import {
 } from '@nestjs/swagger';
 import type { z } from 'zod';
 import {
-  assertUnchanged,
   Etag,
   ifMatchHeader,
   ifNoneMatchHeader,
 } from '../../core/http/etag.js';
 import { ApiListQuery } from '../../core/http/list-docs.js';
 import type { Principal } from '../../iam/auth/principal.js';
-import { APPROVAL_LIST, approvalList } from './approvals.list.js';
+import { APPROVAL_LIST } from './approvals.list.js';
 import {
   approvalDetailSchema,
   approvalPageSchema,
@@ -96,9 +95,7 @@ export class ApprovalsController {
     @CurrentUser() user: Principal,
     @Query() raw: Record<string, unknown>,
   ) {
-    // The list bound to the caller: assignedToMe, requestedByMe and decidedByMe are theirs.
-    const list = approvalList(user);
-    return this.approvals.page(user, list.parse(raw), list);
+    return this.approvals.page(user, raw);
   }
 
   @Get(':id')
@@ -208,14 +205,8 @@ export class ApprovalsController {
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
   ) {
-    // If-Match is checked under the request's lock (a check before it would race).
-    return this.approvals.cancel(
-      user,
-      id,
-      dto.reason,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    // The service checks If-Match under the request's lock (a check before it would race).
+    return this.approvals.cancel(user, id, dto.reason, ip, ifMatch);
   }
 
   @Post(':id/abandon')
@@ -245,13 +236,7 @@ export class ApprovalsController {
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
   ) {
-    return this.approvals.abandon(
-      user,
-      id,
-      dto.reason,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    return this.approvals.abandon(user, id, dto.reason, ip, ifMatch);
   }
 
   @Post(':id/resubmit')
@@ -281,13 +266,7 @@ export class ApprovalsController {
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
   ) {
-    return this.approvals.resubmit(
-      user,
-      id,
-      dto.comment,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    return this.approvals.resubmit(user, id, dto.comment, ip, ifMatch);
   }
 
   private async decide(
@@ -298,13 +277,6 @@ export class ApprovalsController {
     ifMatch: string | undefined,
     ip: string,
   ) {
-    return this.approvals.decide(
-      user,
-      id,
-      decision,
-      dto.comment,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    return this.approvals.decide(user, id, decision, dto.comment, ip, ifMatch);
   }
 }

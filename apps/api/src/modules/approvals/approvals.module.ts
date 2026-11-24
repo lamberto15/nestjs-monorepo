@@ -13,7 +13,7 @@ import {
   type Type,
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
-import { AuthorizationService, Can } from '@nestjs/authorization';
+import { Can } from '@nestjs/authorization';
 import { DiscoveryModule } from '@nestjs/core';
 import { OnEvent } from '@nestjs/event-emitter';
 import type { NodeResponse } from '@nestjs/platform-node';
@@ -48,7 +48,6 @@ import {
 import { RecordIdempotent } from '../records/record.routes.js';
 import { RecordsModule } from '../records/records.module.js';
 import { WebhooksModule } from '../webhooks/webhooks.module.js';
-import { Records } from '../records/records.service.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import {
   ApprovalDelegationsController,
@@ -81,6 +80,9 @@ import {
 import { ApprovalsService } from './approvals.service.js';
 import { APPROVAL_SETTINGS } from './approvals.settings.js';
 import { Approvers } from './approvers.js';
+import { ApprovalsRepository } from './approvals.repository.js';
+import { ApprovalPoliciesRepository } from './approval-policies.repository.js';
+import { ApprovalDelegationsRepository } from './approval-delegations.repository.js';
 import { ApprovalsPersonalData } from './approvals.personal-data.js';
 import { ApprovalsErasure } from './approvals.erasure.js';
 
@@ -180,6 +182,9 @@ export class ApprovalsExtension implements RecordHooks {
     ApprovalsController,
   ],
   providers: [
+    ApprovalsRepository,
+    ApprovalPoliciesRepository,
+    ApprovalDelegationsRepository,
     ApprovalsRegistry,
     Approvers,
     ApprovalEngine,
@@ -241,16 +246,12 @@ function actionRoute(
 
   @RecordController(record, `:id/${actionPath(action)}`, suffix)
   class ApprovalActionRoute {
-    constructor(
-      private readonly records: Records,
-      private readonly authorization: AuthorizationService,
-      private readonly approvals: ApprovalsService,
-    ) {}
+    constructor(private readonly approvals: ApprovalsService) {}
 
     @Post()
     @HttpCode(HttpStatus.OK)
     @RecordIdempotent(record)
-    @Can.Anyone() // Checked below: updating the record.
+    @Can.Anyone() // Checked by the service: updating the record.
     @ApiOperation({
       summary: approval.label,
       description: `Needs the approval of ${record.subject}.${action}'s policy when it is on for you (GET /v1/approvals/policies/${record.subject}.${action}); otherwise it is done at once. While a request is open, ${aNoun(record)} can't be changed or deleted (409 \`approval_pending\`).`,
@@ -281,17 +282,6 @@ function actionRoute(
       @Ip() ip: string,
       @Res({ passthrough: true }) res: NodeResponse,
     ) {
-      const { store, feature } = this.records.of(record.subject);
-      // Unreadable: the 404 of a missing one; readable but not theirs to change: a 403.
-      const row = await store.findOne(id, { visibleTo: user });
-      await this.authorization.authorize(
-        feature.policy as unknown as Type<{
-          update(...args: unknown[]): boolean;
-        }>,
-        'update',
-        user,
-        row,
-      );
       const result = await this.approvals.act(
         user,
         record.subject,

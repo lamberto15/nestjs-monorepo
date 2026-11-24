@@ -57,17 +57,7 @@ describe('the module graph', () => {
  *   handlers ask a repository. A file that must keep a query (a package's
  *   store, a list declaration, a helper other repositories build on) says
  *   why in MAY_QUERY; the records engine and tenant move are QUERY_ENGINES.
- *
- * shortcut: NOT_YET_CONVERTED folders are not checked until their services'
- * queries move; convert one and take it off the list.
  */
-/**
- * Folders whose services still hold their own queries: each is converted by
- * moving them into its repository, then leaves this list (a listed folder
- * that no longer has one fails below, so the list only shrinks).
- */
-const NOT_YET_CONVERTED = ['iam/sso'];
-
 /** Folders whose queries are the engine itself, not a module's own. */
 const QUERY_ENGINES: Record<string, string> = {
   'modules/records':
@@ -135,6 +125,8 @@ const MAY_QUERY: Record<string, string> = {
     'the movesWithAccount() registry reads table metadata; no query',
   'iam/auth/token-session.ts':
     'SQL expressions over refresh token claims that the store and repositories embed',
+  'iam/sso/scim/scim-filter.ts':
+    'translates a SCIM filter into the where clause its repositories run; no query',
   // modules
   'modules/webhooks/webhook-store.view.ts':
     "the package's store tables, declared as a tables file declares its own",
@@ -175,10 +167,8 @@ const specifiersOf = (file: string) =>
     ),
   ].map(([, from]) => from!);
 
-const isConverted = (module: string | undefined) =>
-  module !== undefined &&
-  !NOT_YET_CONVERTED.includes(module) &&
-  !(module in QUERY_ENGINES);
+const holdsItsOwnQueries = (module: string | undefined) =>
+  module !== undefined && !(module in QUERY_ENGINES);
 
 describe('the layers', () => {
   const src = import.meta.dirname;
@@ -201,7 +191,7 @@ describe('the layers', () => {
     const found = files
       .filter(
         ({ file, path }) =>
-          isConverted(moduleOf(src, file)) &&
+          holdsItsOwnQueries(moduleOf(src, file)) &&
           !/\.(repository|tables|module)\.ts$/.test(path) &&
           !(path in MAY_QUERY),
       )
@@ -211,19 +201,6 @@ describe('the layers', () => {
           .map((from) => `${path} -> ${from}`),
       );
     expect(found).toEqual([]);
-  });
-
-  it('lists only folders that still hold queries outside a repository', () => {
-    const stale = NOT_YET_CONVERTED.filter(
-      (module) =>
-        !files.some(
-          ({ file, path }) =>
-            moduleOf(src, file) === module &&
-            !/\.(repository|tables|module)\.ts$/.test(path) &&
-            specifiersOf(file).some(isDrizzle),
-        ),
-    );
-    expect(stale).toEqual([]);
   });
 
   it('lists only files that exist', () => {

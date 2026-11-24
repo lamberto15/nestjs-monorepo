@@ -30,7 +30,6 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import {
-  assertUnchanged,
   Etag,
   ifMatchHeader,
   ifNoneMatchHeader,
@@ -186,13 +185,7 @@ export class ApprovalPoliciesController {
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
   ) {
-    return this.policies.set(
-      user,
-      key,
-      body,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    return this.policies.set(user, key, body, ip, ifMatch);
   }
 
   @Delete('policies/:key')
@@ -211,12 +204,6 @@ export class ApprovalPoliciesController {
     @Headers('if-match') ifMatch: string | undefined,
     @Ip() ip: string,
   ) {
-    return this.policies.set(
-      user,
-      key,
-      null,
-      ip,
-      ifMatch ? (shown: object) => assertUnchanged(ifMatch, shown) : undefined,
-    );
+    return this.policies.set(user, key, null, ip, ifMatch);
   }
 }
