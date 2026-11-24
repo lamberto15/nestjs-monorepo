@@ -17275,6 +17275,8 @@ export interface operations {
                             description: string | null;
                             /** @description A feature flag (boolean, may roll out to a share of principals). */
                             flag: boolean;
+                            /** @description Kept encrypted and never shown: `value` is null, `source` says whether one is set. */
+                            secret: boolean;
                             /** @description Where it may be set; `user`: you may set it for yourself. */
                             scopes: ("tenant" | "unit" | "user")[];
                             public: boolean;
@@ -17378,6 +17380,8 @@ export interface operations {
                         description: string | null;
                         /** @description A feature flag (boolean, may roll out to a share of principals). */
                         flag: boolean;
+                        /** @description Kept encrypted and never shown: `value` is null, `source` says whether one is set. */
+                        secret: boolean;
                         /** @description Where it may be set; `user`: you may set it for yourself. */
                         scopes: ("tenant" | "unit" | "user")[];
                         public: boolean;
@@ -17650,6 +17654,8 @@ export interface operations {
                         description: string | null;
                         /** @description A feature flag (boolean, may roll out to a share of principals). */
                         flag: boolean;
+                        /** @description Kept encrypted and never shown: `value` is null, `source` says whether one is set. */
+                        secret: boolean;
                         /** @description Where it may be set; `user`: you may set it for yourself. */
                         scopes: ("tenant" | "unit" | "user")[];
                         public: boolean;
@@ -17765,6 +17771,8 @@ export interface operations {
                         description: string | null;
                         /** @description A feature flag (boolean, may roll out to a share of principals). */
                         flag: boolean;
+                        /** @description Kept encrypted and never shown: `value` is null, `source` says whether one is set. */
+                        secret: boolean;
                         /** @description Where it may be set; `user`: you may set it for yourself. */
                         scopes: ("tenant" | "unit" | "user")[];
                         public: boolean;

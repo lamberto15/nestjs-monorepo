@@ -18536,6 +18536,10 @@
                             "type": "boolean",
                             "description": "A feature flag (boolean, may roll out to a share of principals)."
                           },
+                          "secret": {
+                            "type": "boolean",
+                            "description": "Kept encrypted and never shown: `value` is null, `source` says whether one is set."
+                          },
                           "scopes": {
                             "type": "array",
                             "items": {
@@ -18736,6 +18740,7 @@
                           "label",
                           "description",
                           "flag",
+                          "secret",
                           "scopes",
                           "public",
                           "value",
@@ -18821,6 +18826,10 @@
                     "flag": {
                       "type": "boolean",
                       "description": "A feature flag (boolean, may roll out to a share of principals)."
+                    },
+                    "secret": {
+                      "type": "boolean",
+                      "description": "Kept encrypted and never shown: `value` is null, `source` says whether one is set."
                     },
                     "scopes": {
                       "type": "array",
@@ -19022,6 +19031,7 @@
                     "label",
                     "description",
                     "flag",
+                    "secret",
                     "scopes",
                     "public",
                     "value",
@@ -19478,6 +19488,10 @@
                       "type": "boolean",
                       "description": "A feature flag (boolean, may roll out to a share of principals)."
                     },
+                    "secret": {
+                      "type": "boolean",
+                      "description": "Kept encrypted and never shown: `value` is null, `source` says whether one is set."
+                    },
                     "scopes": {
                       "type": "array",
                       "items": {
@@ -19678,6 +19692,7 @@
                     "label",
                     "description",
                     "flag",
+                    "secret",
                     "scopes",
                     "public",
                     "value",
@@ -19761,6 +19776,10 @@
                       "type": "boolean",
                       "description": "A feature flag (boolean, may roll out to a share of principals)."
                     },
+                    "secret": {
+                      "type": "boolean",
+                      "description": "Kept encrypted and never shown: `value` is null, `source` says whether one is set."
+                    },
                     "scopes": {
                       "type": "array",
                       "items": {
@@ -19961,6 +19980,7 @@
                     "label",
                     "description",
                     "flag",
+                    "secret",
                     "scopes",
                     "public",
                     "value",
