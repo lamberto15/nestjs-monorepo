@@ -46,8 +46,11 @@ const DENIED_EVERY_SECONDS = 3600;
 @Injectable()
 export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
   private readonly logger = new Logger('ApiKeys');
-  /** The allowlist of the client findKey returned, read back by authenticate (the same object). */
-  private readonly allowlists = new WeakMap<object, string[]>();
+  /** What findKey read with the principal it returned, read back by authenticate (the same object). */
+  private readonly found = new WeakMap<
+    object,
+    { allowedCidrs: string[]; lastUsedAt: Date | null }
+  >();
 
   constructor(
     @InjectDrizzle() private readonly db: Database,
@@ -97,7 +100,10 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
       name: client.name,
       tenantId: client.tenantId,
     };
-    this.allowlists.set(user, client.allowedCidrs);
+    this.found.set(user, {
+      allowedCidrs: client.allowedCidrs,
+      lastUsedAt: key.key.lastUsedAt,
+    });
     // On the session too (ApiKeySession.expiresAt): a socket opened with
     // the key ends at it.
     return { hash: key.key.keyHash, user, expiresAt: key.key.expiresAt };
@@ -109,8 +115,14 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
     if (result?.user) {
       await this.checkAddress(context, result.user);
     }
-    if (result?.session?.keyId) {
-      this.touch(result.session.keyId, new Date());
+    const now = new Date();
+    const lastUsedAt = result?.user && this.found.get(result.user)?.lastUsedAt;
+    // The row just read says it was written within the minute: no query at all.
+    if (
+      result?.session?.keyId &&
+      !(lastUsedAt && now.getTime() - lastUsedAt.getTime() < LAST_USED_EVERY_MS)
+    ) {
+      this.touch(result.session.keyId, now);
     }
     return result;
   }
@@ -120,7 +132,7 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
     context: ExecutionContext,
     client: RequestPrincipal,
   ) {
-    const cidrs = this.allowlists.get(client);
+    const cidrs = this.found.get(client)?.allowedCidrs;
     const ip =
       context.getType() === 'http'
         ? context.switchToHttp().getRequest<Request>().ip
@@ -166,7 +178,11 @@ export class ApiKeyAuth extends ApiKeyProvider<RequestPrincipal> {
     }
   }
 
-  /** Records the use, without making the request wait for it. */
+  /**
+   * Records the use, without making the request wait for it. Conditional
+   * too: requests on several instances at once, all reading an old
+   * `lastUsedAt`, write it once.
+   */
   private touch(keyId: string, now: Date) {
     void this.db
       .update(apiKeys)

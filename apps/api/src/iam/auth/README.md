@@ -97,6 +97,15 @@ Throttling, then `PrincipalGuard` (authenticates, refuses the system
 principal, enters the user's tenant, or a break-glass grant's read only), `MfaEnrollmentGuard`,
 `OnboardingGuard`, then authorization: each needs the principal before it.
 
+## Jobs
+
+`SessionPruneJob` (`session-prune.job.ts`): every hour at :25 UTC, on one
+instance (@nestjs/locks), deletes expired sessions and refresh-token
+families, 5000 rows a statement; nothing is announced (an expired one
+authenticates nothing already). An API key's `lastUsedAt` is written at
+most once a minute: a request whose key row shows a use within the minute
+writes nothing, and the write itself is conditional, for instances racing.
+
 ## Variables
 
 `auth.config.ts`: `SESSION_IDLE_MINUTES` (120), `SESSION_MAX_HOURS` (12),
@@ -108,5 +117,6 @@ means nobody is an operator).
 ## Tests
 
 Unit specs next to the code; `auth.e2e-spec.ts`,
-`drizzle-authentication.store.e2e-spec.ts` (the package's store contract),
+`drizzle-authentication.store.e2e-spec.ts` (the package's store contract,
+the prune job),
 `single-tenant.e2e-spec.ts`.

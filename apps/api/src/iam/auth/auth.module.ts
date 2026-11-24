@@ -27,6 +27,7 @@ import { PasswordSignIn } from './password-sign-in.service.js';
 import { PrincipalGuard } from './principal.guard.js';
 import { RecentAuthenticationCheck } from './recent-authentication.js';
 import { ACCESS_TOKEN_TTL_MS, SessionLifetime } from './session-lifetime.js';
+import { SessionPruneJob } from './session-prune.job.js';
 import { SessionAuth } from './session-auth.provider.js';
 import { SignInGates } from './sign-in-gate.js';
 import { SignInContext, signInMetadata } from './sign-in-context.js';
@@ -139,6 +140,7 @@ const JWT_KEY_SECRET = 'jwt-signing-key';
     AddressThrottlerGuard,
     OperatorGuard,
     WhoAmIParts,
+    SessionPruneJob,
     { provide: APP_GUARD, useClass: PrincipalGuard },
     { provide: APP_GUARD, useClass: MfaEnrollmentGuard },
     { provide: APP_GUARD, useClass: OnboardingGuard },

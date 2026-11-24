@@ -25,6 +25,7 @@ import {
   users,
 } from '../src/iam/auth/auth.tables.js';
 import { tokenClaims } from '../src/iam/auth/authentication-method.js';
+import { CheapPasswordsModule } from './account.js';
 import type { Database } from '../src/core/database/database.js';
 
 /**
@@ -42,6 +43,8 @@ export const authModules = () => [
   I18nModule,
   EncryptionModule,
   SharedLocksModule,
+  // Every sign-in spec hashes cheaply: scrypt's default costs ~0.3 s a hash.
+  CheapPasswordsModule,
   AuthModule,
   AuditModule,
 ];

@@ -8,7 +8,7 @@ import {
   type SessionStore,
 } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { and, eq, isNull, lt, lte, max, min, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, max, min, or } from 'drizzle-orm';
 import type { Database } from '../../core/database/database.js';
 import {
   AUTH_EVENTS,
@@ -32,6 +32,9 @@ import { UsersRepository } from './users.repository.js';
  * a session or a token family is announced (`auth.session-ended`,
  * `auth.token-session-ended`) for the sockets it opened.
  */
+/** Expired rows deleted per statement by `pruneExpired()`. */
+const PRUNE_BATCH = 5000;
+
 const ownedOrImpersonatedBy = (userId: string) =>
   or(
     eq(sessions.userId, userId),
@@ -81,9 +84,6 @@ export class DrizzleAuthenticationStore
       };
     }
     await this.db.insert(sessions).values(record);
-    await this.db
-      .delete(sessions)
-      .where(lte(sessions.expiresAt, record.createdAt));
   }
 
   async touchSession(id: string, lastActiveAt: Date): Promise<void> {
@@ -143,9 +143,6 @@ export class DrizzleAuthenticationStore
 
   async saveRefreshToken(record: RefreshTokenRecord): Promise<void> {
     await this.db.insert(refreshTokens).values(record);
-    await this.db
-      .delete(refreshTokens)
-      .where(lte(refreshTokens.familyExpiresAt, record.createdAt));
   }
 
   /**
@@ -230,6 +227,35 @@ export class DrizzleAuthenticationStore
       )
       .limit(1);
     return revoked.length > 0;
+  }
+
+  /**
+   * Deletes the sessions and refresh-token families that expired by `now`,
+   * PRUNE_BATCH rows a statement (SessionPruneJob). Nothing is announced:
+   * an expired session or family authenticates nothing already, and its
+   * sockets were ended by their own deadlines. Returns how many rows went.
+   */
+  async pruneExpired(now: Date) {
+    let total = 0;
+    for (const [table, expiresAt] of [
+      [sessions, sessions.expiresAt],
+      [refreshTokens, refreshTokens.familyExpiresAt],
+    ] as const) {
+      for (;;) {
+        const expired = this.db
+          .select({ id: table.id })
+          .from(table)
+          .where(lte(expiresAt, now))
+          .limit(PRUNE_BATCH);
+        const deleted = await this.db
+          .delete(table)
+          .where(inArray(table.id, expired))
+          .returning({ id: table.id });
+        total += deleted.length;
+        if (deleted.length < PRUNE_BATCH) break;
+      }
+    }
+    return total;
   }
 
   private async sessionsEnded(rows: { id: string }[]) {

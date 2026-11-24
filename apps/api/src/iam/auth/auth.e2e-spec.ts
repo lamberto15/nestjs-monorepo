@@ -161,20 +161,9 @@ class LeakyProvider extends AuthenticationProvider {
   }
 }
 
-/** A module's own options, merged in: cheap hashes for the tests. */
-@Injectable()
-@AuthenticationOptionsPart(() => ({ password: { logN: 10 } }))
-class CheapPasswords {}
-
 @Module({
   controllers: [ProbeController],
-  providers: [
-    TestPolicy,
-    TestHosts,
-    TestImpersonationRules,
-    LeakyProvider,
-    CheapPasswords,
-  ],
+  providers: [TestPolicy, TestHosts, TestImpersonationRules, LeakyProvider],
 })
 class ProbeModule {}
 
@@ -500,6 +489,35 @@ describe('sign-in and the principal (e2e)', () => {
       expect((await get('/probe/clients', revoked.headers)).statusCode).toBe(
         401,
       );
+    });
+
+    it('record the last use at most once a minute: a second use within it writes nothing', async () => {
+      const { tenantId } = await createUser(app);
+      const { client, headers } = await apiClient(app, tenantId);
+      const lastUsed = async () =>
+        (
+          await db
+            .select({ at: apiKeys.lastUsedAt })
+            .from(apiKeys)
+            .where(eq(apiKeys.clientId, client.id))
+        )[0]!.at;
+      const update = vi.spyOn(db, 'update');
+      try {
+        expect((await get('/probe/clients', headers)).statusCode).toBe(200);
+        // Written without the request waiting for it.
+        const first = await vi.waitFor(async () => {
+          const at = await lastUsed();
+          expect(at).not.toBeNull();
+          return at;
+        });
+        expect((await get('/probe/clients', headers)).statusCode).toBe(200);
+        expect(await lastUsed()).toEqual(first);
+        expect(
+          update.mock.calls.filter(([table]) => table === apiKeys),
+        ).toHaveLength(1);
+      } finally {
+        update.mockRestore();
+      }
     });
 
     it('stop while API_CLIENTS is off, and work again once it is on', async () => {
