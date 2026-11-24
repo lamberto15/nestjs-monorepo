@@ -59,7 +59,8 @@ import { TURNSTILE_HTTP } from './turnstile.verifier.js';
     CaptchaService,
     AppAttestationService,
     { provide: APP_ATTEST_ROOTS, useValue: [APPLE_APP_ATTESTATION_ROOT] },
-    { provide: APP_GUARD, useClass: CaptchaGuard },
+    CaptchaGuard,
+    { provide: APP_GUARD, useExisting: CaptchaGuard },
   ],
   exports: [CaptchaService],
 })
