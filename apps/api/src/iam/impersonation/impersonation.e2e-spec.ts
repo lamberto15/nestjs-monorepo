@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Controller, Get, Module, VERSION_NEUTRAL } from '@nestjs/common';
-import { CurrentUser } from '@nestjs/authentication';
+import { CurrentUser, SessionService } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import type { NestNodeApplication } from '@nestjs/platform-node';
@@ -48,6 +48,7 @@ describe('impersonation (e2e)', () => {
   /** The administrator's access token: it outlives their session's replacement. */
   let adminToken: Headers;
   let adminId: string;
+  let adminEmail: string;
   let editor: { id: string; email: string };
 
   beforeAll(async () => {
@@ -59,6 +60,7 @@ describe('impersonation (e2e)', () => {
     const tenant = await tenantWithAdmin(app);
     tenantId = tenant.tenantId;
     adminId = tenant.admin.id;
+    adminEmail = tenant.admin.email;
     admin = (await signIn(app, tenant.admin.email)).headers;
     adminToken = tenant.admin.headers;
     editor = await member(app, tenantId, ['editor']);
@@ -112,6 +114,41 @@ describe('impersonation (e2e)', () => {
     expect(await entries('user.impersonation-started')).toHaveLength(1);
     expect(await entries('user.impersonation-stopped')).toHaveLength(1);
     admin = back;
+  });
+
+  it('ends with the administrator’s sessions, and stops once', async () => {
+    const start = async () => {
+      const fresh = (await signIn(app, adminEmail)).headers;
+      const started = await post(
+        `/v1/access/users/${editor.id}/impersonate`,
+        fresh,
+      );
+      expect(started.statusCode).toBe(204);
+      return { cookie: cookieOf(started.headers['set-cookie']) };
+    };
+    // Sign out everywhere, a password change or reset: revokeAll().
+    const as = await start();
+    await app.get(SessionService).revokeAll(adminId);
+    expect(
+      (await app.inject({ method: 'GET', url: '/probe/me', headers: as }))
+        .statusCode,
+    ).toBe(401);
+    expect((await post('/v1/auth/impersonation/stop', as)).statusCode).toBe(
+      401,
+    );
+
+    // Two stops at once: one administrator session back, not two.
+    const again = await start();
+    const stops = await Promise.all([
+      post('/v1/auth/impersonation/stop', again),
+      post('/v1/auth/impersonation/stop', again),
+    ]);
+    expect(stops.map((stop) => stop.statusCode).sort()).toEqual([204, 401]);
+    admin = {
+      cookie: cookieOf(
+        stops.find((stop) => stop.statusCode === 204)!.headers['set-cookie'],
+      ),
+    };
   });
 
   it('refuses oneself, an administrator, a stranger and a non-administrator', async () => {

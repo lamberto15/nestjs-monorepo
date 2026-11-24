@@ -1,0 +1,1 @@
+CREATE INDEX "sessions_impersonator_idx" ON "sessions" (("metadata"->'impersonator'->>'id'));

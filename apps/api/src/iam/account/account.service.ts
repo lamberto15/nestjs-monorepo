@@ -304,6 +304,8 @@ export class AccountService {
     const currentId = isSessionRecord(current) ? current.id : undefined;
     const currentSid = (current as { sid?: unknown } | undefined)?.sid;
     const browsers = (await this.sessions.list(user.id))
+      // The list also holds the sessions in which they act as someone else.
+      .filter((session) => session.userId === user.id)
       .filter((session) => !user.impersonator || session.id === currentId)
       .map((session) => {
         const authentication = authenticationOf(session);

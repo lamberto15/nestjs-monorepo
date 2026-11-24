@@ -5,9 +5,14 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { type SessionRecord, SessionService } from '@nestjs/authentication';
+import {
+  AuthenticationStorage,
+  type SessionRecord,
+  SessionService,
+} from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../../core/database/database.js';
@@ -48,6 +53,7 @@ export class ImpersonationService implements ImpersonationEligibility {
   constructor(
     @InjectTransaction() private readonly db: Database,
     private readonly sessions: SessionService,
+    private readonly storage: AuthenticationStorage,
     private readonly users: UsersRepository,
     private readonly roles: RolesService,
     private readonly audit: AuditService,
@@ -103,7 +109,11 @@ export class ImpersonationService implements ImpersonationEligibility {
       details: { email: target.email, endsAt: impersonator.endsAt },
       ip,
     });
-    await this.sessions.revoke(session.id, { userId: actor.id });
+    // Once: of two starts with the same session, one deletes it (a single
+    // statement), and the other gets no second impersonation.
+    if (!(await this.storage.sessions.deleteSession(session.id))) {
+      throw new UnauthorizedException();
+    }
     // The administrator's second factor stands for this session; their
     // sign-in's time doesn't (no authenticatedAt: never a recent one).
     const issued = await this.sessions.create(target.id, {
@@ -122,7 +132,11 @@ export class ImpersonationService implements ImpersonationEligibility {
         message: t('impersonation.notImpersonating'),
       });
     }
-    await this.sessions.revoke(session.id, { userId: session.userId });
+    // Once: of two stops with the same cookie, one deletes the session, and
+    // the other gets no second administrator session.
+    if (!(await this.storage.sessions.deleteSession(session.id))) {
+      throw new UnauthorizedException();
+    }
     const {
       impersonator: _,
       method: _method,

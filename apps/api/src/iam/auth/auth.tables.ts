@@ -1,4 +1,6 @@
+import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   boolean,
   index,
   jsonb,
@@ -70,6 +72,10 @@ export const memberships = globalTable(
   ],
 );
 
+/** The id of the administrator a session impersonates for, as SQL (null for any other session). */
+export const impersonatorOf = (metadata: AnyPgColumn) =>
+  sql`(${metadata}->'impersonator'->>'id')`;
+
 /**
  * Browser sessions (@nestjs/authentication's SessionStore), by the SHA-256
  * of their cookie token. Global: a session is the person's; the tenant it
@@ -89,6 +95,9 @@ export const sessions = pgTable(
   (t) => [
     index('sessions_user_id_idx').on(t.userId),
     index('sessions_expires_at_idx').on(t.expiresAt),
+    // The administrator acting as this session's user (impersonation.ts):
+    // ending all of theirs ends these too (DrizzleAuthenticationStore).
+    index('sessions_impersonator_idx').on(impersonatorOf(t.metadata)),
   ],
 );
 
