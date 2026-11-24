@@ -32,10 +32,10 @@ try {
 }
 
 // After the environment: the modules' configs read it when they are imported.
-const { VersioningType } = await import('@nestjs/common');
 const { NestFactory } = await import('@nestjs/core');
 const { AppModule } = await import('./app.module.js');
 const { buildOpenApiDocument } = await import('./core/http/openapi.js');
+const { setupVersioning } = await import('./core/http/http-setup.js');
 // Record add-ons that AppModule does not list (a feature takes them with
 // `forRecord()`, comments for one) put their schemas and realtime events in
 // the document when loaded: the client's record panels type their routes
@@ -56,7 +56,7 @@ const app = await NestFactory.create(AppModule, {
 });
 // What setupHttp() applies and the document shows (it reads the config,
 // which preview mode doesn't instantiate).
-app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+setupVersioning(app);
 const document = buildOpenApiDocument(app);
 mkdirSync(dirname(target), { recursive: true });
 writeFileSync(target, `${JSON.stringify(document, null, 2)}\n`);

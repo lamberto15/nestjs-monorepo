@@ -1,4 +1,8 @@
-import { type RequestMethod, VersioningType } from '@nestjs/common';
+import {
+  type INestApplication,
+  type RequestMethod,
+  VersioningType,
+} from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { type NestNodeApplication, NodeAdapter } from '@nestjs/platform-node';
 import compression from 'compression';
@@ -146,8 +150,14 @@ export function setupHttp(app: NestNodeApplication) {
     exclude: [...csrfExclusions.values()],
   });
 
-  // /v1/notes: a breaking change ships as /v2 next to it (`@Version('2')` on
-  // a route or `@Controller({ version: '2' })`). /health and the docs carry
-  // no version (`VERSION_NEUTRAL`).
+  setupVersioning(app);
+}
+
+/**
+ * /v1/notes: a breaking change ships as /v2 next to it (`@Version('2')` on
+ * a route or `@Controller({ version: '2' })`). /health and the docs carry
+ * no version (`VERSION_NEUTRAL`). Also what the OpenAPI dump applies.
+ */
+export function setupVersioning(app: INestApplication) {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 }
