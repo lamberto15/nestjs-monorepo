@@ -560,9 +560,11 @@ export class InvitationsService {
   /**
    * The invitation's roles and units, as they are now: a role or unit
    * deleted since is left out (row-level security keeps it to the tenant).
+   * Added to what a member already holds, never replacing it: the inviter
+   * was checked for what they grant, not for taking roles away (an
+   * invitation would otherwise demote an administrator).
    */
   private async grant(userId: string, invitation: Invitation) {
-    await this.db.delete(userRoles).where(eq(userRoles.userId, userId));
     const existing = invitation.roleIds.length
       ? await this.db
           .select({ id: roles.id })
@@ -577,9 +579,11 @@ export class InvitationsService {
       })
       .filter(({ expiresAt }) => !expiresAt || expiresAt.getTime() > now);
     if (grants.length) {
+      // A role already held stays as it is, its expiry included.
       await this.db
         .insert(userRoles)
-        .values(grants.map((grant) => ({ userId, ...grant })));
+        .values(grants.map((grant) => ({ userId, ...grant })))
+        .onConflictDoNothing();
     }
     await this.units.place(userId, invitation.unitIds);
   }

@@ -24,7 +24,8 @@ person (no sign-in needed for a new address).
 - **Acceptance** is one transaction under the account's and the
   membership's row locks: the membership (never turning a deactivated one
   back on: 403 `membership_inactive`), the invitation's roles (as they
-  are now, replacing the member's) and its units (added).
+  are now, added to the member's: a role already held is kept as it is,
+  and none is taken away) and its units (added).
 - **Grant rules:** the inviter must be able to grant every role and place
   people in every unit (`Access.manageOrganizationalUnits`, or a unit of
   theirs or above); sending and changing check it again. Roles want a

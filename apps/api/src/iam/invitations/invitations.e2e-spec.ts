@@ -18,6 +18,7 @@ import { QueuesModule } from '../../core/queues/queues.module.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { BreachedPasswordsService } from '../account/breached-passwords.service.js';
 import { auditLog } from '../audit/audit.tables.js';
+import { userRoles } from '../access/access.tables.js';
 import { memberships, users } from '../auth/auth.tables.js';
 import { invitations } from './invitations.tables.js';
 import { InvitationsModule } from './invitations.module.js';
@@ -219,6 +220,41 @@ describe('invitations (e2e)', () => {
       .from(memberships)
       .where(eq(memberships.tenantId, tenantId));
     expect(mine.map((m) => m.userId)).toContain(person.user.id);
+  });
+
+  it('adds an invitation’s roles to a member’s, never taking any away', async () => {
+    const { tenantId, admin } = await tenantWithAdmin(app);
+    const [administrator, viewer] = await roleIds(
+      app,
+      tenantId,
+      'administrator',
+      'viewer',
+    );
+    // A manager who may hand out the viewer role and no more.
+    const role = await call('POST', '/v1/access/roles', admin.headers, {
+      name: 'People manager',
+      permissions: [
+        { subject: 'Access', action: 'manageUsers', conditions: [] },
+      ],
+    });
+    const manager = await member(app, tenantId, [role.json().id]);
+    const boss = await member(app, tenantId, ['administrator']);
+    const invited = await call('POST', '/v1/access/users', manager.headers, {
+      email: boss.email,
+      roleIds: [viewer],
+    });
+    expect(invited.statusCode, invited.body).toBe(202);
+    const accepted = await accept(await tokenFor(boss.email), {}, boss.headers);
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    const held = await inTenant(tenantId, () =>
+      db()
+        .select({ roleId: userRoles.roleId })
+        .from(userRoles)
+        .where(eq(userRoles.userId, boss.id)),
+    );
+    expect(held.map((row) => row.roleId).sort()).toEqual(
+      [administrator, viewer].sort(),
+    );
   });
 
   it('never turns a deactivated membership back on', async () => {
