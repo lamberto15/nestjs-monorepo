@@ -455,6 +455,22 @@ describe('custom fields (e2e)', () => {
       priority: 3,
       region: 'south',
     });
+    // A change of custom values alone is the record's change: it moves
+    // updatedAt (a sync by `updatedAt` sees it) and is audited as an update.
+    expect(merged.json().updatedAt).not.toBe(created.json().updatedAt);
+    const updates = await app.get(Tenancy).run(team.tenantId, () =>
+      app
+        .get<Database>(getDrizzleToken())
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.action, 'testItem.updated'),
+            eq(auditLog.targetId, id),
+          ),
+        ),
+    );
+    expect(updates).toHaveLength(1);
     const removed = await call('PATCH', `/v1/test-items/${id}`, headers, {
       title: 'Renamed',
       custom: { region: null },
