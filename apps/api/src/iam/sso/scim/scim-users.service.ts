@@ -184,6 +184,7 @@ export class ScimUsersService implements ScimMembers {
     const tenantId = this.tenancy.tenantId();
     const email = await this.verifiedEmailOf(input);
     let deactivated = false;
+    let left = false;
     const userId = await this.unique(() =>
       this.txHost.withTransaction(async () => {
         if (input.externalId) {
@@ -255,6 +256,7 @@ export class ScimUsersService implements ScimMembers {
         const active = input.active ?? true;
         if (active !== wasActive) {
           await this.setActive(actor, tenantId, account!.id, active);
+          left = !active;
         }
         deactivated = await this.settleAccount(actor, account!.id, active, ip);
         await this.audit.record(actor, {
@@ -275,6 +277,7 @@ export class ScimUsersService implements ScimMembers {
     );
     if (deactivated) await this.signOutEverywhere(userId);
     this.access.invalidate();
+    if (left) this.announceLeft(actor, tenantId, userId);
     return this.get(userId);
   }
 
@@ -287,6 +290,7 @@ export class ScimUsersService implements ScimMembers {
   ) {
     const tenantId = this.tenancy.tenantId();
     let deactivated = false;
+    let left = false;
     await this.unique(() =>
       this.txHost.withTransaction(async () => {
         // The account's lock first, as a creation takes it: never the
@@ -308,6 +312,7 @@ export class ScimUsersService implements ScimMembers {
         const active = input.active ?? before.active;
         if (active !== before.active) {
           await this.setActive(actor, tenantId, id, active);
+          left = !active;
           deactivated = await this.settleAccount(actor, id, active, ip);
         }
         await this.audit.record(actor, {
@@ -332,6 +337,7 @@ export class ScimUsersService implements ScimMembers {
     );
     if (deactivated) await this.signOutEverywhere(id);
     this.access.invalidate();
+    if (left) this.announceLeft(actor, tenantId, id);
     return this.get(id);
   }
 
@@ -384,12 +390,14 @@ export class ScimUsersService implements ScimMembers {
   async remove(actor: ClientPrincipal, id: string, ip?: string) {
     const tenantId = this.tenancy.tenantId();
     let deactivated = false;
+    let left = false;
     await this.txHost.withTransaction(async () => {
       await this.lockAccount(id);
       await this.lockMembership(tenantId, id);
       const before = await this.find(id);
       if (before.active) {
         await this.setActive(actor, tenantId, id, false);
+        left = true;
       }
       deactivated = await this.settleAccount(actor, id, false, ip);
       await this.db.delete(scimUsers).where(eq(scimUsers.userId, id));
@@ -403,6 +411,7 @@ export class ScimUsersService implements ScimMembers {
     });
     if (deactivated) await this.signOutEverywhere(id);
     this.access.invalidate();
+    if (left) this.announceLeft(actor, tenantId, id);
   }
 
   /** Those of `ids` the SCIM client provisioned: a group's members can only be these. */
@@ -423,6 +432,19 @@ export class ScimUsersService implements ScimMembers {
       .where(inArray(scimUsers.userId, [...new Set(ids)]));
     const known = new Set(rows.map((row) => row.id));
     return ids.filter((id) => known.has(id));
+  }
+
+  /** After the commit: the deactivation setActive() announced inside it (ACCESS_EVENTS). */
+  private announceLeft(
+    actor: ClientPrincipal,
+    tenantId: string,
+    userId: string,
+  ) {
+    this.events.emit(ACCESS_EVENTS.memberDeactivationCommitted, {
+      userId,
+      tenantId,
+      actor,
+    } satisfies MemberDeactivatedEvent);
   }
 
   /**

@@ -63,8 +63,12 @@ export class RealtimeDisconnects {
     this.realtime.disconnect([tokenRoom(sid)]);
   }
 
-  /** A membership was deactivated: that user's connections in that tenant end. */
-  @OnEvent(ACCESS_EVENTS.memberDeactivated)
+  /**
+   * A membership was deactivated: that user's connections in that tenant
+   * end, once it committed (a socket reconnecting before would pass its
+   * handshake on the membership as it still was).
+   */
+  @OnEvent(ACCESS_EVENTS.memberDeactivationCommitted)
   memberDeactivated({ userId, tenantId }: MemberDeactivatedEvent) {
     this.realtime.disconnect([
       principalRoom({ kind: 'user', id: userId }, tenantId),

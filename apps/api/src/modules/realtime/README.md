@@ -69,7 +69,7 @@ async push({ noteId, watcherKeys }: NoteCommented) {
 
 `@OnEvent` listeners (realtime.listeners.ts), emitted by the owner after
 the change commits: `auth.session-ended` `{ sessionId }`,
-`auth.token-session-ended` `{ sid }` (iam/auth), `access.member-deactivated`
+`auth.token-session-ended` `{ sid }` (iam/auth), `access.member-deactivation-committed`
 `{ userId, tenantId }` (iam/access), `access.client-revoked`
 `{ clientId, tenantId }` and `access.keys-revoked` `{ keyIds }`
 (iam/api-clients), `tenancy.tenant-deactivated` `{ tenantId }`

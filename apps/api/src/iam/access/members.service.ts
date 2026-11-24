@@ -158,7 +158,9 @@ export class MembersService implements OnModuleInit {
   /**
    * Changes a membership: its activation and its roles in this tenant.
    * A deactivation is announced (`access.member-deactivated`) in the
-   * change's transaction, a reactivation too (`access.member-reactivated`).
+   * change's transaction, and again once committed
+   * (`access.member-deactivation-committed`); a reactivation in the
+   * transaction (`access.member-reactivated`).
    */
   async update(
     actor: UserPrincipal,
@@ -181,6 +183,7 @@ export class MembersService implements OnModuleInit {
     if (grants) {
       await this.roles.checkRoleGrant(actor, grants.changed);
     }
+    let deactivated = false;
     await this.txHost.withTransaction(async () => {
       // One change to the membership at a time.
       const [membership] = await this.db
@@ -201,6 +204,7 @@ export class MembersService implements OnModuleInit {
       }
       await this.roles.assertAnAdministratorRemains();
       if (changes.active === false && membership?.active) {
+        deactivated = true;
         await this.events.emitAsync(ACCESS_EVENTS.memberDeactivated, {
           userId: id,
           tenantId,
@@ -233,6 +237,13 @@ export class MembersService implements OnModuleInit {
       });
     });
     this.access.invalidate();
+    if (deactivated) {
+      this.events.emit(ACCESS_EVENTS.memberDeactivationCommitted, {
+        userId: id,
+        tenantId,
+        actor,
+      } satisfies MemberDeactivatedEvent);
+    }
   }
 
   /** The current tenant's memberships: users are global, so the tenant is named here. */
