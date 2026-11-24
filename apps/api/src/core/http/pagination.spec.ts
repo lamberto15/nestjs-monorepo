@@ -1,7 +1,7 @@
 import type { SQL } from 'drizzle-orm';
 import { PgDialect, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { sortSchema } from './list-sort.js';
-import { WALK_BATCH, walkList } from './pagination.js';
+import { COUNT_CAP, pageOffset, WALK_BATCH, walkList } from './pagination.js';
 
 const auditLog = pgTable('audit_log', {
   id: uuid('id').primaryKey(),
@@ -68,5 +68,29 @@ describe('walkList (exports walk a list by keyset)', () => {
     }
     expect(reads).toHaveLength(1);
     expect(reads[0]).toHaveLength(1);
+  });
+});
+
+describe('pageOffset (pages by number)', () => {
+  const page = (page: number | undefined, limit = 50) =>
+    pageOffset({ page, limit } as Parameters<typeof pageOffset>[0]);
+
+  it('skips the rows of the pages before, none for a cursor page', () => {
+    expect(page(undefined)).toBe(0);
+    expect(page(1)).toBe(0);
+    expect(page(3, 20)).toBe(40);
+  });
+
+  it('refuses a page that starts past COUNT_CAP, as a 400 on `page`', () => {
+    expect(page(COUNT_CAP / 50)).toBe(COUNT_CAP - 50);
+    expect(() => page(COUNT_CAP / 50 + 1)).toThrow(
+      expect.objectContaining({
+        status: 400,
+        response: expect.objectContaining({
+          code: 'validation_failed',
+          errors: [expect.objectContaining({ path: 'page' })],
+        }),
+      }),
+    );
   });
 });

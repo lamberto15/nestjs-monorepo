@@ -26,12 +26,7 @@ import {
   type SortBy,
   sortSchema,
 } from './list-sort.js';
-import {
-  afterCursor,
-  COUNT_CAP,
-  type PageQuery,
-  pageQuerySchema,
-} from './pagination.js';
+import { afterCursor, type PageQuery, pageQuerySchema } from './pagination.js';
 
 /**
  * What a filter may ask of a field: the same names in the flat syntax
@@ -558,16 +553,6 @@ export function listQuery(
             message: 'cursor is not the nextCursor of this list and sort',
           });
         }
-      }
-      if (
-        page !== undefined &&
-        (page - 1) * (query.limit as number) >= COUNT_CAP
-      ) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['page'],
-          message: `page starts past row ${COUNT_CAP}: narrow the filters`,
-        });
       }
     })
     // A sorted cursor carries the last row's sort values: `cursor` becomes its id, `after` the values.

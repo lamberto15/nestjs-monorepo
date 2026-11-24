@@ -97,6 +97,13 @@ it.
   pages by number instead, and `?count=true` adds `total` (counted up to a
   cap, with `totalCapped`) and `pageCount`. Pass the cursor back with the
   same `sort`.
+- **Which to use.** A cursor for infinite scroll, "load more", exports,
+  jobs and syncs: each page costs the same however deep (the rows after
+  the cursor, by an index), and rows written meanwhile are never skipped
+  or repeated. A page number for a table that jumps to page 7: the rows
+  skipped are still read, so a page may not start past row 10,000 (400 on
+  `page`, every list), where the count stops too; past it, filter or use
+  the cursor. A sort is fast with an index on its columns.
 - **Cursors are sealed.** A sorted cursor carries the last row's sort values,
   which a field permission may hide, so it is AES-GCM ciphertext under
   `CURSOR_KEYS`. A cursor that was changed, made for another sort or sealed

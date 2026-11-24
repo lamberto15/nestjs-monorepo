@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import {
   count,
   desc,
@@ -124,9 +125,29 @@ export const pageOrder = (id: AnyColumn, query: PageQuery): SQL[] => [
   desc(id),
 ];
 
-/** The rows a page by number skips; 0 for a cursor page. */
-export const pageOffset = (query: PageQuery) =>
-  query.page ? (query.page - 1) * query.limit : 0;
+/**
+ * The rows a page by number skips; 0 for a cursor page. The skipped rows
+ * are read, so no page starts past COUNT_CAP, where the count stops too:
+ * a 400 (`validation_failed`, path `page`) for every list that pages by
+ * number, which a deeper reader pages by cursor or narrows by filters.
+ */
+export function pageOffset(query: PageQuery) {
+  if (!query.page) return 0;
+  const offset = (query.page - 1) * query.limit;
+  if (offset >= COUNT_CAP) {
+    throw new BadRequestException({
+      code: 'validation_failed',
+      message: 'The request is invalid.',
+      errors: [
+        {
+          path: 'page',
+          message: `page starts past row ${COUNT_CAP}: narrow the filters, or page by cursor`,
+        },
+      ],
+    });
+  }
+  return offset;
+}
 
 /**
  * The condition for the rows after `cursor`: `id < cursor` (newest first),
