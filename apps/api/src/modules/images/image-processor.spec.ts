@@ -176,6 +176,21 @@ describe('ImageProcessor', () => {
     expect(stripped!.data.includes(Buffer.from('Cam 1'))).toBe(false);
   });
 
+  it('strips an original alone, as process() does, without making renditions', async () => {
+    const original = await photo();
+    const stripped = await processor().strip(original);
+    expect(stripped?.removed).toEqual(['exif']);
+    expect((await meta(stripped!.data)).exif).toBeUndefined();
+    expect(
+      await processor().strip(await blank(30, 20).jpeg().toBuffer()),
+    ).toBeUndefined();
+    await expect(
+      processor().strip(
+        Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+      ),
+    ).rejects.toMatchObject({ reason: 'format' });
+  });
+
   it('leaves an original without metadata byte for byte (no result to store)', async () => {
     const plain = await blank(300, 200).jpeg().toBuffer();
     const result = await processor().process(plain);

@@ -232,19 +232,20 @@ export class BrandingService {
    * The upload is already on the disk (BrandingLogoUpload, which checked the
    * lock and recognized the bytes). The image processor has the last word
    * (a damaged file is refused, metadata is stripped); the tenant's row
-   * then names the new file and the old one goes. Audited.
+   * then names the new file and the old one goes. Audited. The image is
+   * processed before the transaction: it takes seconds on a large one, and
+   * would hold a database connection all that time.
    */
-  @Transactional()
   async logoUploaded(
     actor: Principal,
     file: { contentType: string; key: string },
     variant: LogoVariant,
     ip?: string,
   ): Promise<Branding> {
-    const tenantId = this.tenancy.tenantId();
     let bytes = await this.disk.getBuffer(file.key);
     try {
-      const { stripped } = await this.images.process(bytes);
+      // Stripped only: a logo is shown as it is, never by a rendition.
+      const stripped = await this.images.strip(bytes);
       if (stripped) {
         bytes = stripped.data;
         await this.disk.put(file.key, bytes, { contentType: file.contentType });
@@ -256,15 +257,29 @@ export class BrandingService {
       }
       throw error;
     }
+    try {
+      return await this.saveLogo(actor, file, variant, bytes.length, ip);
+    } catch (error) {
+      // Rolled back: the row still names the old file, the new one is no one's.
+      await this.disk.delete(file.key).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  @Transactional()
+  private async saveLogo(
+    actor: Principal,
+    file: { contentType: string; key: string },
+    variant: LogoVariant,
+    size: number,
+    ip?: string,
+  ): Promise<Branding> {
+    const tenantId = this.tenancy.tenantId();
     const [old] = await this.db
       .select({ key: brandingLogos.key })
       .from(brandingLogos)
       .where(eq(brandingLogos.variant, variant));
-    const values = {
-      key: file.key,
-      contentType: file.contentType,
-      size: bytes.length,
-    };
+    const values = { key: file.key, contentType: file.contentType, size };
     await this.db
       .insert(brandingLogos)
       .values({ variant, ...values })
@@ -276,7 +291,7 @@ export class BrandingService {
       action: 'branding.logo-changed',
       targetType: 'tenant',
       targetId: tenantId,
-      details: { contentType: file.contentType, size: bytes.length, variant },
+      details: { contentType: file.contentType, size, variant },
       ip,
     });
     // After the commit: a rollback leaves the old row naming its file.

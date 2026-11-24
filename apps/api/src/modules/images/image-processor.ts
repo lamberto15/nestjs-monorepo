@@ -119,6 +119,48 @@ export class ImageProcessor {
   readonly maxBytes = MAX_INPUT_BYTES;
 
   async process(input: Buffer): Promise<ProcessedImage> {
+    const { open, meta } = await this.opened(input);
+    // One at a time: each conversion decodes the image again, but none holds
+    // more than the one it is working on (a 48 MP photo peaks near 150 MB).
+    const renditions = {} as Record<RenditionName, ProcessedRendition>;
+    for (const name of RENDITION_NAMES) {
+      const { px, quality } = RENDITION_SPECS[name];
+      const { data, info } = await attempt(() =>
+        open()
+          .autoOrient()
+          .resize({
+            width: px,
+            height: px,
+            fit: 'inside',
+            withoutEnlargement: true,
+          })
+          .webp({ quality })
+          .toBuffer({ resolveWithObject: true }),
+      );
+      renditions[name] = {
+        data,
+        width: info.width,
+        height: info.height,
+        contentType: RENDITION_CONTENT_TYPE,
+      };
+    }
+    const stripped = await this.strippedOf(input, open, meta);
+    return stripped ? { renditions, stripped } : { renditions };
+  }
+
+  /**
+   * The original without its metadata, as `process()` gives it, without
+   * making renditions: for a file stored alone (a logo, a profile
+   * picture). Undefined when there is nothing to strip; refused as
+   * `process()` refuses.
+   */
+  async strip(input: Buffer): Promise<ProcessedImage['stripped']> {
+    const { open, meta } = await this.opened(input);
+    return this.strippedOf(input, open, meta);
+  }
+
+  /** The image checked (size, format by its bytes and its header), and a way to decode it. */
+  private async opened(input: Buffer) {
     if (input.length > MAX_INPUT_BYTES) {
       throw new ImageRejectedError(
         'size',
@@ -151,32 +193,14 @@ export class ImageProcessor {
         `Not an image that is processed: ${meta.format ?? 'unknown'}.`,
       );
     }
+    return { open, meta: meta as typeof meta & { format: string } };
+  }
 
-    // One at a time: each conversion decodes the image again, but none holds
-    // more than the one it is working on (a 48 MP photo peaks near 150 MB).
-    const renditions = {} as Record<RenditionName, ProcessedRendition>;
-    for (const name of RENDITION_NAMES) {
-      const { px, quality } = RENDITION_SPECS[name];
-      const { data, info } = await attempt(() =>
-        open()
-          .autoOrient()
-          .resize({
-            width: px,
-            height: px,
-            fit: 'inside',
-            withoutEnlargement: true,
-          })
-          .webp({ quality })
-          .toBuffer({ resolveWithObject: true }),
-      );
-      renditions[name] = {
-        data,
-        width: info.width,
-        height: info.height,
-        contentType: RENDITION_CONTENT_TYPE,
-      };
-    }
-
+  private async strippedOf(
+    input: Buffer,
+    open: () => Sharp,
+    meta: Metadata & { format: string },
+  ): Promise<ProcessedImage['stripped']> {
     const found = new Set(metadataKinds(meta));
     let animated = false;
     if (meta.format === 'png') {
@@ -196,7 +220,7 @@ export class ImageProcessor {
       // 16-bit images would come out 8-bit: leave them (and their metadata) alone.
       (meta.depth !== undefined && meta.depth !== 'uchar')
     ) {
-      return { renditions };
+      return undefined;
     }
     // Same format, rotated upright (the Orientation tag goes with the rest of
     // the EXIF, so the pixels must carry it), colours in sRGB (the library's
@@ -226,7 +250,7 @@ export class ImageProcessor {
         `Without its metadata the image would be ${data.length} bytes, more than ${MAX_GROWTH} times its ${input.length}.`,
       );
     }
-    return { renditions, stripped: { data, removed } };
+    return { data, removed };
   }
 
   private sharp(): Promise<SharpFactory> {
