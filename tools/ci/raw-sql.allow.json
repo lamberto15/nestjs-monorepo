@@ -16,7 +16,7 @@
     "why": "keep: runtime roles, grants and ownership checks (catalogs, CREATE/ALTER ROLE, GRANT: drizzle-kit cannot emit them)"
   },
   "apps/api/src/core/tenancy/row-level-security.ts": {
-    "count": 12,
+    "count": 13,
     "why": "keep: the tenant setting expression of the policies, the pool wrapper that sends the tenant settings, the policy catalog reads and the tenant-wall probe (pg_policies, set_config: no Drizzle API)"
   },
   "apps/api/src/demo/demo.guard.ts": {

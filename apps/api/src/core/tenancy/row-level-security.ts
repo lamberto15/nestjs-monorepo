@@ -102,6 +102,16 @@ const frozenCheck = (tenantId: string) =>
   )} is not null`;
 
 const BEGIN = /^\s*(?:begin|start\s+transaction)\b/i;
+/** A plain read: a `select` (a data-modifying CTE starts with `with`, so it is not one). */
+const READ = /^\s*select\b/i;
+
+const textOf = (config: unknown) => {
+  const text =
+    typeof config === 'string'
+      ? config
+      : (config as { text?: unknown } | null)?.text;
+  return typeof text === 'string' ? text : '';
+};
 const ONE_STATEMENT = /^[^;]*;?\s*$/;
 
 type QueryArgs = [config: unknown, values?: unknown, callback?: unknown];
@@ -250,10 +260,22 @@ class TenantPool extends pg.Pool {
   private async inTransaction(config: unknown, values: unknown) {
     const client = await (this.connect() as unknown as Promise<pg.PoolClient>);
     let broken: Error | undefined;
+    let released = false;
     try {
       await client.query('begin');
       try {
         const result = await client.query(config as string, values as []);
+        if (READ.test(textOf(config))) {
+          // A read has nothing to commit: its rows are final once they came
+          // back, so it answers without waiting a round trip for the commit,
+          // and the connection goes back once the commit is done.
+          released = true;
+          client.query('commit').then(
+            () => client.release(),
+            (error: Error) => client.release(error),
+          );
+          return result;
+        }
         await client.query('commit');
         return result;
       } catch (error) {
@@ -263,7 +285,7 @@ class TenantPool extends pg.Pool {
         throw error;
       }
     } finally {
-      client.release(broken);
+      if (!released) client.release(broken);
     }
   }
 

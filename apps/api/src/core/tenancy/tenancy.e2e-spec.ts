@@ -190,6 +190,22 @@ describe('tenancy (e2e)', () => {
         db.update(tenantItems).set({ name: 'renamed' }),
       );
       expect(await tenancy.run(b, () => items.names())).toEqual(['b1']);
+      // A read answers before its commit; the one connection is given back
+      // after it, so reads of both tenants in a burst each see their own.
+      const burst = await Promise.all(
+        [a, b, a, b, a].map((tenant) =>
+          tenancy.run(tenant, () =>
+            db.select({ name: tenantItems.name }).from(tenantItems),
+          ),
+        ),
+      );
+      expect(burst.map((rows) => rows.map(({ name }) => name))).toEqual([
+        ['renamed'],
+        ['b1'],
+        ['renamed'],
+        ['b1'],
+        ['renamed'],
+      ]);
     });
 
     it('without a tenant, shows no row and refuses every write', async () => {
