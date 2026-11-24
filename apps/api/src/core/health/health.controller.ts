@@ -14,8 +14,9 @@ import { ReadinessCheck, type ReadinessIndicator } from './readiness.js';
 /**
  * For load balancers and orchestrators:
  *
- * - `GET /health` (readiness): 200 when every `@ReadinessCheck()` of the
- *   app answers, 503 when one doesn't or while the app shuts down.
+ * - `GET /health/ready` (readiness; `GET /health` is the same check): 200
+ *   when every `@ReadinessCheck()` of the app answers, 503 when one doesn't
+ *   or while the app shuts down.
  * - `GET /health/live` (liveness): 200 while the process serves requests.
  */
 // Probes are never rate limited.
@@ -31,7 +32,7 @@ export class HealthController {
     private readonly discovery: DiscoveryService,
   ) {}
 
-  @Get()
+  @Get(['', 'ready'])
   @HealthCheck()
   ready() {
     const checks = this.discovery

@@ -1,12 +1,26 @@
 import { registerAs } from '@nestjs/config';
 import { z } from 'zod';
-import { baseUrl, list, optional, secret } from '../config/env.helpers.js';
+import {
+  baseUrl,
+  integer,
+  list,
+  optional,
+  secret,
+} from '../config/env.helpers.js';
 import { readEnv } from '../config/env.js';
 
 /** TRUST_PROXY unset: loopback and private networks. */
 export const DEFAULT_TRUSTED_PROXIES = ['loopback', 'linklocal', 'uniquelocal'];
 
 export const schema = z.object({
+  /** The port the API listens on. */
+  PORT: integer(3000, { min: 1, max: 65535 }),
+  /**
+   * How long (ms) an idle keep-alive connection stays open. Longer than the
+   * load balancer's own idle timeout (AWS ALB 60 s, Google 600 s), or the
+   * balancer reuses a connection Node just closed and answers a 502.
+   */
+  KEEP_ALIVE_TIMEOUT_MS: integer(65_000, { min: 1000 }),
   /** The public origin of this API, for the links it hands out (signed file URLs, mails). */
   APP_URL: baseUrl('http://localhost:3000'),
   /**
@@ -49,6 +63,8 @@ export const schema = z.object({
 export const httpConfig = registerAs('http', () => {
   const env = readEnv(schema);
   return {
+    port: env.PORT,
+    keepAliveTimeoutMs: env.KEEP_ALIVE_TIMEOUT_MS,
     appUrl: env.APP_URL!,
     webUrl: (env.WEB_URL ?? env.APP_URL)!,
     corsOrigins: env.CORS_ORIGINS,

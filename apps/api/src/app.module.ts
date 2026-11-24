@@ -98,12 +98,14 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
     // Loads .env into process.env; each module reads and checks its own
     // variables in its *.config.ts.
     ConfigModule.forRoot(),
+    // Before every other module, so the APM sees all of them (NestJS Observe's
+    // docs: first in the imports; .env is already loaded by then).
+    ObservabilityModule,
     // Events inside the process: how modules of one level talk.
     EventEmitterModule.forRoot(),
     // Core: always there.
     LoggingModule,
     MetricsModule,
-    ObservabilityModule,
     HttpConventionsModule,
     ThrottlingModule,
     I18nModule,

@@ -22,8 +22,9 @@ its own origin: one image, one origin
 ([core/web](../apps/api/src/core/web/README.md)). `/app/.data` is the only
 writable path (local files and the mail directory); mount a volume on it or
 use S3 and an SMTP or mail API instead. The image's `HEALTHCHECK` calls
-`/health/live`. A `worker` container serves no HTTP, so turn the health check
-off for it. Set `SECURITY_CONTACT` to publish `/.well-known/security.txt`. A
+`/health/live` on `PORT`. A `worker` container serves its probes there too
+(`/health/live` and `/health/ready`, nothing else), so the same check works
+for it. Set `SECURITY_CONTACT` to publish `/.well-known/security.txt`. A
 static page while the app is down (a deploy, an outage) is the host's: the
 load balancer or proxy in front serves it; `APP_MODE=maintenance` covers a
 running app.
@@ -117,8 +118,10 @@ The logger masks them.
 
 ## Health, metrics, observability
 
-- `GET /health` is readiness: 200 when the database, its pool and Redis
-  answer, 503 when one does not and while the app shuts down.
+- `GET /health/ready` is readiness (`GET /health` is the same check): 200
+  when the database, its pool and Redis answer, 503 when one does not and
+  while the app shuts down. Point the load balancer and the orchestrator's
+  readiness probe at it; the worker answers it too.
   `GET /health/live` is liveness and asks nothing. Both are public, never
   rate limited and answer in maintenance
   ([core/health](../apps/api/src/core/health/README.md)).
@@ -147,10 +150,23 @@ In production run API and worker containers of the same image so a heavy job
 never slows a request, and scale each on its own. `WORKER_QUEUES` lets a
 worker take only some queues. See [Background work](background-work.md).
 
-On SIGTERM both processes shut down gracefully: `/health` turns 503 so the
-load balancer stops sending traffic, workers finish the jobs they run, and the
-modules close what they hold (Redis last). Give the orchestrator a stop
-timeout longer than your longest job.
+On SIGTERM both processes shut down gracefully: `/health/ready` answers 503
+for `SHUTDOWN_DRAIN_MS` (5 s) so the load balancer stops sending traffic,
+then the server closes (open event streams end first), workers finish the
+jobs they run, and the modules close what they hold (Redis last). Keep the
+drain above the balancer's health-check interval times its unhealthy
+threshold, and give the orchestrator a stop timeout longer than the drain
+plus your longest job.
+
+Idle keep-alive connections stay open `KEEP_ALIVE_TIMEOUT_MS` (65 s), longer
+than the load balancer's own idle timeout (AWS ALB 60 s): set it above the
+balancer's if yours keeps them longer (Google's is 600 s), or the balancer
+reuses a connection the app just closed and answers a 502.
+
+**Files in a split deployment.** API and worker containers do not share a
+disk: with `APP_ROLE` `api` or `worker`, the local storage driver refuses to
+start unless `STORAGE_SHARED=on` says `STORAGE_ROOT` is a volume every
+process mounts. Use S3 (`STORAGE_DRIVER=s3`) otherwise.
 
 ## More than one instance
 

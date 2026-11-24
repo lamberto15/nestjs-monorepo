@@ -63,7 +63,8 @@ USER node
 ARG GIT_SHA=""
 ENV GIT_SHA=${GIT_SHA}
 EXPOSE 3000
-# Liveness only: the process answers. Readiness (database, Redis) is /health.
+# Liveness only: the process answers. Readiness (database, Redis) is
+# /health/ready. The worker (node dist/worker) answers both on PORT too.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/health/live').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health/live').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 CMD ["node", "dist/main"]

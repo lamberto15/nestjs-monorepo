@@ -120,7 +120,7 @@ export const observeModule = () =>
         ...observeOtlpOptions(config.otlpEndpoint),
         http: {
           tags: { env: config.environment ?? 'development' },
-          ignore: ['/health', '/health/live'],
+          ignore: ['/health', '/health/live', '/health/ready'],
         },
         // Passwords, tokens and keys never leave the process: the SDK's own
         // rules, plus the names the app's registry (core/logging/redaction.ts)

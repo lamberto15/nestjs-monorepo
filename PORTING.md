@@ -181,6 +181,10 @@ repository.
   `env.example` is generated from there (`pnpm env:example`).
 - Readiness checks are contributed by the module that owns the dependency
   (`@ReadinessCheck()`), not listed in the health module.
+- Readiness is also `GET /health/ready` (the NestJS tutorials' name;
+  `GET /health` stays as the same check), the worker answers its own probes,
+  and readiness turns 503 for `SHUTDOWN_DRAIN_MS` on SIGTERM before the
+  server closes (2026-11-25).
 - Every point in time is `timestamptz(3)` (`at()`), so no query truncates
   to the millisecond.
 - A queue is registered by the module that owns it; there is no central

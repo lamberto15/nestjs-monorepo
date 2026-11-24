@@ -73,7 +73,7 @@ export const csrfExclusions = new Map<
 
 /**
  * The HTTP conventions applied to the app itself (main.ts and the e2e tests
- * call it before `init()`): request ids, the JSON body limit, security
+ * call it before `init()`): keep-alive timeouts, request ids, the JSON body limit, security
  * headers, compression, CORS, CSRF and URI versioning. The global filter and
  * validation pipe come with HttpConventionsModule, which must be imported:
  * this reads its configuration.
@@ -83,6 +83,12 @@ export function setupHttp(app: NestNodeApplication) {
     strict: false,
   });
   const origins = config.corsOrigins;
+
+  // Idle connections outlive the load balancer's, so it never reuses one
+  // Node just closed (a 502); headers must be allowed a little longer still.
+  const server = app.getHttpServer();
+  server.keepAliveTimeout = config.keepAliveTimeoutMs;
+  server.headersTimeout = config.keepAliveTimeoutMs + 1000;
 
   // First of all: every response, a body parser's error or a CSRF refusal
   // included, carries its id.

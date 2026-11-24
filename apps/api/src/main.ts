@@ -1,9 +1,11 @@
 // First: it loads .env, which the instrument below reads.
 import './core/observability/instrument.js';
+import type { ConfigType } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestNodeApplication } from '@nestjs/platform-node';
 import { AppModule } from './app.module.js';
 import { createHttpAdapter, setupHttp } from './core/http/http-setup.js';
+import { httpConfig } from './core/http/http.config.js';
 import { setupOpenApi } from './core/http/openapi.js';
 import { createLogger } from './core/logging/logging.js';
 import { nestrixInstrument } from './core/observability/nestrix.js';
@@ -28,8 +30,12 @@ async function bootstrap() {
   // Sockets on the same server, reaching every instance through Redis.
   setupRealtime(app);
   setupOpenApi(app);
-  // On SIGTERM, /health turns 503 and the modules close what they hold.
+  // On SIGTERM, /health/ready turns 503 for SHUTDOWN_DRAIN_MS (core/health),
+  // then the server stops and the modules close what they hold.
   app.enableShutdownHooks();
-  await app.listen(process.env.PORT ?? 3000);
+  const { port } = app.get<ConfigType<typeof httpConfig>>(httpConfig.KEY, {
+    strict: false,
+  });
+  await app.listen(port);
 }
 await bootstrap();

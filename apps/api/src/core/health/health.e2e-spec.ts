@@ -23,6 +23,14 @@ describe('health', () => {
     });
   });
 
+  it('GET /health/ready is the same check', async () => {
+    const response = await app.inject({ method: 'GET', url: '/health/ready' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      info: { database: { status: 'up' } },
+    });
+  });
+
   it('GET /health/live is 200 without asking the database', async () => {
     const response = await app.inject({ method: 'GET', url: '/health/live' });
     expect(response.statusCode).toBe(200);
