@@ -1,4 +1,3 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import {
@@ -15,11 +14,8 @@ import {
   type PasswordResetLink,
 } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
-import { and, eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { AuditService } from '../audit/audit.service.js';
-import { users } from '../auth/auth.tables.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { authTimeOf, SignInContext } from '../auth/sign-in-context.js';
 import { UsersRepository } from '../auth/users.repository.js';
@@ -34,8 +30,7 @@ import {
   ResetPasswordMail,
   VerifyEmailMail,
 } from './account.mails.js';
-import { userIdentities } from './account.tables.js';
-import { AccountUsers } from './account.users.js';
+import { AccountRepository } from './account.repository.js';
 import { AccountWork } from './account-work.js';
 import {
   isFreshAuthentication,
@@ -71,7 +66,7 @@ export class PasswordResetMailer extends PasswordResetHandler {
   constructor(
     private readonly work: AccountWork,
     private readonly mailQueue: MailQueue,
-    private readonly accounts: AccountUsers,
+    private readonly accounts: AccountRepository,
     private readonly history: PasswordHistoryService,
     registry: AuthenticationRegistry,
   ) {
@@ -113,7 +108,7 @@ export class PasswordResetMailer extends PasswordResetHandler {
 export class EmailVerificationMailer extends EmailVerificationHandler {
   constructor(
     private readonly mailQueue: MailQueue,
-    private readonly accounts: AccountUsers,
+    private readonly accounts: AccountRepository,
     registry: AuthenticationRegistry,
   ) {
     super();
@@ -149,7 +144,7 @@ export class EmailVerificationMailer extends EmailVerificationHandler {
 export class MagicLinkMailer extends MagicLinkHandler {
   constructor(
     private readonly mailQueue: MailQueue,
-    private readonly accounts: AccountUsers,
+    private readonly accounts: AccountRepository,
     @Inject(accountConfig.KEY) config: ConfigType<typeof accountConfig>,
     registry: AuthenticationRegistry,
   ) {
@@ -188,7 +183,7 @@ export class MagicLinkMailer extends MagicLinkHandler {
 @Injectable()
 export class OidcAccounts extends OidcAccountResolver {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly accounts: AccountRepository,
     private readonly users: UsersRepository,
     private readonly audit: AuditService,
     @Inject(accountConfig.KEY)
@@ -220,16 +215,10 @@ export class OidcAccounts extends OidcAccountResolver {
     if (!linkTo) {
       this.recordAuthTime(profile);
     }
-    const [known] = await this.db
-      .select({ userId: userIdentities.userId, active: users.active })
-      .from(userIdentities)
-      .innerJoin(users, eq(users.id, userIdentities.userId))
-      .where(
-        and(
-          eq(userIdentities.provider, profile.provider),
-          eq(userIdentities.subject, profile.subject),
-        ),
-      );
+    const known = await this.accounts.identityOwner(
+      profile.provider,
+      profile.subject,
+    );
     if (known) {
       // Already someone's: connecting it to another account is refused.
       if (linkTo && linkTo.id !== known.userId) {
@@ -286,16 +275,10 @@ export class OidcAccounts extends OidcAccountResolver {
     profile: OidcProfile,
     expected: ProviderReauthentication,
   ) {
-    const [known] = await this.db
-      .select({ userId: userIdentities.userId, active: users.active })
-      .from(userIdentities)
-      .innerJoin(users, eq(users.id, userIdentities.userId))
-      .where(
-        and(
-          eq(userIdentities.provider, profile.provider),
-          eq(userIdentities.subject, profile.subject),
-        ),
-      );
+    const known = await this.accounts.identityOwner(
+      profile.provider,
+      profile.subject,
+    );
     if (!known?.active || known.userId !== expected.userId) {
       throw new ReauthenticationRefused('account', expected.redirectTo);
     }
@@ -330,15 +313,10 @@ export class OidcAccounts extends OidcAccountResolver {
    * someone else's.
    */
   async linkNative(userId: string, identity: NativeIdentity) {
-    const [known] = await this.db
-      .select({ userId: userIdentities.userId })
-      .from(userIdentities)
-      .where(
-        and(
-          eq(userIdentities.provider, identity.provider),
-          eq(userIdentities.subject, identity.subject),
-        ),
-      );
+    const known = await this.accounts.identityOwner(
+      identity.provider,
+      identity.subject,
+    );
     if (known?.userId === userId) {
       return;
     }
@@ -359,7 +337,7 @@ export class OidcAccounts extends OidcAccountResolver {
     profile: Pick<OidcProfile, 'provider' | 'subject' | 'email'>,
   ) {
     await this.work.run(async () => {
-      await this.db.insert(userIdentities).values({
+      await this.accounts.insertIdentity({
         provider: profile.provider,
         subject: profile.subject,
         userId,

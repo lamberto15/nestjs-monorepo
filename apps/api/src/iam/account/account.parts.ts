@@ -15,7 +15,7 @@ import {
 import { captchaSettingsSchema } from '../captcha/captcha.schemas.js';
 import { CaptchaService } from '../captcha/captcha.service.js';
 import { accountConfig } from './account.config.js';
-import { AccountUsers } from './account.users.js';
+import { AccountRepository } from './account.repository.js';
 import { oidcProviders } from './oidc.providers.js';
 import { ReauthenticationService } from './reauthentication.service.js';
 
@@ -69,7 +69,7 @@ import { ReauthenticationService } from './reauthentication.service.js';
 export class AccountParts implements WhoAmIProvider, SignInMethodsProvider {
   constructor(
     private readonly mfa: MfaService,
-    private readonly accounts: AccountUsers,
+    private readonly accounts: AccountRepository,
     private readonly reauthentication: ReauthenticationService,
     private readonly access: AccessService,
     private readonly catalog: PermissionCatalog,

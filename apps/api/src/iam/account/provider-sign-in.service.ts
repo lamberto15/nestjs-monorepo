@@ -1,9 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OidcService, SessionService } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { InjectTransaction } from '@nestjs-cls/transactional';
-import { and, eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AUTH_EVENTS, type SignedInEvent } from '../auth/auth.events.js';
 import { sessionTenant } from '../auth/impersonation.js';
@@ -11,7 +8,7 @@ import type { UserPrincipal } from '../auth/principal.js';
 import { SignInContext } from '../auth/sign-in-context.js';
 import { UsersRepository } from '../auth/users.repository.js';
 import { AccountFlowContext } from './account-flow.context.js';
-import { userIdentities } from './account.tables.js';
+import { AccountRepository } from './account.repository.js';
 import { AccountWork } from './account-work.js';
 import {
   ProviderReauthentications,
@@ -35,7 +32,7 @@ export interface CallbackRequest {
 @Injectable()
 export class ProviderSignIn {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly accounts: AccountRepository,
     private readonly oidc: OidcService,
     private readonly sessions: SessionService,
     private readonly users: UsersRepository,
@@ -184,10 +181,7 @@ export class ProviderSignIn {
 
   /** The providers connected to the account. */
   async identities(userId: string) {
-    const rows = await this.db
-      .select()
-      .from(userIdentities)
-      .where(eq(userIdentities.userId, userId));
+    const rows = await this.accounts.identitiesOf(userId);
     return rows.map((row) => ({
       provider: row.provider,
       email: row.email,
@@ -198,28 +192,16 @@ export class ProviderSignIn {
   /**
    * Disconnects a provider, unless it's the last way to sign in (no
    * password, no passkey, no other provider): 409 `last_sign_in_method`.
-   * The account row is locked first (`assertNotLastSignInMethod`), so two
+   * The account row is locked first (`signInMethods()`), so two
    * removals at once can't each see "one left" and remove both.
    */
   async unlink(user: UserPrincipal, provider: string) {
-    const linked = and(
-      eq(userIdentities.userId, user.id),
-      eq(userIdentities.provider, provider),
-    );
     await this.work.run(async () => {
-      const [found] = await this.db
-        .select({ provider: userIdentities.provider })
-        .from(userIdentities)
-        .where(linked);
-      if (!found) {
+      if (!(await this.accounts.hasIdentity(user.id, provider))) {
         throw new NotFoundException();
       }
-      await assertNotLastSignInMethod(this.db, user.id);
-      const deleted = await this.db
-        .delete(userIdentities)
-        .where(linked)
-        .returning();
-      if (deleted.length === 0) {
+      assertNotLastSignInMethod(await this.accounts.signInMethods(user.id));
+      if (!(await this.accounts.deleteIdentity(user.id, provider))) {
         throw new NotFoundException();
       }
       await this.audit.record(user, {

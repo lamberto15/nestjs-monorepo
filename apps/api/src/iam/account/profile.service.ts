@@ -1,9 +1,6 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
-import { users } from '../auth/auth.tables.js';
 import type { UserPrincipal } from '../auth/principal.js';
+import { AccountRepository } from './account.repository.js';
 import { AccountWork } from './account-work.js';
 
 export interface ProfileChanges {
@@ -18,7 +15,7 @@ export interface ProfileChanges {
 @Injectable()
 export class ProfileService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly accounts: AccountRepository,
     private readonly work: AccountWork,
   ) {}
 
@@ -26,14 +23,10 @@ export class ProfileService {
     const set = Object.fromEntries(
       Object.entries(changes).filter(([, value]) => value !== undefined),
     ) as ProfileChanges;
-    const [row] = await this.work.run(() =>
+    const row = await this.work.run(() =>
       Object.keys(set).length
-        ? this.db
-            .update(users)
-            .set(set)
-            .where(eq(users.id, user.id))
-            .returning()
-        : this.db.select().from(users).where(eq(users.id, user.id)),
+        ? this.accounts.update(user.id, set)
+        : this.accounts.find(user.id),
     );
     return {
       kind: 'user' as const,

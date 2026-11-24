@@ -8,7 +8,7 @@ import { EmailVerificationService } from '@nestjs/authentication';
 import type { Redis } from 'ioredis';
 import { REDIS } from '../../core/redis/redis.js';
 import { normalizeEmail, UsersRepository } from '../auth/users.repository.js';
-import { AccountUsers } from './account.users.js';
+import { AccountRepository } from './account.repository.js';
 
 /** At most one link per account in this long through the public resend. */
 export const VERIFICATION_RESEND_COOLDOWN_MS = 60_000;
@@ -42,7 +42,7 @@ export class VerificationRequests implements OnModuleDestroy {
 
   constructor(
     private readonly users: UsersRepository,
-    private readonly accounts: AccountUsers,
+    private readonly accounts: AccountRepository,
     private readonly emailVerification: EmailVerificationService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}

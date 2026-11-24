@@ -28,7 +28,8 @@ import { AccountOperations } from './account.operations.js';
 import { AccountOptions } from './account.options.js';
 import { AccountService } from './account.service.js';
 import { AccountStores } from './account.stores.js';
-import { AccountUsers } from './account.users.js';
+import { AccountRepository } from './account.repository.js';
+import { PasskeysRepository } from './passkeys.repository.js';
 import { AccountWork } from './account-work.js';
 import {
   BreachedPasswordsService,
@@ -109,7 +110,8 @@ const accountFeature = ConfigModule.forFeature(accountConfig);
   providers: [
     AccountOptions,
     AccountStores,
-    AccountUsers,
+    AccountRepository,
+    PasskeysRepository,
     AccountWork,
     AccountFlowContext,
     AccountService,

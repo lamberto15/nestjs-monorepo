@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MfaService } from '@nestjs/authentication';
 import type { Principal } from '../auth/principal.js';
 import { AccountStores } from './account.stores.js';
-import { AccountUsers } from './account.users.js';
+import { AccountRepository } from './account.repository.js';
 import { PasswordHistoryService } from './password-history.service.js';
 import {
   type PendingAlert,
@@ -19,7 +19,7 @@ import {
 @Injectable()
 export class AccountOperations {
   constructor(
-    private readonly users: AccountUsers,
+    private readonly users: AccountRepository,
     private readonly history: PasswordHistoryService,
     private readonly alerts: SecurityAlerts,
     private readonly stores: AccountStores,

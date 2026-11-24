@@ -66,7 +66,7 @@ describe('the module graph', () => {
  * moving them into its repository, then leaves this list (a listed folder
  * that no longer has one fails below, so the list only shrinks).
  */
-const NOT_YET_CONVERTED = ['iam/account', 'iam/sso', 'modules/approvals'];
+const NOT_YET_CONVERTED = ['iam/sso'];
 
 /** Folders whose queries are the engine itself, not a module's own. */
 const QUERY_ENGINES: Record<string, string> = {
@@ -127,6 +127,8 @@ const MAY_QUERY: Record<string, string> = {
   'iam/access/permission-catalog.ts':
     'reads table columns to check declared fields; no query',
   'iam/access/unit-directory.ts': "the extension point's SQL types only",
+  'iam/account/account.stores.ts':
+    "the stores of @nestjs/authentication's interfaces (two-factor, magic links, OIDC logins, email links)",
   'iam/auth/drizzle-authentication.store.ts':
     "the store of @nestjs/authentication's interface",
   'iam/auth/account-rows.ts':
@@ -146,6 +148,8 @@ const MAY_QUERY: Record<string, string> = {
   'modules/templates/template.list.ts': LIST_DECLARATION,
   'modules/views/view.list.ts': LIST_DECLARATION,
   'modules/notifications/notifications.lists.ts': LIST_DECLARATION,
+  'modules/approvals/approvals.list.ts':
+    "a list's declaration, and the request conditions (assigned to, decided by, takes part in) its filters and the repository share",
   'modules/attachments/attachments.quota.ts':
     "defineQuota()'s count is handed the database by the quotas module",
   'modules/money/money.columns.ts': 'a column type',

@@ -2,7 +2,7 @@ import type { EmailVerificationService } from '@nestjs/authentication';
 import type { Redis } from 'ioredis';
 import { Logger } from '@nestjs/common';
 import type { UsersRepository } from '../auth/users.repository.js';
-import type { AccountUsers } from './account.users.js';
+import type { AccountRepository } from './account.repository.js';
 import {
   VERIFICATION_RESEND_COOLDOWN_MS,
   VerificationRequests,
@@ -37,7 +37,7 @@ function setup(found: Found, sentRecently = false) {
   };
   const service = new VerificationRequests(
     users as unknown as UsersRepository,
-    accounts as unknown as AccountUsers,
+    accounts as unknown as AccountRepository,
     emailVerification as unknown as EmailVerificationService,
     redis as unknown as Redis,
   );

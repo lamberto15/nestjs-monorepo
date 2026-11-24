@@ -1,4 +1,3 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -20,11 +19,8 @@ import {
 } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
-import { eq, sql } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { AuditService } from '../audit/audit.service.js';
 import { authConfig } from '../auth/auth.config.js';
-import { sessions, users } from '../auth/auth.tables.js';
 import {
   authenticationOf,
   isRecent,
@@ -36,9 +32,9 @@ import {
   type ReauthenticationMethodSource,
   ReauthenticationMethods,
 } from '../auth/recent-authentication.js';
+import { AccountRepository } from './account.repository.js';
 import { AccountWork } from './account-work.js';
 import { accountConfig } from './account.config.js';
-import { userIdentities } from './account.tables.js';
 import { oidcProviders } from './oidc.providers.js';
 import { PasskeyAssertionError, PasskeysService } from './passkeys.service.js';
 
@@ -93,7 +89,7 @@ export interface ReauthenticationOptions {
 @Injectable()
 export class ReauthenticationService implements ReauthenticationMethodSource {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly accounts: AccountRepository,
     private readonly passwordHasher: PasswordHasher,
     private readonly mfa: MfaService,
     private readonly sessions: SessionService,
@@ -147,10 +143,7 @@ export class ReauthenticationService implements ReauthenticationMethodSource {
   async options(user: UserPrincipal): Promise<ReauthenticationOptions> {
     const [{ hasPassword, mfaOn }, identities, hasPasskey] = await Promise.all([
       this.factors(user.id),
-      this.db
-        .select({ provider: userIdentities.provider })
-        .from(userIdentities)
-        .where(eq(userIdentities.userId, user.id)),
+      this.accounts.identitiesOf(user.id),
       this.passkeys.enabled ? this.passkeys.has(user.id) : false,
     ]);
     const configured = Object.keys(oidcProviders(this.config));
@@ -183,12 +176,7 @@ export class ReauthenticationService implements ReauthenticationMethodSource {
    * session's metadata, so nothing else it holds is lost.
    */
   async stampAuthenticated(sessionId: string, at: Date) {
-    await this.db
-      .update(sessions)
-      .set({
-        metadata: sql`coalesce(${sessions.metadata}, '{}'::jsonb) || ${JSON.stringify({ authenticatedAt: at.toISOString() })}::jsonb`,
-      })
-      .where(eq(sessions.id, sessionId));
+    await this.accounts.stampSession(sessionId, at);
   }
 
   /**
@@ -377,14 +365,11 @@ export class ReauthenticationService implements ReauthenticationMethodSource {
 
   /** What the account signs in with: its password's hash, and whether two-factor is on. */
   async factors(userId: string) {
-    const [[row], mfaOn] = await Promise.all([
-      this.db
-        .select({ passwordHash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, userId)),
+    const [hash, mfaOn] = await Promise.all([
+      this.accounts.passwordHashOf(userId),
       this.mfa.isEnrolled(userId),
     ]);
-    const passwordHash = row?.passwordHash ?? null;
+    const passwordHash = hash ?? null;
     return { passwordHash, hasPassword: passwordHash !== null, mfaOn };
   }
 }

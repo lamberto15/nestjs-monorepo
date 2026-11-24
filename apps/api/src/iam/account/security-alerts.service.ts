@@ -1,8 +1,5 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { and, eq, gt, ne } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { MailQueue } from '../../core/mail/mail.queue.js';
 import { Events } from '../../core/outbox/events.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -11,8 +8,7 @@ import type { Principal } from '../auth/principal.js';
 import { securityAlerted } from './account.events.js';
 import { SecurityAlertMail, type SecurityAlertKind } from './account.mails.js';
 import { AccountWork } from './account-work.js';
-import { AccountUsers } from './account.users.js';
-import { accountDevices } from './account.tables.js';
+import { AccountRepository } from './account.repository.js';
 import { deviceOf, normalizeIp } from './devices.js';
 
 /** A device unseen for this long is new again. */
@@ -66,9 +62,8 @@ export class SecurityAlerts {
   private readonly logger = new Logger(SecurityAlerts.name);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
     private readonly audit: AuditService,
-    private readonly accounts: AccountUsers,
+    private readonly accounts: AccountRepository,
     private readonly mail: MailQueue,
     private readonly work: AccountWork,
     @Optional() private readonly events?: Events,
@@ -166,36 +161,10 @@ export class SecurityAlerts {
   }: SignedInEvent): Promise<PendingAlert | null> {
     const device = deviceOf(userAgent, ip);
     const since = new Date(Date.now() - KNOWN_DEVICE_DAYS * 86_400_000);
-    const [seen] = await this.db
-      .select({ lastSeenAt: accountDevices.lastSeenAt })
-      .from(accountDevices)
-      .where(
-        and(
-          eq(accountDevices.userId, user.id),
-          eq(accountDevices.device, device.hash),
-          gt(accountDevices.lastSeenAt, since),
-        ),
-      );
-    const [other] = seen
-      ? []
-      : await this.db
-          .select({ device: accountDevices.device })
-          .from(accountDevices)
-          .where(
-            and(
-              eq(accountDevices.userId, user.id),
-              ne(accountDevices.device, device.hash),
-            ),
-          )
-          .limit(1);
-    const now = new Date();
-    await this.db
-      .insert(accountDevices)
-      .values({ userId: user.id, device: device.hash, lastSeenAt: now })
-      .onConflictDoUpdate({
-        target: [accountDevices.userId, accountDevices.device],
-        set: { lastSeenAt: now },
-      });
+    const seen = await this.accounts.seenDevice(user.id, device.hash, since);
+    const other =
+      !seen && (await this.accounts.hasOtherDevice(user.id, device.hash));
+    await this.accounts.touchDevice(user.id, device.hash, new Date());
     // The first sign-in ever, or a known device: nothing to tell.
     return seen || !other
       ? null
@@ -207,12 +176,7 @@ export class SecurityAlerts {
   }
 
   /** Whether the account ever signed in (a device of it is known). */
-  private async hasSignedIn(userId: string) {
-    const [row] = await this.db
-      .select({ device: accountDevices.device })
-      .from(accountDevices)
-      .where(eq(accountDevices.userId, userId))
-      .limit(1);
-    return row !== undefined;
+  private hasSignedIn(userId: string) {
+    return this.accounts.hasDevice(userId);
   }
 }

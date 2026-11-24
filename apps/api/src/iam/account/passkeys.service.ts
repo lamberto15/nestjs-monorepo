@@ -1,5 +1,4 @@
 import { createHmac, hkdfSync, randomBytes } from 'node:crypto';
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   BadRequestException,
   ConflictException,
@@ -31,9 +30,7 @@ import {
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
 import { decodeClientDataJSON } from '@simplewebauthn/server/helpers';
-import { and, asc, count, eq, lt } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import type { Database } from '../../core/database/database.js';
 import { httpConfig } from '../../core/http/http.config.js';
 import { REDIS } from '../../core/redis/redis.js';
 import { Secrets } from '../../core/secrets/secrets.service.js';
@@ -43,18 +40,18 @@ import {
   type SignedInEvent,
   type SignInFailedEvent,
 } from '../auth/auth.events.js';
-import { users } from '../auth/auth.tables.js';
 import { methodMetadata, tokenClaims } from '../auth/authentication-method.js';
 import { sessionTenant } from '../auth/impersonation.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { SignInGates } from '../auth/sign-in-gate.js';
 import { UsersRepository } from '../auth/users.repository.js';
+import { AccountRepository } from './account.repository.js';
 import { AccountWork } from './account-work.js';
 import { accountConfig } from './account.config.js';
 import { verifiedEmailOnly } from './account.schemas.js';
-import { passkeys } from './account.tables.js';
 import { deviceLabel } from './devices.js';
 import type { PasskeyView } from './passkey.schemas.js';
+import { type Passkey, PasskeysRepository } from './passkeys.repository.js';
 import {
   type PasskeySettings,
   passkeyIssues,
@@ -154,7 +151,7 @@ export interface VerifiedAssertion {
   userVerified: boolean;
 }
 
-type Row = typeof passkeys.$inferSelect;
+type Row = Passkey;
 
 /** The name of the decoy credentials' key in core/secrets. */
 const DECOY_SECRET = 'passkey-decoy-key';
@@ -203,7 +200,8 @@ export class PasskeysService implements OnModuleInit {
   private decoyKey = Buffer.alloc(0);
 
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly repository: PasskeysRepository,
+    private readonly accounts: AccountRepository,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly secrets: Secrets,
     private readonly users: UsersRepository,
@@ -259,22 +257,13 @@ export class PasskeysService implements OnModuleInit {
 
   /** The user's passkeys, oldest first. */
   async list(userId: string): Promise<PasskeyView[]> {
-    const rows = await this.db
-      .select()
-      .from(passkeys)
-      .where(eq(passkeys.userId, userId))
-      .orderBy(asc(passkeys.createdAt), asc(passkeys.id));
+    const rows = await this.repository.list(userId);
     return rows.map(toView);
   }
 
   /** Whether the user has a passkey (re-authentication's options). */
   async has(userId: string) {
-    const [found] = await this.db
-      .select({ id: passkeys.id })
-      .from(passkeys)
-      .where(eq(passkeys.userId, userId))
-      .limit(1);
-    return found !== undefined;
+    return this.repository.exists(userId);
   }
 
   // Registration
@@ -384,40 +373,27 @@ export class PasskeysService implements OnModuleInit {
     }
     const { credential, credentialDeviceType, credentialBackedUp, aaguid } =
       verification.registrationInfo;
-    const tx = this.db;
     let alert: PendingAlert | null = null;
     const row = await this.work.run(async () => {
       // The account row locked: two registrations at once count one after the other.
-      await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.id, user.id))
-        .for('update');
-      const [{ held }] = await tx
-        .select({ held: count() })
-        .from(passkeys)
-        .where(eq(passkeys.userId, user.id));
-      if (held >= MAX_PASSKEYS) {
+      await this.accounts.lock(user.id);
+      if ((await this.repository.countOf(user.id)) >= MAX_PASSKEYS) {
         throw tooMany();
       }
-      const [inserted] = await tx
-        .insert(passkeys)
-        .values({
-          userId: user.id,
-          name,
-          credentialId: credential.id,
-          publicKey: toBase64url(credential.publicKey),
-          counter: credential.counter,
-          // Sorted, as browsers report them (and as the decoys are).
-          transports: [...(credential.transports ?? [])].sort((a, b) =>
-            a.localeCompare(b),
-          ),
-          deviceType: credentialDeviceType,
-          backedUp: credentialBackedUp,
-          aaguid,
-        })
-        .onConflictDoNothing({ target: passkeys.credentialId })
-        .returning();
+      const inserted = await this.repository.insert({
+        userId: user.id,
+        name,
+        credentialId: credential.id,
+        publicKey: toBase64url(credential.publicKey),
+        counter: credential.counter,
+        // Sorted, as browsers report them (and as the decoys are).
+        transports: [...(credential.transports ?? [])].sort((a, b) =>
+          a.localeCompare(b),
+        ),
+        deviceType: credentialDeviceType,
+        backedUp: credentialBackedUp,
+        aaguid,
+      });
       if (!inserted) {
         // Registered already, here or on another account: the authenticator's id is global.
         throw new ConflictException({
@@ -446,11 +422,7 @@ export class PasskeysService implements OnModuleInit {
   /** A new name; 404 for another user's passkey. Audited. */
   async rename(user: UserPrincipal, id: string, name: string) {
     return this.work.run(async () => {
-      const [row] = await this.db
-        .update(passkeys)
-        .set({ name })
-        .where(and(eq(passkeys.id, id), eq(passkeys.userId, user.id)))
-        .returning();
+      const row = await this.repository.rename(user.id, id, name);
       if (!row) {
         throw new NotFoundException();
       }
@@ -470,21 +442,13 @@ export class PasskeysService implements OnModuleInit {
    * audit entry and the owner's notification go in the same transaction.
    */
   async remove(user: UserPrincipal, id: string, ip: string) {
-    const tx = this.db;
     const alert = await this.work.run(async () => {
-      const [found] = await tx
-        .select({ id: passkeys.id, name: passkeys.name })
-        .from(passkeys)
-        .where(and(eq(passkeys.id, id), eq(passkeys.userId, user.id)));
+      const found = await this.repository.findOwn(user.id, id);
       if (!found) {
         throw new NotFoundException();
       }
-      await assertNotLastSignInMethod(tx, user.id);
-      const deleted = await tx
-        .delete(passkeys)
-        .where(eq(passkeys.id, found.id))
-        .returning({ id: passkeys.id });
-      if (deleted.length === 0) {
+      assertNotLastSignInMethod(await this.accounts.signInMethods(user.id));
+      if (!(await this.repository.delete(found.id))) {
         throw new NotFoundException(); // removed meanwhile
       }
       return this.securityAlerts.credentialsChanged(user, user.id, {
@@ -750,10 +714,7 @@ export class PasskeysService implements OnModuleInit {
       purpose,
       binding,
     );
-    const [row] = await this.db
-      .select()
-      .from(passkeys)
-      .where(eq(passkeys.credentialId, response.id));
+    const row = await this.repository.findByCredentialId(response.id);
     if (!row) {
       throw new PasskeyAssertionError('unknown');
     }
@@ -803,24 +764,9 @@ export class PasskeysService implements OnModuleInit {
     }
     const { newCounter, userVerified, credentialBackedUp } =
       verification.authenticationInfo;
-    const [recorded] = await this.db
-      .update(passkeys)
-      .set({
-        counter: newCounter,
-        backedUp: credentialBackedUp,
-        lastUsedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(passkeys.id, row.id),
-          // Synced passkeys keep 0; any other must have moved forwards.
-          newCounter === 0
-            ? eq(passkeys.counter, 0)
-            : lt(passkeys.counter, newCounter),
-        ),
-      )
-      .returning({ id: passkeys.id });
-    if (!recorded) {
+    if (
+      !(await this.repository.recordUse(row.id, newCounter, credentialBackedUp))
+    ) {
       // Another assertion recorded a counter as high meanwhile (or the
       // passkey was removed): this one is a replay of the counter.
       throw new PasskeyAssertionError('counter');
@@ -960,14 +906,7 @@ export class PasskeysService implements OnModuleInit {
 
   /** The user's credentials as `allowCredentials` / `excludeCredentials` entries. */
   private async descriptors(userId: string) {
-    const rows = await this.db
-      .select({
-        credentialId: passkeys.credentialId,
-        transports: passkeys.transports,
-      })
-      .from(passkeys)
-      .where(eq(passkeys.userId, userId))
-      .orderBy(asc(passkeys.createdAt));
+    const rows = await this.repository.credentialsOf(userId);
     return rows.map((row) => ({
       id: row.credentialId,
       transports: row.transports as AuthenticatorTransportFuture[],

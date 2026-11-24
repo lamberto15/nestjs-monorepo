@@ -1,23 +1,11 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import {
   PersonalData,
   type PersonalDataSection,
   type PersonalDataSubject,
 } from '../personal-data/personal-data.js';
-import {
-  accountDevices,
-  emailTokens,
-  mfaAuthenticators,
-  mfaFailures,
-  mfaRecoveryCodes,
-  oidcLogins,
-  passkeys,
-  passwordHistory,
-  userIdentities,
-} from './account.tables.js';
+import { AccountRepository } from './account.repository.js';
+import { PasskeysRepository } from './passkeys.repository.js';
 
 /**
  * What the account's sign-in methods hold about a person: linked
@@ -29,63 +17,42 @@ import {
 @PersonalData({ name: 'sign-in-methods', scopes: ['account'] })
 @Injectable()
 export class AccountPersonalData implements PersonalDataSection {
-  constructor(@InjectTransaction() private readonly db: Database) {}
+  constructor(
+    private readonly accounts: AccountRepository,
+    private readonly passkeys: PasskeysRepository,
+  ) {}
 
   async rows({ userId }: PersonalDataSubject) {
-    const [identities, keys, [authenticator]] = await Promise.all([
-      this.db
-        .select({
-          provider: userIdentities.provider,
-          subject: userIdentities.subject,
-          email: userIdentities.email,
-          createdAt: userIdentities.createdAt,
-        })
-        .from(userIdentities)
-        .where(eq(userIdentities.userId, userId)),
-      this.db
-        .select({
-          id: passkeys.id,
-          name: passkeys.name,
-          deviceType: passkeys.deviceType,
-          backedUp: passkeys.backedUp,
-          transports: passkeys.transports,
-          aaguid: passkeys.aaguid,
-          lastUsedAt: passkeys.lastUsedAt,
-          createdAt: passkeys.createdAt,
-        })
-        .from(passkeys)
-        .where(eq(passkeys.userId, userId)),
-      this.db
-        .select({ confirmed: mfaAuthenticators.confirmed })
-        .from(mfaAuthenticators)
-        .where(eq(mfaAuthenticators.id, userId)),
+    const [identities, keys, enabled] = await Promise.all([
+      this.accounts.identitiesOf(userId),
+      this.passkeys.list(userId),
+      this.accounts.mfaConfirmed(userId),
     ]);
     return [
-      ...identities.map((row) => ({ kind: 'identity', ...row })),
-      ...keys.map((row) => ({ kind: 'passkey', ...row })),
-      { kind: 'twoFactor', enabled: authenticator?.confirmed ?? false },
+      ...identities.map(({ provider, subject, email, createdAt }) => ({
+        kind: 'identity',
+        provider,
+        subject,
+        email,
+        createdAt,
+      })),
+      // Without key material.
+      ...keys.map((key) => ({
+        kind: 'passkey',
+        id: key.id,
+        name: key.name,
+        deviceType: key.deviceType,
+        backedUp: key.backedUp,
+        transports: key.transports,
+        aaguid: key.aaguid,
+        lastUsedAt: key.lastUsedAt,
+        createdAt: key.createdAt,
+      })),
+      { kind: 'twoFactor', enabled },
     ];
   }
 
   async erase({ userId }: PersonalDataSubject) {
-    await this.db
-      .delete(userIdentities)
-      .where(eq(userIdentities.userId, userId));
-    await this.db.delete(passkeys).where(eq(passkeys.userId, userId));
-    await this.db
-      .delete(passwordHistory)
-      .where(eq(passwordHistory.userId, userId));
-    await this.db
-      .delete(mfaAuthenticators)
-      .where(eq(mfaAuthenticators.id, userId));
-    await this.db
-      .delete(mfaRecoveryCodes)
-      .where(eq(mfaRecoveryCodes.userId, userId));
-    await this.db.delete(mfaFailures).where(eq(mfaFailures.userId, userId));
-    await this.db
-      .delete(accountDevices)
-      .where(eq(accountDevices.userId, userId));
-    await this.db.delete(emailTokens).where(eq(emailTokens.userId, userId));
-    await this.db.delete(oidcLogins).where(eq(oidcLogins.linkUserId, userId));
+    await this.accounts.eraseSignInMethods(userId);
   }
 }

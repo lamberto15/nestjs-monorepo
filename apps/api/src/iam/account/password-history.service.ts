@@ -1,4 +1,3 @@
-import { InjectTransaction } from '@nestjs-cls/transactional';
 import {
   Inject,
   Injectable,
@@ -7,12 +6,9 @@ import {
 import type { ConfigType } from '@nestjs/config';
 import { PasswordHasher } from '@nestjs/authentication';
 import { t } from '@nestjs/i18n';
-import { desc, eq, inArray } from 'drizzle-orm';
-import type { Database } from '../../core/database/database.js';
 import { AuthPolicy } from '../auth/auth-policy.js';
-import { users } from '../auth/auth.tables.js';
 import { accountConfig } from './account.config.js';
-import { passwordHistory } from './account.tables.js';
+import { AccountRepository } from './account.repository.js';
 import { PasswordHashLimiter } from './password-hashing.js';
 
 /**
@@ -30,7 +26,7 @@ import { PasswordHashLimiter } from './password-hashing.js';
 @Injectable()
 export class PasswordHistoryService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
+    private readonly accounts: AccountRepository,
     private readonly hasher: PasswordHasher,
     private readonly limiter: PasswordHashLimiter,
     @Inject(accountConfig.KEY)
@@ -58,20 +54,14 @@ export class PasswordHistoryService {
     if (count === 0) {
       return;
     }
-    const [current] = await this.db
-      .select({ passwordHash: users.passwordHash })
-      .from(users)
-      .where(eq(users.id, userId));
-    const previous = await this.db
-      .select({ passwordHash: passwordHistory.passwordHash })
-      .from(passwordHistory)
-      .where(eq(passwordHistory.userId, userId))
-      .orderBy(desc(passwordHistory.createdAt), desc(passwordHistory.id))
-      .limit(Math.max(0, count - 1));
-    const hashes = [
-      current?.passwordHash,
-      ...previous.map((p) => p.passwordHash),
-    ].filter((hash): hash is string => !!hash);
+    const current = await this.accounts.passwordHashOf(userId);
+    const previous = await this.accounts.previousPasswordHashes(
+      userId,
+      Math.max(0, count - 1),
+    );
+    const hashes = [current, ...previous].filter(
+      (hash): hash is string => !!hash,
+    );
     if (hashes.length === 0) {
       return;
     }
@@ -103,30 +93,16 @@ export class PasswordHistoryService {
   async replaced(userId: string) {
     const keep = Math.max(0, (await this.count(userId)) - 1);
     if (keep === 0) {
-      await this.db
-        .delete(passwordHistory)
-        .where(eq(passwordHistory.userId, userId));
+      await this.accounts.deletePasswordHistory(userId);
       return;
     }
-    const [current] = await this.db
-      .select({ passwordHash: users.passwordHash })
-      .from(users)
-      .where(eq(users.id, userId));
-    if (current?.passwordHash) {
-      await this.db
-        .insert(passwordHistory)
-        .values({ userId, passwordHash: current.passwordHash });
+    const current = await this.accounts.passwordHashOf(userId);
+    if (current) {
+      await this.accounts.insertPasswordHistory(userId, current);
     }
-    const kept = await this.db
-      .select({ id: passwordHistory.id })
-      .from(passwordHistory)
-      .where(eq(passwordHistory.userId, userId))
-      .orderBy(desc(passwordHistory.createdAt), desc(passwordHistory.id));
-    const stale = kept.slice(keep).map((row) => row.id);
+    const stale = (await this.accounts.passwordHistoryIds(userId)).slice(keep);
     if (stale.length > 0) {
-      await this.db
-        .delete(passwordHistory)
-        .where(inArray(passwordHistory.id, stale));
+      await this.accounts.deletePasswordHistoryIds(stale);
     }
   }
 }

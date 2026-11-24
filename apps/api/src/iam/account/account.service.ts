@@ -18,10 +18,7 @@ import {
 } from '@nestjs/authentication';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { t } from '@nestjs/i18n';
-import { InjectTransaction } from '@nestjs-cls/transactional';
-import { and, eq, gt } from 'drizzle-orm';
 import { databaseErrorKind } from '../../core/database/database-errors.js';
-import type { Database } from '../../core/database/database.js';
 import { isSafeRedirectPath } from '../../core/http/redirect-path.js';
 import { AuditService } from '../audit/audit.service.js';
 import {
@@ -29,7 +26,6 @@ import {
   type SignedInEvent,
   type SignInFailedEvent,
 } from '../auth/auth.events.js';
-import { refreshTokens, users } from '../auth/auth.tables.js';
 import {
   authenticationOf,
   isSessionRecord,
@@ -43,9 +39,8 @@ import { PasswordSignIn } from '../auth/password-sign-in.service.js';
 import type { UserPrincipal } from '../auth/principal.js';
 import { SignInContext } from '../auth/sign-in-context.js';
 import { SignInGates } from '../auth/sign-in-gate.js';
-import { tokenSessionId } from '../auth/token-session.js';
 import { normalizeEmail, UsersRepository } from '../auth/users.repository.js';
-import { AccountUsers } from './account.users.js';
+import { AccountRepository } from './account.repository.js';
 import { AccountWork } from './account-work.js';
 import { BreachedPasswordsService } from './breached-passwords.service.js';
 import { deviceLabel } from './devices.js';
@@ -72,9 +67,8 @@ export interface RequestContext {
 @Injectable()
 export class AccountService {
   constructor(
-    @InjectTransaction() private readonly db: Database,
     private readonly users: UsersRepository,
-    private readonly accounts: AccountUsers,
+    private readonly accounts: AccountRepository,
     private readonly work: AccountWork,
     private readonly audit: AuditService,
     private readonly securityAlerts: SecurityAlerts,
@@ -131,17 +125,14 @@ export class AccountService {
   private async passwordWasReset(userId: string, ip: string) {
     const user = await this.users.findActive(userId);
     const alert = await this.work.run(async () => {
-      await this.db
-        .update(users)
-        // A reset link also replaces the generated password and proved the
-        // address: the first administrator's onboarding is done as far as it can be.
-        .set({
-          emailVerified: true,
-          onboardingPassword: false,
-          ...(user &&
-            !isPlaceholderEmail(user.email) && { onboardingEmail: false }),
-        })
-        .where(eq(users.id, userId));
+      // A reset link also replaces the generated password and proved the
+      // address: the first administrator's onboarding is done as far as it can be.
+      await this.accounts.update(userId, {
+        emailVerified: true,
+        onboardingPassword: false,
+        ...(user &&
+          !isPlaceholderEmail(user.email) && { onboardingEmail: false }),
+      });
       return this.securityAlerts.credentialsChanged(user, userId, {
         action: 'auth.password-reset',
         ip,
@@ -277,10 +268,8 @@ export class AccountService {
       throw new ConflictException(t('account.emailTaken'));
     }
     await this.work.run(async () => {
-      await this.db
-        .update(users)
-        .set({ email, emailVerified: false })
-        .where(eq(users.id, user.id))
+      await this.accounts
+        .update(user.id, { email, emailVerified: false })
         // Taken since the check above: the unique index decides.
         .catch((error: unknown) => {
           throw databaseErrorKind(error) === 'unique_violation'
@@ -377,20 +366,7 @@ export class AccountService {
 
   /** The user's token families still signed in: when each started and was last refreshed, with its claims. */
   private async liveTokenFamilies(userId: string) {
-    const rows = await this.db
-      .select({
-        familyId: refreshTokens.familyId,
-        createdAt: refreshTokens.createdAt,
-        claims: refreshTokens.claims,
-      })
-      .from(refreshTokens)
-      .where(
-        and(
-          eq(refreshTokens.userId, userId),
-          eq(refreshTokens.revoked, false),
-          gt(refreshTokens.familyExpiresAt, new Date()),
-        ),
-      );
+    const rows = await this.accounts.liveRefreshTokens(userId);
     const families = new Map<
       string,
       {
@@ -424,21 +400,12 @@ export class AccountService {
 
   /** Revokes the user's token families of the session `sid`; false when none is theirs. */
   private async revokeTokenSession(userId: string, sid: string) {
-    const families = await this.db
-      .selectDistinct({ familyId: refreshTokens.familyId })
-      .from(refreshTokens)
-      .where(
-        and(
-          eq(refreshTokens.userId, userId),
-          eq(refreshTokens.revoked, false),
-          eq(tokenSessionId, sid),
-        ),
-      );
+    const families = await this.accounts.tokenFamiliesOf(userId, sid);
     if (families.length === 0) {
       return false;
     }
     // The store announces each family's end (`auth.token-session-ended`).
-    for (const { familyId } of families) {
+    for (const familyId of families) {
       await this.store.revokeRefreshTokenFamily(familyId);
     }
     return true;
