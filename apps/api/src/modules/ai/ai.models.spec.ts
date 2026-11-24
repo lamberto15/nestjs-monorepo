@@ -43,6 +43,7 @@ describe('aiModuleOptions', () => {
     maxOutputTokens: 1024,
     attempts: 2,
     cacheTtlSeconds: 0,
+    runRetentionDays: 400,
     ...values,
   });
   const ask = async () => {

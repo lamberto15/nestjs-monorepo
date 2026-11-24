@@ -15,6 +15,7 @@ import { aiConfig } from './ai.config.js';
 import { AiController } from './ai.controller.js';
 import { aiModuleOptions } from './ai.models.js';
 import { AiProcessor } from './ai.processor.js';
+import { AiRunRetentionJob } from './ai.retention.job.js';
 import { AI_TOKENS } from './ai.quota.js';
 import { AI, AiService } from './ai.service.js';
 import { AI_SETTINGS } from './ai.settings.js';
@@ -51,7 +52,14 @@ import { AiFeature } from './ai.feature.js';
     DiscoveryModule,
   ],
   controllers: [AiController],
-  providers: [AiSources, AiService, AiProcessor, AiPersonalData, AiFeature],
+  providers: [
+    AiSources,
+    AiService,
+    AiProcessor,
+    AiPersonalData,
+    AiFeature,
+    AiRunRetentionJob,
+  ],
 })
 export class AiModule {
   /**

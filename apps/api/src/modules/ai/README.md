@@ -44,7 +44,10 @@ answered from Redis for `AI_CACHE_TTL_SECONDS` (no tokens).
 
 ANTHROPIC_API_KEY, AI_BASE_URL, AI_MODEL (default `claude-sonnet-5-5`),
 AI_MODEL_CHEAP (default `claude-haiku-5-5`), AI_TIMEOUT_MS,
-AI_MAX_OUTPUT_TOKENS, AI_ATTEMPTS, AI_CACHE_TTL_SECONDS.
+AI_MAX_OUTPUT_TOKENS, AI_ATTEMPTS, AI_CACHE_TTL_SECONDS, AI_RUN_RETENTION_DAYS
+(400, as the audit log: a run is the usage record). `AiRunRetentionJob` deletes
+the ended runs (`completed`, `failed`) older than that every night at 04:50
+UTC, on one instance, across tenants; a queued or running one stays.
 
 Prompts and completions are declared to log redaction. A task is added in
 `ai.tasks.ts` with its version, tier, prompt and schema.

@@ -26,6 +26,12 @@ export const schema = z.object({
   AI_ATTEMPTS: integer(2, { min: 1, max: 5 }),
   /** Seconds an identical prompt is answered from Redis; 0: never. */
   AI_CACHE_TTL_SECONDS: integer(3600, { min: 0 }),
+  /**
+   * Ended runs older than this many days are deleted every night. A run is
+   * the usage record (who asked, the model, the tokens): kept as long as
+   * the audit log (AUDIT_RETENTION_DAYS), for a year's comparison of usage.
+   */
+  AI_RUN_RETENTION_DAYS: integer(400, { min: 1 }),
 });
 
 export const aiConfig = registerAs('ai', () => {
@@ -39,5 +45,6 @@ export const aiConfig = registerAs('ai', () => {
     maxOutputTokens: env.AI_MAX_OUTPUT_TOKENS,
     attempts: env.AI_ATTEMPTS,
     cacheTtlSeconds: env.AI_CACHE_TTL_SECONDS,
+    runRetentionDays: env.AI_RUN_RETENTION_DAYS,
   };
 });

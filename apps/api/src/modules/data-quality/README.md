@@ -25,7 +25,7 @@ Its `ref` fields are always checked: one pointing at a record in the recycle bin
 
 ## Scans
 
-`POST /v1/data-quality/scans` (`DataQuality.scan`) answers 202 and runs on the `data-quality` queue in the tenant that started it: one job per batch of 500 records, each queuing the next, record type after record type. `GET /v1/data-quality` shows the `lastScan` (`total`, `scanned`, `status`) and the open findings per subject.
+`POST /v1/data-quality/scans` (`DataQuality.scan`) answers 202 and runs on the `data-quality` queue in the tenant that started it: one job per batch of 500 records, each queuing the next, record type after record type (with an id from the scan, the subject and where the batch starts, `onceJob()`: a retried batch queues no second next). `GET /v1/data-quality` shows the `lastScan` (`total`, `scanned`, `status`) and the open findings per subject.
 
 - A finding that still holds is kept (its `checkedAt` moves); one a scan no longer finds is deleted when its subject is done. A dismissed finding stays dismissed while it holds.
 - One scan at a time per tenant: another while one runs is a 409 `scan_running`; one over an hour old is taken as lost. A batch that fails its last attempt marks the scan `failed`.
@@ -38,10 +38,11 @@ Its `ref` fields are always checked: one pointing at a record in the recycle bin
 - `POST …/findings/{id}/dismiss` (`DataQuality.resolve`): right as it is; audited `data-quality.finding-dismissed`.
 - `POST …/findings/{id}/recheck` (`DataQuality.resolve`): checks the record again now; `{ resolved, finding }`.
 - Findings of records deleted for good go with them (a `purged` hook).
+- Findings no scan or recheck found again for DATA_QUALITY_FINDING_RETENTION_DAYS (180, by `checkedAt`) are deleted every night at 04:55 UTC, on one instance, across tenants (`DataQualityRetentionJob`), dismissed ones too: a scan already deletes what no longer holds, so what is left that old is of a record type no longer scanned, or a scan nobody ran again. The next scan finds what still holds.
 
 No seed role holds `DataQuality.*`: administrators give them in a role.
 
-Tables: `data_quality_findings`, `data_quality_scans` (tenant tables). No environment variables.
+Tables: `data_quality_findings`, `data_quality_scans` (tenant tables). Variable (`data-quality.config.ts`): DATA_QUALITY_FINDING_RETENTION_DAYS.
 
 Add-on: `pnpm feature:add --addons data-quality` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `data-quality.addon.js`): scans for missing values, duplicates and broken rules.
 

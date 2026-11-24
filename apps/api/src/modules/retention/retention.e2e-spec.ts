@@ -153,8 +153,13 @@ describe('retention (e2e)', () => {
     );
 
   /** The scheduler's run and the worker's batches it queues, to the end. */
-  async function runRetention() {
-    const queued = await app.get(RetentionScheduler).run();
+  /** Each call a night of its own: a night's jobs are queued once (their ids). */
+  let night = 0;
+  async function runRetention(again = false) {
+    if (!again) night++;
+    const queued = await app
+      .get(RetentionScheduler)
+      .run(new Date(Date.now() + night * DAY));
     await vi.waitFor(
       async () => {
         const counts = await queue.getJobCounts('waiting', 'active', 'delayed');
@@ -326,6 +331,10 @@ describe('retention (e2e)', () => {
     expect(await runRetention()).toBe(1); // this tenant's rule alone
     expect(await rows(many, mine.tenantId)).toHaveLength(0);
     expect(await rows([kept!], theirs.tenantId)).toHaveLength(1);
+    expect(await audited('retention.purged', mine.tenantId)).toHaveLength(2);
+    // The same night scheduled again (a retried scheduler) queues nothing new.
+    await items(40, 1, mine.tenantId);
+    await runRetention(true);
     expect(await audited('retention.purged', mine.tenantId)).toHaveLength(2);
     expect(await rule('item', mine.admin.headers)).toMatchObject({
       lastCount: RETENTION_BATCH + 1,

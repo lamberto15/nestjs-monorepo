@@ -22,6 +22,7 @@ import { SystemContext } from '../../iam/access/system-context.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { RECORD_SCHEDULE_JOB } from './recurrence.permissions.js';
 import { RecurrenceModule } from './recurrence.module.js';
+import { RecurrenceRetentionJob } from './recurrence.retention.job.js';
 import {
   RECORD_SCHEDULE_QUEUE,
   RecurrenceService,
@@ -416,5 +417,47 @@ describe('recurring record schedules (e2e)', () => {
     expect(await inTenant(() => service.queueIfDue(now))).toBe(true);
     const [job] = await queue.getWaiting();
     expect(job!.data).toEqual({ tenantId });
+  });
+
+  it('forgets the runs of occurrences older than RECURRENCE_RUN_RETENTION_DAYS every night, and keeps recent ones', async () => {
+    const { id } = await schedule(await editor(), {
+      template: { title: 'Kept' },
+    });
+    const now = new Date();
+    const ago = (days: number) => new Date(now.getTime() - days * 86_400_000);
+    const [old, recent] = await inTenant(() =>
+      db()
+        .insert(recordScheduleRuns)
+        .values(
+          [ago(91), ago(89)].map((occurrenceAt) => ({
+            scheduleId: id,
+            occurrenceAt,
+            status: 'created' as const,
+          })),
+        )
+        .returning({ id: recordScheduleRuns.id }),
+    );
+    expect(
+      await app.get(RecurrenceRetentionJob).run(now),
+    ).toBeGreaterThanOrEqual(1);
+    const left = await inTenant(() =>
+      db()
+        .select({ id: recordScheduleRuns.id })
+        .from(recordScheduleRuns)
+        .where(eq(recordScheduleRuns.scheduleId, id)),
+    );
+    expect(left).toEqual([recent]);
+    expect(left).not.toContainEqual(old);
+  });
+
+  it('queues one job per tenant and pass: the pass run again queues nothing new', async () => {
+    const service = app.get(RecurrenceService);
+    const queue = app.get<Queue>(getQueueToken(RECORD_SCHEDULE_QUEUE));
+    await queue.obliterate({ force: true });
+    const { id } = await schedule(await editor());
+    const { now } = await due(id, HOUR);
+    expect(await inTenant(() => service.queueIfDue(now))).toBe(true);
+    expect(await inTenant(() => service.queueIfDue(now))).toBe(true);
+    expect(await queue.getWaiting()).toHaveLength(1);
   });
 });

@@ -22,6 +22,7 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { tenantQuotas } from '../quotas/quotas.tables.js';
 import { AiModule } from './ai.module.js';
+import { AiRunRetentionJob } from './ai.retention.job.js';
 import { AI, AiService, OUTPUT_KEPT_SECONDS } from './ai.service.js';
 import { aiRuns } from './ai.tables.js';
 
@@ -419,5 +420,48 @@ describe('AI helper (e2e)', () => {
     const refused = await ask(team.admin.headers, record.id);
     expect(refused.statusCode).toBe(403);
     expect(refused.json().code).toBe('ai_disabled');
+  });
+
+  it('deletes ended runs older than AI_RUN_RETENTION_DAYS every night, never an open one, and keeps recent ones', async () => {
+    const recordId = randomUUID();
+    const now = new Date();
+    const ago = (days: number) => new Date(now.getTime() - days * 86_400_000);
+    const run = (
+      status: 'completed' | 'failed' | 'queued',
+      createdAt: Date,
+      requestedBy = `user:${randomUUID()}`,
+    ) => ({
+      source: 'test-items',
+      subject: 'TestItem',
+      recordId,
+      task: 'summarize',
+      promptVersion: '1',
+      status,
+      requestedBy,
+      createdAt,
+    });
+    const inTenant = <T>(work: () => Promise<T>) =>
+      app.get(Tenancy).run(team.tenantId, work);
+    const rows = await inTenant(() =>
+      db
+        .insert(aiRuns)
+        .values([
+          run('completed', ago(401)),
+          run('failed', ago(401)),
+          run('queued', ago(401)),
+          run('completed', ago(399)),
+        ])
+        .returning({ id: aiRuns.id }),
+    );
+    expect(await app.get(AiRunRetentionJob).run(now)).toBeGreaterThanOrEqual(2);
+    const left = await inTenant(() =>
+      db
+        .select({ id: aiRuns.id })
+        .from(aiRuns)
+        .where(eq(aiRuns.recordId, recordId)),
+    );
+    expect(left.map((r) => r.id).sort()).toEqual(
+      [rows[2]!.id, rows[3]!.id].sort(),
+    );
   });
 });

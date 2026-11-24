@@ -61,7 +61,10 @@ while a batch comes back full:
 - resumable: a handled row leaves the rule's condition, so a job that dies is
   retried and the next night finds what is left;
 - the policy keeps `lastRunAt` and `lastCount`; when a hold keeps due rows
-  the first batch logs how many.
+  the first batch logs how many;
+- a batch's job id is its tenant, rule, night (UTC day) and place in the run
+  (`onceJob()`): the scheduler run again that night, or a batch retried after
+  it queued its next, queues nothing new.
 
 A hold placed while a batch's transaction runs applies from the next batch.
 

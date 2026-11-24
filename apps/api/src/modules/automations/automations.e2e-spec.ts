@@ -27,6 +27,8 @@ import { notifications } from '../notifications/notifications.tables.js';
 import { PUSH_QUEUE } from '../notifications/notifications.push.js';
 import { WebhooksModule } from '../webhooks/webhooks.module.js';
 import { AutomationsModule } from './automations.module.js';
+import { AutomationRunRetentionJob } from './automations.retention.job.js';
+import { automationRuns } from './automations.tables.js';
 
 vi.hoisted(() => {
   Object.assign(process.env, {
@@ -463,5 +465,41 @@ describe('automation rules (e2e)', () => {
     } finally {
       await receiver.close();
     }
+  });
+
+  it('deletes runs older than AUTOMATIONS_RUN_RETENTION_DAYS every night, and keeps recent ones', async () => {
+    const { id } = await rule({
+      actions: [{ type: 'setField', field: 'body', value: 'X' }],
+    });
+    const recordId = randomUUID();
+    const values = (createdAt: Date) => ({
+      ruleId: id,
+      ruleVersion: 1,
+      recordId,
+      status: 'succeeded' as const,
+      actions: [],
+      createdAt,
+    });
+    const now = new Date();
+    const [old, recent] = await inTenant(() =>
+      db()
+        .insert(automationRuns)
+        .values([
+          values(new Date(now.getTime() - 91 * 86_400_000)),
+          values(new Date(now.getTime() - 89 * 86_400_000)),
+        ])
+        .returning({ id: automationRuns.id }),
+    );
+    expect(
+      await app.get(AutomationRunRetentionJob).run(now),
+    ).toBeGreaterThanOrEqual(1);
+    const left = await inTenant(() =>
+      db()
+        .select({ id: automationRuns.id })
+        .from(automationRuns)
+        .where(eq(automationRuns.recordId, recordId)),
+    );
+    expect(left).toEqual([recent]);
+    expect(left).not.toContainEqual(old);
   });
 });

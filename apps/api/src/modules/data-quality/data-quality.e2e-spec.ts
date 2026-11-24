@@ -18,6 +18,9 @@ import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
 import { RecycleBinPurgeJob } from '../records/recycle-bin.job.js';
 import { DataQualityModule } from './data-quality.module.js';
+import { DataQualityRetentionJob } from './data-quality.retention.job.js';
+import { DataQualityService } from './data-quality.service.js';
+import { dataQualityFindings } from './data-quality.tables.js';
 
 vi.hoisted(() => {
   process.env.SCHEDULER = 'off';
@@ -432,5 +435,49 @@ describe('data quality on test items (e2e)', () => {
     if (second.statusCode === 409) {
       expect(second.json().code).toBe('scan_running');
     }
+  });
+
+  it('deletes findings no scan found again for DATA_QUALITY_FINDING_RETENTION_DAYS every night, and keeps recent ones', async () => {
+    const db = app.get<Database>(getDrizzleToken());
+    const inTenant = <T>(work: () => Promise<T>) =>
+      app.get(Tenancy).run(team.tenantId, work);
+    const now = new Date();
+    const finding = (checkedAt: Date) => ({
+      subject: 'TestItem',
+      recordId: randomUUID(),
+      check: 'missing' as const,
+      field: 'body',
+      severity: 'suggestion' as const,
+      checkedAt,
+    });
+    const [, recent] = await inTenant(() =>
+      db
+        .insert(dataQualityFindings)
+        .values([
+          finding(new Date(now.getTime() - 181 * 86_400_000)),
+          finding(new Date(now.getTime() - 179 * 86_400_000)),
+        ])
+        .returning({ id: dataQualityFindings.id }),
+    );
+    expect(
+      await app.get(DataQualityRetentionJob).run(now),
+    ).toBeGreaterThanOrEqual(1);
+    const left = await inTenant(() =>
+      db.select({ id: dataQualityFindings.id }).from(dataQualityFindings),
+    );
+    expect(left).toEqual([recent]);
+  });
+
+  it('queues a batch once: a retried batch queues no second next one', async () => {
+    const quality = app.get(DataQualityService);
+    const next = {
+      tenantId: team.tenantId,
+      scanId: randomUUID(),
+      subject: 'TestItem',
+      after: randomUUID(),
+    };
+    const first = await quality.queueNext(next);
+    const again = await quality.queueNext(next);
+    expect(again.id).toBe(first.id);
   });
 });

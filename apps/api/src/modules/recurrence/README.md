@@ -19,8 +19,15 @@ resume, end; at most 20 active per owner, 1000 records per schedule).
   occurrence is made once however often it is tried (row lock, and a unique
   `record_schedule_runs` row per schedule and moment); a missed one is made up,
   10 per pass; the third failure in a row skips the occurrence; an owner who is
-  inactive or lost the permission ends the schedule.
+  inactive or lost the permission ends the schedule. The job of a pass has the
+  id of the tenant and the pass (`onceJob()`): the pass run again queues
+  nothing new.
+- **Runs are forgotten:** `RecurrenceRetentionJob` deletes the
+  `record_schedule_runs` of occurrences more than RECURRENCE_RUN_RETENTION_DAYS
+  (90) past, every night at 04:45 UTC, on one instance, across tenants. A
+  schedule never goes back to an occurrence before now (it resumes after now),
+  so an old row's guard is no longer needed.
 
 Add-on: `pnpm feature:add --addons recurrence` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `recurrence.addon.js`): records created on a schedule.
 
-No variables. Remove: `pnpm module:remove recurrence` ([removing-a-module](../../../../../docs/removing-a-module.md)).
+Variable (`recurrence.config.ts`): RECURRENCE_RUN_RETENTION_DAYS. Remove: `pnpm module:remove recurrence` ([removing-a-module](../../../../../docs/removing-a-module.md)).

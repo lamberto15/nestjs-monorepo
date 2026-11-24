@@ -1,5 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { type DynamicModule, Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { DiscoveryModule } from '@nestjs/core';
 import { DEFAULT_JOB_OPTIONS } from '../../core/queues/queues.js';
 import { AccessModule } from '../../iam/access/access.module.js';
@@ -9,9 +10,11 @@ import { recordValues, type RecordDeclaration } from '../records/record.js';
 import { recordSchemas } from '../records/record.schemas.js';
 import { RecordsModule } from '../records/records.module.js';
 import { Records } from '../records/records.service.js';
+import { recurrenceConfig } from './recurrence.config.js';
 import { RecurrenceController } from './recurrence.controller.js';
 import { RECURRENCE_PERMISSIONS } from './recurrence.permissions.js';
 import { RecurrenceProcessor } from './recurrence.processor.js';
+import { RecurrenceRetentionJob } from './recurrence.retention.job.js';
 import { RecurrenceScheduler } from './recurrence.scheduler.js';
 import {
   RECORD_SCHEDULE_QUEUE,
@@ -37,6 +40,7 @@ import { RecurrencePersonalData } from './recurrence.personal-data.js';
     AccessModule.forFeature(RECURRENCE_PERMISSIONS),
     AuditModule,
     CalendarsModule,
+    ConfigModule.forFeature(recurrenceConfig),
     DiscoveryModule,
     BullModule.registerQueue({
       name: RECORD_SCHEDULE_QUEUE,
@@ -49,6 +53,7 @@ import { RecurrencePersonalData } from './recurrence.personal-data.js';
     RecurrenceService,
     RecurrenceProcessor,
     RecurrenceScheduler,
+    RecurrenceRetentionJob,
     RecurrencePersonalData,
   ],
 })

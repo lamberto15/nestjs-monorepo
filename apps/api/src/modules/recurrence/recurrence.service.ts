@@ -23,6 +23,7 @@ import {
   pageOrder,
   toPage,
 } from '../../core/http/pagination.js';
+import { onceJob } from '../../core/queues/queues.js';
 import { withTenant } from '../../core/tenancy/tenant-job.js';
 import { Tenancy } from '../../core/tenancy/tenancy.service.js';
 import { AccessService } from '../../iam/access/access.service.js';
@@ -64,6 +65,9 @@ export const MAX_ATTEMPTS = 3;
 const BATCH = 500;
 /** At most this many occurrences of one schedule are made in one pass (making up missed ones). */
 export const MAX_PER_PASS = 10;
+
+/** The scheduler's interval (RecurrenceScheduler, every five minutes): one job per tenant in each. */
+const PASS_MS = 5 * 60_000;
 
 const view = (row: RecordScheduleRow) => ({
   id: row.id,
@@ -365,7 +369,14 @@ export class RecurrenceService {
       )
       .limit(1);
     if (!due) return false;
-    await this.queue.add('run', withTenant({}));
+    const job = withTenant({});
+    // From the tenant and the pass: the pass run again queues nothing new.
+    const pass = Math.floor(now.getTime() / PASS_MS);
+    await this.queue.add(
+      'run',
+      job,
+      onceJob(`record-schedules-${job.tenantId}-${pass}`),
+    );
     return true;
   }
 

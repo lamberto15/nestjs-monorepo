@@ -1,4 +1,5 @@
 import { type DynamicModule, Injectable, Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { DiscoveryModule } from '@nestjs/core';
 import { z } from 'zod';
 import { AccessModule } from '../../iam/access/access.module.js';
@@ -24,11 +25,13 @@ import {
   SetFieldAction,
   WebhookAction,
 } from './automations.actions.js';
+import { automationsConfig } from './automations.config.js';
 import { AutomationsController } from './automations.controller.js';
 import { automationMatched } from './automations.events.js';
 import { AUTOMATION_NOTIFICATIONS } from './automations.notifications.js';
 import { AUTOMATION_PERMISSIONS } from './automations.permissions.js';
 import { AutomationRulePolicy } from './automations.policy.js';
+import { AutomationRunRetentionJob } from './automations.retention.job.js';
 import { AutomationRunner } from './automations.runner.js';
 import {
   AUTOMATIONS_CAPABILITY,
@@ -47,6 +50,7 @@ import {
   imports: [
     AccessModule.forFeature(AUTOMATION_PERMISSIONS),
     AuditModule,
+    ConfigModule.forFeature(automationsConfig),
     DiscoveryModule,
     RecordsModule,
     NotificationsModule,
@@ -57,6 +61,7 @@ import {
     AutomationActions,
     AutomationsService,
     AutomationRunner,
+    AutomationRunRetentionJob,
     AutomationRulePolicy,
     SetFieldAction,
     NotifyAction,

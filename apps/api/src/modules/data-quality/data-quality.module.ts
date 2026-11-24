@@ -15,6 +15,7 @@ import {
   ApiOkResponse,
   ApiOperation,
 } from '@nestjs/swagger';
+import { ConfigModule } from '@nestjs/config';
 import { DiscoveryModule } from '@nestjs/core';
 import { DEFAULT_JOB_OPTIONS } from '../../core/queues/queues.js';
 import { AccessModule } from '../../iam/access/access.module.js';
@@ -30,10 +31,12 @@ import {
 } from '../records/record-extension.js';
 import { Records } from '../records/records.service.js';
 import { RecordsModule } from '../records/records.module.js';
+import { dataQualityConfig } from './data-quality.config.js';
 import { DataQualityController } from './data-quality.controller.js';
 import { DATA_QUALITY_PERMISSIONS } from './data-quality.permissions.js';
 import { DataQualityPolicy } from './data-quality.policy.js';
 import { DataQualityProcessor } from './data-quality.processor.js';
+import { DataQualityRetentionJob } from './data-quality.retention.job.js';
 import {
   DataQualityRegistration,
   DataQualityRegistry,
@@ -60,6 +63,7 @@ import {
   imports: [
     AccessModule.forFeature(DATA_QUALITY_PERMISSIONS),
     AuditModule,
+    ConfigModule.forFeature(dataQualityConfig),
     DiscoveryModule,
     RecordsModule,
     BullModule.registerQueue({
@@ -73,6 +77,7 @@ import {
     DataQualityService,
     DataQualityPolicy,
     DataQualityProcessor,
+    DataQualityRetentionJob,
   ],
   exports: [DataQualityService, DataQualityPolicy],
 })

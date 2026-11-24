@@ -94,7 +94,11 @@ without `apply`: the most recently changed records you may read (or
 `recordIds`), at most `limit` (≤ 50); `truncated` when the limit was reached;
 `triggerSimulated: false` for a `field` trigger (no change is replayed).
 
-Tables: `automation_rules`, `automation_runs` (tenant tables). No variables.
+Tables: `automation_rules`, `automation_runs` (tenant tables).
+
+Variable (`automations.config.ts`): AUTOMATIONS_RUN_RETENTION_DAYS (90):
+`AutomationRunRetentionJob` deletes older runs every night at 04:40 UTC, on one
+instance, across tenants.
 
 Add-on: `pnpm feature:add --addons automations` ([adding-a-feature](../../../../../docs/adding-a-feature.md), `automations.addon.js`): tenants' rules on a record's changes.
 

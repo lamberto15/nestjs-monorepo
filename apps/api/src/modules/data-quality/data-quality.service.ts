@@ -30,6 +30,7 @@ import type {
   Database,
   DatabaseTransactions,
 } from '../../core/database/database.js';
+import { onceJob } from '../../core/queues/queues.js';
 import { afterCursor } from '../../core/http/pagination.js';
 import {
   type TenantEnvelope,
@@ -315,9 +316,19 @@ export class DataQualityService {
       .where(eq(scans.id, scanId));
   }
 
-  /** Queues a scan's next batch. */
+  /**
+   * Queues a scan's next batch, its id from the work (the scan, the
+   * subject, where the batch starts): a batch retried after it queued its
+   * next queues nothing new.
+   */
   queueNext(job: DataQualityJob) {
-    return this.queue.add('batch', job);
+    return this.queue.add(
+      'batch',
+      job,
+      onceJob(
+        `data-quality-${job.scanId}-${job.subject}-${job.after ?? 'start'}`,
+      ),
+    );
   }
 
   /** Dismisses a finding: right as it is. It stays dismissed while it holds. */

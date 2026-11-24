@@ -9,6 +9,7 @@ import {
 import type { Queue } from 'bullmq';
 import { and, asc, count, eq, inArray, lt, not } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
+import { onceJob } from '../../core/queues/queues.js';
 import type {
   Database,
   DatabaseTransactions,
@@ -40,9 +41,21 @@ const DAY = 86_400_000;
 export interface RetentionJob {
   /** The rule's name: `note`. */
   rule: string;
+  /** The night's UTC day (`2026-11-25`): with the rule and tenant, the run's job ids. */
+  day: string;
+  /** This batch's place in the run: 0 for the first. */
+  batch?: number;
   /** Rows handled by the earlier batches of this run. */
   total?: number;
 }
+
+/**
+ * A batch's job id, from the work: the tenant, the rule, the night and the
+ * batch's place. The scheduler run again that night, or a batch retried
+ * after it queued its next, queues nothing new.
+ */
+const retentionJobId = (job: RetentionJob & TenantEnvelope) =>
+  `retention-${job.tenantId}-${job.rule}-${job.day}-${job.batch ?? 0}`;
 
 /** What one batch did. */
 export interface RetentionBatch {
@@ -218,7 +231,8 @@ export class RetentionService {
    * Queues a first batch for every tenant's enabled rule: what the
    * scheduler runs. Returns how many jobs it queued.
    */
-  async schedule(): Promise<number> {
+  async schedule(now = new Date()): Promise<number> {
+    const day = now.toISOString().slice(0, 10);
     const perTenant = await this.tenancy.forEachTenant(
       RETENTION_JOB.key,
       async () => {
@@ -231,7 +245,8 @@ export class RetentionService {
           if (!this.rules.find(rule)) {
             continue; // a rule no longer declared
           }
-          await this.queue.add('batch', withTenant({ rule }));
+          const job = withTenant({ rule, day });
+          await this.queue.add('batch', job, onceJob(retentionJobId(job)));
           queued++;
         }
         return queued;
@@ -251,7 +266,8 @@ export class RetentionService {
 
   /** Queues the next batch of a job's rule, in its tenant. */
   queueNext(job: RetentionJob & TenantEnvelope, total: number) {
-    return this.queue.add('batch', { ...job, total });
+    const next = { ...job, batch: (job.batch ?? 0) + 1, total };
+    return this.queue.add('batch', next, onceJob(retentionJobId(next)));
   }
 
   /**

@@ -21,10 +21,10 @@ export class RetentionScheduler {
   @Cron('10 4 * * *', { name: 'retention', timeZone: 'UTC' })
   @OnOneInstance({ key: 'retention:schedule' })
   @WithoutOverlapping()
-  run() {
+  run(now = new Date()) {
     if (this.rules.all().length === 0) {
       return Promise.resolve(0);
     }
-    return this.retention.schedule();
+    return this.retention.schedule(now);
   }
 }
