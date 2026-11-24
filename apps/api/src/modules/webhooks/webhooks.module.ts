@@ -45,6 +45,7 @@ import { webhooksConfig } from './webhooks.config.js';
 import './webhooks.errors.js';
 import { WEBHOOK_PERMISSIONS } from './webhooks.permissions.js';
 import { WebhookPolicy } from './webhooks.policy.js';
+import { WebhooksErasure } from './webhooks.erasure.js';
 import { WebhooksService } from './webhooks.service.js';
 
 /**
@@ -132,6 +133,7 @@ import { WebhooksService } from './webhooks.service.js';
     WebhookCatalog,
     WebhookPublisher,
     WebhooksService,
+    WebhooksErasure,
     WebhookPolicy,
     IncomingSendersService,
     IncomingEventHandlers,

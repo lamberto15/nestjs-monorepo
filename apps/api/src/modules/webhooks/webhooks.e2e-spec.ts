@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { Transactional } from '@nestjs-cls/transactional';
+import { Transactional, TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable, Module } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -23,6 +23,7 @@ import { AccessModule } from '../../iam/access/access.module.js';
 import { definePermissions } from '../../iam/access/permissions.js';
 import { API_CLIENT_EVENTS } from '../../iam/api-clients/api-clients.events.js';
 import { auditLog } from '../../iam/audit/audit.tables.js';
+import { TENANT_EVENTS } from '../../iam/tenants/tenants.events.js';
 import { apiClients } from '../../iam/auth/auth.tables.js';
 import { WebhookDeliveryRetentionJob } from './webhook-delivery-retention.job.js';
 import { storeDeliveries } from './webhook-store.view.js';
@@ -625,6 +626,40 @@ describe('outgoing webhooks (e2e)', () => {
     });
     expect(await endpoints.list({ tenant: gone!.id })).toEqual([]);
     expect(await endpoints.list({ tenant: paused!.id })).toHaveLength(1);
+  });
+
+  it("deletes an erased tenant's endpoints once the erase commits", async () => {
+    const erased = await tenantWithAdmin(app);
+    const subscriber = await apiClient(app, erased.tenantId);
+    const created = await call(
+      'POST',
+      '/v1/webhook-endpoints',
+      subscriber.headers,
+      { url: 'https://hooks.example.com/erased', eventTypes: ['*'] },
+    );
+    expect(created.statusCode, created.body).toBe(201);
+    const endpoints = app.get(WebhookEndpoints);
+    const tenant = subscriber.client.id;
+    // TenantsService.purge(): the event in its transaction, outside any tenant.
+    const erase = () =>
+      app
+        .get(Tenancy)
+        .run(null, () =>
+          app
+            .get(TransactionHost)
+            .withTransaction(() =>
+              app
+                .get(EventEmitter2)
+                .emitAsync(TENANT_EVENTS.erasing, {
+                  tenantId: erased.tenantId,
+                }),
+            ),
+        );
+    await erase();
+    // Kept until the commit's event is relayed: an erase rolled back keeps them.
+    expect(await endpoints.list({ tenant })).toHaveLength(1);
+    await deliverWebhooks(app);
+    expect(await endpoints.list({ tenant })).toEqual([]);
   });
 
   it('prunes finished deliveries past WEBHOOKS_DELIVERY_RETENTION_DAYS with their recorded requests, and keeps recent and pending ones', async () => {

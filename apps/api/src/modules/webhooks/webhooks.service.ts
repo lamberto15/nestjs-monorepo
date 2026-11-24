@@ -399,6 +399,11 @@ export class WebhooksService {
       .from(apiClients)
       .where(eq(apiClients.id, clientId));
     if (client) return;
+    await this.deleteEndpointsOf(clientId);
+  }
+
+  /** Every endpoint of a client that no longer exists: nothing more is sent to it. */
+  async deleteEndpointsOf(clientId: string) {
     for (;;) {
       const page = await this.endpoints.list({ tenant: clientId, limit: 100 });
       for (const endpoint of page) {
