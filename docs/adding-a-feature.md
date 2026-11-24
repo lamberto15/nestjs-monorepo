@@ -24,8 +24,11 @@ the recycle bin and the units):
 From the repository's root, with every option on the command line, the API's
 files and the web pages in one run (`tools/feature-add.mjs`: the schematics
 CLI Nest uses underneath, from the root with `--web-root apps/web/src`, then
-the router's route tree). `nest g` from `apps/api`, and `pnpm feature:add`
-there, write the API's files only:
+the router's route tree). `nest g feature <name>` from `apps/api` (its
+`nest-cli.json` names this collection, which extends Nest's own, so
+`nest g service` still works) asks the questions instead of taking flags,
+which the Nest CLI refuses; it and `pnpm feature:add` there write the API's
+files only:
 
 ```bash
 pnpm feature:add invoices --fields "title:string,amount:money,dueOn:date?,status:enum(draft|sent|paid)" --addons tags,comments,sequences

@@ -1,5 +1,6 @@
 {
   "$schema": "../node_modules/@nestjs/schematics/node_modules/@angular-devkit/schematics/collection-schema.json",
+  "extends": ["@nestjs/schematics"],
   "schematics": {
     "feature": {
       "factory": "./feature/index.js#feature",
