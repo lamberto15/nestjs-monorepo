@@ -196,12 +196,12 @@ describe('ProblemDetailsFilter', () => {
     expect(answer(error)).toMatchObject({ status: 409, code: 'conflict' });
   });
 
-  it('answers a malformed id that reached a query as a 400 invalid_id', () => {
+  it('answers a value the database could not read as a 400 invalid_value', () => {
     const error = new Error('Failed query', {
       cause: Object.assign(new Error('invalid input syntax for type uuid'), {
         code: '22P02',
       }),
     });
-    expect(answer(error)).toMatchObject({ status: 400, code: 'invalid_id' });
+    expect(answer(error)).toMatchObject({ status: 400, code: 'invalid_value' });
   });
 });

@@ -21,13 +21,18 @@ const overloaded = (code: string, message: string, cause: unknown) =>
  * mapped to its own code is a 409 `conflict`: two requests raced for the
  * same key, and the index decided (a service maps it where it can say more).
  * A value the database can't read as its column's type (bodies and queries
- * are validated first, so a malformed id in the path) is a 400 `invalid_id`.
+ * are validated first, so most often a malformed id in the path, but also
+ * an enum, number or JSON text that got past validation) is a 400
+ * `invalid_value`.
  */
 export function infrastructureError(error: unknown) {
   switch (databaseErrorKind(error)) {
     case 'invalid_text':
       return new BadRequestException(
-        { code: 'invalid_id', message: 'That is not a valid id.' },
+        {
+          code: 'invalid_value',
+          message: 'A value in the request is not valid for its field.',
+        },
         { cause: error },
       );
     case 'unique_violation':

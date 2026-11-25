@@ -1,5 +1,5 @@
-import { setTimeout as sleep } from 'node:timers/promises';
 import { getHeapStatistics } from 'node:v8';
+import { TimeoutPolicy } from '@nestjs/resilience';
 import {
   Injectable,
   Logger,
@@ -26,7 +26,10 @@ import {
 
 /** A read that takes longer (Redis or PostgreSQL away) is given up: the collection goes on without it. */
 const COLLECT_TIMEOUT_MS = 2_000;
-const TIMED_OUT = Symbol('timed out');
+const collectTimeout = new TimeoutPolicy({
+  timeout: COLLECT_TIMEOUT_MS,
+  name: 'metric-collect',
+});
 
 /** How often the global provider is checked while nothing records: Nestrix registers its own a moment after the app started. */
 const REBIND_INTERVAL_MS = 5_000;
@@ -211,13 +214,7 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
   ) {
     const observe = async (result: ObservableResult) => {
       try {
-        const samples = await Promise.race([
-          read(),
-          sleep(COLLECT_TIMEOUT_MS, TIMED_OUT, { ref: false }),
-        ]);
-        if (samples === TIMED_OUT) {
-          throw new Error(`no answer in ${COLLECT_TIMEOUT_MS} ms`);
-        }
+        const samples = await collectTimeout.execute(async () => read());
         for (const sample of samples) {
           result.observe(sample.value, sample.labels);
         }

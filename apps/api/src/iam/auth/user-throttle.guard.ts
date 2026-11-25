@@ -17,8 +17,11 @@ import { ScaledThrottlerGuard } from '../../core/throttling/scaled-throttler.gua
 import { throttlingConfig } from '../../core/throttling/throttling.config.js';
 import { principalKey, type RequestPrincipal } from './principal.js';
 
-/** What `@SkipThrottle()` sets for the default throttler (@nestjs/throttler's THROTTLER_SKIP + name). */
-const SKIPPED = 'THROTTLER:SKIPdefault';
+/**
+ * What `@SkipThrottle()` sets (@nestjs/throttler's THROTTLER_SKIP + name):
+ * `{ default: true }` skips both limits, `{ user: true }` this one alone.
+ */
+const SKIPPED = ['THROTTLER:SKIPdefault', 'THROTTLER:SKIPuser'];
 
 export interface UserThrottleOptions {
   /** Requests per `ttl` from one signed-in caller. */
@@ -70,7 +73,11 @@ export class UserThrottlerGuard extends ScaledThrottlerGuard {
   override async canActivate(context: ExecutionContext) {
     if (await this.shouldSkip(context)) return true;
     const targets = [context.getHandler(), context.getClass()];
-    if (this.reflector.getAllAndOverride<boolean>(SKIPPED, targets)) {
+    if (
+      SKIPPED.some((key) =>
+        this.reflector.getAllAndOverride<boolean>(key, targets),
+      )
+    ) {
       return true;
     }
     const options = this.reflector.getAllAndOverride<

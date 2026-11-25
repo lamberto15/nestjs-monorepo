@@ -183,8 +183,8 @@ repository.
     rule 7); `src/module-graph.spec.ts` checks it.
   - Every JSON response is run through the schema its route documents: an
     undeclared key is dropped, a response off its schema is a 500.
-  - A unique key two requests raced for is 409 `conflict`; a malformed id
-    in a path is 400 `invalid_id`.
+  - A unique key two requests raced for is 409 `conflict`; a value the
+    database cannot read (a malformed id in a path) is 400 `invalid_value`.
   - Every route is limited per signed-in user or API client
     (`RATE_LIMIT_PER_CALLER`, 600 a minute) after the limit per address
     (`RATE_LIMIT_PER_IP`, now 1200).

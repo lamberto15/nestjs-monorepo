@@ -27,8 +27,8 @@ with a locked-down Content-Security-Policy); on S3 they point at the bucket.
 STORAGE_DRIVER (`local`, `s3`, `memory`), STORAGE_ROOT, STORAGE_SIGNING_KEYS,
 S3_BUCKET, S3_REGION, S3_ENDPOINT, S3_FORCE_PATH_STYLE, STORAGE_SHARED.
 S3 credentials are the standard AWS_* variables or the instance role.
-With `APP_ROLE` `api` or `worker` (a split deployment) the local driver
-refuses to start unless `STORAGE_SHARED=on`: the API's uploads must be on a
+With `APP_ROLE` `api` or `worker` (a split deployment) in production
+(`NODE_ENV=production`) the local driver refuses to start unless `STORAGE_SHARED=on`: the API's uploads must be on a
 disk the worker sees.
 
 ## Remove

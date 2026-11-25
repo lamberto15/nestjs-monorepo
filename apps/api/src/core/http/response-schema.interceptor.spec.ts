@@ -1,9 +1,17 @@
-import { HttpCode, Post, Get, Logger, StreamableFile } from '@nestjs/common';
+import {
+  HttpCode,
+  Post,
+  Get,
+  Logger,
+  Query,
+  StreamableFile,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
   ApiAcceptedResponse,
   ApiCreatedResponse,
   ApiOkResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { lastValueFrom, of } from 'rxjs';
 import { z } from 'zod';
@@ -28,6 +36,18 @@ class NotesController {
   @HttpCode(200)
   @ApiOkResponse({ standardSchema: note })
   act() {}
+
+  @Get()
+  @ApiOkResponse({ standardSchema: note })
+  @ApiQuery({ name: 'fields', required: false })
+  @ApiQuery({ name: 'include', required: false })
+  reshaped() {}
+
+  @Get()
+  @ApiOkResponse({ standardSchema: note })
+  listed(
+    @Query({ schema: z.object({ fields: z.string() }) }) _query: unknown,
+  ) {}
 
   @Get()
   undocumented() {}
@@ -109,14 +129,30 @@ describe('ResponseSchemaInterceptor', () => {
 
   it('leaves a response narrowed by fields or widened by include as it is', async () => {
     await expect(
-      respond('one', { id: 'n1' }, { query: { fields: 'id' } }),
+      respond('reshaped', { id: 'n1' }, { query: { fields: 'id' } }),
     ).resolves.toEqual({ id: 'n1' });
     await expect(
       respond(
-        'one',
+        'reshaped',
         { id: 'n1', createdAt: at, can: {} },
         { query: { include: 'can' } },
       ),
     ).resolves.toHaveProperty('can');
+  });
+
+  it('leaves a response narrowed by fields its query schema declares', async () => {
+    await expect(
+      respond('listed', { id: 'n1' }, { query: { fields: 'id' } }),
+    ).resolves.toEqual({ id: 'n1' });
+  });
+
+  it('still strips on a route that takes no fields or include', async () => {
+    await expect(
+      respond(
+        'one',
+        { id: 'n1', createdAt: at, tenantId: 't1' },
+        { query: { include: '1', fields: 'tenantId' } },
+      ),
+    ).resolves.not.toHaveProperty('tenantId');
   });
 });

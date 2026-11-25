@@ -42,7 +42,8 @@ application/problem+json`:
   the logs, found by `requestId`.
 - Two requests racing for one unique key: the database's index decides, and
   the loser gets 409 `conflict` (or the module's own code where it maps the
-  violation). A malformed id that reaches a query is 400 `invalid_id`.
+  violation). A value the database cannot read as its column's type (most
+  often a malformed id) is 400 `invalid_value`.
 - Other fields an exception carries are kept (`retryAfter`, `etag`).
   A `retryAfter` on a 503 also sets `Retry-After`.
 - A module whose own errors are not `HttpException`s maps them in its folder:

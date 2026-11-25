@@ -6,6 +6,7 @@ describe('storageConfig', () => {
   });
 
   it('refuses a local disk in a split deployment unless it is shared', () => {
+    vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('STORAGE_DRIVER', 'local');
     vi.stubEnv('APP_ROLE', 'api');
     expect(() => storageConfig()).toThrow(/STORAGE_SHARED=on/);
@@ -18,6 +19,9 @@ describe('storageConfig', () => {
     vi.stubEnv('APP_ROLE', 'all');
     expect(storageConfig().driver).toBe('local');
     vi.stubEnv('APP_ROLE', 'worker');
+    vi.stubEnv('NODE_ENV', 'development');
+    expect(storageConfig().driver).toBe('local'); // dev:worker, one machine
+    vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('STORAGE_DRIVER', 's3');
     vi.stubEnv('S3_BUCKET', 'files');
     expect(storageConfig().driver).toBe('s3');

@@ -11,7 +11,7 @@ says how a route uses them.
   `ProblemDetailsFilter.map(MyError, (error) => new ConflictException(…))`.
   A busy pool or a cancelled statement is a 503 `database_busy` /
   `database_timeout` with Retry-After, a unique violation no service mapped a
-  409 `conflict`, a malformed id that reached a query a 400 `invalid_id`
+  409 `conflict`, a value the database could not read (a malformed id) a 400 `invalid_value`
   (`infrastructure-errors.ts`).
 - **Validation**: `@Body({ schema })`, `@Query({ schema })`,
   `@Param('id', { schema })` with Zod, through Nest's

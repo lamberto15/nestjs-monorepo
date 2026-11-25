@@ -10,13 +10,17 @@ import {
 import {
   HTTP_CODE_METADATA,
   METHOD_METADATA,
+  ROUTE_ARGS_METADATA,
 } from '@nestjs/common/constants.js';
+import { RouteParamtypes } from '@nestjs/common/internal';
 import { Reflector } from '@nestjs/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { mergeMap, type Observable } from 'rxjs';
 
 /** Where `@ApiOkResponse({ standardSchema })` and its siblings keep their entries (@nestjs/swagger). */
 const API_RESPONSE = 'swagger/apiResponse';
+/** Where `@ApiQuery()` keeps a route's documented parameters (@nestjs/swagger). */
+const API_PARAMETERS = 'swagger/apiParameters';
 
 type ResponseEntries = Record<string, { standardSchema?: StandardSchemaV1 }>;
 
@@ -39,6 +43,7 @@ type ResponseEntries = Record<string, { standardSchema?: StandardSchemaV1 }>;
 @Injectable()
 export class ResponseSchemaInterceptor extends StandardSchemaSerializerInterceptor {
   private readonly logger = new Logger(ResponseSchemaInterceptor.name);
+  private readonly reshapingNames = new WeakMap<object, Set<string>>();
   private readonly documentedRoutes = new WeakMap<
     object,
     { entries: ResponseEntries; schema?: StandardSchemaV1 } | null
@@ -57,9 +62,13 @@ export class ResponseSchemaInterceptor extends StandardSchemaSerializerIntercept
     const { query } = http.getRequest<{ query?: Record<string, unknown> }>();
     // shortcut: a response narrowed by ?fields= or widened by ?include= is
     // not checked: the list query and the record presenter build it from
-    // declared names only, and a static schema can't describe either. Check
-    // them too once record schemas describe their includes.
-    if (query?.fields !== undefined || query?.include !== undefined) {
+    // declared names only, and a static schema can't describe either. Only
+    // on a route that reads that parameter (`reshapes`). Check them too once
+    // record schemas describe their includes.
+    if (
+      (query?.fields !== undefined || query?.include !== undefined) &&
+      this.reshapes(context, query)
+    ) {
       return next.handle();
     }
     const declared = this.getContextOptions(context)?.schema;
@@ -110,6 +119,44 @@ export class ResponseSchemaInterceptor extends StandardSchemaSerializerIntercept
     return found ?? undefined;
   }
 
+  /**
+   * Whether the request sends a `fields` or `include` its route reads: one
+   * it documents (`@ApiQuery()`), takes by name (`@Query('include')`) or
+   * whose query schema declares it (`@Query({ schema })`). Elsewhere the key
+   * is ignored, and must not switch the check off.
+   */
+  private reshapes(context: ExecutionContext, query: Record<string, unknown>) {
+    const handler = context.getHandler();
+    let names = this.reshapingNames.get(handler);
+    if (!names) {
+      const documented =
+        this.routes.get<{ name?: string; in?: string }[] | undefined>(
+          API_PARAMETERS,
+          handler,
+        ) ?? [];
+      const args = Object.entries(
+        (Reflect.getMetadata(
+          ROUTE_ARGS_METADATA,
+          context.getClass(),
+          handler.name,
+        ) ?? {}) as Record<string, { data?: unknown; schema?: unknown }>,
+      )
+        .filter(([key]) => key.split(':')[0] === String(RouteParamtypes.QUERY))
+        .map(([, arg]) => arg);
+      names = new Set(
+        [
+          ...documented.filter((p) => p.in === 'query').map((p) => p.name),
+          ...args.map((arg) => arg.data),
+          ...args.flatMap((arg) => Object.keys(queryProperties(arg.schema))),
+        ].filter(
+          (name): name is string => name === 'fields' || name === 'include',
+        ),
+      );
+      this.reshapingNames.set(handler, names);
+    }
+    return [...names].some((name) => query[name] !== undefined);
+  }
+
   private async check(body: unknown, schema: StandardSchemaV1, route: string) {
     // What Nest would not send as JSON (nothing, a file, a stream) passes.
     if (!isJsonBody(body)) return body;
@@ -143,4 +190,23 @@ function pathOf(path: StandardSchemaV1.Issue['path']) {
     String(typeof segment === 'object' ? segment.key : segment),
   );
   return keys.join('.') || '(root)';
+}
+
+/** The properties a Standard Schema's JSON Schema declares, if it can give one (zod does). */
+function queryProperties(schema: unknown): Record<string, unknown> {
+  const standard = (schema as Partial<StandardSchemaV1> | undefined)?.[
+    '~standard'
+  ] as
+    | {
+        jsonSchema?: {
+          input?: (options: { target: string }) => { properties?: object };
+        };
+      }
+    | undefined;
+  try {
+    return (standard?.jsonSchema?.input?.({ target: 'draft-2020-12' })
+      ?.properties ?? {}) as Record<string, unknown>;
+  } catch {
+    return {}; // a schema JSON Schema can't express: nothing declared
+  }
 }

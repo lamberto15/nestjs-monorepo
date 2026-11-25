@@ -18,6 +18,7 @@ describe('CustomFieldsService', () => {
     definitions: vi.fn(),
     findById: vi.fn(),
     lastPosition: vi.fn(),
+    hasKey: vi.fn(),
     countActive: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
@@ -111,6 +112,20 @@ describe('CustomFieldsService', () => {
         type: 'text',
       } as never),
     ).rejects.toMatchObject({ response: { code: 'custom_field_limit' } });
+    expect(repository.insert).not.toHaveBeenCalled();
+  });
+
+  it('says a key is taken before it says the subject is full', async () => {
+    repository.hasKey.mockResolvedValue(true);
+    repository.countActive.mockResolvedValue(MAX_ACTIVE_FIELDS);
+    await expect(
+      service.create(user, {
+        subject: 'Invoice',
+        key: 'taken',
+        label: 'Taken',
+        type: 'text',
+      } as never),
+    ).rejects.toMatchObject({ response: { code: 'custom_field_exists' } });
     expect(repository.insert).not.toHaveBeenCalled();
   });
 

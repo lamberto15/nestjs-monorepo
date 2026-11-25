@@ -61,6 +61,15 @@ export class CustomFieldsRepository {
     return last;
   }
 
+  /** Whether the subject has a field with this key, active or not (keys are never reused). */
+  async hasKey(subject: string, key: string) {
+    const [found] = await this.db
+      .select({ id: d.id })
+      .from(d)
+      .where(and(eq(d.subject, subject), eq(d.key, key)));
+    return !!found;
+  }
+
   async countActive(subject: string) {
     const [{ active }] = await this.db
       .select({ active: count() })

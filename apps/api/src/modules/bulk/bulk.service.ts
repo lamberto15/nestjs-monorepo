@@ -35,6 +35,7 @@ import {
 import { bulkConfig } from './bulk.config.js';
 import { BulkExtension } from './bulk.extension.js';
 import { BulkTally, itemError, skipped } from './bulk.results.js';
+import { infrastructureError } from '../../core/http/infrastructure-errors.js';
 import { actionsOf, bulkInputSchema } from './bulk.schemas.js';
 import {
   BULK,
@@ -280,10 +281,11 @@ export class BulkService {
 
   /**
    * Performs the action on every selected record, BULK_GROUP at a time in
-   * one transaction, each item in a savepoint of it: a 4xx rolls back and
-   * fails that item alone; ids the selection did not yield are skipped.
-   * Anything else (the database gone) rolls back its group and stops the
-   * run; earlier groups stay done.
+   * one transaction, each item in a savepoint of it: a 4xx, or a database
+   * error the API answers as one (a unique violation no hook mapped), rolls
+   * back and fails that item alone; ids the selection did not yield are
+   * skipped. Anything else (the database gone, overloaded) rolls back its
+   * group and stops the run; earlier groups stay done.
    */
   async execute(
     principal: Principal,
@@ -321,7 +323,8 @@ export class BulkService {
               );
               results.push({ id: row.id, status: 'done' });
             } catch (error) {
-              const failure = itemError(error);
+              const failure =
+                itemError(error) ?? itemError(infrastructureError(error));
               if (!failure) throw error;
               results.push({ id: row.id, status: 'failed', error: failure });
             }

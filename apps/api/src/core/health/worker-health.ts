@@ -1,5 +1,9 @@
 import { createServer } from 'node:http';
-import { HttpException, type INestApplicationContext } from '@nestjs/common';
+import {
+  HttpException,
+  type INestApplicationContext,
+  Logger,
+} from '@nestjs/common';
 import { HealthController } from './health.controller.js';
 
 /**
@@ -7,7 +11,9 @@ import { HealthController } from './health.controller.js';
  * context), so this answers `GET /health/live` and `GET /health/ready` on
  * `port` with the same checks as the API's, and nothing else. Custom
  * because Nest's HTTP adapter would also mount every controller of the app.
- * Unref'd: it never keeps the process alive once the app has closed.
+ * Unref'd: it never keeps the process alive once the app has closed. A
+ * port already taken (the API's, on one machine) is logged, and the worker
+ * runs on without probes.
  */
 export function serveWorkerHealth(app: INestApplicationContext, port: number) {
   const health = app.get(HealthController);
@@ -37,6 +43,11 @@ export function serveWorkerHealth(app: INestApplicationContext, port: number) {
       .writeHead(status, { 'content-type': 'application/json' })
       .end(JSON.stringify(body ?? { status: 'error' }));
   });
+  server.on('error', (error) =>
+    new Logger('WorkerHealth').warn(
+      `No probes on port ${port}: ${error.message}. Set PORT to a free one for the worker.`,
+    ),
+  );
   server.listen(port).unref();
   return server;
 }

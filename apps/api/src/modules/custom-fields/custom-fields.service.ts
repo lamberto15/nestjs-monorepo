@@ -194,7 +194,16 @@ export class CustomFieldsService {
       defaultValue: input.default ?? null,
     };
     assertValid(definition);
+    const exists = () =>
+      new ConflictException({
+        code: 'custom_field_exists',
+        message: `${input.subject} already has a field "${input.key}" (keys are never reused, even after a field is deactivated).`,
+      });
     return this.txHost.withTransaction(async () => {
+      // A taken key says so before the limit does; the index settles a race.
+      if (await this.repository.hasKey(input.subject, input.key)) {
+        throw exists();
+      }
       await this.assertRoom(input.subject);
       const last = await this.repository.lastPosition(input.subject);
       const created = await this.repository
@@ -212,10 +221,7 @@ export class CustomFieldsService {
         // The unique index decides, so two creates of one key can't both pass.
         .catch((error: unknown) => {
           throw databaseErrorKind(error) === 'unique_violation'
-            ? new ConflictException({
-                code: 'custom_field_exists',
-                message: `${input.subject} already has a field "${input.key}" (keys are never reused, even after a field is deactivated).`,
-              })
+            ? exists()
             : error;
         });
       await this.audit.record(actor, {

@@ -1,4 +1,5 @@
 import { getTableName, sql, type SQL } from 'drizzle-orm';
+import { Logger } from '@nestjs/common';
 import {
   type AnyPgColumn,
   getTableConfig,
@@ -104,6 +105,7 @@ const frozenCheck = (tenantId: string) =>
 const BEGIN = /^\s*(?:begin|start\s+transaction)\b/i;
 /** A plain read: a `select` (a data-modifying CTE starts with `with`, so it is not one). */
 const READ = /^\s*select\b/i;
+const logger = new Logger('RowLevelSecurity');
 
 const textOf = (config: unknown) => {
   const text =
@@ -272,7 +274,12 @@ class TenantPool extends pg.Pool {
           released = true;
           client.query('commit').then(
             () => client.release(),
-            (error: Error) => client.release(error),
+            (error: Error) => {
+              // Its rows are already answered: a `select` with an effect
+              // (a function that writes) lost it, so say so.
+              logger.warn(`A read's commit failed: ${error.message}`);
+              client.release(error);
+            },
           );
           return result;
         }
