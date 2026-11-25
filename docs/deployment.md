@@ -127,10 +127,10 @@ The logger masks them.
   ([core/health](../apps/api/src/core/health/README.md)).
 - Metrics go out over OTLP, not a scrape route: with Nestrix on, to
   `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, else `OTEL_EXPORTER_OTLP_ENDPOINT`
-  plus `/v1/metrics`. The Nestrix server, with `NESTRIX_METRICS=on`, keeps
-  only Nestrix's own runtime metrics and request durations and drops the
-  app's (nestrix-js/nestrix#87), so the app's metrics need an OpenTelemetry
-  Collector (its Prometheus exporter keeps the names alerts read). With NestJS Observe on, they are not
+  plus `/v1/metrics`. The Nestrix server (0.11.0 or later) stores them with
+  `NESTRIX_METRICS=all` and charts them on its Metrics page; `on` keeps only
+  its own runtime metrics. Alerts on them from Prometheus need an
+  OpenTelemetry Collector (its Prometheus exporter keeps the names). With NestJS Observe on, they are not
   exported ([core/metrics](../apps/api/src/core/metrics/README.md)).
 - Observability is off until a backend is configured, and has two:
   NestJS Observe (`OBSERVE_APP_KEY`, `OBSERVE_APP_SECRET`) or any

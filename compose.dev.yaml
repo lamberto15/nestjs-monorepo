@@ -86,7 +86,7 @@ services:
   # apps/api/.env. Dashboard: http://localhost:4318, the password below.
   # Development values only: no ingest key (it listens on loopback alone).
   nestrix:
-    image: ghcr.io/nestrix-js/nestrix-server:0.9.1@sha256:9ec653445ed9ebb31fbfa51f59f4866083def1a69f8c1442461eb4da9cac7b60
+    image: ghcr.io/nestrix-js/nestrix-server:0.11.0@sha256:00b035c65e1c3648504b0057e2d1741e226b3a496e047ff26ea55687fd53ec01
     profiles: [traces]
     restart: unless-stopped
     depends_on:
@@ -98,8 +98,8 @@ services:
       NESTRIX_ADMIN_PASSWORD: ${NESTRIX_ADMIN_PASSWORD:-nestrix-dev-password}
       # Sessions survive a restart of the server.
       NESTRIX_SESSION_SECRET: nestrix-dev-session-secret-0123456789abcdef
-      # CPU, memory, event-loop delay and request durations, beside the traces.
-      NESTRIX_METRICS: 'on'
+      # The app's own metrics (core/metrics) beside Nestrix's runtime ones.
+      NESTRIX_METRICS: 'all'
       NESTRIX_LOG_FORMAT: text
     ports:
       - '127.0.0.1:${NESTRIX_PORT:-4318}:4318'
