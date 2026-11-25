@@ -64,7 +64,7 @@ import {
  * Custom: @nestjs/authentication's provider and magic-link sign-ins end in
  * a session cookie; it has no token result for them (RFC 8252's flow), and
  * its link flow needs a browser session, which a token-only app has not.
- * Its `finish()` and `consume()` always sign the browser in (0.1.6 has no
+ * Its `finish()` and `consume()` always sign the browser in (0.1.7 has no
  * `signIn: false`): the session they make for a native login is
  * discarded at once and its cookie cleared (`discardSignIn()`).
  */
