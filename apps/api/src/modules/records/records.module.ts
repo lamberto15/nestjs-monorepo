@@ -128,8 +128,8 @@ export class RecordsModule {
 
 /**
  * A record's stock quota (`records.<item>`): its live records in the
- * tenant, checked by RecordStore.create() in the insert's transaction (422
- * `quota_exceeded`).
+ * tenant, checked by RecordStore.create() and restore() in their
+ * transaction (422 `quota_exceeded`).
  */
 function recordQuota(
   declaration: RecordDeclaration,

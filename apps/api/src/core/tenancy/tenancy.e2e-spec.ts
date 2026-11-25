@@ -206,6 +206,23 @@ describe('tenancy (e2e)', () => {
         ['b1'],
         ['renamed'],
       ]);
+      // That read runs read only: a select that would write is refused
+      // before its rows are answered, never lost in the commit after them.
+      expect(
+        codeOf(
+          await caught(
+            tenancy.run(a, () =>
+              db.execute(sql`select nextval('locks_fencing_token_seq')`),
+            ),
+          ),
+        ),
+      ).toBe('25006');
+      // A locking select is not such a read: it runs in a transaction of its own.
+      expect(
+        await tenancy.run(a, () =>
+          db.select({ name: tenantItems.name }).from(tenantItems).for('update'),
+        ),
+      ).toEqual([{ name: 'renamed' }]);
     });
 
     it('without a tenant, shows no row and refuses every write', async () => {

@@ -54,6 +54,19 @@ describe('MetricsService.collect()', () => {
     expect(failures!.value).toBeGreaterThanOrEqual(2);
   });
 
+  it('counts a read that takes too long as failed', async () => {
+    const service = new MetricsService();
+    service.collect(
+      'stuck',
+      'Never answers.',
+      () => new Promise<never>(() => {}),
+    );
+
+    expect(await recorded.read('stuck')).toEqual([]);
+    const [failures] = await recorded.read('metric_read_failures');
+    expect(failures!.attributes).toEqual({ metric: 'stuck' });
+  }, 15_000);
+
   it('stops reading once its app is closed', async () => {
     const service = new MetricsService();
     const read = vi.fn(() => [{ value: 1 }]);

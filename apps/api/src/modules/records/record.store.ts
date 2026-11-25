@@ -311,11 +311,14 @@ export class RecordStore<Row extends RecordRow = RecordRow> {
 
   /**
    * Out of the recycle bin: the record as it is now. A unique value
-   * another record took meanwhile is a 409 `<item>_taken`.
+   * another record took meanwhile is a 409 `<item>_taken`; past the
+   * record's stock quota (it counts live records), a 422 `quota_exceeded`.
    */
   async restore(by: Principal, id: string): Promise<Row> {
     if (!this.declaration.softDelete) throw this.notFound(id);
     return this.txHost.withTransaction(async () => {
+      // As in create(): the quota's lock first, then the row's.
+      if (this.feature.quota) await this.quotas!.assertRoom(this.feature.quota);
       const [row] = (await this.db
         .update(this.table as unknown as PgTable)
         .set({ deletedAt: null, deletedBy: null })

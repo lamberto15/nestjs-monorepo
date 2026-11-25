@@ -1,5 +1,6 @@
 import { HttpException } from '@nestjs/common';
 import { AuthorizationError } from '@nestjs/authorization';
+import { infrastructureError } from '../../core/http/infrastructure-errors.js';
 import { problemCode } from '../../core/http/problem-details.filter.js';
 import type {
   BulkItemError,
@@ -9,11 +10,18 @@ import type {
 
 /**
  * An item's failure, from what its action threw: a 4xx as the record's own
- * route would answer it (its `code`, `message`, field `errors`), or a
- * refused permission check. Undefined for anything else (the database
- * gone): that stops the run.
+ * route would answer it (its `code`, `message`, field `errors`), a
+ * database error the API answers as one (a unique violation no hook
+ * mapped: 409 `conflict`), or a refused permission check. Undefined for
+ * anything else (the database gone, overloaded): that stops the run.
  */
 export function itemError(error: unknown): BulkItemError | undefined {
+  if (!(
+    error instanceof HttpException || error instanceof AuthorizationError
+  )) {
+    const answered = infrastructureError(error);
+    return answered ? itemError(answered) : undefined;
+  }
   if (error instanceof AuthorizationError) {
     return { code: 'forbidden', message: 'Forbidden' };
   }

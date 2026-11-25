@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'node:net';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { serveWorkerHealth } from './worker-health.js';
 
 describe('serveWorkerHealth', () => {
@@ -41,5 +41,20 @@ describe('serveWorkerHealth', () => {
     expect((await fetch(url('/health/live'), { method: 'POST' })).status).toBe(
       404,
     );
+  });
+
+  it('logs a port already taken, and does not crash the worker', async () => {
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const taken = (server.address() as AddressInfo).port;
+    const second = serveWorkerHealth(app, taken);
+    await new Promise((resolve) => second.once('error', resolve));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(
+        new RegExp(`No probes on port ${taken}: .*EADDRINUSE`),
+      ),
+    );
+    warn.mockRestore();
   });
 });

@@ -103,8 +103,13 @@ const frozenCheck = (tenantId: string) =>
   )} is not null`;
 
 const BEGIN = /^\s*(?:begin|start\s+transaction)\b/i;
-/** A plain read: a `select` (a data-modifying CTE starts with `with`, so it is not one). */
-const READ = /^\s*select\b/i;
+/**
+ * A plain read: a `select` (a data-modifying CTE starts with `with`, so it
+ * is not one), and not a locking one (`for update`, `for share`), which a
+ * read-only transaction refuses.
+ */
+const READ =
+  /^\s*select\b(?![\s\S]*\bfor\s+(?:no\s+key\s+)?(?:update|share|key\s+share)\b)/i;
 const logger = new Logger('RowLevelSecurity');
 
 const textOf = (config: unknown) => {
@@ -264,19 +269,20 @@ class TenantPool extends pg.Pool {
     let broken: Error | undefined;
     let released = false;
     try {
-      await client.query('begin');
+      const read = READ.test(textOf(config));
+      // A read's transaction is read only: a `select` that would write (a
+      // function, nextval()) fails here, before its rows are answered.
+      await client.query(read ? 'begin read only' : 'begin');
       try {
         const result = await client.query(config as string, values as []);
-        if (READ.test(textOf(config))) {
-          // A read has nothing to commit: its rows are final once they came
-          // back, so it answers without waiting a round trip for the commit,
-          // and the connection goes back once the commit is done.
+        if (read) {
+          // A read-only transaction has nothing to commit: its rows are final
+          // once they came back, so it answers without waiting a round trip
+          // for the commit, and the connection goes back once that is done.
           released = true;
           client.query('commit').then(
             () => client.release(),
             (error: Error) => {
-              // Its rows are already answered: a `select` with an effect
-              // (a function that writes) lost it, so say so.
               logger.warn(`A read's commit failed: ${error.message}`);
               client.release(error);
             },

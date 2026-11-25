@@ -14,6 +14,12 @@ export const MAX_BULK_RESULTS = 10_000;
  * back alone. A queued run reports its progress after each group.
  */
 export const BULK_GROUP = 100;
+/**
+ * The group of a run that takes its record's quota lock (a restore, under
+ * `forFeature({ quota })`): the lock is held until the group commits, and
+ * every create of that record in the tenant waits on it.
+ */
+export const BULK_QUOTA_GROUP = 10;
 
 /**
  * What a record's bulk route does to many of its records, each as the

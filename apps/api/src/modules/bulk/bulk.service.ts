@@ -35,11 +35,11 @@ import {
 import { bulkConfig } from './bulk.config.js';
 import { BulkExtension } from './bulk.extension.js';
 import { BulkTally, itemError, skipped } from './bulk.results.js';
-import { infrastructureError } from '../../core/http/infrastructure-errors.js';
 import { actionsOf, bulkInputSchema } from './bulk.schemas.js';
 import {
   BULK,
   BULK_GROUP,
+  BULK_QUOTA_GROUP,
   type BulkAction,
   type BulkItemResult,
   type BulkJob,
@@ -280,7 +280,8 @@ export class BulkService {
   }
 
   /**
-   * Performs the action on every selected record, BULK_GROUP at a time in
+   * Performs the action on every selected record, BULK_GROUP at a time
+   * (BULK_QUOTA_GROUP where each item takes the quota's lock) in
    * one transaction, each item in a savepoint of it: a 4xx, or a database
    * error the API answers as one (a unique violation no hook mapped), rolls
    * back and fails that item alone; ids the selection did not yield are
@@ -304,14 +305,18 @@ export class BulkService {
     const tally = new BulkTally(cap);
     // Which ids were found: only for an ids selection (a filter's matches are unbounded).
     const seen = selection.ids ? new Set<string>() : undefined;
+    const size =
+      action === 'restore' && registration.feature.quota
+        ? BULK_QUOTA_GROUP
+        : BULK_GROUP;
     for await (const batch of this.select(
       principal,
       registration,
       action,
       selection,
     )) {
-      for (let start = 0; start < batch.length; start += BULK_GROUP) {
-        const group = batch.slice(start, start + BULK_GROUP);
+      for (let start = 0; start < batch.length; start += size) {
+        const group = batch.slice(start, start + size);
         for (const row of group) seen?.add(row.id);
         const results = await this.txHost.withTransaction(async () => {
           const results: BulkItemResult[] = [];
@@ -323,8 +328,7 @@ export class BulkService {
               );
               results.push({ id: row.id, status: 'done' });
             } catch (error) {
-              const failure =
-                itemError(error) ?? itemError(infrastructureError(error));
+              const failure = itemError(error);
               if (!failure) throw error;
               results.push({ id: row.id, status: 'failed', error: failure });
             }

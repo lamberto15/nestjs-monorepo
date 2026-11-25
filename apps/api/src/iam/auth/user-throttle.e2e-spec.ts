@@ -24,6 +24,13 @@ class ProbeController {
   skipped() {
     return { ok: true };
   }
+
+  @Get('user-skipped')
+  @Can.Anyone()
+  @SkipThrottle({ user: true })
+  userSkipped() {
+    return { ok: true };
+  }
 }
 
 @Module({ controllers: [ProbeController] })
@@ -53,15 +60,14 @@ describe('the default limit per signed-in caller (e2e)', () => {
     expect((await hit(other.headers)).statusCode).toBe(200);
   });
 
-  it('skips a route that skips throttling', async () => {
-    const { headers } = await signedInUser(app);
-    for (let i = 0; i < 4; i++) {
-      const res = await app.inject({
-        method: 'GET',
-        url: '/probe/skipped',
-        headers,
-      });
-      expect(res.statusCode).toBe(200);
-    }
-  });
+  it.each(['/probe/skipped', '/probe/user-skipped'])(
+    'skips a route that skips throttling, or only this limit (%s)',
+    async (url) => {
+      const { headers } = await signedInUser(app);
+      for (let i = 0; i < 4; i++) {
+        const res = await app.inject({ method: 'GET', url, headers });
+        expect(res.statusCode).toBe(200);
+      }
+    },
+  );
 });

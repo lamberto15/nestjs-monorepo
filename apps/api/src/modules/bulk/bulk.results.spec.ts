@@ -24,6 +24,17 @@ describe('itemError', () => {
     });
   });
 
+  it('fails an item alone on a unique violation no hook mapped, not on an overload', () => {
+    const database = (code: string) =>
+      new Error('Failed query', {
+        cause: Object.assign(new Error('from postgres'), { code }),
+      });
+    expect(itemError(database('23505'))).toMatchObject({ code: 'conflict' });
+    // 57014: a statement timeout, a 503 the run stops on.
+    expect(itemError(database('57014'))).toBeUndefined();
+    expect(itemError(new Error('the database is gone'))).toBeUndefined();
+  });
+
   it("keeps a validation_failed's errors", () => {
     expect(
       itemError(

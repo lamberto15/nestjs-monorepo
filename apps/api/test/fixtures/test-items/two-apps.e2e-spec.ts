@@ -88,6 +88,14 @@ describe('records: two apps in one process (e2e)', () => {
       headers: editor.headers,
     });
     await createTestItem(second, editor.headers);
+    // Restoring it would make three live: refused like a create.
+    const restored = await second.inject({
+      method: 'POST',
+      url: `/v1/test-items/${a.id}/restore`,
+      headers: editor.headers,
+    });
+    expect(restored.statusCode).toBe(422);
+    expect(restored.json().code).toBe('quota_exceeded');
   });
 
   it('refuses two controllers of one name in one app', async () => {
