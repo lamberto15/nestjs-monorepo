@@ -43,7 +43,7 @@ services:
   # Only with the profile: docker compose -f compose.dev.yaml --profile documents up -d --wait
   # Its Chromium may load the page it is given and nothing else, and runs no script.
   gotenberg:
-    image: gotenberg/gotenberg:9.7.0-chromium
+    image: gotenberg/gotenberg:9.9.3-chromium
     profiles: [documents]
     restart: unless-stopped
     command:
